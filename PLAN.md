@@ -150,27 +150,30 @@ These are user-facing names. Crates use the `neue-` prefix.
   relative-pointer, pointer-gestures, text-input-v3 and input-method-v2, primary-selection,
   ext-data-control, ext-session-lock, ext-idle-notify, idle-inhibit, ext-foreign-toplevel-list,
   ext-workspace, ext-image-copy-capture, xdg-foreign, xdg-dialog-v1, xdg-toplevel-icon,
-  xdg-system-bell, keyboard-shortcuts-inhibit, security-context-v1, kde appmenu, and
-  kde server-decoration (for older Qt). Colour management and HDR come later.
+  xdg-system-bell, keyboard-shortcuts-inhibit, security-context-v1, kde appmenu,
+  `gtk_shell1` (GTK menu export only, ADR 0005), and kde server-decoration (for older Qt).
+  Colour management and HDR come later.
 - **IPC:** `neuectl` speaks JSON over a Unix socket. It covers window, Space and output
   queries, actions, config reload, screenshots and event streams. It is also the hook that
-  tests and coding agents use.
+  tests and coding agents use. Protocol and channel boundaries: ADR 0003.
 - **Config:** TOML in `~/.config/neueos/`, hot-reloaded. Preferences writes it through
-  `neue-settingsd`.
+  `neue-settingsd`. File layout, layering and reload: ADR 0004.
+- **Library:** Smithay from a pinned git rev, GLES renderer, no X11 features: ADR 0001.
 
 ### 3.2 Toolkit (`neue-kit` and friends)
 | Crate | Responsibility |
 |---|---|
-| `neue-paint` | Scene primitives (kurbo, peniko), **materials** (linen, metal, aqua glass, HUD), nine-slice, procedural textures. Two backends: GPU (vello + wgpu) and CPU (`vello_cpu`, used for compositor chrome and golden tests) |
+| `neue-paint` | Its own recorded `Scene` (kurbo, peniko), **materials** (linen, metal, aqua glass, HUD), nine-slice, procedural textures. Replayed per backend: GPU (`vello_gpu` on wgpu), CPU (`vello_cpu`, for compositor chrome and golden tests), and Masonry's `imaging` painter (ADR 0002) |
 | `neue-theme` | Design tokens: colours, metrics, typography, light and dark, accent colour, materials table |
 | `neue-platform` | Windowing backends. **Wayland** (smithay-client-toolkit: xdg-shell, layer-shell, fractional scale, text-input-v3, DnD, clipboard, xdg-activation, xdg-dialog). **winit** (macOS and dev, so apps and widget galleries run natively on the Mac) |
-| `neue-kit` | Widget tree, layout (taffy), events, focus, animation (springs), text through **parley** and fontique, accessibility through **AccessKit**, menus with DBusMenu export, an Elm-style app model, and async integration |
+| `neue-kit` | Widget tree on **`masonry_core`** (pinned git rev, hidden behind neue-kit's own API; ADR 0002), Masonry's layout, events, focus, animation (our springs on `on_anim_frame`), text through **parley** and fontique, accessibility through **AccessKit**, menus with DBusMenu export, an Elm-style app model, and async integration |
 | `neue-desktop` | freedesktop specs: desktop entries, icon themes, MIME (shared-mime-info), thumbnails, trash, recent files, autostart |
 | `neue-dbus` | zbus interfaces: DBusMenu, StatusNotifierItem/Watcher, Notifications, our private services |
 
-- **Phase 0 spike:** evaluate Linebender's **Masonry** as the base for the widget tree. If
-  its event and paint model allows fully custom materials, build on it. Otherwise write a
-  thin widget tree of our own on top of the same crates. Record the outcome in an ADR.
+- **Masonry decision (ADR 0002):** build on `masonry_core` with our own sctk and winit
+  drivers in `neue-platform`. The first Phase 2 task is a gate: if Masonry's pins, `imaging`
+  and our `vello_cpu`/`vello_gpu` pins can't be reconciled, or popups can't map to
+  xdg-popup, fall back to a thin tree of our own on the same crates.
 - Widget set (v1): push button (Aqua gel, default-pulse), bevel/recessed buttons, checkbox,
   radio, popup/pull-down, combo, segmented control, slider, stepper, text field, search
   field, secure field, text view, scroll view with overlay scrollbars, table and outline
@@ -189,9 +192,10 @@ crashes, the compositor restarts it.
 - **Global menu pipeline:**
   1. The window maps to a DBusMenu service through the KDE appmenu Wayland protocol.
   2. The shell renders that menu.
-  3. Sources: neue-kit apps (native), Qt/KDE apps (via the plasma-integration platform
-     theme), and GTK3 apps via appmenu-gtk-module (Wayland support to be verified in
-     Phase 0).
+  3. Sources (ADR 0005): neue-kit apps, Qt6 apps and Chromium via KDE appmenu + DBusMenu
+     (needs our `com.canonical.AppMenu.Registrar`), and GTK3/GTK4 `GtkApplication` apps via
+     `gtk_shell1` + `org.gtk.Menus`. The shell owns the registrar and both D-Bus clients;
+     the compositor only stores per-window addresses.
   4. Every other app gets the **fallback menu**:
      - App menu: About, Hide, Quit.
      - File: New Window, Close.
@@ -352,22 +356,17 @@ crashes, the compositor restarts it.
 - **No VMware needed.** Parallels on Apple silicon cannot run x86_64 guests at usable speed,
   so x86_64 graphics testing happens on the PCs.
 
-### 6.3 Phase 0 environment checks
-These are uncertainties to resolve, not assumptions:
-1. Install Arch Linux ARM in Parallels. Candidate routes:
-   - The archboot aarch64 ISO.
-   - Bootstrapping the ALARM generic rootfs from an ARM live ISO.
-
-   Then check whether Parallels Tools works on Arch. If it doesn't, fall back to
-   virtiofs/SSH and rsync.
-2. **GPU acceleration in the guest:** check what `eglinfo` reports (virtio-gpu/virgl
-   vs. llvmpipe). If it reports llvmpipe, development still works through software
-   rendering; performance is then judged only on the PCs.
-3. Run Smithay's `anvil` example on the VM's DRM device, and nested.
-4. Run a vello demo natively on macOS and inside the VM.
-5. Global-menu feasibility on Wayland for Qt6 (plasma-integration), GTK3
-   (appmenu-gtk-module), Chromium/Electron, and Firefox. Record the results.
-6. Masonry evaluation (see §3.2).
+### 6.3 Phase 0 environment checks (resolved)
+All resolved in Phase 0; details in `docs/research/` and `docs/dev-setup.md`.
+1. **Arch Linux ARM in Parallels:** installed via archboot with GRUB (UEFI); see
+   `arch-arm-parallels.md` and `dev-setup.md`.
+2. **GPU in the guest:** virgl, OpenGL ES 3.0 (no compute); Vulkan is llvmpipe only. VM FPS
+   is not a performance signal (`vm-graphics.md`).
+3. **anvil:** works on DRM (after replacing archboot's kmscon with getty) and nested in weston.
+4. **vello:** `vello_gpu` renders on virgl GL in the VM and on Metal on the Mac
+   (`vm-graphics.md`, `paint-poc.md`).
+5. **Global menus:** coverage table in `global-menu.md`; strategy in ADR 0005.
+6. **Masonry:** `masonry.md`; decision in ADR 0002.
 
 ---
 
@@ -452,7 +451,7 @@ sequential, 0.4 can start once R2 is in, and 0.6 / 0.7 can run in parallel.
       *Accept:* a coverage table with tested/observed status per toolkit.
       (Run by Claude over SSH in the VM's Plasma session on 2026-11-03, with no input injection;
       results in `global-menu-checklist.md`, summary in `global-menu.md`. Open items listed there.)
-- [ ] **0.8 ADRs 0001–0005** · Opus. 0001 Smithay, 0002 toolkit stack and Masonry (from
+- [x] **0.8 ADRs 0001–0005** · Opus. 0001 Smithay, 0002 toolkit stack and Masonry (from
       R3, R4, 0.6), 0003 IPC, 0004 config format, 0005 global-menu strategy (from R1,
       0.7). Then split Phase 1 into tasks.
       *Accept:* five ADRs merged; Phase 1 has a task list.
@@ -464,17 +463,100 @@ sequential, 0.4 can start once R2 is in, and 0.6 / 0.7 can run in parallel.
         own a small command list and replay it per backend.
       - Masonry has its own layout (not taffy), no springs, and a paint API moving to
         the `imaging` crate; crates.io release lags `main` by a year.
+      (ADRs in `docs/adr/`; §3.1, §3.2, §3.3 and §6.3 updated, Phase 1 split below.)
 - **Exit:** CI is green on 3 platforms. Smithay runs in the VM. Proof-of-concept renders
   on the Mac.
 
 ### Phase 1: Compositor MVP (L)
-- [ ] tty, winit and headless backends. Multi-monitor, fractional scaling, VRR, direct scanout.
-- [ ] Floating window management, focus and stacking, xkb keymaps, cursor theme,
-      clipboard, DnD.
-- [ ] Mountain Lion server-side title bars (vello_cpu chrome), traffic lights, resize edges.
-- [ ] Core protocol set (§3.1). Explicit sync tested on NVIDIA.
-- [ ] xwayland-satellite on demand. Screencopy. `neuectl` IPC. Config hot reload.
-- [ ] `neue-session`, systemd units, and first PKGBUILDs (`neue-comp`).
+One task = one thread = one PR, as in Phase 0. Rough order: 1.1 → 1.2 → 1.3 first, then
+1.4–1.8 in any order, then 1.9 onward. Unless noted, tasks touch only `compositor/neue-comp`
+and are checked with `cargo xtask linux cargo xtask check` plus a headless test.
+Decisions to follow: ADR 0001 (Smithay), 0003 (IPC), 0004 (config), 0005 (global menu).
+
+- [ ] **1.1 Compositor skeleton on winit** · Opus. calloop loop, Smithay state, compositor,
+      shm, linux-dmabuf, seat, output, xdg-shell; winit backend; GLES renderer with damage
+      tracking; new windows placed in a stack, click to focus; Super+Q quits.
+      *Accept:* `foot` and `weston-terminal` show and take input nested under weston in the VM.
+- [ ] **1.2 Headless backend + test harness** · Opus. Headless backend (EGL surfaceless when
+      pixels are needed), a scripted test client on `wayland-client`, and a first test
+      that maps an `xdg_toplevel` and asserts the window list. Runs in CI on Linux.
+      *Accept:* the test passes in `cargo xtask check` on both Linux CI jobs.
+- [ ] **1.3 `neue-ipc` + `neuectl`** · Sonnet. New portable crate `neue-ipc` and the
+      `neuectl` binary per ADR 0003: `version`, `windows`, `outputs`, `focused-window`,
+      `action`, `actions`, `subscribe` (window events), `quit`.
+      *Accept:* headless test drives the compositor through the socket; `neue-ipc` tests
+      pass on macOS.
+- [ ] **1.4 tty backend** · Opus. DRM/KMS atomic, GBM, libinput, udev, libseat; single
+      output; VT switching; cursor plane.
+      *Accept:* in the VM on DRM under seatd, `foot` runs and keyboard/pointer work
+      (owner at the VM window confirms input).
+- [ ] **1.5 Floating window management** · Opus. Focus and stacking rules, interactive move
+      and resize (xdg `move`/`resize`), window placement, minimise/zoom/close as actions,
+      xdg-activation focus stealing rules.
+      *Accept:* headless tests for focus/stacking; `neuectl action` covers each operation.
+- [ ] **1.6 `neue-config` + compositor config and hot reload** · Sonnet. New portable crate
+      `neue-config` with the `compositor.toml` schema (keyboard layouts and xkb options,
+      pointer, keybindings, output scale), layering and the inotify reload per ADR 0004;
+      `reload-config` and `config_error` in `neuectl`.
+      *Accept:* changing the xkb layout in the file applies without restart (headless test
+      plus VM check).
+- [ ] **1.7 Multi-monitor and scaling** · Opus. Output layout from config, hotplug,
+      fractional-scale-v1, viewporter, per-output scale, windows moving between outputs.
+      *Accept:* headless test with two outputs at scales 1 and 1.5; VM hotplug by resizing
+      the Parallels window (owner).
+- [ ] **1.8 Clipboard and DnD** · Sonnet. Data device, primary selection, ext-data-control,
+      DnD with icon surfaces.
+      *Accept:* `wl-copy`/`wl-paste` round trip in a headless test; DnD of a file between two
+      GTK apps in the VM.
+- [ ] **1.9 Cursors** · Sonnet. XCursor theme loading (pure-Rust `xcursor` crate),
+      cursor-shape-v1, per-scale cursor sizes, hardware cursor plane on tty.
+      *Accept:* correct cursors on resize edges and text fields in the VM.
+- [ ] **1.10 Server-side title bars** · Opus. xdg-decoration and kde server-decoration;
+      title bar and traffic lights drawn with `neue-paint` on `vello_cpu`, nine-sliced and
+      cached per state/scale, uploaded via `MemoryRenderBuffer`; title text through parley
+      with a bundled placeholder font. Touches `neue-paint` too.
+      *Accept:* golden tests for the title bar (focused/unfocused × light/dark × 1x/2x);
+      a GTK3 app shows our chrome in the VM; title bar render time logged.
+- [ ] **1.11 Chrome interaction** · Sonnet. Traffic-light hover/press and actions, drag to
+      move, double-click to zoom/minimise (per config), invisible resize edges.
+      *Accept:* headless tests on hit-testing; VM check by the owner.
+- [ ] **1.12 Shell-facing protocols** · Sonnet. wlr-layer-shell, ext-session-lock,
+      ext-idle-notify, idle-inhibit, ext-foreign-toplevel-list, xdg-foreign, xdg-dialog-v1
+      (modal flag only; sheets come later), xdg-toplevel-icon, xdg-system-bell,
+      keyboard-shortcuts-inhibit.
+      *Accept:* a headless test per protocol binding; `swaylock` or another ext-session-lock
+      client locks and unlocks in the VM.
+- [ ] **1.13 Input protocols** · Sonnet. pointer-constraints, relative-pointer,
+      pointer-gestures, text-input-v3, input-method-v2, touchpad gestures config.
+      *Accept:* headless tests; an IME (e.g. fcitx5) commits text into a GTK app in the VM.
+- [ ] **1.14 Presentation and sync** · Opus. linux-drm-syncobj-v1 (explicit sync),
+      presentation-time, tearing-control, security-context-v1 filtering of privileged globals.
+      *Accept:* headless tests; explicit sync exercised on the NVIDIA PC (owner, see 1.18).
+- [ ] **1.15 Direct scanout and VRR** · Opus. Direct scanout for full-screen surfaces,
+      adaptive sync per output (config), damage review.
+      *Accept:* scanout and VRR confirmed on real x86_64 hardware (owner); flagged in the PR.
+- [ ] **1.16 Screencopy** · Sonnet. ext-image-copy-capture (output and toplevel sources),
+      `neuectl screenshot`.
+      *Accept:* `neuectl screenshot` PNG matches a headless golden; `grim` works in the VM.
+- [ ] **1.17 Global-menu protocol side** · Sonnet. `org_kde_kwin_appmenu` v2 and `gtk_shell1`
+      v5 per ADR 0005 (`gtk_shell1` XML in a new `neue-protocols` crate); menu addresses in
+      `neuectl windows`.
+      *Accept:* Kate (with a test registrar) and gnome-text-editor show addresses in
+      `neuectl windows` in the VM.
+- [ ] **1.18 xwayland-satellite on demand** · Sonnet. Reserve X display sockets, spawn
+      `xwayland-satellite` on first connection, export `DISPLAY` (ADR 0001).
+      *Accept:* `xeyes` (or another X11 app) appears in the VM; nothing X-related runs before.
+- [ ] **1.19 `neue-session` and systemd units** · Sonnet. New `session/neue-session` crate:
+      environment import, `graphical-session.target`, units for `neue-comp`, and a greetd /
+      wayland-sessions entry.
+      *Accept:* the session starts from greetd in the VM and logs out cleanly.
+- [ ] **1.20 First PKGBUILD + `cargo xtask package`** · Sonnet. PKGBUILD for `neue-comp`,
+      `neuectl` and `neue-session` with vendored git deps; `xtask package <crate>`.
+      *Accept:* package builds in the OrbStack amd64 and arm64 machines and installs in the VM.
+- [ ] **1.21 Daily-drive pass** · Opus with the owner. foot/Alacritty, Firefox, a Qt app, a
+      Flatpak, an X11 app on the NVIDIA PC, an AMD/Intel PC and the VM; fix or file bugs.
+      *Accept:* the Phase 1 exit criterion below, with a results table in
+      `docs/research/phase1-daily-drive.md`.
 - **Exit:** daily-drivable with third-party apps (foot/Alacritty, Firefox, Flatpaks) on the
   PC and the VM.
 
