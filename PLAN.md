@@ -586,8 +586,9 @@ Decisions to follow: ADR 0001 (Smithay), 0003 (IPC), 0004 (config), 0005 (global
       `tests/decorations.rs`. Checked in the VM on the tty with `prlctl capture`: mousepad
       (GTK3, KDE protocol) and foot (xdg-decoration) show the bar, focus changes its
       style, zoom fits the client below it; cold slice render ≈0.5 ms, a title 0.05–0.4 ms
-      (debug log). Owner's hand check: `docs/dev-setup.md` §9. Not done: appearance
-      setting (light only), scale-2 check in the VM, interaction (1.11).
+      (debug log). Owner checked the bars by hand in the VM (`docs/dev-setup.md` §9) and
+      found them fine. Not done: appearance setting (light only), scale-2 check in the VM,
+      interaction (1.11; until then server-decorated windows can't be drag-resized).
 - [ ] **1.11 Chrome interaction** · Sonnet. Traffic-light hover/press and actions, drag to
       move, double-click to zoom/minimise (per config), invisible resize edges.
       *Accept:* headless tests on hit-testing; VM check by the owner.

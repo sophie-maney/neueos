@@ -375,5 +375,6 @@ ssh neueos-vm 'export XDG_RUNTIME_DIR=/run/user/1000 RUST_LOG=info,neue_comp::de
 6. **Timings:** `grep rendered /tmp/neue-comp.log` shows "rendered title bar slices" and
    "rendered window title" with `micros=`.
 
-Not yet: clicking the buttons or dragging the bar (task 1.11). Header-bar apps
+Not yet: clicking the buttons, dragging the bar or drag-resizing a server-decorated window
+(it has no resize edges until task 1.11; use `neuectl action resize-window`). Header-bar apps
 (`gnome-text-editor`, `gtk3-demo`) keep their own title bars by design.
