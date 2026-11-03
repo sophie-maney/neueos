@@ -412,7 +412,7 @@ sequential, 0.4 can start once R2 is in, and 0.6 / 0.7 can run in parallel.
       with `cfg(target_os = "linux")`).
       *Accept:* `cargo fmt --check`, `cargo clippy --workspace -- -D warnings` and
       `cargo test --workspace` pass on macOS.
-- [ ] **0.2 `cargo xtask` skeleton** · Sonnet. `xtask/` crate with `check` (fmt + clippy
+- [x] **0.2 `cargo xtask` skeleton** · Sonnet. `xtask/` crate with `check` (fmt + clippy
       + tests, skipping Linux-only crates on macOS through a crate list, not comments),
       and `linux` / `linux-amd64` that run a command in the OrbStack machines. Other
       subcommands print "not implemented yet". Update "Commands" in `AGENTS.md`.

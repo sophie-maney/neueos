@@ -113,7 +113,11 @@ The repo is the memory between threads, not chat history. Before finishing:
   their UI can be iterated on natively.
 
 ## Commands
-> These are planned and are created in Phase 0. Update this section when they land.
+> `cargo xtask` lives in `xtask/` (alias in `.cargo/config.toml`). `check`, `linux` and
+> `linux-amd64` work; the other subcommands print "not implemented yet" until their
+> Phase 0 tasks land. Linux-only crates are listed in `LINUX_ONLY_CRATES`
+> (`xtask/src/main.rs`) and skipped by `check` on other hosts. Machine names default to
+> `neueos-arm64` / `neueos-amd64`; override with `NEUE_ORB_ARM64` / `NEUE_ORB_AMD64`.
 
 ```sh
 cargo xtask check          # fmt --check + clippy -D warnings + tests for the current host
