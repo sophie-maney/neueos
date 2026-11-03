@@ -285,5 +285,29 @@ Z and Y: after the switch they come out swapped (German layout). Then:
   keeps working. Fix the file: `config_reloaded`, no restart.
 - Add `[keybindings]` with `"Super+Q" = "none"` and `"Super+Shift+Q" = "quit"`: Super+Q does
   nothing now, Super+Shift+Q quits.
-- Untested on hardware: `[outputs."<name>"] scale = 1.5` (names from `neuectl outputs`);
-  look for oddly placed windows or cursor and report them for task 1.7.
+- Output settings (`[outputs."<name>"] scale` and `position`) are checked in §6.
+
+## 6. Checking outputs, hotplug and scaling in the VM (task 1.7)
+Rebuild and start on the tty as in §4 (`-c foot`). In a second ssh session:
+```sh
+export XDG_RUNTIME_DIR=/run/user/1000 WAYLAND_DISPLAY=wayland-1
+export PATH=~/neueos/target/release:$PATH
+neuectl outputs                      # Virtual-1 at the VM window's size, +0+0
+neuectl events                       # leave running: output_* and window_* lines
+```
+1. **Hotplug by resizing:** drag a corner of the Parallels VM window. Expect an `output_changed` line with the new `width`/`height` within a second
+   or two, the desktop filling the window again, and `foot` still usable. Zoom `foot`
+   first (`neuectl action zoom-window`) and it should be refitted to the new size. If no
+   event arrives and Parallels just stretches the picture, the guest resolution isn't
+   following the window (a Parallels display setting, not a compositor bug); note it.
+2. **Scale:** `printf '[outputs."Virtual-1"]\nscale = 1.5\n' >> ~/.config/neueos/compositor.toml`
+   (back the file up first). Expect `output_changed` with `"scale":1.5` and `foot`'s text
+   redrawn larger but sharp (fractional scaling, not a blurry upscale). Remove the lines
+   again afterwards.
+3. **Second display (optional):** if Parallels offers a second display for the VM
+   (Hardware → Graphics), enable it: expect `output_added` for `Virtual-2` to the right of
+   `Virtual-1`; `neuectl action move-window --x <its x + 100> --y 100` moves `foot` there.
+   Disable it again: `output_removed`, and `foot` comes back to `Virtual-1`.
+
+Report the `neuectl events` lines and anything that looks wrong (black output, stuck
+frames, cursor in the wrong place).

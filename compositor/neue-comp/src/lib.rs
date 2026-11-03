@@ -10,6 +10,7 @@
 //! - `config`: `compositor.toml` loading, applying, hot reload and key bindings (ADR 0009).
 //! - `input`: input dispatch, focus on click, compositor key bindings.
 //! - [`placement`]: where new windows go (a cascading stack).
+//! - [`outputs`]: output layout, hotplug, per-output scale and frame callbacks.
 //! - `ipc`: the `neuectl` socket (ADR 0003, ADR 0007).
 //! - `headless`: a virtual output without rendering or input; used by tests.
 //! - `tty`: DRM/KMS, libinput and libseat on real hardware and the VM (cargo feature `tty`).
@@ -28,6 +29,7 @@ mod handlers;
 mod headless;
 mod input;
 mod ipc;
+pub mod outputs;
 pub mod placement;
 pub mod state;
 #[cfg(feature = "tty")]
@@ -46,7 +48,7 @@ use smithay::reexports::wayland_server::Display;
 use smithay::wayland::dmabuf::DmabufState;
 use tracing::{info, warn};
 
-pub use headless::OUTPUT_SIZE as HEADLESS_OUTPUT_SIZE;
+pub use headless::{OUTPUT_NAME as HEADLESS_OUTPUT_NAME, OUTPUT_SIZE as HEADLESS_OUTPUT_SIZE};
 pub use ipc::IpcSocket;
 pub use neue_ipc::WindowInfo;
 pub use state::State;
@@ -171,7 +173,7 @@ impl Compositor {
             BackendKind::Tty => return Err(Error::BackendUnavailable(BackendKind::Tty)),
             BackendKind::Headless => {
                 headless::start_frame_timer(&event_loop.handle())?;
-                headless::init(&dh)
+                headless::init()
             }
         };
 
@@ -230,6 +232,7 @@ impl Compositor {
                 }
                 state.space.refresh();
                 state.popups.cleanup();
+                state.refresh_surface_scales();
                 if let Err(err) = display.flush_clients() {
                     warn!(%err, "flushing clients failed");
                 }

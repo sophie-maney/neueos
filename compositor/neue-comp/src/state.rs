@@ -8,30 +8,33 @@ use std::os::unix::net::UnixStream;
 use std::sync::Arc;
 use std::time::Instant;
 
-use neue_ipc::{WindowId, WindowInfo};
+use neue_ipc::{OutputInfo, WindowId, WindowInfo};
 use smithay::desktop::{PopupManager, Space, Window, WindowSurfaceType};
 use smithay::input::keyboard::{KeyboardHandle, XkbConfig};
 use smithay::input::pointer::{CursorImageStatus, PointerHandle};
 use smithay::input::{Seat, SeatState};
 use smithay::output::Output;
-use smithay::reexports::calloop::{EventLoop, LoopSignal};
+use smithay::reexports::calloop::{EventLoop, LoopHandle, LoopSignal};
 use smithay::reexports::wayland_server::backend::{ClientData, ClientId, DisconnectReason};
 use smithay::reexports::wayland_server::protocol::wl_surface::WlSurface;
 use smithay::reexports::wayland_server::{Client, DisplayHandle};
 use smithay::utils::{Logical, Point};
 use smithay::wayland::compositor::{CompositorClientState, CompositorState};
 use smithay::wayland::dmabuf::DmabufState;
+use smithay::wayland::fractional_scale::FractionalScaleManagerState;
 use smithay::wayland::output::OutputManagerState;
 use smithay::wayland::selection::data_device::DataDeviceState;
 use smithay::wayland::shell::xdg::XdgShellState;
 use smithay::wayland::shm::ShmState;
 use smithay::wayland::socket::ListeningSocketSource;
+use smithay::wayland::viewporter::ViewporterState;
 use smithay::wayland::xdg_activation::XdgActivationState;
 use tracing::warn;
 
 use crate::Error;
 use crate::config::ConfigRuntime;
 use crate::ipc::IpcServer;
+use crate::outputs::LaidOutOutput;
 
 /// Key repeat delay and rate of the seat's keyboard until the config is loaded. They
 /// match the config defaults, which `State::init_config` applies right after start-up.
@@ -51,14 +54,15 @@ pub enum Backend {
 }
 
 impl Backend {
-    /// The backend's output. Every backend has exactly one until multi-output (task 1.7).
-    pub fn output(&self) -> &Output {
+    /// The outputs the backend has right now. [`State::new`] adds them to the layout;
+    /// later changes go through [`State::add_output`] and [`State::remove_output`].
+    pub fn outputs(&self) -> Vec<Output> {
         match self {
             #[cfg(feature = "winit")]
-            Self::Winit(data) => data.output(),
-            Self::Headless(data) => data.output(),
+            Self::Winit(data) => vec![data.output().clone()],
+            Self::Headless(data) => data.outputs().to_vec(),
             #[cfg(feature = "tty")]
-            Self::Tty(data) => data.output(),
+            Self::Tty(data) => data.outputs(),
         }
     }
 }
@@ -72,7 +76,12 @@ pub struct State {
     pub socket_name: Option<OsString>,
     pub display_handle: DisplayHandle,
     pub loop_signal: LoopSignal,
+    pub loop_handle: LoopHandle<'static, State>,
     pub backend: Backend,
+    /// The outputs in the layout, in connection order (see `outputs.rs`).
+    pub(crate) outputs: Vec<LaidOutOutput>,
+    /// What `neuectl` subscribers were last told about the outputs.
+    pub(crate) reported_outputs: Vec<OutputInfo>,
 
     /// Mapped windows, their positions and their stacking order (last is topmost).
     pub space: Space<Window>,
@@ -99,6 +108,8 @@ pub struct State {
     pub output_manager_state: OutputManagerState,
     pub data_device_state: DataDeviceState,
     pub xdg_activation_state: XdgActivationState,
+    pub fractional_scale_state: FractionalScaleManagerState,
+    pub viewporter_state: ViewporterState,
     pub seat_state: SeatState<State>,
     pub seat: Seat<State>,
     pub keyboard: KeyboardHandle<State>,
@@ -125,6 +136,8 @@ impl State {
         // data-control and DnD icons are task 1.8.
         let data_device_state = DataDeviceState::new::<Self>(&dh);
         let xdg_activation_state = XdgActivationState::new::<Self>(&dh);
+        let fractional_scale_state = FractionalScaleManagerState::new::<Self>(&dh);
+        let viewporter_state = ViewporterState::new::<Self>(&dh);
 
         let mut seat_state = SeatState::new();
         let mut seat: Seat<Self> = seat_state.new_wl_seat(&dh, "seat0");
@@ -139,16 +152,17 @@ impl State {
             None
         };
 
-        let mut space = Space::default();
-        space.map_output(backend.output(), (0, 0));
-
-        Ok(Self {
+        let initial_outputs = backend.outputs();
+        let mut state = Self {
             start_time: Instant::now(),
             socket_name,
             display_handle: dh,
             loop_signal: event_loop.get_signal(),
+            loop_handle: event_loop.handle(),
             backend,
-            space,
+            outputs: Vec::new(),
+            reported_outputs: Vec::new(),
+            space: Space::default(),
             unmapped: Vec::new(),
             minimized: Vec::new(),
             remembered: HashMap::new(),
@@ -163,12 +177,18 @@ impl State {
             output_manager_state,
             data_device_state,
             xdg_activation_state,
+            fractional_scale_state,
+            viewporter_state,
             seat_state,
             seat,
             keyboard,
             pointer,
             cursor_status: CursorImageStatus::default_named(),
-        })
+        };
+        for output in initial_outputs {
+            state.add_output(output);
+        }
+        Ok(state)
     }
 
     /// Add a client connected through `stream`, e.g. one end of a socket pair.

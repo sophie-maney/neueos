@@ -146,6 +146,11 @@ pub struct OutputConfig {
     /// Scale factor (0.5 to 4). Unset: the backend's choice (1).
     #[serde(deserialize_with = "output_scale")]
     pub scale: Option<f64>,
+    /// Top-left corner in the global layout, in logical pixels (`[1920, 0]`), each
+    /// coordinate between -32768 and 32767. Unset: placed to the right of the outputs that
+    /// are already laid out, top edges aligned.
+    #[serde(deserialize_with = "output_position")]
+    pub position: Option<[i32; 2]>,
 }
 
 fn xkb_names<'de, D: Deserializer<'de>>(d: D) -> Result<Vec<String>, D::Error> {
@@ -218,6 +223,19 @@ fn output_scale<'de, D: Deserializer<'de>>(d: D) -> Result<Option<f64>, D::Error
     }
 }
 
+fn output_position<'de, D: Deserializer<'de>>(d: D) -> Result<Option<[i32; 2]>, D::Error> {
+    let position = Option::<[i32; 2]>::deserialize(d)?;
+    match position {
+        Some(p) if p.iter().any(|c| !(-32768..=32767).contains(c)) => {
+            Err(serde::de::Error::custom(format!(
+                "position must be between -32768 and 32767, not [{}, {}]",
+                p[0], p[1]
+            )))
+        }
+        position => Ok(position),
+    }
+}
+
 #[cfg(test)]
 mod tests {
     use super::*;
@@ -257,6 +275,7 @@ scroll-factor = 2.5
 
 [outputs."HDMI-A-1"]
 scale = 1.5
+position = [-1280, 0]
 "#,
         )
         .unwrap();
@@ -268,6 +287,7 @@ scale = 1.5
         assert!(c.pointer.natural_scroll);
         assert_eq!(c.pointer.scroll_factor, 2.5);
         assert_eq!(c.outputs["HDMI-A-1"].scale, Some(1.5));
+        assert_eq!(c.outputs["HDMI-A-1"].position, Some([-1280, 0]));
         assert!(loaded.unknown_keys.is_empty(), "{:?}", loaded.unknown_keys);
     }
 
@@ -311,6 +331,8 @@ scale = 1.5
             ("[pointer]\nscroll-factor = 0.0\n", 2),
             ("[pointer]\nscroll-factor = nan\n", 2),
             ("[outputs.X]\nscale = 9\n", 2),
+            ("[outputs.X]\nposition = [0, 40000]\n", 2),
+            ("[outputs.X]\nposition = [0]\n", 2),
             ("[keybindings]\n\"Hyper+Q\" = \"quit\"\n", 2),
             ("[keybindings]\n\"Super+Q\" = 5\n", 2),
         ] {

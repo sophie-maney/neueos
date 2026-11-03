@@ -151,14 +151,10 @@ impl State {
         zone
     }
 
-    /// The work area of the output `window` is on (or the active one).
+    /// The work area of the output `window` is mostly on (or the active one).
     fn work_area_for(&self, window: &Window) -> Rectangle<i32, Logical> {
-        let output = self
-            .space
-            .outputs_for_element(window)
-            .into_iter()
-            .next()
-            .or_else(|| self.active_output());
+        let output =
+            crate::outputs::primary_output(&self.space, window).or_else(|| self.active_output());
         output.map(|o| self.work_area(&o)).unwrap_or_default()
     }
 
@@ -460,9 +456,14 @@ impl State {
         }
     }
 
-    /// Move `window` so its geometry starts at `location` (top edge kept in the work area).
+    /// Move `window` so its geometry starts at `location` (top edge kept in the work area
+    /// of the output the middle of the top edge lands on, or the nearest one).
     pub fn move_window_to(&mut self, window: &Window, location: Point<i32, Logical>) {
-        let work = self.work_area_for(window);
+        let top_middle = location + Point::from((window.geometry().size.w / 2, 0));
+        let work = self
+            .output_near(top_middle)
+            .map(|o| self.work_area(&o))
+            .unwrap_or_else(|| self.work_area_for(window));
         let loc = placement::constrain_move(rect(work), (location.x, location.y));
         if let Some(index) = self.minimized.iter().position(|(w, _)| w == window) {
             self.minimized[index].1 = loc.into();

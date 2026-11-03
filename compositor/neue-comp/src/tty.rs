@@ -4,14 +4,17 @@
 //! EGL/GBM, libinput for input devices, udev to find the GPU, and libseat (seatd or logind)
 //! for device access and VT switching (Ctrl+Alt+F1…F12).
 //!
-//! Scope of task 1.4: one GPU, one output (the first connected connector, at its preferred
-//! mode), no hotplug. Multi-monitor and hotplug are task 1.7, direct scanout and VRR 1.15,
-//! XCursor themes 1.9. The pointer is drawn on the cursor plane where the hardware has one
-//! (the DRM compositor falls back to compositing it otherwise).
+//! One GPU drives every connected connector at its preferred mode, each on its own CRTC
+//! with its own render and vblank cycle (task 1.7). udev change events on the GPU rescan
+//! the connectors: new ones become outputs, disconnected ones are removed, and a changed
+//! preferred mode (a monitor switch, or a resized VM window) is applied with a modeset.
+//! Several GPUs, direct scanout and VRR are task 1.15, XCursor themes 1.9. The pointer is
+//! drawn on the cursor plane where the hardware has one (the DRM compositor falls back to
+//! compositing it otherwise).
 //!
 //! `NEUE_DRM_DEVICE=/dev/dri/cardN` overrides the GPU choice.
 //!
-//! Adapted from Smithay's `anvil/src/udev.rs` (MIT), reduced to a single GPU and output.
+//! Adapted from Smithay's `anvil/src/udev.rs` (MIT), reduced to a single GPU.
 
 use std::fmt;
 use std::path::PathBuf;
@@ -37,7 +40,7 @@ use smithay::backend::renderer::element::surface::{
 use smithay::backend::renderer::gles::GlesRenderer;
 use smithay::backend::session::libseat::LibSeatSession;
 use smithay::backend::session::{Event as SessionEvent, Session};
-use smithay::backend::udev;
+use smithay::backend::udev::{self, UdevBackend, UdevEvent};
 use smithay::desktop::space::{SpaceRenderElements, space_render_elements};
 use smithay::desktop::utils::send_frames_surface_tree;
 use smithay::input::pointer::{CursorImageStatus, CursorImageSurfaceData};
@@ -48,7 +51,7 @@ use smithay::reexports::drm::control::{Device as _, ModeTypeFlags, connector, cr
 use smithay::reexports::input::Libinput;
 use smithay::reexports::rustix::fs::OFlags;
 use smithay::reexports::wayland_server::DisplayHandle;
-use smithay::utils::{DeviceFd, IsAlive, Physical, Point, Scale};
+use smithay::utils::{DeviceFd, IsAlive, Physical, Point, Rectangle, Scale};
 use smithay::wayland::compositor::with_states;
 use smithay::wayland::dmabuf::{DmabufFeedbackBuilder, DmabufGlobal, DmabufState};
 use tracing::{debug, error, info, warn};
@@ -64,6 +67,9 @@ const COLOR_FORMATS: [Fourcc; 2] = [Fourcc::Argb8888, Fourcc::Abgr8888];
 /// Overlay and primary-plane scanout of client buffers is task 1.15; until then only the
 /// cursor goes on its own plane and everything else is composited.
 const FRAME_FLAGS: FrameFlags = FrameFlags::ALLOW_CURSOR_PLANE_SCANOUT;
+/// How far (logical pixels) from an output the pointer can be and still have its image
+/// drawn there: more than any cursor is tall.
+const CURSOR_REACH: i32 = 128;
 
 type Allocator = GbmAllocator<DrmDeviceFd>;
 type Exporter = GbmFramebufferExporter<DrmDeviceFd>;
@@ -80,54 +86,76 @@ smithay::backend::renderer::element::render_elements! {
     CursorSurface=WaylandSurfaceRenderElement<GlesRenderer>,
 }
 
+/// One lit connector: its output, the DRM output that scans it out, and its frame state.
+struct OutputSurface {
+    output: Output,
+    connector: connector::Handle,
+    drm_output: TtyOutput,
+    /// A frame was queued and its vblank has not arrived yet.
+    frame_pending: bool,
+    /// A render is already scheduled (idle callback or timer).
+    render_scheduled: bool,
+}
+
+/// What a connector rescan changed, for the state to apply.
+#[derive(Default)]
+struct Changes {
+    added: Vec<Output>,
+    removed: Vec<Output>,
+    mode_changed: Vec<Output>,
+}
+
 /// State owned by the tty backend.
 ///
 /// Drop order matters: the DRM device restores the previous display state when its last
 /// handle goes, which needs DRM master, so the session (which holds it) must outlive every
-/// handle. Fields drop in declaration order and the session is last; the DRM event source
-/// also holds a handle and is removed from the loop in `Drop`.
+/// handle. Fields drop in declaration order and the session is last; the DRM and udev event
+/// sources also hold handles and are removed from the loop in `Drop`.
 pub struct TtyData {
-    drm_output: TtyOutput,
+    /// Lit connectors, in the order they were found.
+    surfaces: Vec<OutputSurface>,
     output_manager: OutputManager,
     renderer: GlesRenderer,
     loop_handle: LoopHandle<'static, State>,
     drm_source: Option<RegistrationToken>,
-    output: Output,
+    udev_source: Option<RegistrationToken>,
+    /// The GPU, to match udev events.
+    node: DrmNode,
     _dmabuf_global: DmabufGlobal,
     /// The built-in arrow, used until XCursor themes (task 1.9).
     default_cursor: MemoryRenderBuffer,
     /// The session is active (our VT is in front). False while switched away.
     active: bool,
-    /// A frame was queued and its vblank has not arrived yet.
-    frame_pending: bool,
-    /// A render is already scheduled (idle callback or timer).
-    render_scheduled: bool,
     libinput: Libinput,
     session: LibSeatSession,
 }
 
 impl fmt::Debug for TtyData {
     fn fmt(&self, f: &mut fmt::Formatter<'_>) -> fmt::Result {
+        let outputs: Vec<String> = self.surfaces.iter().map(|s| s.output.name()).collect();
         f.debug_struct("TtyData")
             .field("seat", &self.session.seat())
-            .field("output", &self.output.name())
+            .field("outputs", &outputs)
             .field("active", &self.active)
-            .field("frame_pending", &self.frame_pending)
             .finish_non_exhaustive()
     }
 }
 
 impl Drop for TtyData {
     fn drop(&mut self) {
-        if let Some(token) = self.drm_source.take() {
+        for token in [self.drm_source.take(), self.udev_source.take()]
+            .into_iter()
+            .flatten()
+        {
             self.loop_handle.remove(token);
         }
     }
 }
 
 impl TtyData {
-    pub fn output(&self) -> &Output {
-        &self.output
+    /// The lit outputs, in the order they were found.
+    pub fn outputs(&self) -> Vec<Output> {
+        self.surfaces.iter().map(|s| s.output.clone()).collect()
     }
 
     pub fn renderer(&mut self) -> &mut GlesRenderer {
@@ -141,10 +169,124 @@ impl TtyData {
             warn!(vt, %err, "VT switch failed");
         }
     }
+
+    fn surface_mut(&mut self, crtc: crtc::Handle) -> Option<&mut OutputSurface> {
+        self.surfaces
+            .iter_mut()
+            .find(|s| s.drm_output.crtc() == crtc)
+    }
+
+    /// Bring the lit connectors in line with what is connected now.
+    fn sync_connectors(&mut self) -> Changes {
+        let mut changes = Changes::default();
+        let connected = connected_connectors(self.output_manager.device());
+
+        // Unplugged: drop their DRM output (which turns the CRTC off).
+        let before = self.surfaces.len();
+        self.surfaces.retain(|surface| {
+            let keep = connected.iter().any(|c| c.handle() == surface.connector);
+            if !keep {
+                info!(output = surface.output.name(), "connector unplugged");
+                changes.removed.push(surface.output.clone());
+            }
+            keep
+        });
+        if self.surfaces.len() != before
+            && let Err(err) = self
+                .output_manager
+                .lock()
+                .try_to_restore_modifiers::<_, TtyElement>(
+                    &mut self.renderer,
+                    &DrmOutputRenderElements::default(),
+                )
+        {
+            warn!(?err, "restoring modifiers after an unplug failed");
+        }
+
+        // Still there with a different preferred mode: modeset.
+        for surface in &mut self.surfaces {
+            let Some(info) = connected.iter().find(|c| c.handle() == surface.connector) else {
+                continue;
+            };
+            let Some(drm_mode) = preferred_mode(info) else {
+                continue;
+            };
+            let mode = Mode::from(drm_mode);
+            if surface.output.current_mode() == Some(mode) {
+                continue;
+            }
+            match surface.drm_output.use_mode::<_, TtyElement>(
+                drm_mode,
+                &mut self.renderer,
+                &DrmOutputRenderElements::default(),
+            ) {
+                Ok(()) => {
+                    surface
+                        .output
+                        .change_current_state(Some(mode), None, None, None);
+                    surface.output.set_preferred(mode);
+                    changes.mode_changed.push(surface.output.clone());
+                }
+                Err(err) => warn!(output = surface.output.name(), ?err, "modeset failed"),
+            }
+        }
+
+        // Newly plugged.
+        for info in &connected {
+            if self.surfaces.iter().any(|s| s.connector == info.handle()) {
+                continue;
+            }
+            match self.light_connector(info) {
+                Ok(surface) => {
+                    changes.added.push(surface.output.clone());
+                    self.surfaces.push(surface);
+                }
+                Err(err) => warn!(connector = ?info.interface(), %err, "cannot light connector"),
+            }
+        }
+        changes
+    }
+
+    /// Pick a free CRTC for `info` and start scanning out on it.
+    fn light_connector(&mut self, info: &connector::Info) -> Result<OutputSurface, String> {
+        let used: Vec<crtc::Handle> = self.surfaces.iter().map(|s| s.drm_output.crtc()).collect();
+        let drm = self.output_manager.device();
+        let crtc = pick_crtc(drm, info, &used).ok_or("no free CRTC")?;
+        let drm_mode = preferred_mode(info).ok_or("no modes")?;
+        let mut planes = drm
+            .planes(&crtc)
+            .map_err(|err| format!("querying planes: {err}"))?;
+        // Overlays are for direct scanout (task 1.15). Not offering them also sidesteps the
+        // known overlay breakage on NVIDIA that anvil works around.
+        planes.overlay.clear();
+
+        let output = create_output(info, drm_mode);
+        let drm_output = self
+            .output_manager
+            .lock()
+            .initialize_output::<_, TtyElement>(
+                crtc,
+                drm_mode,
+                &[info.handle()],
+                &output,
+                Some(planes),
+                &mut self.renderer,
+                &DrmOutputRenderElements::default(),
+            )
+            .map_err(|err| format!("initialising the DRM output: {err:?}"))?;
+        info!(output = output.name(), ?crtc, mode = ?drm_mode, "connector lit");
+        Ok(OutputSurface {
+            output,
+            connector: info.handle(),
+            drm_output,
+            frame_pending: false,
+            render_scheduled: false,
+        })
+    }
 }
 
-/// Open the seat, the primary GPU and its first connected display, and register the
-/// session, DRM and libinput event sources on `handle`.
+/// Open the seat, the primary GPU and its connected displays, and register the session,
+/// DRM, udev and libinput event sources on `handle`.
 pub fn init(
     dh: &DisplayHandle,
     dmabuf_state: &mut DmabufState,
@@ -189,7 +331,7 @@ pub fn init(
     // SAFETY: the context was just created and is only ever used from this thread (the
     // compositor is single-threaded, AGENTS.md).
     #[allow(unsafe_code)] // see SAFETY
-    let mut renderer =
+    let renderer =
         unsafe { GlesRenderer::new(context) }.map_err(Error::init("creating the GLES renderer"))?;
 
     let render_node = EGLDevice::device_for_display(&egl_display)
@@ -209,18 +351,8 @@ pub fn init(
     let exporter = GbmFramebufferExporter::new(gbm.clone(), render_node.into());
     let render_formats: FormatSet = renderer.egl_context().dmabuf_render_formats().clone();
 
-    let (connector, crtc) = pick_connector(&drm)?;
-    let drm_mode = preferred_mode(&connector)
-        .ok_or_else(|| Error::init("choosing a display mode")("the connector has no modes"))?;
-    let mut planes = drm
-        .planes(&crtc)
-        .map_err(Error::init("querying the CRTC's planes"))?;
-    // Overlays are for direct scanout (task 1.15). Not offering them also sidesteps the
-    // known overlay breakage on NVIDIA that anvil works around.
-    planes.overlay.clear();
-
-    let output = create_output(dh, &connector, drm_mode);
-    let mut output_manager = DrmOutputManager::new(
+    let node = DrmNode::from_file(&fd).map_err(Error::init("identifying the DRM device"))?;
+    let output_manager = DrmOutputManager::new(
         drm,
         allocator,
         exporter,
@@ -228,20 +360,6 @@ pub fn init(
         COLOR_FORMATS,
         render_formats,
     );
-    let drm_output = output_manager
-        .lock()
-        .initialize_output::<_, TtyElement>(
-            crtc,
-            drm_mode,
-            &[connector.handle()],
-            &output,
-            Some(planes),
-            &mut renderer,
-            &DrmOutputRenderElements::default(),
-        )
-        .map_err(|err| format!("{err:?}"))
-        .map_err(Error::init("initialising the DRM output"))?;
-
     let dmabuf_global = create_dmabuf_global(dh, dmabuf_state, &renderer, render_node);
 
     // Input: libinput on the same seat, opening devices through the session.
@@ -266,72 +384,92 @@ pub fn init(
         .map_err(Error::init("adding the session source"))?;
     let drm_source = handle
         .insert_source(drm_notifier, |event, _, state| match event {
-            DrmEvent::VBlank(_crtc) => on_vblank(state),
+            DrmEvent::VBlank(crtc) => on_vblank(state, crtc),
             DrmEvent::Error(err) => error!(?err, "DRM error"),
         })
         .map_err(|e| e.error)
         .map_err(Error::init("adding the DRM event source"))?;
-    // First frame once the state exists.
-    handle.insert_idle(render);
+    // Connector hotplug arrives as a udev "change" event on the GPU.
+    let udev = UdevBackend::new(&seat).map_err(Error::init("watching udev for hotplug"))?;
+    let udev_source = handle
+        .insert_source(udev, |event, _, state| on_udev_event(event, state))
+        .map_err(|e| e.error)
+        .map_err(Error::init("adding the udev event source"))?;
 
-    let data = TtyData {
+    let mut data = TtyData {
         session,
         libinput,
         loop_handle: handle.clone(),
         drm_source: Some(drm_source),
+        udev_source: Some(udev_source),
+        node,
         renderer,
         output_manager,
-        drm_output,
-        output,
+        surfaces: Vec::new(),
         _dmabuf_global: dmabuf_global,
         default_cursor: cursor::default_cursor(),
         active: true,
-        frame_pending: false,
-        render_scheduled: true,
     };
-    info!(output = data.output.name(), mode = ?drm_mode, "tty backend ready");
+    // Initial outputs; `State::new` adds them to the layout.
+    let changes = data.sync_connectors();
+    if changes.added.is_empty() {
+        warn!("no connected display yet; waiting for a hotplug");
+    }
+    // First frames once the state exists.
+    handle.insert_idle(|state| {
+        if let Some(tty) = tty(state) {
+            schedule_all(tty);
+        }
+    });
+    info!(outputs = ?data.outputs().iter().map(Output::name).collect::<Vec<_>>(), "tty backend ready");
     Ok(Backend::Tty(Box::new(data)))
 }
 
-/// The first connected connector with at least one mode, and a CRTC that can drive it.
-fn pick_connector(drm: &DrmDevice) -> Result<(connector::Info, crtc::Handle), Error> {
-    let resources = drm
-        .resource_handles()
-        .map_err(Error::init("reading DRM resources"))?;
-    for &handle in resources.connectors() {
-        let info = match drm.get_connector(handle, true) {
-            Ok(info) => info,
+/// The connected connectors that have at least one mode.
+fn connected_connectors(drm: &DrmDevice) -> Vec<connector::Info> {
+    let resources = match drm.resource_handles() {
+        Ok(resources) => resources,
+        Err(err) => {
+            warn!(%err, "reading DRM resources failed");
+            return Vec::new();
+        }
+    };
+    resources
+        .connectors()
+        .iter()
+        .filter_map(|&handle| match drm.get_connector(handle, true) {
+            Ok(info) => Some(info),
             Err(err) => {
                 warn!(?handle, %err, "skipping connector");
-                continue;
+                None
             }
-        };
-        if info.state() != connector::State::Connected || info.modes().is_empty() {
-            continue;
-        }
-        // Prefer the CRTC the connector is already on (no flicker), else any it supports.
-        let current = info
-            .current_encoder()
-            .and_then(|encoder| drm.get_encoder(encoder).ok())
-            .and_then(|encoder| encoder.crtc());
-        let crtc = current.or_else(|| {
-            info.encoders()
-                .iter()
-                .filter_map(|&encoder| drm.get_encoder(encoder).ok())
-                .flat_map(|encoder| resources.filter_crtcs(encoder.possible_crtcs()))
-                .next()
-        });
-        match crtc {
-            Some(crtc) => {
-                debug!(connector = ?info.interface(), ?crtc, "picked connector");
-                return Ok((info, crtc));
-            }
-            None => warn!(connector = ?info.interface(), "no CRTC for connector"),
-        }
-    }
-    Err(Error::init("finding a display")(
-        "no connected connector with a usable CRTC",
-    ))
+        })
+        .filter(|info| info.state() == connector::State::Connected && !info.modes().is_empty())
+        .collect()
+}
+
+/// A CRTC that can drive `info` and is not in `used`: the one it is already on (no
+/// flicker), else any it supports.
+fn pick_crtc(
+    drm: &DrmDevice,
+    info: &connector::Info,
+    used: &[crtc::Handle],
+) -> Option<crtc::Handle> {
+    let resources = drm.resource_handles().ok()?;
+    let current = info
+        .current_encoder()
+        .and_then(|encoder| drm.get_encoder(encoder).ok())
+        .and_then(|encoder| encoder.crtc())
+        .filter(|crtc| !used.contains(crtc));
+    let crtc = current.or_else(|| {
+        info.encoders()
+            .iter()
+            .filter_map(|&encoder| drm.get_encoder(encoder).ok())
+            .flat_map(|encoder| resources.filter_crtcs(encoder.possible_crtcs()))
+            .find(|crtc| !used.contains(crtc))
+    });
+    debug!(connector = ?info.interface(), ?crtc, "picked CRTC");
+    crtc
 }
 
 /// The connector's preferred mode, else its first one.
@@ -345,7 +483,6 @@ fn preferred_mode(connector: &connector::Info) -> Option<smithay::reexports::drm
 }
 
 fn create_output(
-    dh: &DisplayHandle,
     connector: &connector::Info,
     drm_mode: smithay::reexports::drm::control::Mode,
 ) -> Output {
@@ -371,10 +508,8 @@ fn create_output(
             serial_number: "Unknown".into(),
         },
     );
-    // The output global lives as long as the display; we never remove it (hotplug is 1.7).
-    let _global = output.create_global::<State>(dh);
     let mode = Mode::from(drm_mode);
-    output.change_current_state(Some(mode), None, None, Some((0, 0).into()));
+    output.change_current_state(Some(mode), None, None, None);
     output.set_preferred(mode);
     output
 }
@@ -431,45 +566,94 @@ fn on_session_event(event: SessionEvent, state: &mut State) {
             if let Err(err) = tty.output_manager.lock().activate(false) {
                 error!(%err, "reactivating DRM failed");
             }
-            // The vblank for a frame queued before the switch never arrives.
-            tty.frame_pending = false;
-            tty.drm_output.reset_buffers();
-            schedule_render(tty, Duration::ZERO);
+            for surface in &mut tty.surfaces {
+                // The vblank for a frame queued before the switch never arrives.
+                surface.frame_pending = false;
+                surface.drm_output.reset_buffers();
+            }
+            // Displays may have been plugged or unplugged while we were away.
+            rescan(state);
         }
     }
 }
 
-fn on_vblank(state: &mut State) {
+fn on_udev_event(event: UdevEvent, state: &mut State) {
     let Some(tty) = tty(state) else { return };
-    tty.frame_pending = false;
-    if let Err(err) = tty.drm_output.frame_submitted() {
-        warn!(?err, "frame_submitted failed");
+    match event {
+        UdevEvent::Changed { device_id } if device_id == tty.node.dev_id() => {
+            debug!("GPU changed: rescanning connectors");
+            rescan(state);
+        }
+        // One GPU for now (task 1.15 adds more).
+        _ => {}
     }
-    schedule_render(tty, Duration::ZERO);
 }
 
-/// Run [`render`] after `delay`, unless a render is already scheduled.
-fn schedule_render(tty: &mut TtyData, delay: Duration) {
-    if tty.render_scheduled {
+/// Apply connector changes to the layout and redraw every output.
+fn rescan(state: &mut State) {
+    let Some(data) = tty(state) else { return };
+    if !data.active {
+        return; // ActivateSession rescans
+    }
+    let changes = data.sync_connectors();
+    for output in &changes.removed {
+        state.remove_output(output);
+    }
+    for output in &changes.mode_changed {
+        state.output_mode_changed(output);
+    }
+    for output in changes.added {
+        state.add_output(output);
+    }
+    if let Some(data) = tty(state) {
+        schedule_all(data);
+    }
+}
+
+fn on_vblank(state: &mut State, crtc: crtc::Handle) {
+    let Some(tty) = tty(state) else { return };
+    let Some(surface) = tty.surface_mut(crtc) else {
+        return; // unplugged since the frame was queued
+    };
+    surface.frame_pending = false;
+    if let Err(err) = surface.drm_output.frame_submitted() {
+        warn!(?err, "frame_submitted failed");
+    }
+    schedule_render(tty, crtc, Duration::ZERO);
+}
+
+/// Render every output soon (after hotplug or a session switch: the layout may have moved).
+fn schedule_all(tty: &mut TtyData) {
+    let crtcs: Vec<crtc::Handle> = tty.surfaces.iter().map(|s| s.drm_output.crtc()).collect();
+    for crtc in crtcs {
+        schedule_render(tty, crtc, Duration::ZERO);
+    }
+}
+
+/// Run [`render`] for `crtc` after `delay`, unless a render is already scheduled.
+fn schedule_render(tty: &mut TtyData, crtc: crtc::Handle, delay: Duration) {
+    let handle = tty.loop_handle.clone();
+    let Some(surface) = tty.surface_mut(crtc) else {
+        return;
+    };
+    if surface.render_scheduled {
         return;
     }
-    tty.render_scheduled = true;
-    let result = tty
-        .loop_handle
-        .insert_source(Timer::from_duration(delay), |_, _, state| {
-            render(state);
-            TimeoutAction::Drop
-        });
+    surface.render_scheduled = true;
+    let result = handle.insert_source(Timer::from_duration(delay), move |_, _, state| {
+        render(state, crtc);
+        TimeoutAction::Drop
+    });
     if let Err(err) = result {
-        tty.render_scheduled = false;
+        surface.render_scheduled = false;
         error!(err = %err.error, "scheduling a render failed");
     }
 }
 
-/// Compose a frame and queue it for the next vblank. Without damage nothing is queued and
-/// the next attempt is one refresh interval later (as in anvil; render-on-commit and a
-/// damage review come with task 1.15).
-fn render(state: &mut State) {
+/// Compose a frame for `crtc` and queue it for its next vblank. Without damage nothing is
+/// queued and the next attempt is one refresh interval later (as in anvil; render-on-commit
+/// and a damage review come with task 1.15).
+fn render(state: &mut State, crtc: crtc::Handle) {
     let time = state.start_time.elapsed();
     let pointer_location = state.pointer.current_location();
     let State {
@@ -479,35 +663,50 @@ fn render(state: &mut State) {
         ..
     } = state;
     let Backend::Tty(tty) = backend else { return };
-    tty.render_scheduled = false;
-    if !tty.active || tty.frame_pending {
+    let active = tty.active;
+    let TtyData {
+        surfaces,
+        renderer,
+        default_cursor,
+        ..
+    } = &mut **tty;
+    let Some(surface) = surfaces.iter_mut().find(|s| s.drm_output.crtc() == crtc) else {
+        return;
+    };
+    surface.render_scheduled = false;
+    if !active || surface.frame_pending {
         return;
     }
 
-    let output = tty.output.clone();
+    let output = surface.output.clone();
     let scale = Scale::from(output.current_scale().fractional_scale());
-    let output_origin = space
-        .output_geometry(&output)
-        .map(|geometry| geometry.loc)
-        .unwrap_or_default();
+    let Some(output_geo) = space.output_geometry(&output) else {
+        return; // not in the layout yet
+    };
 
-    // Topmost first: the cursor, then the windows.
+    // Topmost first: the cursor (if it is on this output), then the windows.
     let mut elements: Vec<TtyElement> = Vec::new();
     if let CursorImageStatus::Surface(surface) = &*cursor_status
         && !surface.alive()
     {
         *cursor_status = CursorImageStatus::default_named();
     }
-    let cursor_pos = pointer_location - output_origin.to_f64();
+    // Generous bounds, so a cursor straddling two outputs shows on both.
+    let cursor_near = output_geo.overlaps(Rectangle::new(
+        pointer_location.to_i32_floor() - Point::from((CURSOR_REACH, CURSOR_REACH)),
+        (2 * CURSOR_REACH, 2 * CURSOR_REACH).into(),
+    ));
+    let cursor_pos = pointer_location - output_geo.loc.to_f64();
     match &*cursor_status {
         CursorImageStatus::Hidden => {}
+        _ if !cursor_near => {}
         CursorImageStatus::Named(_) => {
             let location: Point<f64, Physical> =
                 (cursor_pos - cursor::HOTSPOT.to_f64()).to_physical(scale);
             match MemoryRenderBufferRenderElement::from_buffer(
-                &mut tty.renderer,
+                renderer,
                 location,
-                &tty.default_cursor,
+                default_cursor,
                 None,
                 None,
                 None,
@@ -529,7 +728,7 @@ fn render(state: &mut State) {
                 .to_physical(scale)
                 .to_i32_round();
             elements.extend(render_elements_from_surface_tree::<_, TtyElement>(
-                &mut tty.renderer,
+                renderer,
                 surface,
                 location,
                 scale,
@@ -538,15 +737,15 @@ fn render(state: &mut State) {
             ));
         }
     }
-    match space_render_elements(&mut tty.renderer, [&*space], &output, 1.0) {
+    match space_render_elements(renderer, [&*space], &output, 1.0) {
         Ok(space_elements) => elements.extend(space_elements.into_iter().map(TtyElement::Space)),
         Err(err) => warn!(?err, "output has no mode"),
     }
 
     let rendered =
-        match tty
+        match surface
             .drm_output
-            .render_frame(&mut tty.renderer, &elements, CLEAR_COLOR, FRAME_FLAGS)
+            .render_frame(renderer, &elements, CLEAR_COLOR, FRAME_FLAGS)
         {
             Ok(result) => !result.is_empty,
             Err(err) => {
@@ -555,27 +754,26 @@ fn render(state: &mut State) {
             }
         };
     if rendered {
-        match tty.drm_output.queue_frame(()) {
-            Ok(()) => tty.frame_pending = true,
+        match surface.drm_output.queue_frame(()) {
+            Ok(()) => surface.frame_pending = true,
             Err(err) => warn!(?err, "queueing the frame failed"),
         }
     }
+    let frame_pending = surface.frame_pending;
 
     // Frame callbacks, so clients draw their next frame.
-    for window in space.elements() {
-        window.send_frame(&output, time, Some(Duration::ZERO), |_, _| {
-            Some(output.clone())
-        });
-    }
-    if let CursorImageStatus::Surface(surface) = &*cursor_status {
+    crate::outputs::send_frames(space, &output, time);
+    if let CursorImageStatus::Surface(surface) = &*cursor_status
+        && output_geo.to_f64().contains(pointer_location)
+    {
         send_frames_surface_tree(surface, &output, time, Some(Duration::ZERO), |_, _| {
             Some(output.clone())
         });
     }
 
-    if !tty.frame_pending {
+    if !frame_pending {
         let refresh_mhz = output.current_mode().map_or(60_000, |mode| mode.refresh);
         let interval = Duration::from_micros(1_000_000_000 / u64::from(refresh_mhz.max(1) as u32));
-        schedule_render(tty, interval);
+        schedule_render(tty, crtc, interval);
     }
 }

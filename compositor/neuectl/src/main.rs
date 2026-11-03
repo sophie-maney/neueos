@@ -119,7 +119,7 @@ fn main() -> Result<()> {
         Command::ReloadConfig => client.reload_config()?,
         Command::Quit => client.quit()?,
         Command::Subscribe => {
-            for event in client.subscribe(vec![Topic::Windows, Topic::Config])? {
+            for event in client.subscribe(vec![Topic::Windows, Topic::Config, Topic::Outputs])? {
                 let event = event?;
                 // Events are one JSON line each in both modes: stable and greppable.
                 writeln!(out, "{}", serde_json::to_string(&event)?)?;

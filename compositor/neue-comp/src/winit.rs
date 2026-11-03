@@ -5,7 +5,6 @@
 //! redrawn and submitted, and linux-dmabuf v4 feedback from the EGL device's render node.
 
 use std::fmt;
-use std::time::Duration;
 
 use smithay::backend::egl::EGLDevice;
 use smithay::backend::renderer::ImportDma;
@@ -79,15 +78,8 @@ pub fn init(
             serial_number: "0".into(),
         },
     );
-    // The output global lives as long as the display; we never remove it.
-    let _global = output.create_global::<State>(dh);
     // GL renders upside down relative to the window, hence the flip.
-    output.change_current_state(
-        Some(mode),
-        Some(Transform::Flipped180),
-        None,
-        Some((0, 0).into()),
-    );
+    output.change_current_state(Some(mode), Some(Transform::Flipped180), None, None);
     output.set_preferred(mode);
 
     // linux-dmabuf v4 with feedback needs the render node; fall back to v3 without it.
@@ -140,6 +132,8 @@ pub fn handle_event(event: WinitEvent, state: &mut State) {
                 .change_current_state(Some(mode), None, None, None);
             data.output.set_preferred(mode);
             data.full_redraw = 4;
+            let output = data.output.clone();
+            state.output_mode_changed(&output);
         }
         WinitEvent::Input(event) => state.process_input_event(event),
         WinitEvent::Redraw => render(state),
@@ -198,12 +192,7 @@ fn render(state: &mut State) {
     }
 
     // Frame callbacks for everything on this output, so clients draw their next frame.
-    let time = state.start_time.elapsed();
-    for window in state.space.elements() {
-        window.send_frame(output, time, Some(Duration::ZERO), |_, _| {
-            Some(output.clone())
-        });
-    }
+    crate::outputs::send_frames(&state.space, output, state.start_time.elapsed());
 
     data.backend.window().request_redraw();
 }
