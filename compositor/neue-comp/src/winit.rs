@@ -14,6 +14,8 @@ use smithay::backend::renderer::element::surface::{
     WaylandSurfaceRenderElement, render_elements_from_surface_tree,
 };
 use smithay::backend::renderer::gles::GlesRenderer;
+
+use crate::render::OutputElement;
 use smithay::backend::winit::{self, WinitEvent, WinitEventLoop, WinitGraphicsBackend};
 use smithay::input::pointer::{CursorIcon, CursorImageStatus};
 use smithay::output::{Mode, Output, PhysicalProperties, Subpixel};
@@ -178,6 +180,7 @@ fn render(state: &mut State) {
     let output = &data.output;
     let damage_tracker = &mut data.damage_tracker;
     let space = &state.space;
+    let chrome = &mut state.chrome;
     // The drag icon, if a drag is running, is drawn at the pointer.
     let icon = state.dnd_icon.as_ref().filter(|i| i.surface.alive());
     let pointer_location = state.pointer.current_location();
@@ -188,39 +191,30 @@ fn render(state: &mut State) {
         .bind()
         .map_err(|err| format!("{err:?}"))
         .and_then(|(renderer, mut framebuffer)| {
-            let icon_elements: Vec<WaylandSurfaceRenderElement<GlesRenderer>> =
-                match (icon, output_loc) {
-                    (Some(icon), Some(loc)) => {
-                        let at = pointer_location - loc.to_f64() + icon.offset.to_f64();
-                        render_elements_from_surface_tree(
-                            renderer,
-                            &icon.surface,
-                            at.to_physical(scale).to_i32_round(),
-                            scale,
-                            1.0,
-                            Kind::Unspecified,
-                        )
-                    }
-                    _ => Vec::new(),
-                };
-            smithay::desktop::space::render_output::<
-                _,
-                WaylandSurfaceRenderElement<GlesRenderer>,
-                _,
-                _,
-            >(
-                output,
-                renderer,
-                &mut framebuffer,
-                1.0,
-                age,
-                [space],
-                &icon_elements,
-                damage_tracker,
-                CLEAR_COLOR,
-            )
-            .map(|result| result.damage.cloned())
-            .map_err(|err| format!("{err:?}"))
+            let mut elements: Vec<OutputElement> = match (icon, output_loc) {
+                (Some(icon), Some(loc)) => {
+                    let at = pointer_location - loc.to_f64() + icon.offset.to_f64();
+                    render_elements_from_surface_tree::<_, WaylandSurfaceRenderElement<_>>(
+                        renderer,
+                        &icon.surface,
+                        at.to_physical(scale).to_i32_round(),
+                        scale,
+                        1.0,
+                        Kind::Unspecified,
+                    )
+                    .into_iter()
+                    .map(OutputElement::Surface)
+                    .collect()
+                }
+                _ => Vec::new(),
+            };
+            elements.extend(crate::render::output_elements(
+                renderer, space, chrome, output,
+            ));
+            damage_tracker
+                .render_output(renderer, &mut framebuffer, age, &elements, CLEAR_COLOR)
+                .map(|result| result.damage.cloned())
+                .map_err(|err| format!("{err:?}"))
         });
 
     match result {

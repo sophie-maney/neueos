@@ -57,14 +57,14 @@ impl CpuRenderer {
         };
         let mut ctx = RenderContext::new_with(width, height, settings);
         let textures = &mut self.textures;
-        let mut resolve = |brush: &TextureBrush| {
+        let mut resolve = |_: &mut Resources, brush: &TextureBrush| {
             let key = (brush.texture.cache_key(), scale.to_bits());
             let pixmap = textures
                 .entry(key)
                 .or_insert_with(|| Arc::new(brush.texture.render(scale)));
             ImageSource::Pixmap(Arc::clone(pixmap))
         };
-        crate::replay::replay!(&mut ctx, scene, scale, &mut resolve);
+        crate::replay::replay!(&mut ctx, scene, scale, &mut self.resources, &mut resolve);
 
         let mut target = Pixmap::new(width, height);
         ctx.flush();

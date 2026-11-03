@@ -8,9 +8,11 @@
 use std::fmt;
 use std::sync::Arc;
 
-use vello_common::kurbo::{Affine, BezPath, Rect, Shape, Stroke};
-use vello_common::peniko::{Color, Gradient};
+use vello_common::kurbo::{Affine, BezPath, Point, Rect, Shape, Stroke};
+use vello_common::peniko::{Color, FontData, Gradient};
 use vello_common::pixmap::Pixmap;
+
+use crate::text::TextLine;
 
 /// A procedurally generated, tileable texture (for example linen).
 ///
@@ -124,6 +126,19 @@ pub enum Command {
     },
     /// End the most recent layer.
     PopLayer,
+    /// Fill a run of positioned glyphs from one font (see [`crate::text`]).
+    Glyphs {
+        /// Logical-space transform; glyph positions are relative to it.
+        transform: Affine,
+        /// The font the glyph ids index into.
+        font: FontData,
+        /// Font size in logical pixels.
+        size: f32,
+        /// Glyph ids and positions.
+        glyphs: Arc<[vello_cpu::Glyph]>,
+        /// Text colour.
+        color: Color,
+    },
 }
 
 /// A recorded scene in logical pixels.
@@ -209,6 +224,20 @@ impl Scene {
             std_dev,
             color,
         });
+    }
+
+    /// Draw `line` with its baseline starting at `origin`.
+    pub fn draw_text(&mut self, line: &TextLine, origin: Point, color: Color) {
+        let transform = self.transform * Affine::translate(origin.to_vec2());
+        for run in line.runs() {
+            self.commands.push(Command::Glyphs {
+                transform,
+                font: run.font.clone(),
+                size: run.size,
+                glyphs: Arc::clone(&run.glyphs),
+                color,
+            });
+        }
     }
 
     /// Start a layer clipped to `clip`. Must be balanced with [`Self::pop_layer`].

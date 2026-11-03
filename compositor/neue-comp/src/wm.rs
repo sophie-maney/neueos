@@ -151,11 +151,22 @@ impl State {
         zone
     }
 
-    /// The work area of the output `window` is mostly on (or the active one).
+    /// Where `window`'s client area may go on the output it is mostly on (or the active
+    /// one): the work area below its title bar.
     fn work_area_for(&self, window: &Window) -> Rectangle<i32, Logical> {
         let output =
             crate::outputs::primary_output(&self.space, window).or_else(|| self.active_output());
-        output.map(|o| self.work_area(&o)).unwrap_or_default()
+        let work = output.map(|o| self.work_area(&o)).unwrap_or_default();
+        self.content_area(window, work)
+    }
+
+    /// Where `window`'s client area may go on the active output.
+    fn active_content_area(&self, window: &Window) -> Rectangle<i32, Logical> {
+        let work = self
+            .active_output()
+            .map(|o| self.work_area(&o))
+            .unwrap_or_default();
+        self.content_area(window, work)
     }
 
     /// Children of `window`, bottom to top.
@@ -268,10 +279,7 @@ impl State {
 
     /// Place and map a window that just committed its first buffer, then focus it.
     pub(crate) fn map_new_window(&mut self, window: Window) {
-        let work = self
-            .active_output()
-            .map(|o| self.work_area(&o))
-            .unwrap_or_default();
+        let work = self.active_content_area(&window);
         let size = window.geometry().size;
         let location = if Self::with_wm_data(&window, |d| d.zoomed) {
             work.loc
@@ -416,10 +424,7 @@ impl State {
         let mapped = self.space.element_geometry(window);
         let work = match mapped {
             Some(_) => self.work_area_for(window),
-            None => self
-                .active_output()
-                .map(|o| self.work_area(&o))
-                .unwrap_or_default(),
+            None => self.active_content_area(window),
         };
         let was_zoomed = Self::with_wm_data(window, |d| d.zoomed);
         if zoom && !was_zoomed {
@@ -456,13 +461,28 @@ impl State {
         }
     }
 
+    /// Fit a zoomed `window` to its work area again, e.g. after its title bar came or went.
+    pub(crate) fn refit_zoomed(&mut self, window: &Window) {
+        let Some(toplevel) = window.toplevel().cloned() else {
+            return;
+        };
+        let work = self.work_area_for(window);
+        toplevel.with_pending_state(|state| state.size = Some(work.size));
+        if toplevel.is_initial_configure_sent() {
+            toplevel.send_pending_configure();
+        }
+        if self.space.element_geometry(window).is_some() {
+            self.space.map_element(window.clone(), work.loc, false);
+        }
+    }
+
     /// Move `window` so its geometry starts at `location` (top edge kept in the work area
     /// of the output the middle of the top edge lands on, or the nearest one).
     pub fn move_window_to(&mut self, window: &Window, location: Point<i32, Logical>) {
         let top_middle = location + Point::from((window.geometry().size.w / 2, 0));
         let work = self
             .output_near(top_middle)
-            .map(|o| self.work_area(&o))
+            .map(|o| self.content_area(window, self.work_area(&o)))
             .unwrap_or_else(|| self.work_area_for(window));
         let loc = placement::constrain_move(rect(work), (location.x, location.y));
         if let Some(index) = self.minimized.iter().position(|(w, _)| w == window) {

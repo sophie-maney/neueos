@@ -570,12 +570,25 @@ Decisions to follow: ADR 0001 (Smithay), 0003 (IPC), 0004 (config), 0005 (global
       `tests/cursor.rs` (shape requests, stale serials, resize override) and unit tests in
       `cursor.rs`. Owner checked cursors by hand in the VM (`docs/dev-setup.md` §8) and found them fine. Not done:
       cursor theme artwork (Phase 3), move-grab cursor, tablet cursors.
-- [ ] **1.10 Server-side title bars** · Opus. xdg-decoration and kde server-decoration;
+- [x] **1.10 Server-side title bars** · Opus. xdg-decoration and kde server-decoration;
       title bar and traffic lights drawn with `neue-paint` on `vello_cpu`, nine-sliced and
       cached per state/scale, uploaded via `MemoryRenderBuffer`; title text through parley
       with a bundled placeholder font. Touches `neue-paint` too.
       *Accept:* golden tests for the title bar (focused/unfocused × light/dark × 1x/2x);
       a GTK3 app shows our chrome in the VM; title bar render time logged.
+      *Done:* rules in ADR 0013. Server-side by default, client-side when a client asks;
+      the bar is 22 px above the client geometry and placement/zoom/moves keep it on
+      screen. Three slices (left with buttons, 1 px middle, right) per style and scale,
+      the title per window; `render::output_elements` stacks each bar with its window in
+      both backends. `neue-paint` gained `text` (parley without system fonts, Fira Sans
+      Regular under the OFL as placeholder), `Command::Glyphs` and
+      `materials::title_bar`; goldens `titlebar-*`. Headless tests in
+      `tests/decorations.rs`. Checked in the VM on the tty with `prlctl capture`: mousepad
+      (GTK3, KDE protocol) and foot (xdg-decoration) show the bar, focus changes its
+      style, zoom fits the client below it; cold slice render ≈0.5 ms, a title 0.05–0.4 ms
+      (debug log). Owner checked the bars by hand in the VM (`docs/dev-setup.md` §9) and
+      found them fine. Not done: appearance setting (light only), scale-2 check in the VM,
+      interaction (1.11; until then server-decorated windows can't be drag-resized).
 - [ ] **1.11 Chrome interaction** · Sonnet. Traffic-light hover/press and actions, drag to
       move, double-click to zoom/minimise (per config), invisible resize edges.
       *Accept:* headless tests on hit-testing; VM check by the owner.

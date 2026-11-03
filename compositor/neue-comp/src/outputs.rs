@@ -192,8 +192,9 @@ impl State {
         // Same offset on the first remaining output, clamped into its work area.
         let target = self.outputs().next().cloned();
         if let (Some(old), Some(target)) = (old_geometry, target) {
-            let work = self.work_area(&target);
+            let target_work = self.work_area(&target);
             for window in stranded {
+                let work = self.content_area(&window, target_work);
                 if Self::with_wm_data(&window, |d| d.zoomed) {
                     continue; // refitted below
                 }
@@ -290,7 +291,8 @@ impl State {
         for window in windows {
             let primary = primary_output(&self.space, &window);
             if Self::with_wm_data(&window, |d| d.zoomed) {
-                let work = self.work_area(primary.as_ref().unwrap_or(&first));
+                let work =
+                    self.content_area(&window, self.work_area(primary.as_ref().unwrap_or(&first)));
                 let Some(toplevel) = window.toplevel() else {
                     continue;
                 };
@@ -305,7 +307,7 @@ impl State {
             } else if primary.is_none()
                 && let Some(geo) = self.space.element_geometry(&window)
             {
-                let work = self.work_area(&first);
+                let work = self.content_area(&window, self.work_area(&first));
                 let loc = placement::constrain(
                     (work.loc.x, work.loc.y, work.size.w, work.size.h),
                     (geo.size.w, geo.size.h),
@@ -322,7 +324,10 @@ impl State {
             let size = window.geometry().size;
             let rect = Rectangle::new(*loc, size);
             if !areas.iter().any(|a| a.overlaps(rect)) {
-                let w = first_work;
+                let bar = crate::decorations::title_bar_height(window).min(first_work.size.h);
+                let mut w = first_work;
+                w.loc.y += bar;
+                w.size.h -= bar;
                 *loc = placement::constrain(
                     (w.loc.x, w.loc.y, w.size.w, w.size.h),
                     (size.w, size.h),

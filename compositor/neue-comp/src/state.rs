@@ -28,7 +28,10 @@ use smithay::wayland::selection::data_device::DataDeviceState;
 use smithay::wayland::selection::ext_data_control::DataControlState as ExtDataControlState;
 use smithay::wayland::selection::primary_selection::PrimarySelectionState;
 use smithay::wayland::selection::wlr_data_control::DataControlState as WlrDataControlState;
+use smithay::wayland::shell::kde::decoration::KdeDecorationState;
 use smithay::wayland::shell::xdg::XdgShellState;
+use smithay::wayland::shell::xdg::decoration::XdgDecorationState;
+use smithay::reexports::wayland_protocols_misc::server_decoration::server::org_kde_kwin_server_decoration_manager::Mode as KdeDefaultMode;
 use smithay::wayland::shm::ShmState;
 use smithay::wayland::socket::ListeningSocketSource;
 use smithay::wayland::viewporter::ViewporterState;
@@ -37,6 +40,7 @@ use tracing::warn;
 
 use crate::Error;
 use crate::config::ConfigRuntime;
+use crate::decorations::Chrome;
 use crate::ipc::IpcServer;
 use crate::outputs::LaidOutOutput;
 
@@ -107,6 +111,12 @@ pub struct State {
 
     pub compositor_state: CompositorState,
     pub xdg_shell_state: XdgShellState,
+    /// `xdg-decoration`: clients ask for server-side title bars (ADR 0013).
+    pub xdg_decoration_state: XdgDecorationState,
+    /// KDE's older server-decoration protocol, used by GTK3 and older Qt.
+    pub kde_decoration_state: KdeDecorationState,
+    /// Title-bar rendering and its caches.
+    pub chrome: Chrome,
     pub shm_state: ShmState,
     pub dmabuf_state: DmabufState,
     pub output_manager_state: OutputManagerState,
@@ -177,6 +187,8 @@ impl State {
     ) -> Result<Self, Error> {
         let compositor_state = CompositorState::new::<Self>(&dh);
         let xdg_shell_state = XdgShellState::new::<Self>(&dh);
+        let xdg_decoration_state = XdgDecorationState::new::<Self>(&dh);
+        let kde_decoration_state = KdeDecorationState::new::<Self>(&dh, KdeDefaultMode::Server);
         let shm_state = ShmState::new::<Self>(&dh, vec![]);
         let output_manager_state = OutputManagerState::new_with_xdg_output::<Self>(&dh);
         // Clipboard. Some clients (foot) refuse to start without it.
@@ -225,6 +237,9 @@ impl State {
             config: ConfigRuntime::new(event_loop.handle()),
             compositor_state,
             xdg_shell_state,
+            xdg_decoration_state,
+            kde_decoration_state,
+            chrome: Chrome::default(),
             shm_state,
             dmabuf_state,
             output_manager_state,

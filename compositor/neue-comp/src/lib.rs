@@ -10,6 +10,8 @@
 //! - `config`: `compositor.toml` loading, applying, hot reload and key bindings (ADR 0009).
 //! - `input`: input dispatch, focus on click, compositor key bindings.
 //! - [`placement`]: where new windows go (a cascading stack).
+//! - [`decorations`]: server-side title bars (xdg-decoration, KDE server-decoration).
+//! - `render`: the render elements of an output (windows, title bars, layers).
 //! - [`outputs`]: output layout, hotplug, per-output scale and frame callbacks.
 //! - `ipc`: the `neuectl` socket (ADR 0003, ADR 0007).
 //! - `headless`: a virtual output without rendering or input; used by tests.
@@ -24,6 +26,7 @@
 pub mod config;
 #[cfg(feature = "tty")]
 mod cursor;
+pub mod decorations;
 mod grabs;
 mod handlers;
 mod headless;
@@ -31,6 +34,8 @@ mod input;
 mod ipc;
 pub mod outputs;
 pub mod placement;
+#[cfg(any(feature = "winit", feature = "tty"))]
+mod render;
 pub mod state;
 #[cfg(feature = "tty")]
 mod tty;
