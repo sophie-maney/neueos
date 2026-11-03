@@ -429,12 +429,15 @@ sequential, 0.4 can start once R2 is in, and 0.6 / 0.7 can run in parallel.
       *Accept:* owner has all three machines; the doc matches what was actually done.
       (Owner ran `docs/dev-setup.md`; results recorded at its end. GRUB_UEFI used, since
       archboot offers no systemd-boot.)
-- [ ] **0.5 VM graphics checks** · Opus, owner at the VM. Record `eglinfo` (virgl vs.
+- [x] **0.5 VM graphics checks** · Opus, owner at the VM. Record `eglinfo` (virgl vs.
       llvmpipe), run Smithay's `anvil` on the VM's DRM device and nested under a stock
       Wayland session, and run a vello demo in the VM. Results in
       `docs/research/vm-graphics.md`.
       *Accept:* anvil shows a window on DRM in the VM (or a documented blocker and
       fallback).
+      (virgl GLES 3.0, Vulkan only llvmpipe. anvil works on DRM and nested in weston once
+      archboot's kmscon is replaced by getty. `vello_gpu` renders on virgl GL. Run over SSH and
+      checked with `prlctl capture`; a few checks at the VM window are listed as open questions.)
 - [ ] **0.6 `neue-paint` proof of concept** · Opus. Procedural linen and an Aqua push
       button (normal + pressed, light + dark) as `neue-paint` code; an example that
       shows them in a winit window via vello on macOS; a test that renders them with

@@ -6,3 +6,6 @@
 
 # Golden-image test failures (actual output next to the committed golden)
 **/*.actual.png
+
+# Local Claude Code settings (per machine)
+.claude/settings.local.json
