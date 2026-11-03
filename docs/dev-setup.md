@@ -131,6 +131,7 @@ Host neueos-vm
     User <your user>
 ```
 ```sh
+[ -f ~/.ssh/id_ed25519 ] || ssh-keygen -t ed25519   # only if you have no key yet
 ssh-copy-id neueos-vm
 ssh neueos-vm uname -m            # aarch64
 ```
