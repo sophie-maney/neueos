@@ -23,12 +23,12 @@ fn toplevel_maps_and_is_listed() {
     let window = &windows[0];
     assert_eq!(window.title.as_deref(), Some("Hello"));
     assert_eq!(window.app_id.as_deref(), Some("org.neueos.Test"));
-    assert_eq!(window.size, (320, 200));
+    assert_eq!((window.width, window.height), (320, 200));
     assert!(window.focused);
 
     // The window lies on the headless output.
     let (out_w, out_h) = neue_comp::HEADLESS_OUTPUT_SIZE;
-    let (x, y) = window.location;
+    let (x, y) = (window.x, window.y);
     assert!(
         x >= 0 && y >= 0 && x + 320 <= out_w && y + 200 <= out_h,
         "{window:#?}"

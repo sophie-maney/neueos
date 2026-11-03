@@ -104,7 +104,7 @@ The repo is the memory between threads, not chat history. Before finishing:
 ## Platform matrix
 | Crate group | macOS (dev host, aarch64) | Linux aarch64 | Linux x86_64 |
 |---|---|---|---|
-| `neue-paint`, `neue-theme`, `neue-kit`, `neue-platform` (winit), `neue-config`, `neue-desktop` (pure parts), apps' UI, widget gallery | ✅ portable | ✅ | ✅ |
+| `neue-paint`, `neue-theme`, `neue-kit`, `neue-platform` (winit), `neue-config`, `neue-ipc`, `neuectl`, `neue-desktop` (pure parts), apps' UI, widget gallery | ✅ portable | ✅ | ✅ |
 | `neue-comp`, `neue-shell`, services, `neue-platform` (Wayland), anything using D-Bus, DRM, udev or PipeWire | ❌ | ✅ | ✅ |
 
 - Gate Linux-only code with `#[cfg(target_os = "linux")]` at module or crate level.
@@ -135,10 +135,11 @@ cargo xtask iso [--arch x86_64|aarch64]
 
 ### Driving the running desktop
 `neuectl` (the compositor's IPC) is the interface for automation and verification.
-- `neuectl windows`, `neuectl spaces`, `neuectl outputs` list state.
-- `neuectl action <name>` triggers actions.
-- `neuectl screenshot <path>` captures the screen.
-- `neuectl events` streams events.
+- `neuectl windows`, `neuectl outputs`, `neuectl focused-window` list state (`--json` for
+  scripts). `neuectl spaces` arrives with Phase 4.
+- `neuectl actions` lists actions; `neuectl action <name> [--window ID]` triggers one.
+- `neuectl screenshot <path>` captures the screen (task 1.16).
+- `neuectl events` (alias of `subscribe`) streams window events as JSON lines.
 
 Use these to verify visual and behavioural changes in the VM instead of guessing.
 

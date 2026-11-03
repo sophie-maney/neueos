@@ -9,6 +9,7 @@
 //! - `handlers`: Wayland protocol handlers (compositor, shm, dmabuf, seat, output, xdg-shell).
 //! - `input`: input dispatch, focus on click, compositor key bindings.
 //! - [`placement`]: where new windows go (a cascading stack).
+//! - `ipc`: the `neuectl` socket (ADR 0003, ADR 0007).
 //! - `headless`: a virtual output without rendering or input; used by tests.
 //! - `winit`: the nested development backend (cargo feature `winit`).
 //!
@@ -19,6 +20,7 @@
 mod handlers;
 mod headless;
 mod input;
+mod ipc;
 pub mod placement;
 pub mod state;
 #[cfg(feature = "winit")]
@@ -34,7 +36,9 @@ use smithay::wayland::dmabuf::DmabufState;
 use tracing::{info, warn};
 
 pub use headless::OUTPUT_SIZE as HEADLESS_OUTPUT_SIZE;
-pub use state::{State, WindowInfo};
+pub use ipc::IpcSocket;
+pub use neue_ipc::WindowInfo;
+pub use state::State;
 
 /// Crate name, used by smoke tests and diagnostics.
 pub const NAME: &str = "neue-comp";
@@ -58,6 +62,8 @@ pub struct Options {
     /// Listen on a Wayland socket in `XDG_RUNTIME_DIR`. Tests turn this off and connect
     /// their clients with [`State::insert_client`].
     pub listen: bool,
+    /// Where the `neuectl` socket goes.
+    pub ipc_socket: IpcSocket,
 }
 
 impl Options {
@@ -67,6 +73,7 @@ impl Options {
             backend,
             commands: Vec::new(),
             listen: true,
+            ipc_socket: IpcSocket::Auto,
         }
     }
 }
@@ -147,7 +154,10 @@ impl Compositor {
             }
         };
 
-        let state = State::new(&event_loop, dh, backend, dmabuf_state, options.listen)?;
+        let mut state = State::new(&event_loop, dh, backend, dmabuf_state, options.listen)?;
+        if let Some(path) = ipc_socket_path(options, &state) {
+            state.ipc.listen(&path)?;
+        }
 
         // Wake the loop when clients send requests. They are dispatched in the loop callback
         // of `run`, which owns the `Display`; this keeps the display out of `State` and
@@ -208,6 +218,25 @@ impl Compositor {
     }
 }
 
+/// Where to put the `neuectl` socket, if anywhere.
+fn ipc_socket_path(options: &Options, state: &State) -> Option<std::path::PathBuf> {
+    match &options.ipc_socket {
+        IpcSocket::Off => None,
+        IpcSocket::Path(path) => Some(path.clone()),
+        IpcSocket::Auto => {
+            let display = state.socket_name.as_ref()?.to_str()?;
+            let Some(runtime_dir) = std::env::var_os("XDG_RUNTIME_DIR") else {
+                warn!("XDG_RUNTIME_DIR is not set: no neuectl socket");
+                return None;
+            };
+            Some(neue_ipc::socket_path_for_display(
+                std::path::Path::new(&runtime_dir),
+                display,
+            ))
+        }
+    }
+}
+
 /// Run the compositor until it is asked to quit.
 pub fn run(options: Options) -> Result<(), Error> {
     let compositor = Compositor::new(&options)?;
@@ -226,13 +255,18 @@ pub fn spawn(command: &str, state: &State) {
         );
         return;
     };
-    let result = Command::new("/bin/sh")
+    let mut process = Command::new("/bin/sh");
+    process
         .arg("-c")
         .arg(command)
         .env("WAYLAND_DISPLAY", socket_name)
         // Never let children fall back to an X server.
-        .env_remove("DISPLAY")
-        .spawn();
+        .env_remove("DISPLAY");
+    match state.ipc.path() {
+        Some(path) => process.env(neue_ipc::SOCKET_ENV, path),
+        None => process.env_remove(neue_ipc::SOCKET_ENV),
+    };
+    let result = process.spawn();
     match result {
         Ok(mut child) => {
             info!(command, pid = child.id(), "spawned");
