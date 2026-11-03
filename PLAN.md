@@ -503,10 +503,17 @@ Decisions to follow: ADR 0001 (Smithay), 0003 (IPC), 0004 (config), 0005 (global
       cursor plus client cursor surfaces; plain `GlesRenderer`, no overlays yet (ADR 0001
       amendment 2). Verified in the VM with scripted input (Parallels key events, ydotool).
       The owner hasn't confirmed by hand yet. VM steps: `docs/dev-setup.md` §4.
-- [ ] **1.5 Floating window management** · Opus. Focus and stacking rules, interactive move
+- [x] **1.5 Floating window management** · Opus. Focus and stacking rules, interactive move
       and resize (xdg `move`/`resize`), window placement, minimise/zoom/close as actions,
       xdg-activation focus stealing rules.
       *Accept:* headless tests for focus/stacking; `neuectl action` covers each operation.
+      *Done:* rules in ADR 0008 (dialogs stay above parents, focus returns to the parent,
+      work area from layer-shell zones, placement centre/cascade/remember, zoom = xdg
+      maximized, activation tokens only from the focused client, popup grabs). New
+      actions `minimize-window`, `unminimize-window`, `zoom-window`, `move-window`,
+      `resize-window`; `WindowInfo` gains `minimized`/`zoomed`/`demands_attention`/`parent`;
+      new `window_changed` event. Headless tests in `tests/wm.rs` script pointer input via
+      `State::move_pointer`/`press_button`. Not yet checked by hand in the VM.
 - [ ] **1.6 `neue-config` + compositor config and hot reload** · Sonnet. New portable crate
       `neue-config` with the `compositor.toml` schema (keyboard layouts and xkb options,
       pointer, keybindings, output scale), layering and the inotify reload per ADR 0004;

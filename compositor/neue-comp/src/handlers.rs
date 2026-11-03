@@ -3,15 +3,20 @@
 //! Adapted from Smithay's `smallvil` (MIT): `smallvil/src/handlers/` and, for dmabuf,
 //! `anvil/src/winit.rs`.
 
-use neue_ipc::Event;
 use smithay::backend::allocator::dmabuf::Dmabuf;
 #[cfg(any(feature = "winit", feature = "tty"))]
 use smithay::backend::renderer::ImportDma;
 use smithay::backend::renderer::utils::{RendererSurfaceStateUserData, on_commit_buffer_handler};
-use smithay::desktop::{PopupKind, Window, find_popup_root_surface, get_popup_toplevel_coords};
+use std::time::Duration;
+
+use smithay::desktop::{
+    PopupKeyboardGrab, PopupKind, PopupPointerGrab, PopupUngrabStrategy, Window,
+    find_popup_root_surface, get_popup_toplevel_coords,
+};
 use smithay::input::dnd::{DnDGrab, DndGrabHandler, GrabType, Source};
 use smithay::input::pointer::{CursorImageStatus, Focus};
 use smithay::input::{Seat, SeatHandler, SeatState};
+use smithay::reexports::wayland_protocols::xdg::shell::server::xdg_toplevel;
 use smithay::reexports::wayland_server::protocol::{wl_buffer, wl_seat, wl_surface::WlSurface};
 use smithay::reexports::wayland_server::{Client, Resource};
 use smithay::utils::Serial;
@@ -31,9 +36,11 @@ use smithay::wayland::shell::xdg::{
     PopupSurface, PositionerState, ToplevelSurface, XdgShellHandler, XdgShellState,
 };
 use smithay::wayland::shm::{ShmHandler, ShmState};
+use smithay::wayland::xdg_activation::{
+    XdgActivationHandler, XdgActivationState, XdgActivationToken, XdgActivationTokenData,
+};
 use tracing::{debug, warn};
 
-use crate::placement;
 use crate::state::{Backend, ClientState, State};
 
 impl CompositorHandler for State {
@@ -60,6 +67,9 @@ impl CompositorHandler for State {
             }
             if let Some(window) = self.window_for_surface(&root) {
                 window.on_commit();
+                if &root == surface {
+                    self.window_committed(&window);
+                }
             }
         }
 
@@ -101,22 +111,7 @@ impl State {
         }
 
         self.unmapped.swap_remove(index);
-        let output = self
-            .space
-            .outputs()
-            .next()
-            .and_then(|o| self.space.output_geometry(o))
-            .map(|g| (g.loc.x, g.loc.y, g.size.w, g.size.h))
-            .unwrap_or((0, 0, 0, 0));
-        let size = window.geometry().size;
-        let (x, y) = placement::cascade(output, (size.w, size.h), self.placed);
-        self.placed += 1;
-        debug!(x, y, w = size.w, h = size.h, "mapping window");
-        self.space.map_element(window.clone(), (x, y), true);
-        if let Some(info) = self.window_info(&window, None) {
-            self.emit(Event::WindowOpened(info));
-        }
-        self.focus_window(&window);
+        self.map_new_window(window);
     }
 
     fn commit_popup(&mut self, surface: &WlSurface) {
@@ -140,8 +135,9 @@ impl State {
         };
         let Some(output_geo) = self
             .space
-            .outputs()
-            .next()
+            .outputs_for_element(&window)
+            .first()
+            .or_else(|| self.space.outputs().next())
             .and_then(|o| self.space.output_geometry(o))
         else {
             return;
@@ -283,19 +279,60 @@ impl XdgShellHandler for State {
         self.unmapped
             .retain(|w| w.toplevel().is_none_or(|t| t.wl_surface() != surface));
         if let Some(window) = self.window_for_surface(surface) {
-            let was_focused = self.keyboard.current_focus().as_ref() == Some(surface);
-            let id = self.window_id(&window);
-            self.space.unmap_elem(&window);
-            if let Some(window) = id {
-                self.emit(Event::WindowClosed { window });
-            }
-            if was_focused {
-                self.focus_topmost();
-                // Smithay does not call `focus_changed` when the destroyed surface already
-                // cleared the focus, so report it ourselves (a no-op if it was reported).
-                self.report_focus(self.focused_window_id());
-            }
+            self.window_destroyed(&window);
         }
+    }
+
+    fn move_request(&mut self, surface: ToplevelSurface, seat: wl_seat::WlSeat, serial: Serial) {
+        if let Some(seat) = Seat::<State>::from_resource(&seat) {
+            self.start_move(surface.wl_surface(), &seat, serial);
+        }
+    }
+
+    fn resize_request(
+        &mut self,
+        surface: ToplevelSurface,
+        seat: wl_seat::WlSeat,
+        serial: Serial,
+        edges: xdg_toplevel::ResizeEdge,
+    ) {
+        if let Some(seat) = Seat::<State>::from_resource(&seat) {
+            self.start_resize(surface.wl_surface(), &seat, serial, edges);
+        }
+    }
+
+    fn maximize_request(&mut self, surface: ToplevelSurface) {
+        if let Some(window) = self.any_window_for_toplevel(&surface) {
+            self.set_zoomed(&window, true, None);
+        } else {
+            surface.send_configure();
+        }
+    }
+
+    fn unmaximize_request(&mut self, surface: ToplevelSurface) {
+        if let Some(window) = self.any_window_for_toplevel(&surface) {
+            self.set_zoomed(&window, false, None);
+        } else {
+            surface.send_configure();
+        }
+    }
+
+    fn minimize_request(&mut self, surface: ToplevelSurface) {
+        if let Some(window) = self.window_for_surface(surface.wl_surface()) {
+            self.minimize_window(&window);
+        }
+    }
+
+    fn title_changed(&mut self, surface: ToplevelSurface) {
+        self.toplevel_changed(&surface);
+    }
+
+    fn app_id_changed(&mut self, surface: ToplevelSurface) {
+        self.toplevel_changed(&surface);
+    }
+
+    fn parent_changed(&mut self, surface: ToplevelSurface) {
+        self.toplevel_changed(&surface);
     }
 
     fn new_popup(&mut self, surface: PopupSurface, _positioner: PositionerState) {
@@ -319,8 +356,131 @@ impl XdgShellHandler for State {
         surface.send_repositioned(token);
     }
 
-    // Popup grabs (menus that close on outside click) come with task 1.5.
-    fn grab(&mut self, _surface: PopupSurface, _seat: wl_seat::WlSeat, _serial: Serial) {}
+    /// Popup grabs: menus get the keyboard and close on a click outside them.
+    /// Adapted from Smithay's `anvil` (MIT): `anvil/src/shell/xdg.rs`.
+    fn grab(&mut self, surface: PopupSurface, seat: wl_seat::WlSeat, serial: Serial) {
+        let Some(seat) = Seat::<State>::from_resource(&seat) else {
+            return;
+        };
+        let kind = PopupKind::Xdg(surface);
+        let Ok(root) = find_popup_root_surface(&kind) else {
+            return;
+        };
+        if self
+            .space
+            .elements()
+            .all(|w| w.toplevel().is_none_or(|t| t.wl_surface() != &root))
+        {
+            return;
+        }
+        let Ok(mut grab) = self.popups.grab_popup(root, kind, &seat, serial) else {
+            return;
+        };
+        if let Some(keyboard) = seat.get_keyboard() {
+            if keyboard.is_grabbed()
+                && !(keyboard.has_grab(serial)
+                    || keyboard.has_grab(grab.previous_serial().unwrap_or(serial)))
+            {
+                grab.ungrab(PopupUngrabStrategy::All);
+                return;
+            }
+            keyboard.set_focus(self, grab.current_grab(), serial);
+            keyboard.set_grab(self, PopupKeyboardGrab::new(&grab), serial);
+        }
+        if let Some(pointer) = seat.get_pointer() {
+            if pointer.is_grabbed()
+                && !(pointer.has_grab(serial)
+                    || pointer.has_grab(grab.previous_serial().unwrap_or_else(|| grab.serial())))
+            {
+                grab.ungrab(PopupUngrabStrategy::All);
+                return;
+            }
+            pointer.set_grab(self, PopupPointerGrab::new(&grab), serial, Focus::Keep);
+        }
+    }
+}
+
+impl State {
+    /// The window for `surface`, mapped, minimised or not mapped yet.
+    fn any_window_for_toplevel(&self, surface: &ToplevelSurface) -> Option<Window> {
+        self.window_for_surface(surface.wl_surface()).or_else(|| {
+            self.unmapped
+                .iter()
+                .find(|w| w.toplevel() == Some(surface))
+                .cloned()
+        })
+    }
+
+    fn toplevel_changed(&mut self, surface: &ToplevelSurface) {
+        if let Some(window) = self.window_for_surface(surface.wl_surface()) {
+            self.notify_window_changed(&window);
+        }
+    }
+}
+
+/// How long an activation token stays usable.
+const ACTIVATION_TOKEN_LIFETIME: Duration = Duration::from_secs(10);
+
+/// Whether a token may take focus, decided when it is created (see `token_created`).
+#[derive(Debug, Clone, Copy)]
+struct TokenGrant(bool);
+
+impl XdgActivationHandler for State {
+    fn activation_state(&mut self) -> &mut XdgActivationState {
+        &mut self.xdg_activation_state
+    }
+
+    /// A token may take focus if the client that asked for it had keyboard focus at the
+    /// time, and any serial it passed is no older than that focus. Tokens are always
+    /// accepted so that refused activations can still ask for attention.
+    fn token_created(&mut self, _token: XdgActivationToken, data: XdgActivationTokenData) -> bool {
+        let focused_client = self
+            .keyboard
+            .current_focus()
+            .and_then(|s| s.client())
+            .map(|c| c.id());
+        let from_focused = data.client_id.is_some() && data.client_id == focused_client;
+        let serial_ok = match &data.serial {
+            None => true,
+            Some((serial, seat)) => {
+                Seat::<State>::from_resource(seat).as_ref() == Some(&self.seat)
+                    && self
+                        .keyboard
+                        .last_enter()
+                        .is_some_and(|enter| serial.is_no_older_than(&enter))
+            }
+        };
+        let granted = from_focused && serial_ok;
+        debug!(granted, app_id = ?data.app_id, "activation token created");
+        data.user_data
+            .insert_if_missing_threadsafe(|| TokenGrant(granted));
+        self.xdg_activation_state
+            .retain_tokens(|_, d| d.timestamp.elapsed() < ACTIVATION_TOKEN_LIFETIME);
+        true
+    }
+
+    fn request_activation(
+        &mut self,
+        token: XdgActivationToken,
+        token_data: XdgActivationTokenData,
+        surface: WlSurface,
+    ) {
+        let granted = token_data
+            .user_data
+            .get::<TokenGrant>()
+            .is_some_and(|g| g.0)
+            && token_data.timestamp.elapsed() < ACTIVATION_TOKEN_LIFETIME;
+        self.xdg_activation_state.remove_token(&token);
+        let Some(window) = self.window_for_surface(&surface) else {
+            return;
+        };
+        debug!(granted, "activation requested");
+        if granted {
+            self.focus_window(&window);
+        } else {
+            self.request_attention(&window);
+        }
+    }
 }
 
 smithay::delegate_dispatch2!(State);

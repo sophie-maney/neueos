@@ -21,6 +21,7 @@
 
 #[cfg(feature = "tty")]
 mod cursor;
+mod grabs;
 mod handlers;
 mod headless;
 mod input;
@@ -31,6 +32,7 @@ pub mod state;
 mod tty;
 #[cfg(feature = "winit")]
 mod winit;
+pub mod wm;
 
 use std::fmt;
 use std::process::Command;

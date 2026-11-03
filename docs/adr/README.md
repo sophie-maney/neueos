@@ -17,3 +17,4 @@ Don't edit an accepted ADR's decision; supersede it with a new one.
 | [0005](0005-global-menu.md) | Global-menu strategy | Accepted |
 | [0006](0006-compositor-test-harness.md) | Compositor test harness | Accepted |
 | [0007](0007-neuectl-wire-details.md) | `neuectl` wire details (window ids, events, errors) | Accepted |
+| [0008](0008-floating-window-management.md) | Floating window management rules | Accepted |

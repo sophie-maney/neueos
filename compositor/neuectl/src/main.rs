@@ -9,7 +9,8 @@ use std::path::PathBuf;
 use anyhow::{Context, Result};
 use clap::{Parser, Subcommand};
 use neue_ipc::{
-    ActionInfo, Client, OutputInfo, Topic, VersionInfo, WindowArg, WindowId, WindowInfo,
+    ActionInfo, ActionParams, Client, OutputInfo, Topic, VersionInfo, WindowArg, WindowId,
+    WindowInfo,
 };
 
 #[derive(Debug, Parser)]
@@ -45,6 +46,18 @@ enum Command {
         /// Target window id (default: the focused window, for actions that take one).
         #[arg(long, value_name = "ID")]
         window: Option<u64>,
+        /// New x position (`move-window`), in global logical pixels.
+        #[arg(long, allow_negative_numbers = true)]
+        x: Option<i32>,
+        /// New y position (`move-window`).
+        #[arg(long, allow_negative_numbers = true)]
+        y: Option<i32>,
+        /// New width (`resize-window`), in logical pixels.
+        #[arg(long)]
+        width: Option<i32>,
+        /// New height (`resize-window`).
+        #[arg(long)]
+        height: Option<i32>,
     },
     /// Stream window events until interrupted.
     #[command(alias = "events")]
@@ -86,7 +99,21 @@ fn main() -> Result<()> {
             let actions = client.actions()?;
             emit(&mut out, cli.json, &actions, |a| format_actions(a))?;
         }
-        Command::Action { name, window } => client.action(&name, window.map(WindowId))?,
+        Command::Action {
+            name,
+            window,
+            x,
+            y,
+            width,
+            height,
+        } => client.action_with(ActionParams {
+            name,
+            window: window.map(WindowId),
+            x,
+            y,
+            width,
+            height,
+        })?,
         Command::Quit => client.quit()?,
         Command::Subscribe => {
             for event in client.subscribe(vec![Topic::Windows])? {
@@ -129,7 +156,7 @@ fn format_windows(windows: &[WindowInfo]) -> String {
     let mut text = String::new();
     for w in windows {
         text.push_str(&format!(
-            "{}{:>4}  {}x{}+{}+{}  {}  {}\n",
+            "{}{:>4}  {}x{}+{}+{}  {}  {}{}\n",
             if w.focused { '*' } else { ' ' },
             w.id,
             w.width,
@@ -138,9 +165,28 @@ fn format_windows(windows: &[WindowInfo]) -> String {
             w.y,
             w.app_id.as_deref().unwrap_or("-"),
             w.title.as_deref().unwrap_or(""),
+            window_flags(w),
         ));
     }
     text
+}
+
+/// ` [minimized] [zoomed] …` for the states a window is in, or nothing.
+fn window_flags(w: &WindowInfo) -> String {
+    let mut flags = String::new();
+    for (on, name) in [
+        (w.minimized, "minimized"),
+        (w.zoomed, "zoomed"),
+        (w.demands_attention, "attention"),
+    ] {
+        if on {
+            flags.push_str(&format!("  [{name}]"));
+        }
+    }
+    if let Some(parent) = w.parent {
+        flags.push_str(&format!("  [child of {parent}]"));
+    }
+    flags
 }
 
 fn format_outputs(outputs: &[OutputInfo]) -> String {
@@ -171,7 +217,11 @@ fn format_actions(actions: &[ActionInfo]) -> String {
             WindowArg::Optional => " [--window ID]",
             WindowArg::Required => " --window ID",
         };
-        text.push_str(&format!("{:width$}  {}{window}\n", a.name, a.description));
+        let args: String = a.args.iter().map(|arg| format!(" --{arg} N")).collect();
+        text.push_str(&format!(
+            "{:width$}  {}{window}{args}\n",
+            a.name, a.description
+        ));
     }
     text
 }
@@ -197,11 +247,16 @@ mod tests {
             width: 30,
             height: 40,
             focused,
+            minimized: id == 1,
+            zoomed: false,
+            demands_attention: false,
+            parent: None,
         };
         let text = format_windows(&[window(1, false), window(2, true)]);
         let lines: Vec<&str> = text.lines().collect();
         assert!(lines[0].starts_with(' '));
         assert!(lines[1].starts_with('*'));
+        assert!(lines[0].contains("[minimized]"));
         assert!(lines[1].contains("30x40+1+2  foot  Term"));
     }
 
@@ -213,6 +268,21 @@ mod tests {
             cli.command,
             Command::Action {
                 window: Some(7),
+                ..
+            }
+        ));
+    }
+
+    #[test]
+    fn parses_move_with_negative_position() {
+        let cli =
+            Cli::try_parse_from(["neuectl", "action", "move-window", "--x", "-20", "--y", "5"])
+                .expect("valid command line");
+        assert!(matches!(
+            cli.command,
+            Command::Action {
+                x: Some(-20),
+                y: Some(5),
                 ..
             }
         ));
