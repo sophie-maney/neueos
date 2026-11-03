@@ -535,6 +535,14 @@ Decisions to follow: ADR 0001 (Smithay), 0003 (IPC), 0004 (config), 0005 (global
       fractional-scale-v1, viewporter, per-output scale, windows moving between outputs.
       *Accept:* headless test with two outputs at scales 1 and 1.5; VM hotplug by resizing
       the Parallels window (owner).
+      *Done (owner VM check pending):* rules in ADR 0010. New `outputs.rs` owns globals,
+      layout (`[outputs."NAME"] position`, else left to right), scales, window rescue and
+      the new `outputs` IPC topic (`output_added`/`_changed`/`_removed`); surfaces get the
+      scale of the output they overlap most. tty lights every connector on its own CRTC
+      and rescans on udev change events (a resized VM window is a modeset). Headless
+      backend has `State::headless_add_output`/`_remove_output`/`_set_mode`; tests in
+      `tests/outputs.rs`. Checked in the VM: tty start-up and a live scale 1.5 reload with
+      `foot`. Not done: mode/transform/enable settings, EDID names, several GPUs (1.15).
 - [ ] **1.8 Clipboard and DnD** · Sonnet. Data device (core part exists since 1.1), primary selection, ext-data-control,
       DnD with icon surfaces.
       *Accept:* `wl-copy`/`wl-paste` round trip in a headless test; DnD of a file between two

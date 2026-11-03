@@ -26,6 +26,7 @@ use smithay::wayland::compositor::{
     with_states,
 };
 use smithay::wayland::dmabuf::{DmabufGlobal, DmabufHandler, DmabufState, ImportNotifier};
+use smithay::wayland::fractional_scale::FractionalScaleHandler;
 use smithay::wayland::output::OutputHandler;
 use smithay::wayland::pointer_constraints::PointerConstraintsHandler;
 use smithay::wayland::selection::SelectionHandler;
@@ -125,7 +126,7 @@ impl State {
         }
     }
 
-    /// Keep a popup inside the output it would otherwise overflow.
+    /// Keep a popup inside the output its window is mostly on.
     fn unconstrain_popup(&self, popup: &PopupSurface) {
         let Ok(root) = find_popup_root_surface(&PopupKind::Xdg(popup.clone())) else {
             return;
@@ -133,12 +134,9 @@ impl State {
         let Some(window) = self.window_for_surface(&root) else {
             return;
         };
-        let Some(output_geo) = self
-            .space
-            .outputs_for_element(&window)
-            .first()
-            .or_else(|| self.space.outputs().next())
-            .and_then(|o| self.space.output_geometry(o))
+        let Some(output_geo) = crate::outputs::primary_output(&self.space, &window)
+            .or_else(|| self.space.outputs().next().cloned())
+            .and_then(|o| self.space.output_geometry(&o))
         else {
             return;
         };
@@ -225,6 +223,10 @@ impl SeatHandler for State {
 }
 
 impl OutputHandler for State {}
+
+// Preferred scales are sent from `State::refresh_surface_scales`; a new fractional-scale
+// object gets the stored one from Smithay.
+impl FractionalScaleHandler for State {}
 
 impl SelectionHandler for State {
     type SelectionUserData = ();

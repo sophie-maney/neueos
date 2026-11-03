@@ -113,33 +113,34 @@ impl State {
     }
 
     /// Relative motion (mice and touchpads on the tty backend). The pointer stays on the
-    /// output; with several outputs (task 1.7) this clamps to their union instead.
+    /// outputs: a move into a gap of the layout lands on the nearest output's edge.
     fn on_pointer_motion<I: InputBackend>(&mut self, event: I::PointerMotionEvent) {
-        let Some(output_geo) = self
-            .space
-            .outputs()
-            .next()
-            .and_then(|o| self.space.output_geometry(o))
-        else {
+        let target = self.pointer.current_location() + event.delta();
+        let rects = self.outputs().filter_map(|o| self.space.output_geometry(o));
+        let Some(pos) = crate::outputs::clamp_to_nearest(target, rects) else {
             return;
         };
-        let pos = clamp_to(self.pointer.current_location() + event.delta(), output_geo);
         self.move_pointer(pos, event.time());
     }
 
+    /// Absolute motion (tablets, touchscreens, VM pointers and the nested backend) maps
+    /// onto the bounding box of all outputs, then onto the nearest output.
     fn on_pointer_motion_absolute<I: InputBackend>(
         &mut self,
         event: I::PointerMotionAbsoluteEvent,
     ) {
-        let Some(output_geo) = self
-            .space
+        let Some(bounds) = self
             .outputs()
-            .next()
-            .and_then(|o| self.space.output_geometry(o))
+            .filter_map(|o| self.space.output_geometry(o))
+            .reduce(|a, b| a.merge(b))
         else {
             return;
         };
-        let pos = event.position_transformed(output_geo.size) + output_geo.loc.to_f64();
+        let target = event.position_transformed(bounds.size) + bounds.loc.to_f64();
+        let rects = self.outputs().filter_map(|o| self.space.output_geometry(o));
+        let Some(pos) = crate::outputs::clamp_to_nearest(target, rects) else {
+            return;
+        };
         self.move_pointer(pos, event.time());
     }
 

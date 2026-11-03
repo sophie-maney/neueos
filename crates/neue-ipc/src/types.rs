@@ -90,6 +90,8 @@ pub enum Topic {
     Windows,
     /// [`Event::ConfigError`] and [`Event::ConfigReloaded`].
     Config,
+    /// [`Event::OutputAdded`], [`Event::OutputChanged`] and [`Event::OutputRemoved`].
+    Outputs,
 }
 
 impl Event {
@@ -101,12 +103,15 @@ impl Event {
             | Self::WindowClosed { .. }
             | Self::FocusChanged { .. } => Topic::Windows,
             Self::ConfigError(_) | Self::ConfigReloaded { .. } => Topic::Config,
+            Self::OutputAdded(_) | Self::OutputChanged(_) | Self::OutputRemoved { .. } => {
+                Topic::Outputs
+            }
         }
     }
 }
 
 /// An event line: `{"event": "window_closed", "data": {"window": 3}}`.
-#[derive(Debug, Clone, PartialEq, Eq, Serialize, Deserialize)]
+#[derive(Debug, Clone, PartialEq, Serialize, Deserialize)]
 #[serde(tag = "event", content = "data", rename_all = "snake_case")]
 pub enum Event {
     /// A window was mapped.
@@ -127,6 +132,12 @@ pub enum Event {
         /// File name, e.g. `compositor.toml`.
         file: String,
     },
+    /// An output was connected (or existed at start-up) and is part of the layout.
+    OutputAdded(OutputInfo),
+    /// Something in an output's [`OutputInfo`] changed: its mode, scale or position.
+    OutputChanged(OutputInfo),
+    /// An output was disconnected. Windows that were only on it have been moved.
+    OutputRemoved { name: String },
 }
 
 /// Where and why a config file was rejected.
@@ -473,6 +484,14 @@ mod tests {
             }})
         );
         assert_eq!(error.topic(), Topic::Config);
+        let removed = Event::OutputRemoved {
+            name: "HDMI-A-1".into(),
+        };
+        assert_eq!(
+            serde_json::to_value(&removed).unwrap(),
+            json!({"event": "output_removed", "data": {"name": "HDMI-A-1"}})
+        );
+        assert_eq!(removed.topic(), Topic::Outputs);
         assert_eq!(
             serde_json::to_value(Event::ConfigReloaded {
                 file: "compositor.toml".into()

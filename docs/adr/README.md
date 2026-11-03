@@ -19,3 +19,4 @@ Don't edit an accepted ADR's decision; supersede it with a new one.
 | [0007](0007-neuectl-wire-details.md) | `neuectl` wire details (window ids, events, errors) | Accepted |
 | [0008](0008-floating-window-management.md) | Floating window management rules | Accepted |
 | [0009](0009-compositor-config-details.md) | Compositor config details (loader, bindings, watcher, events) | Accepted |
+| [0010](0010-outputs-and-scaling.md) | Outputs: layout, hotplug and scaling | Accepted |

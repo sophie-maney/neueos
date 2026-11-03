@@ -18,7 +18,6 @@ use neue_ipc::{ConfigErrorInfo, Event};
 use rustix::fs::inotify::{self, CreateFlags, ReadFlags, WatchFlags};
 use rustix::io::Errno;
 use smithay::input::keyboard::{Keysym, ModifiersState, XkbConfig, xkb};
-use smithay::output::Scale;
 use smithay::reexports::calloop::generic::Generic;
 use smithay::reexports::calloop::timer::{TimeoutAction, Timer};
 use smithay::reexports::calloop::{Interest, LoopHandle, Mode, PostAction, RegistrationToken};
@@ -205,6 +204,7 @@ impl State {
         let bindings = Bindings::build(&new.keybindings)?;
 
         let old = &self.config.active;
+        let outputs_changed = new.outputs != old.outputs;
         if new.keyboard != old.keyboard {
             let keyboard = &new.keyboard;
             let layout = keyboard.xkb_layout();
@@ -234,30 +234,12 @@ impl State {
                 .change_repeat_info(keyboard.repeat_rate as i32, keyboard.repeat_delay as i32);
         }
 
-        self.apply_output_scales(&new);
         self.config.bindings = bindings;
         self.config.active = new;
-        Ok(())
-    }
-
-    /// Set the scale of every output whose configured scale changed.
-    fn apply_output_scales(&mut self, new: &CompositorConfig) {
-        let old = &self.config.active;
-        let scale_of =
-            |config: &CompositorConfig, name: &str| config.outputs.get(name).and_then(|o| o.scale);
-        for output in self.space.outputs() {
-            let name = output.name();
-            let (before, after) = (scale_of(old, &name), scale_of(new, &name));
-            if before != after {
-                let scale = Scale::Fractional(after.unwrap_or(1.0));
-                output.change_current_state(None, None, Some(scale), None);
-                info!(
-                    output = name,
-                    scale = after.unwrap_or(1.0),
-                    "output scale changed"
-                );
-            }
+        if outputs_changed {
+            self.apply_output_config();
         }
+        Ok(())
     }
 
     /// Start watching the config directories (a calloop source). The user directory is

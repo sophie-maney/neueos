@@ -364,7 +364,7 @@ impl State {
                 protocol: PROTOCOL_VERSION,
             }),
             Request::Windows => json(&self.windows()),
-            Request::Outputs => json(&self.outputs()),
+            Request::Outputs => json(&self.outputs_info()),
             Request::FocusedWindow => json(&self.windows().into_iter().find(|w| w.focused)),
             Request::Actions => json(
                 &ACTIONS
@@ -483,22 +483,8 @@ impl State {
     }
 
     /// The outputs, for `neuectl outputs`.
-    fn outputs(&self) -> Vec<OutputInfo> {
-        let output = self.backend.output();
-        let mode = output.current_mode();
-        let location = output.current_location();
-        let props = output.physical_properties();
-        vec![OutputInfo {
-            name: output.name(),
-            make: props.make,
-            model: props.model,
-            x: location.x,
-            y: location.y,
-            width: mode.map_or(0, |m| m.size.w),
-            height: mode.map_or(0, |m| m.size.h),
-            refresh_mhz: mode.map_or(0, |m| m.refresh),
-            scale: output.current_scale().fractional_scale(),
-        }]
+    fn outputs_info(&self) -> Vec<OutputInfo> {
+        self.outputs().map(|o| self.output_info(o)).collect()
     }
 
     /// Emit `focus_changed` if `window` differs from the last reported focus.

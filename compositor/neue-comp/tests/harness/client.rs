@@ -13,6 +13,10 @@ use wayland_client::protocol::{
     wl_shm::WlShm, wl_shm_pool::WlShmPool, wl_surface::WlSurface,
 };
 use wayland_client::{Connection, Dispatch, EventQueue, QueueHandle, delegate_noop};
+use wayland_protocols::wp::fractional_scale::v1::client::{
+    wp_fractional_scale_manager_v1::WpFractionalScaleManagerV1,
+    wp_fractional_scale_v1::{self, WpFractionalScaleV1},
+};
 use wayland_protocols::xdg::activation::v1::client::{
     xdg_activation_token_v1::{self, XdgActivationTokenV1},
     xdg_activation_v1::XdgActivationV1,
@@ -33,6 +37,7 @@ pub struct TestClient {
     wm_base: XdgWmBase,
     pub seat: WlSeat,
     activation: XdgActivationV1,
+    fractional_scale: WpFractionalScaleManagerV1,
     _pointer: WlPointer,
     _keyboard: WlKeyboard,
     _globals: GlobalList,
@@ -59,6 +64,9 @@ pub struct ToplevelEvents {
     /// States from the last `xdg_toplevel.configure`.
     pub states: Vec<xdg_toplevel::State>,
     pub close_requested: bool,
+    /// The last `wp_fractional_scale_v1.preferred_scale`, in 120ths (see
+    /// [`TestClient::track_scale`]).
+    pub preferred_scale: Option<u32>,
 }
 
 #[derive(Default)]
@@ -85,6 +93,9 @@ impl TestClient {
         let activation = globals
             .bind(&qh, 1..=1, ())
             .expect("binding xdg_activation_v1");
+        let fractional_scale = globals
+            .bind(&qh, 1..=1, ())
+            .expect("binding wp_fractional_scale_manager_v1");
         let pointer = seat.get_pointer(&qh, ());
         let keyboard = seat.get_keyboard(&qh, ());
         let mut data = ClientData::default();
@@ -98,10 +109,26 @@ impl TestClient {
             wm_base,
             seat,
             activation,
+            fractional_scale,
             _pointer: pointer,
             _keyboard: keyboard,
             _globals: globals,
         }
+    }
+
+    /// Whether the compositor advertises a global with `interface` (e.g. `wp_viewporter`).
+    pub fn has_global(&self, interface: &str) -> bool {
+        self._globals
+            .contents()
+            .with_list(|list| list.iter().any(|g| g.interface == interface))
+    }
+
+    /// Start receiving `toplevel`'s preferred fractional scale
+    /// ([`ToplevelEvents::preferred_scale`]).
+    pub fn track_scale(&mut self, toplevel: &Toplevel) {
+        self.fractional_scale
+            .get_fractional_scale(&toplevel.surface, &self.qh, toplevel.index);
+        self.roundtrip();
     }
 
     /// Serial of the last pointer button press this client saw.
@@ -372,6 +399,22 @@ impl Dispatch<XdgActivationTokenV1, ()> for ClientData {
     }
 }
 
+impl Dispatch<WpFractionalScaleV1, usize> for ClientData {
+    fn event(
+        data: &mut Self,
+        _: &WpFractionalScaleV1,
+        event: wp_fractional_scale_v1::Event,
+        index: &usize,
+        _: &Connection,
+        _: &QueueHandle<Self>,
+    ) {
+        if let wp_fractional_scale_v1::Event::PreferredScale { scale } = event {
+            data.toplevels[*index].preferred_scale = Some(scale);
+        }
+    }
+}
+
+delegate_noop!(ClientData: ignore WpFractionalScaleManagerV1);
 delegate_noop!(ClientData: ignore WlSeat);
 delegate_noop!(ClientData: ignore XdgActivationV1);
 delegate_noop!(ClientData: ignore WlCompositor);
