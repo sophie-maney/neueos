@@ -29,7 +29,7 @@ use neue_comp::{BackendKind, Compositor, IpcSocket, Options, State};
 use smithay::reexports::calloop::channel::{self, Event, Sender};
 
 #[allow(unused_imports)] // Not every test binary names both types.
-pub use client::{Drag, TestClient, Toplevel, read_all};
+pub use client::{Drag, KdeDefaultMode, KdeMode, TestClient, Toplevel, XdgMode, read_all};
 
 /// How long [`Server::with_state`] waits for the compositor before failing the test.
 const STATE_TIMEOUT: Duration = Duration::from_secs(10);

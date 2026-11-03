@@ -5,7 +5,8 @@
 //!   compositor chrome;
 //! - `gpu::GpuRenderer` (`vello_gpu` on wgpu), behind the `gpu` feature.
 //!
-//! Materials in [`materials`] draw into a [`Scene`], so both backends share them.
+//! Materials in [`materials`] draw into a [`Scene`], so both backends share them. Text is
+//! laid out by [`text::TextEngine`] (parley, bundled fonts only).
 //!
 //! Portable crate: must build and pass tests on macOS and Linux.
 
@@ -16,6 +17,7 @@ pub mod gpu;
 pub mod materials;
 mod replay;
 mod scene;
+pub mod text;
 
 pub use scene::{Brush, Command, ProceduralTexture, Scene, TextureBrush};
 pub use vello_common::kurbo;

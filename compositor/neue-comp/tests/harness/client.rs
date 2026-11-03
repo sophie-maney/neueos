@@ -31,8 +31,10 @@ use wayland_protocols::xdg::shell::client::{
     xdg_wm_base::{self, XdgWmBase},
 };
 
+mod decoration;
 mod selection;
 
+pub use decoration::{KdeDefaultMode, KdeMode, XdgMode};
 pub use selection::{Drag, read_all};
 
 /// A connected client with the core globals bound.
@@ -95,6 +97,8 @@ struct ClientData {
     token: Option<String>,
     /// Selection offers and source events (see `selection.rs`).
     offers: selection::Offers,
+    /// Decoration objects and modes (see `decoration.rs`).
+    decorations: decoration::Decorations,
 }
 
 impl TestClient {

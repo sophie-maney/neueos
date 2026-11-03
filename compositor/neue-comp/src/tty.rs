@@ -39,7 +39,6 @@ use smithay::backend::renderer::gles::GlesRenderer;
 use smithay::backend::session::libseat::LibSeatSession;
 use smithay::backend::session::{Event as SessionEvent, Session};
 use smithay::backend::udev::{self, UdevBackend, UdevEvent};
-use smithay::desktop::space::{SpaceRenderElements, space_render_elements};
 use smithay::desktop::utils::send_frames_surface_tree;
 use smithay::input::pointer::{CursorImageStatus, CursorImageSurfaceData};
 use smithay::output::{Mode, Output, PhysicalProperties};
@@ -79,7 +78,7 @@ type TtyOutput = DrmOutput<Allocator, Exporter, FrameData, DrmDeviceFd>;
 smithay::backend::renderer::element::render_elements! {
     /// Everything drawn on a tty output, topmost first.
     pub TtyElement<=GlesRenderer>;
-    Space=SpaceRenderElements<GlesRenderer, WaylandSurfaceRenderElement<GlesRenderer>>,
+    Output=crate::render::OutputElement,
     Cursor=MemoryRenderBufferRenderElement<GlesRenderer>,
     /// A client-drawn cursor or the drag icon.
     CursorSurface=WaylandSurfaceRenderElement<GlesRenderer>,
@@ -660,6 +659,7 @@ fn render(state: &mut State, crtc: crtc::Handle) {
         space,
         cursor_status,
         dnd_icon,
+        chrome,
         ..
     } = state;
     let Backend::Tty(tty) = backend else { return };
@@ -754,10 +754,11 @@ fn render(state: &mut State, crtc: crtc::Handle) {
             Kind::Unspecified,
         ));
     }
-    match space_render_elements(renderer, [&*space], &output, 1.0) {
-        Ok(space_elements) => elements.extend(space_elements.into_iter().map(TtyElement::Space)),
-        Err(err) => warn!(?err, "output has no mode"),
-    }
+    elements.extend(
+        crate::render::output_elements(renderer, space, chrome, &output)
+            .into_iter()
+            .map(TtyElement::Output),
+    );
 
     let rendered =
         match surface

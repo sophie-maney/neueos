@@ -82,7 +82,7 @@ impl GpuRenderer {
             textures,
             depth,
         } = self;
-        let mut resolve = |brush: &TextureBrush| {
+        let mut resolve = |resources: &mut Resources, brush: &TextureBrush| {
             let key = (brush.texture.cache_key(), scale.to_bits());
             let (id, transparent) = *textures.entry(key).or_insert_with(|| {
                 let pixmap = brush.texture.render(scale);
@@ -91,7 +91,7 @@ impl GpuRenderer {
             });
             ImageSource::opaque_id_with_transparency_hint(id, transparent)
         };
-        crate::replay::replay!(&mut *gpu_scene, scene, scale, &mut resolve);
+        crate::replay::replay!(&mut *gpu_scene, scene, scale, &mut *resources, &mut resolve);
 
         let depth_view = match depth {
             Some((depth_size, view)) if *depth_size == (width, height) => view,

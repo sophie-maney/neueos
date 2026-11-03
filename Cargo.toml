@@ -34,6 +34,7 @@ xcursor = "0.3"
 # Scripted Wayland test clients (neue-comp's headless tests). Versions match Smithay's.
 wayland-client = "0.31"
 wayland-protocols = { version = "0.32", features = ["client", "staging"] }
+wayland-protocols-misc = { version = "0.3", features = ["client"] }
 rustix = { version = "1", features = ["fs"] }
 
 # IPC (neue-ipc, neuectl)
@@ -44,6 +45,10 @@ tempfile = "3"
 
 # Configuration (neue-config, ADR 0004). `toml` is MIT OR Apache-2.0.
 toml = "1"
+
+# Text layout for neue-paint (ADR 0002). No `system` feature: fonts are bundled, so no
+# fontconfig and identical output on every host (ADR 0013).
+parley = { version = "0.12", default-features = false, features = ["std"] }
 
 # Internal crates
 neue-paint = { path = "crates/neue-paint" }

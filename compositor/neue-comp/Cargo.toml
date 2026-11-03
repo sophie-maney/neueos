@@ -40,6 +40,7 @@ tracing.workspace = true
 tracing-subscriber.workspace = true
 
 [target.'cfg(target_os = "linux")'.dependencies]
+neue-paint.workspace = true
 rustix.workspace = true
 xcursor = { workspace = true, optional = true }
 smithay = { workspace = true, features = [
@@ -54,6 +55,7 @@ smithay = { workspace = true, features = [
 tempfile.workspace = true
 wayland-client.workspace = true
 wayland-protocols.workspace = true
+wayland-protocols-misc.workspace = true
 
 [lints]
 workspace = true

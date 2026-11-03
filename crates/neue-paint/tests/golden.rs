@@ -15,7 +15,9 @@ use std::io::Cursor;
 use std::path::{Path, PathBuf};
 
 use neue_paint::cpu::{CpuRenderer, Quality};
-use neue_paint::{Appearance, Pixmap, demo};
+use neue_paint::materials::title_bar::{self, TitleBarStyle};
+use neue_paint::text::TextEngine;
+use neue_paint::{Appearance, Pixmap, Scene, demo};
 
 /// Largest per-channel difference that still counts as equal. vello_cpu output differs
 /// slightly between SIMD levels and architectures (docs/research/vello-cpu.md).
@@ -123,6 +125,41 @@ fn sheet_dark_1x() {
 #[test]
 fn sheet_dark_2x() {
     check("sheet-dark@2x", render_sheet(Appearance::Dark, 2.0));
+}
+
+/// Width of the title bar goldens: wide enough for a centred title.
+const TITLE_BAR_WIDTH: f64 = 320.0;
+
+fn render_title_bar(appearance: Appearance, focused: bool, scale: f64) -> Pixmap {
+    let style = TitleBarStyle {
+        appearance,
+        focused,
+    };
+    let title = TextEngine::new().line_truncated(
+        "Untitled — Edited",
+        title_bar::TITLE_FONT_SIZE,
+        title_bar::title_max_width(TITLE_BAR_WIDTH),
+    );
+    let mut scene = Scene::new(TITLE_BAR_WIDTH, title_bar::TITLE_BAR_HEIGHT);
+    title_bar::title_bar(&mut scene, TITLE_BAR_WIDTH, &title, style);
+    CpuRenderer::new(Quality::Reference)
+        .render(&scene, scale)
+        .unwrap()
+}
+
+/// Title bar goldens: focused/unfocused × light/dark × 1x/2x.
+#[test]
+fn title_bar_goldens() {
+    for (appearance, a) in [(Appearance::Light, "light"), (Appearance::Dark, "dark")] {
+        for (focused, f) in [(true, "focused"), (false, "unfocused")] {
+            for (scale, s) in [(1.0, "1x"), (2.0, "2x")] {
+                check(
+                    &format!("titlebar-{f}-{a}@{s}"),
+                    render_title_bar(appearance, focused, scale),
+                );
+            }
+        }
+    }
 }
 
 /// Rendering twice in one process must give identical pixels (texture cache included).

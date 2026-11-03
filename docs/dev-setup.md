@@ -353,3 +353,27 @@ XCursor theme). Rebuild and start on the tty as in §4 (`-c foot`); optionally s
    scrolls output (the plane is used when the cursor fits it; no log line says so).
 
 Report what showed the wrong cursor and which app it was.
+
+## 9. Checking server-side title bars in the VM (task 1.10)
+Install a GTK3 app without a header bar once: `sudo pacman -S --needed mousepad`. Rebuild
+and start on the tty as in §4, with debug logs for the chrome:
+```sh
+ssh neueos-vm 'export XDG_RUNTIME_DIR=/run/user/1000 RUST_LOG=info,neue_comp::decorations=debug
+  unset WAYLAND_DISPLAY
+  setsid nohup ~/neueos/target/release/neue-comp --tty -c foot -c mousepad >/tmp/neue-comp.log 2>&1 </dev/null &'
+```
+1. **GTK3 (KDE protocol):** `mousepad` has our title bar: grey gradient, rounded top
+   corners, red/yellow/green buttons on the left, its title centred.
+2. **xdg-decoration:** `foot` has the same bar.
+3. **Focus:** click into one window, then the other: the unfocused bar turns lighter and its
+   buttons grey.
+4. **Resize and zoom:** resize a window from its client edge (mousepad) or zoom it with
+   `neuectl action zoom-window --window ID`: the bar follows, the title stays centred and
+   gets an ellipsis when the window is narrow; a zoomed window's bar sits at the top of the
+   screen.
+5. **Scale:** with `[outputs."<name>"] scale = 2` (§6) the bar stays sharp.
+6. **Timings:** `grep rendered /tmp/neue-comp.log` shows "rendered title bar slices" and
+   "rendered window title" with `micros=`.
+
+Not yet: clicking the buttons or dragging the bar (task 1.11). Header-bar apps
+(`gnome-text-editor`, `gtk3-demo`) keep their own title bars by design.

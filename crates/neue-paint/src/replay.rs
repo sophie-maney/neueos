@@ -17,7 +17,7 @@ pub(crate) fn paint_for(
     brush: &Brush,
     shape_transform: Affine,
     scale: f64,
-    resolve: &mut impl FnMut(&TextureBrush) -> ImageSource,
+    resolve: impl FnOnce(&TextureBrush) -> ImageSource,
 ) -> Option<(PaintType, Affine)> {
     match brush {
         Brush::Solid(color) => Some((PaintType::Solid(*color), Affine::IDENTITY)),
@@ -47,15 +47,17 @@ pub(crate) fn paint_for(
     }
 }
 
-/// Replay `$scene` into `$ctx` at `$scale`. `$resolve` maps a texture brush to an
-/// `ImageSource` the backend can sample.
+/// Replay `$scene` into `$ctx` at `$scale`. `$resources` are the backend's glyph and image
+/// resources; `$resolve` maps them and a texture brush to an `ImageSource` the backend can
+/// sample.
 macro_rules! replay {
-    ($ctx:expr, $scene:expr, $scale:expr, $resolve:expr) => {{
+    ($ctx:expr, $scene:expr, $scale:expr, $resources:expr, $resolve:expr) => {{
         use vello_common::kurbo::Affine;
         use $crate::scene::Command;
 
         let ctx = $ctx;
         let scale: f64 = $scale;
+        let resources = $resources;
         let resolve = $resolve;
         let root = Affine::scale(scale);
         for command in $scene.commands() {
@@ -66,7 +68,9 @@ macro_rules! replay {
                     brush,
                 } => {
                     if let Some((paint, paint_transform)) =
-                        $crate::replay::paint_for(brush, *transform, scale, &mut *resolve)
+                        $crate::replay::paint_for(brush, *transform, scale, |b| {
+                            resolve(&mut *resources, b)
+                        })
                     {
                         ctx.set_transform(root * *transform);
                         ctx.set_paint(paint);
@@ -81,7 +85,9 @@ macro_rules! replay {
                     brush,
                 } => {
                     if let Some((paint, paint_transform)) =
-                        $crate::replay::paint_for(brush, *transform, scale, &mut *resolve)
+                        $crate::replay::paint_for(brush, *transform, scale, |b| {
+                            resolve(&mut *resources, b)
+                        })
                     {
                         ctx.set_transform(root * *transform);
                         ctx.set_paint(paint);
@@ -114,6 +120,24 @@ macro_rules! replay {
                     ctx.push_layer(clip.as_ref(), None, Some(*opacity), None, None);
                 }
                 Command::PopLayer => ctx.pop_layer(),
+                Command::Glyphs {
+                    transform,
+                    font,
+                    size,
+                    glyphs,
+                    color,
+                } => {
+                    ctx.set_transform(root * *transform);
+                    ctx.set_paint(*color);
+                    ctx.reset_paint_transform();
+                    // A glyph that fails to render is left blank; the rest of the run is
+                    // still drawn, which is the best we can do mid-frame.
+                    let _ = ctx
+                        .glyph_run(&mut *resources, font)
+                        .font_size(*size)
+                        .hint(true)
+                        .fill_glyphs(glyphs.iter().copied());
+                }
             }
         }
         for _ in 0..$scene.open_layers() {
