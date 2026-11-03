@@ -24,6 +24,9 @@ use smithay::wayland::dmabuf::DmabufState;
 use smithay::wayland::fractional_scale::FractionalScaleManagerState;
 use smithay::wayland::output::OutputManagerState;
 use smithay::wayland::selection::data_device::DataDeviceState;
+use smithay::wayland::selection::ext_data_control::DataControlState as ExtDataControlState;
+use smithay::wayland::selection::primary_selection::PrimarySelectionState;
+use smithay::wayland::selection::wlr_data_control::DataControlState as WlrDataControlState;
 use smithay::wayland::shell::xdg::XdgShellState;
 use smithay::wayland::shm::ShmState;
 use smithay::wayland::socket::ListeningSocketSource;
@@ -107,6 +110,15 @@ pub struct State {
     pub dmabuf_state: DmabufState,
     pub output_manager_state: OutputManagerState,
     pub data_device_state: DataDeviceState,
+    pub primary_selection_state: PrimarySelectionState,
+    /// `ext-data-control-v1`, for clipboard managers and `wl-clipboard`.
+    pub ext_data_control_state: ExtDataControlState,
+    /// `wlr-data-control-unstable-v1`, the older form most clipboard tools still use.
+    pub wlr_data_control_state: WlrDataControlState,
+    /// The surface a client attached to the running drag as its icon, if any.
+    pub dnd_icon: Option<DndIcon>,
+    /// A pointer drag-and-drop is running (with or without an icon). Escape cancels it.
+    pub dnd_active: bool,
     pub xdg_activation_state: XdgActivationState,
     pub fractional_scale_state: FractionalScaleManagerState,
     pub viewporter_state: ViewporterState,
@@ -117,6 +129,15 @@ pub struct State {
     /// What the focused client wants the pointer to look like. Drawn by the tty backend;
     /// the winit backend shows the host's cursor instead.
     pub cursor_status: CursorImageStatus,
+}
+
+/// The icon of a drag in progress, drawn at the pointer.
+#[derive(Debug)]
+pub struct DndIcon {
+    pub surface: WlSurface,
+    /// Where the surface's origin sits relative to the pointer. Starts at zero and moves
+    /// with the buffer offsets the client commits.
+    pub offset: Point<i32, Logical>,
 }
 
 impl State {
@@ -132,9 +153,14 @@ impl State {
         let xdg_shell_state = XdgShellState::new::<Self>(&dh);
         let shm_state = ShmState::new::<Self>(&dh, vec![]);
         let output_manager_state = OutputManagerState::new_with_xdg_output::<Self>(&dh);
-        // Clipboard. Some clients (foot) refuse to start without it. Primary selection,
-        // data-control and DnD icons are task 1.8.
+        // Clipboard. Some clients (foot) refuse to start without it.
         let data_device_state = DataDeviceState::new::<Self>(&dh);
+        let primary_selection_state = PrimarySelectionState::new::<Self>(&dh);
+        // Data-control lets any client manage the clipboard without focus (ADR 0011).
+        let ext_data_control_state =
+            ExtDataControlState::new::<Self, _>(&dh, Some(&primary_selection_state), |_| true);
+        let wlr_data_control_state =
+            WlrDataControlState::new::<Self, _>(&dh, Some(&primary_selection_state), |_| true);
         let xdg_activation_state = XdgActivationState::new::<Self>(&dh);
         let fractional_scale_state = FractionalScaleManagerState::new::<Self>(&dh);
         let viewporter_state = ViewporterState::new::<Self>(&dh);
@@ -176,6 +202,11 @@ impl State {
             dmabuf_state,
             output_manager_state,
             data_device_state,
+            primary_selection_state,
+            ext_data_control_state,
+            wlr_data_control_state,
+            dnd_icon: None,
+            dnd_active: false,
             xdg_activation_state,
             fractional_scale_state,
             viewporter_state,

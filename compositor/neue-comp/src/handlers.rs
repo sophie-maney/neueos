@@ -13,17 +13,17 @@ use smithay::desktop::{
     PopupKeyboardGrab, PopupKind, PopupPointerGrab, PopupUngrabStrategy, Window,
     find_popup_root_surface, get_popup_toplevel_coords,
 };
-use smithay::input::dnd::{DnDGrab, DndGrabHandler, GrabType, Source};
+use smithay::input::dnd::{DnDGrab, DndGrabHandler, DndTarget, GrabType, Source};
 use smithay::input::pointer::{CursorImageStatus, Focus};
 use smithay::input::{Seat, SeatHandler, SeatState};
 use smithay::reexports::wayland_protocols::xdg::shell::server::xdg_toplevel;
 use smithay::reexports::wayland_server::protocol::{wl_buffer, wl_seat, wl_surface::WlSurface};
 use smithay::reexports::wayland_server::{Client, Resource};
-use smithay::utils::Serial;
+use smithay::utils::{Logical, Point, Serial};
 use smithay::wayland::buffer::BufferHandler;
 use smithay::wayland::compositor::{
-    CompositorClientState, CompositorHandler, CompositorState, get_parent, is_sync_subsurface,
-    with_states,
+    CompositorClientState, CompositorHandler, CompositorState, SurfaceAttributes, get_parent,
+    is_sync_subsurface, with_states,
 };
 use smithay::wayland::dmabuf::{DmabufGlobal, DmabufHandler, DmabufState, ImportNotifier};
 use smithay::wayland::fractional_scale::FractionalScaleHandler;
@@ -32,6 +32,15 @@ use smithay::wayland::pointer_constraints::PointerConstraintsHandler;
 use smithay::wayland::selection::SelectionHandler;
 use smithay::wayland::selection::data_device::{
     DataDeviceHandler, DataDeviceState, WaylandDndGrabHandler, set_data_device_focus,
+};
+use smithay::wayland::selection::ext_data_control::{
+    DataControlHandler as ExtDataControlHandler, DataControlState as ExtDataControlState,
+};
+use smithay::wayland::selection::primary_selection::{
+    PrimarySelectionHandler, PrimarySelectionState, set_primary_focus,
+};
+use smithay::wayland::selection::wlr_data_control::{
+    DataControlHandler as WlrDataControlHandler, DataControlState as WlrDataControlState,
 };
 use smithay::wayland::shell::xdg::{
     PopupSurface, PositionerState, ToplevelSurface, XdgShellHandler, XdgShellState,
@@ -42,7 +51,7 @@ use smithay::wayland::xdg_activation::{
 };
 use tracing::{debug, warn};
 
-use crate::state::{Backend, ClientState, State};
+use crate::state::{Backend, ClientState, DndIcon, State};
 
 impl CompositorHandler for State {
     fn compositor_state(&mut self) -> &mut CompositorState {
@@ -76,6 +85,7 @@ impl CompositorHandler for State {
 
         self.commit_unmapped(surface);
         self.commit_popup(surface);
+        self.commit_dnd_icon(surface);
     }
 }
 
@@ -113,6 +123,23 @@ impl State {
 
         self.unmapped.swap_remove(index);
         self.map_new_window(window);
+    }
+
+    /// A drag icon that attaches a buffer with an offset moves relative to the pointer.
+    fn commit_dnd_icon(&mut self, surface: &WlSurface) {
+        let Some(icon) = self.dnd_icon.as_mut().filter(|i| &i.surface == surface) else {
+            return;
+        };
+        with_states(surface, |states| {
+            let delta = states
+                .cached_state
+                .get::<SurfaceAttributes>()
+                .current()
+                .buffer_delta
+                .take()
+                .unwrap_or_default();
+            icon.offset += delta;
+        });
     }
 
     fn commit_popup(&mut self, surface: &WlSurface) {
@@ -212,7 +239,8 @@ impl SeatHandler for State {
         // The clipboard follows keyboard focus.
         let dh = &self.display_handle;
         let client = focused.and_then(|s| dh.get_client(s.id()).ok());
-        set_data_device_focus(dh, seat, client);
+        set_data_device_focus(dh, seat, client.clone());
+        set_primary_focus(dh, seat, client);
 
         // Tell `neuectl` subscribers, once per actual change.
         let window = focused
@@ -238,14 +266,49 @@ impl DataDeviceHandler for State {
     }
 }
 
-impl DndGrabHandler for State {}
+impl PrimarySelectionHandler for State {
+    fn primary_selection_state(&mut self) -> &mut PrimarySelectionState {
+        &mut self.primary_selection_state
+    }
+}
+
+impl ExtDataControlHandler for State {
+    fn data_control_state(&mut self) -> &mut ExtDataControlState {
+        &mut self.ext_data_control_state
+    }
+}
+
+impl WlrDataControlHandler for State {
+    fn data_control_state(&mut self) -> &mut WlrDataControlState {
+        &mut self.wlr_data_control_state
+    }
+}
+
+impl DndGrabHandler for State {
+    fn dropped(
+        &mut self,
+        _target: Option<DndTarget<'_, Self>>,
+        _validated: bool,
+        _seat: Seat<Self>,
+        _location: Point<f64, Logical>,
+    ) {
+        self.dnd_icon = None;
+        self.dnd_active = false;
+    }
+
+    fn cancelled(&mut self, _seat: Seat<Self>, _location: Point<f64, Logical>) {
+        self.dnd_icon = None;
+        self.dnd_active = false;
+    }
+}
 
 impl WaylandDndGrabHandler for State {
-    // Pointer drag-and-drop, as in smallvil. Drag icons and touch DnD are task 1.8.
+    // Pointer drag-and-drop. The icon is drawn at the pointer until the drop; touch DnD
+    // waits for touch input.
     fn dnd_requested<S: Source>(
         &mut self,
         source: S,
-        _icon: Option<WlSurface>,
+        icon: Option<WlSurface>,
         seat: Seat<Self>,
         serial: Serial,
         type_: GrabType,
@@ -254,6 +317,11 @@ impl WaylandDndGrabHandler for State {
         let start_data = pointer.as_ref().and_then(|p| p.grab_start_data());
         match (type_, pointer, start_data) {
             (GrabType::Pointer, Some(pointer), Some(start_data)) => {
+                self.dnd_active = true;
+                self.dnd_icon = icon.map(|surface| DndIcon {
+                    surface,
+                    offset: Point::default(),
+                });
                 let grab = DnDGrab::new_pointer(&self.display_handle, start_data, source, seat);
                 pointer.set_grab(self, grab, serial, Focus::Keep);
             }

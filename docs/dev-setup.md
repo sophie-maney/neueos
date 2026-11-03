@@ -311,3 +311,25 @@ neuectl events                       # leave running: output_* and window_* line
 
 Report the `neuectl events` lines and anything that looks wrong (black output, stuck
 frames, cursor in the wrong place).
+
+## 7. Checking clipboard and drag-and-drop in the VM (task 1.8)
+Install the test tools once: `sudo pacman -S --needed wl-clipboard gedit gnome-text-editor
+nautilus` (any two GTK apps work; a text editor and a file manager are the easiest pair).
+Rebuild and start on the tty as in §4 (`-c foot`). In a second ssh session:
+```sh
+export XDG_RUNTIME_DIR=/run/user/1000 WAYLAND_DISPLAY=wayland-1
+export PATH=~/neueos/target/release:$PATH
+```
+1. **Clipboard tools:** `echo hello | wl-copy`, then `wl-paste` prints `hello`; also try
+   `wl-paste --primary` after `echo x | wl-copy --primary`.
+2. **Clipboard between apps:** start two GTK apps (`gnome-text-editor &` twice, or
+   `gedit &`), type text in the first, select it, copy, click the second one and paste.
+   Selecting text and middle-clicking in the other app tests primary selection.
+3. **DnD of a file:** open `nautilus ~` and a second `nautilus /tmp`. Drag a file from one
+   to the other with the mouse. Expect a drag icon following the pointer, the file
+   appearing in the target folder, and the icon disappearing on release. Also drag a file
+   onto the text editor (it opens it or inserts its path) and press Esc during a drag:
+   the icon must go away and nothing is dropped.
+
+Report which of these worked and anything odd (no icon, icon stuck after the drop, icon
+offset from the pointer, paste empty).

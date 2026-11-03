@@ -83,6 +83,7 @@ smithay::backend::renderer::element::render_elements! {
     pub TtyElement<=GlesRenderer>;
     Space=SpaceRenderElements<GlesRenderer, WaylandSurfaceRenderElement<GlesRenderer>>,
     Cursor=MemoryRenderBufferRenderElement<GlesRenderer>,
+    /// A client-drawn cursor or the drag icon.
     CursorSurface=WaylandSurfaceRenderElement<GlesRenderer>,
 }
 
@@ -660,6 +661,7 @@ fn render(state: &mut State, crtc: crtc::Handle) {
         backend,
         space,
         cursor_status,
+        dnd_icon,
         ..
     } = state;
     let Backend::Tty(tty) = backend else { return };
@@ -737,6 +739,22 @@ fn render(state: &mut State, crtc: crtc::Handle) {
             ));
         }
     }
+    // The drag icon rides just under the cursor.
+    if let Some(icon) = dnd_icon.as_ref().filter(|i| i.surface.alive())
+        && cursor_near
+    {
+        let location = (cursor_pos + icon.offset.to_f64())
+            .to_physical(scale)
+            .to_i32_round();
+        elements.extend(render_elements_from_surface_tree::<_, TtyElement>(
+            renderer,
+            &icon.surface,
+            location,
+            scale,
+            1.0,
+            Kind::Unspecified,
+        ));
+    }
     match space_render_elements(renderer, [&*space], &output, 1.0) {
         Ok(space_elements) => elements.extend(space_elements.into_iter().map(TtyElement::Space)),
         Err(err) => warn!(?err, "output has no mode"),
@@ -769,6 +787,18 @@ fn render(state: &mut State, crtc: crtc::Handle) {
         send_frames_surface_tree(surface, &output, time, Some(Duration::ZERO), |_, _| {
             Some(output.clone())
         });
+    }
+
+    if let Some(icon) = dnd_icon.as_ref().filter(|i| i.surface.alive())
+        && output_geo.to_f64().contains(pointer_location)
+    {
+        send_frames_surface_tree(
+            &icon.surface,
+            &output,
+            time,
+            Some(Duration::ZERO),
+            |_, _| Some(output.clone()),
+        );
     }
 
     if !frame_pending {

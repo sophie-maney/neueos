@@ -546,10 +546,19 @@ Decisions to follow: ADR 0001 (Smithay), 0003 (IPC), 0004 (config), 0005 (global
       `output_changed` per resize with the new mode. A second display can't be tested in
       Parallels, so plugging and unplugging is covered only by the headless tests and
       waits for real hardware. Not done: mode/transform/enable settings, EDID names, several GPUs (1.15).
-- [ ] **1.8 Clipboard and DnD** · Sonnet. Data device (core part exists since 1.1), primary selection, ext-data-control,
+- [x] **1.8 Clipboard and DnD** · Sonnet. Data device (core part exists since 1.1), primary selection, ext-data-control,
       DnD with icon surfaces.
       *Accept:* `wl-copy`/`wl-paste` round trip in a headless test; DnD of a file between two
       GTK apps in the VM.
+      *Done:* rules in ADR 0011. Primary selection, `ext-data-control` and also
+      `wlr-data-control` (what `wl-clipboard` uses today), drag icons drawn on tty and winit
+      with offsets following commits. Headless tests in `tests/selection.rs` cover clipboard,
+      primary selection and data-control round trips (the `wl-copy`/`wl-paste` wire path),
+      selection replacement, a full DnD drag between two clients with an icon, and Escape
+      cancelling a drag (the compositor takes the key; Smithay doesn't end the grab when a
+      client destroys its source). Owner checked clipboard, primary selection and file DnD
+      between GTK apps (nautilus, gedit, gnome-text-editor) by hand in the VM
+      (`docs/dev-setup.md` §7). Not done: touch DnD.
 - [ ] **1.9 Cursors** · Sonnet. XCursor theme loading (pure-Rust `xcursor` crate),
       cursor-shape-v1, per-scale cursor sizes, hardware cursor plane on tty.
       *Accept:* correct cursors on resize edges and text fields in the VM.
