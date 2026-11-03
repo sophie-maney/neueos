@@ -1,8 +1,9 @@
 # AGENTS.md
 
-Instructions for coding agents working in this repository. Read `PLAN.md` first. It holds
-the architecture, the decisions already made, and the roadmap. Do not create `CLAUDE.md`;
-this file is the single source of agent instructions.
+Instructions for coding agents working in this repository. Read `PLAN.md` first, but only
+the sections relevant to your task. It holds the architecture, the decisions already made,
+and the roadmap. Do not create `CLAUDE.md`; this file is the single source of agent
+instructions. **Before any work, run the checks in "How to work" below.**
 
 ## Project in one paragraph
 neueOS is a personal Linux desktop environment and Arch-based distribution that
@@ -32,6 +33,72 @@ All first-party code is Rust.
   before adding one.
 - **Don't break the portable build.** Crates marked portable (see below) must compile and
   pass tests on macOS.
+
+## How to work: scope, model and token budget
+The owner is on a usage-limited plan. Results matter, but tokens are scarce: get things
+working first and polish later. Follow these rules in every thread.
+
+### 1. Check before you start (stop and ask if any check fails)
+State the result of these checks in one or two lines, then continue or ask.
+- **Scope:** one thread is one task, and one task is one PR (about a day of work, a few
+  files, one crate or a closely related pair). If the request is a whole phase, several
+  tasks, or vaguely bounded ("continue Phase 1"), **do not start coding.** Propose a split
+  into PR-sized tasks with acceptance criteria. Add the split to `PLAN.md` once the owner
+  agrees, then work on the first task only.
+- **Model:** check that the model fits the task (table below). If it doesn't, say so and
+  ask whether to continue or switch. Don't ask for trivial tasks (under about 10 minutes of
+  work).
+- **Clarity:** if acceptance criteria or a design decision are missing and can't be
+  derived from `PLAN.md`, the ADRs or the code, ask. Don't guess on architecture.
+
+| Task type | Right model |
+|---|---|
+| Splitting a phase into tasks, ADRs, architecture, compositor core (rendering, input, protocols, window management), toolkit core (widget tree, text, input/IME, animation, accessibility), Overview/Spaces, hard debugging | **Opus** |
+| CI, `xtask`, PKGBUILDs, archiso, settings panes, more widgets or apps that follow an existing pattern, tests, docs, research subagents | **Sonnet** |
+| Renames, formatting, typo and one-line fixes | **Haiku** (or Sonnet) |
+
+Rule of thumb: Opus sets a pattern, and Sonnet repeats it.
+
+### 2. Stop and ask during work when…
+- the task turns out bigger than estimated (it needs a new crate, a cross-crate interface
+  change, or more than about 15 files): stop, report what you found, and propose a split;
+- a fix needs a new dependency (especially C), a new protocol or IPC, or a change to a
+  decision in `PLAN.md` or an ADR;
+- you've made **two failed attempts** at the same bug or build error: summarise the
+  hypotheses and evidence, and ask before trying more;
+- the next step needs **manual or hardware work**: installing a VM, BIOS, partitioning,
+  testing on real PCs, anything that needs clicking through a GUI. Write exact steps
+  (into `docs/dev-setup.md` if they're reusable) and let the owner run them. Don't
+  burn tokens on trial and error;
+- the context is getting long and the task isn't close to done: suggest `/compact` with a
+  focus (for example "keep failing test, hypothesis, files touched"), or wrap up with a
+  handoff (step 4) so a fresh thread can continue.
+
+### 3. Save tokens while working
+- Read only what you need: the relevant `PLAN.md` section and the files involved. Don't
+  re-read whole crates.
+- Keep tool output short: `cargo check --message-format short`, `| tail -n 50`, and single
+  tests (`cargo test -p <crate> <name>`). Never dump full build logs into context.
+- Run the full `cargo xtask check` once before handing off, not after every edit.
+- **Subagents:** only for independent research or exploration that would otherwise flood
+  the context. Use Sonnet by default. Use Opus only when the outcome is an architecture
+  judgement and a Sonnet report was inconclusive. Give each subagent:
+  - specific questions,
+  - judgement criteria,
+  - an output limit (for example "under 300 words, recommendation plus source links").
+
+  Don't spawn subagents for routine coding, and don't let them re-do work you already have.
+- **Never run multi-agent Workflows** unless the owner explicitly asks for one.
+- Prefer separate threads, run by the owner, over subagents for parallel independent tasks.
+
+### 4. Hand off at the end of every task
+The repo is the memory between threads, not chat history. Before finishing:
+- tick the boxes in `PLAN.md` (and update the plan if the implementation diverged);
+- write an ADR for any decision you made;
+- commit on a branch, open or update the PR, and fill in the testing notes (macOS, VM, real
+  hardware: which of these were done and which were not);
+- end with a short **Next** line: the next task, its suggested model, and anything the
+  owner must do by hand first.
 
 ## Platform matrix
 | Crate group | macOS (dev host, aarch64) | Linux aarch64 | Linux x86_64 |
