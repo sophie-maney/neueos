@@ -615,9 +615,10 @@ Decisions to follow: ADR 0001 (Smithay), 0003 (IPC), 0004 (config), 0005 (global
       notify and inhibit, foreign toplevel list with `window-<id>` identifiers, xdg-foreign,
       xdg-dialog modal flag, toplevel icon, system bell, shortcuts inhibit). 20 headless
       tests in `tests/shell_protocols.rs` on a new `shell.rs` test-client module.
-      *Not checked:* VM run of `swaylock` and the other clients (owner, `docs/dev-setup.md`
-      §11). Not done: idle inhibit by visibility, layers of a removed output are closed not
-      moved, per-output exclusive focus, lock surface reconfigure on mode change.
+      Owner checked it by hand in the VM (`docs/dev-setup.md` §11: `swaylock`, `waybar`,
+      `fuzzel`, `swaybg`, `swayidle`) and found it fine. Not done: idle inhibit by
+      visibility, layers of a removed output are closed not moved, per-output exclusive
+      focus, lock surface reconfigure on mode change.
 - [ ] **1.13 Input protocols** · Sonnet. pointer-constraints, relative-pointer,
       pointer-gestures, text-input-v3, input-method-v2, touchpad gestures config.
       *Accept:* headless tests; an IME (e.g. fcitx5) commits text into a GTK app in the VM.
