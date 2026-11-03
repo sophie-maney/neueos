@@ -446,10 +446,12 @@ sequential, 0.4 can start once R2 is in, and 0.6 / 0.7 can run in parallel.
       (Recorded `Scene` replayed into `vello_cpu` and `vello_gpu`; the example uses
       `vello_gpu` on wgpu behind the `gpu` feature. Notes for ADR 0002 in
       `docs/research/paint-poc.md`.)
-- [ ] **0.7 Global-menu verification** · Sonnet writes the checklist from R1, **owner
+- [x] **0.7 Global-menu verification** · Sonnet writes the checklist from R1, **owner
       runs it** in the VM under a stock Plasma Wayland session (Qt6, GTK3, Chromium/
       Electron, Firefox). Results added to `docs/research/global-menu.md`.
       *Accept:* a coverage table with tested/observed status per toolkit.
+      (Run by Claude over SSH in the VM's Plasma session on 2026-11-03, with no input injection;
+      results in `global-menu-checklist.md`, summary in `global-menu.md`. Open items listed there.)
 - [ ] **0.8 ADRs 0001–0005** · Opus. 0001 Smithay, 0002 toolkit stack and Masonry (from
       R3, R4, 0.6), 0003 IPC, 0004 config format, 0005 global-menu strategy (from R1,
       0.7). Then split Phase 1 into tasks.
