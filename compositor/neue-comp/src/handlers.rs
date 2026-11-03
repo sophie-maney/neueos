@@ -4,6 +4,7 @@
 //! `anvil/src/winit.rs`.
 
 use smithay::backend::allocator::dmabuf::Dmabuf;
+#[cfg(feature = "winit")]
 use smithay::backend::renderer::ImportDma;
 use smithay::backend::renderer::utils::{RendererSurfaceStateUserData, on_commit_buffer_handler};
 use smithay::desktop::{PopupKind, Window, find_popup_root_surface, get_popup_toplevel_coords};
@@ -179,6 +180,11 @@ impl DmabufHandler for State {
         let imported = match &mut self.backend {
             #[cfg(feature = "winit")]
             Backend::Winit(data) => data.renderer().import_dmabuf(&dmabuf, None).is_ok(),
+            // No dmabuf global is advertised without a renderer.
+            Backend::Headless(_) => {
+                let _ = dmabuf;
+                false
+            }
         };
         if imported {
             let _ = notifier.successful::<State>();

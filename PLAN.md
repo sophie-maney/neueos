@@ -480,10 +480,13 @@ Decisions to follow: ADR 0001 (Smithay), 0003 (IPC), 0004 (config), 0005 (global
       *Done:* also has the core data device (foot needs it) and dmabuf v4 feedback; the
       winit backend is a dev-only cargo feature (ADR 0001 amendment 1). VM steps:
       `docs/dev-setup.md` §3.
-- [ ] **1.2 Headless backend + test harness** · Opus. Headless backend (EGL surfaceless when
+- [x] **1.2 Headless backend + test harness** · Opus. Headless backend (EGL surfaceless when
       pixels are needed), a scripted test client on `wayland-client`, and a first test
       that maps an `xdg_toplevel` and asserts the window list. Runs in CI on Linux.
       *Accept:* the test passes in `cargo xtask check` on both Linux CI jobs.
+      *Done:* in-process harness (`compositor/neue-comp/tests/harness/`) with socket-pair
+      clients and `Server::with_state`; headless backend has no renderer yet, EGL moves to
+      1.16 (ADR 0006). Linux checks need `libwayland-client` (dev-setup §1.2).
 - [ ] **1.3 `neue-ipc` + `neuectl`** · Sonnet. New portable crate `neue-ipc` and the
       `neuectl` binary per ADR 0003: `version`, `windows`, `outputs`, `focused-window`,
       `action`, `actions`, `subscribe` (window events), `quit`.
@@ -538,8 +541,9 @@ Decisions to follow: ADR 0001 (Smithay), 0003 (IPC), 0004 (config), 0005 (global
 - [ ] **1.15 Direct scanout and VRR** · Opus. Direct scanout for full-screen surfaces,
       adaptive sync per output (config), damage review.
       *Accept:* scanout and VRR confirmed on real x86_64 hardware (owner); flagged in the PR.
-- [ ] **1.16 Screencopy** · Sonnet. ext-image-copy-capture (output and toplevel sources),
-      `neuectl screenshot`.
+- [ ] **1.16 Screencopy** · Sonnet (Opus for the renderer part). ext-image-copy-capture
+      (output and toplevel sources), `neuectl screenshot`. First gives the headless backend
+      an optional GLES renderer on EGL surfaceless/device (ADR 0006); CI then needs Mesa.
       *Accept:* `neuectl screenshot` PNG matches a headless golden; `grim` works in the VM.
 - [ ] **1.17 Global-menu protocol side** · Sonnet. `org_kde_kwin_appmenu` v2 and `gtk_shell1`
       v5 per ADR 0005 (`gtk_shell1` XML in a new `neue-protocols` crate); menu addresses in

@@ -35,5 +35,10 @@ smithay = { workspace = true, features = [
     "wayland_frontend",
 ] }
 
+[target.'cfg(target_os = "linux")'.dev-dependencies]
+rustix.workspace = true
+wayland-client.workspace = true
+wayland-protocols.workspace = true
+
 [lints]
 workspace = true

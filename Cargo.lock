@@ -1412,10 +1412,13 @@ name = "neue-comp"
 version = "0.0.0"
 dependencies = [
  "anyhow",
+ "rustix 1.1.6",
  "smithay",
  "thiserror 2.0.21",
  "tracing",
  "tracing-subscriber",
+ "wayland-client",
+ "wayland-protocols",
 ]
 
 [[package]]
