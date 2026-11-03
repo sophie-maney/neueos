@@ -427,6 +427,8 @@ sequential, 0.4 can start once R2 is in, and 0.6 / 0.7 can run in parallel.
       Arch Linux ARM VM (route chosen from R2), file sync (Parallels Tools or
       virtiofs/SSH + rsync), and the Rust toolchain in each.
       *Accept:* owner has all three machines; the doc matches what was actually done.
+      (Doc drafted in `docs/dev-setup.md`, untested. Tick once the owner has run it and
+      filled in the "Record what you actually did" table.)
 - [ ] **0.5 VM graphics checks** · Opus, owner at the VM. Record `eglinfo` (virgl vs.
       llvmpipe), run Smithay's `anvil` on the VM's DRM device and nested under a stock
       Wayland session, and run a vello demo in the VM. Results in
