@@ -135,6 +135,12 @@ Host neueos-vm
 ssh-copy-id neueos-vm
 ssh neueos-vm uname -m            # aarch64
 ```
+If your key lives in the 1Password SSH agent (set through `IdentityAgent` in `~/.ssh/config`),
+`ssh-copy-id` can't see it, because it reads `$SSH_AUTH_SOCK`. Either prefix the command with
+`env SSH_AUTH_SOCK="$HOME/Library/Group Containers/2BUA8C4S2C.com.1password/t/agent.sock"`, or
+save the public key to a file and run `ssh-copy-id -f -i <key>.pub neueos-vm`. With several keys
+in the agent, add `IdentityFile <key>.pub` and `IdentitiesOnly yes` to the `neueos-vm` host entry.
+
 `cargo xtask vm sync` and `cargo xtask vm run` are not implemented yet. Their task will wrap
 the manual steps below and use the host name `neueos-vm`.
 
