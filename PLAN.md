@@ -559,9 +559,17 @@ Decisions to follow: ADR 0001 (Smithay), 0003 (IPC), 0004 (config), 0005 (global
       client destroys its source). Owner checked clipboard, primary selection and file DnD
       between GTK apps (nautilus, gedit, gnome-text-editor) by hand in the VM
       (`docs/dev-setup.md` §7). Not done: touch DnD.
-- [ ] **1.9 Cursors** · Sonnet. XCursor theme loading (pure-Rust `xcursor` crate),
+- [x] **1.9 Cursors** · Sonnet. XCursor theme loading (pure-Rust `xcursor` crate),
       cursor-shape-v1, per-scale cursor sizes, hardware cursor plane on tty.
       *Accept:* correct cursors on resize edges and text fields in the VM.
+      *Done:* rules in ADR 0012. `xcursor` themes from `XCURSOR_THEME`/`XCURSOR_SIZE`
+      (config key is a follow-up), nearest nominal size at `size × output scale`, animated
+      cursors, built-in arrow as fallback at any size; `cursor-shape-v1`; resize grabs force
+      the edge's resize cursor (`State::set_cursor_override`); the winit backend sets the
+      host window's cursor. The cursor plane was already used since 1.4. Headless tests in
+      `tests/cursor.rs` (shape requests, stale serials, resize override) and unit tests in
+      `cursor.rs`. Owner checked cursors by hand in the VM (`docs/dev-setup.md` §8) and found them fine. Not done:
+      cursor theme artwork (Phase 3), move-grab cursor, tablet cursors.
 - [ ] **1.10 Server-side title bars** · Opus. xdg-decoration and kde server-decoration;
       title bar and traffic lights drawn with `neue-paint` on `vello_cpu`, nine-sliced and
       cached per state/scale, uploaded via `MemoryRenderBuffer`; title text through parley

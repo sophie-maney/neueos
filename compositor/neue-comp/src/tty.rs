@@ -8,7 +8,7 @@
 //! with its own render and vblank cycle (task 1.7). udev change events on the GPU rescan
 //! the connectors: new ones become outputs, disconnected ones are removed, and a changed
 //! preferred mode (a monitor switch, or a resized VM window) is applied with a modeset.
-//! Several GPUs, direct scanout and VRR are task 1.15, XCursor themes 1.9. The pointer is
+//! Several GPUs, direct scanout and VRR are task 1.15. The pointer (XCursor theme, task 1.9) is
 //! drawn on the cursor plane where the hardware has one (the DRM compositor falls back to
 //! compositing it otherwise).
 //!
@@ -31,9 +31,7 @@ use smithay::backend::egl::{EGLContext, EGLDevice, EGLDisplay};
 use smithay::backend::libinput::{LibinputInputBackend, LibinputSessionInterface};
 use smithay::backend::renderer::ImportDma;
 use smithay::backend::renderer::element::Kind;
-use smithay::backend::renderer::element::memory::{
-    MemoryRenderBuffer, MemoryRenderBufferRenderElement,
-};
+use smithay::backend::renderer::element::memory::MemoryRenderBufferRenderElement;
 use smithay::backend::renderer::element::surface::{
     WaylandSurfaceRenderElement, render_elements_from_surface_tree,
 };
@@ -123,8 +121,8 @@ pub struct TtyData {
     /// The GPU, to match udev events.
     node: DrmNode,
     _dmabuf_global: DmabufGlobal,
-    /// The built-in arrow, used until XCursor themes (task 1.9).
-    default_cursor: MemoryRenderBuffer,
+    /// XCursor theme and the built-in arrow fallback (task 1.9).
+    cursors: cursor::Themes,
     /// The session is active (our VT is in front). False while switched away.
     active: bool,
     libinput: Libinput,
@@ -408,7 +406,7 @@ pub fn init(
         output_manager,
         surfaces: Vec::new(),
         _dmabuf_global: dmabuf_global,
-        default_cursor: cursor::default_cursor(),
+        cursors: cursor::Themes::from_env(),
         active: true,
     };
     // Initial outputs; `State::new` adds them to the layout.
@@ -669,7 +667,7 @@ fn render(state: &mut State, crtc: crtc::Handle) {
     let TtyData {
         surfaces,
         renderer,
-        default_cursor,
+        cursors,
         ..
     } = &mut **tty;
     let Some(surface) = surfaces.iter_mut().find(|s| s.drm_output.crtc() == crtc) else {
@@ -702,16 +700,17 @@ fn render(state: &mut State, crtc: crtc::Handle) {
     match &*cursor_status {
         CursorImageStatus::Hidden => {}
         _ if !cursor_near => {}
-        CursorImageStatus::Named(_) => {
+        CursorImageStatus::Named(icon) => {
+            let frame = cursors.frame(*icon, scale.x, time);
             let location: Point<f64, Physical> =
-                (cursor_pos - cursor::HOTSPOT.to_f64()).to_physical(scale);
+                cursor_pos.to_physical(scale) - frame.hotspot.to_f64();
             match MemoryRenderBufferRenderElement::from_buffer(
                 renderer,
                 location,
-                default_cursor,
+                &frame.buffer,
                 None,
                 None,
-                None,
+                Some(frame.logical_size(scale.x)),
                 Kind::Cursor,
             ) {
                 Ok(element) => elements.push(TtyElement::Cursor(element)),
