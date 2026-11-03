@@ -599,7 +599,7 @@ Decisions to follow: ADR 0001 (Smithay), 0003 (IPC), 0004 (config), 0005 (global
       the existing `ResizeGrab`; resize cursors on hover. `[windows] title-bar-double-click`
       (`zoom`/`minimize`/`none`) in `compositor.toml`. `neue-paint`: `TitleBarStyle` gains
       `hover` (glyphs) and `pressed`; goldens `titlebar-{hover-*,pressed-*}`. Headless tests
-      in `tests/chrome.rs`. Not checked by the owner in the VM yet (`docs/dev-setup.md` §10).
+      in `tests/chrome.rs`. Owner checked it by hand in the VM (`docs/dev-setup.md` §10) and found it fine.
       Not done: touch and tablet input on chrome, hover refresh without pointer motion,
       keyboard-driven resize.
 - [ ] **1.12 Shell-facing protocols** · Sonnet. wlr-layer-shell, ext-session-lock,
