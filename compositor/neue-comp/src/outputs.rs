@@ -94,6 +94,8 @@ pub fn primary_output(space: &Space<Window>, window: &Window) -> Option<Output> 
 /// Send frame callbacks to the windows `output` paces: those it overlaps most, plus (if it
 /// is the first output) those on no output, so off-screen clients don't stall.
 pub fn send_frames(space: &Space<Window>, output: &Output, time: Duration) {
+    State::send_layer_frames(output, time);
+    crate::lock::send_lock_frames(output, time);
     let first = space.outputs().next() == Some(output);
     for window in space.elements() {
         let primary = primary_output(space, window);
@@ -166,6 +168,7 @@ impl State {
             global,
         });
         self.apply_output_scale(&output);
+        self.lock_new_output(&output);
         self.arrange_outputs();
         self.fit_windows_to_outputs();
         self.report_outputs();
@@ -184,6 +187,10 @@ impl State {
             .filter(|w| primary_output(&self.space, w).as_ref() == Some(output))
             .cloned()
             .collect();
+        // Its layer surfaces have no output left; their clients get `closed`.
+        for layer in layer_map_for_output(output).layers() {
+            layer.layer_surface().send_close();
+        }
         let removed = self.outputs.remove(index);
         self.space.unmap_output(output);
         self.retire_global(removed.global);
@@ -283,7 +290,7 @@ impl State {
 
     /// Refit zoomed windows to their output's work area and pull windows that are on no
     /// output onto the first one.
-    fn fit_windows_to_outputs(&mut self) {
+    pub(crate) fn fit_windows_to_outputs(&mut self) {
         let Some(first) = self.outputs().next().cloned() else {
             return;
         };

@@ -22,13 +22,22 @@ use smithay::utils::{Logical, Point};
 use smithay::wayland::compositor::{CompositorClientState, CompositorState};
 use smithay::wayland::cursor_shape::CursorShapeManagerState;
 use smithay::wayland::dmabuf::DmabufState;
+use smithay::wayland::foreign_toplevel_list::ForeignToplevelListState;
 use smithay::wayland::fractional_scale::FractionalScaleManagerState;
+use smithay::wayland::idle_inhibit::IdleInhibitManagerState;
+use smithay::wayland::idle_notify::IdleNotifierState;
+use smithay::wayland::keyboard_shortcuts_inhibit::{
+    KeyboardShortcutsInhibitState, KeyboardShortcutsInhibitor,
+};
 use smithay::wayland::output::OutputManagerState;
 use smithay::wayland::selection::data_device::DataDeviceState;
 use smithay::wayland::selection::ext_data_control::DataControlState as ExtDataControlState;
 use smithay::wayland::selection::primary_selection::PrimarySelectionState;
 use smithay::wayland::selection::wlr_data_control::DataControlState as WlrDataControlState;
+use smithay::wayland::session_lock::SessionLockManagerState;
 use smithay::wayland::shell::kde::decoration::KdeDecorationState;
+use smithay::wayland::shell::wlr_layer::WlrLayerShellState;
+use smithay::wayland::shell::xdg::dialog::XdgDialogState;
 use smithay::wayland::shell::xdg::XdgShellState;
 use smithay::wayland::shell::xdg::decoration::XdgDecorationState;
 use smithay::reexports::wayland_protocols_misc::server_decoration::server::org_kde_kwin_server_decoration_manager::Mode as KdeDefaultMode;
@@ -36,12 +45,16 @@ use smithay::wayland::shm::ShmState;
 use smithay::wayland::socket::ListeningSocketSource;
 use smithay::wayland::viewporter::ViewporterState;
 use smithay::wayland::xdg_activation::XdgActivationState;
+use smithay::wayland::xdg_foreign::XdgForeignState;
+use smithay::wayland::xdg_system_bell::XdgSystemBellState;
+use smithay::wayland::xdg_toplevel_icon::XdgToplevelIconManager;
 use tracing::warn;
 
 use crate::Error;
 use crate::config::ConfigRuntime;
 use crate::decorations::Chrome;
 use crate::ipc::IpcServer;
+use crate::lock::SessionLockStatus;
 use crate::outputs::LaidOutOutput;
 
 /// Key repeat delay and rate of the seat's keyboard until the config is loaded. They
@@ -135,6 +148,26 @@ pub struct State {
     /// `wp_cursor_shape_manager_v1`: clients name a cursor, the compositor draws it.
     pub cursor_shape_state: CursorShapeManagerState,
     pub viewporter_state: ViewporterState,
+    /// `wlr-layer-shell`: panels, the dock, wallpapers (see `layer.rs`).
+    pub layer_shell_state: WlrLayerShellState,
+    /// `ext-session-lock-v1` global (see `lock.rs`).
+    pub lock_manager_state: SessionLockManagerState,
+    /// Whether the session is locked, and by whom.
+    pub session_lock: SessionLockStatus,
+    pub idle_notifier_state: IdleNotifierState<State>,
+    /// `idle-inhibit`: the surfaces that hold an inhibitor, one entry each.
+    pub idle_inhibitors: Vec<WlSurface>,
+    pub idle_inhibit_state: IdleInhibitManagerState,
+    pub foreign_toplevel_list_state: ForeignToplevelListState,
+    pub xdg_foreign_state: XdgForeignState,
+    /// `xdg-dialog` (modal flag only).
+    pub xdg_dialog_state: XdgDialogState,
+    pub toplevel_icon_manager: XdgToplevelIconManager,
+    pub system_bell_state: XdgSystemBellState,
+    pub shortcuts_inhibit_state: KeyboardShortcutsInhibitState,
+    /// The shortcut inhibitor of the focused surface, while it is active: key bindings are
+    /// off.
+    pub active_inhibitor: Option<KeyboardShortcutsInhibitor>,
     pub seat_state: SeatState<State>,
     pub seat: Seat<State>,
     pub keyboard: KeyboardHandle<State>,
@@ -203,6 +236,18 @@ impl State {
         let fractional_scale_state = FractionalScaleManagerState::new::<Self>(&dh);
         let cursor_shape_state = CursorShapeManagerState::new::<Self>(&dh);
         let viewporter_state = ViewporterState::new::<Self>(&dh);
+        let layer_shell_state = WlrLayerShellState::new::<Self>(&dh);
+        // Every client may lock: `swaylock`-style lockers are ordinary clients.
+        let lock_manager_state = SessionLockManagerState::new::<Self, _>(&dh, |_| true);
+        let idle_notifier_state = IdleNotifierState::new(&dh, event_loop.handle());
+        let idle_inhibit_state = IdleInhibitManagerState::new::<Self>(&dh);
+        let foreign_toplevel_list_state = ForeignToplevelListState::new::<Self>(&dh);
+        let xdg_foreign_state = XdgForeignState::new::<Self>(&dh);
+        let xdg_dialog_state = XdgDialogState::new::<Self>(&dh);
+        let mut toplevel_icon_manager = XdgToplevelIconManager::new::<Self>(&dh);
+        toplevel_icon_manager.replace_icon_sizes([64, 128]);
+        let system_bell_state = XdgSystemBellState::new::<Self>(&dh);
+        let shortcuts_inhibit_state = KeyboardShortcutsInhibitState::new::<Self>(&dh);
 
         let mut seat_state = SeatState::new();
         let mut seat: Seat<Self> = seat_state.new_wl_seat(&dh, "seat0");
@@ -253,6 +298,19 @@ impl State {
             fractional_scale_state,
             cursor_shape_state,
             viewporter_state,
+            layer_shell_state,
+            lock_manager_state,
+            session_lock: SessionLockStatus::default(),
+            idle_notifier_state,
+            idle_inhibitors: Vec::new(),
+            idle_inhibit_state,
+            foreign_toplevel_list_state,
+            xdg_foreign_state,
+            xdg_dialog_state,
+            toplevel_icon_manager,
+            system_bell_state,
+            shortcuts_inhibit_state,
+            active_inhibitor: None,
             seat_state,
             seat,
             keyboard,
@@ -342,6 +400,13 @@ impl State {
         &self,
         pos: Point<f64, Logical>,
     ) -> Option<(WlSurface, Point<f64, Logical>)> {
+        // A locked session shows (and hears from) the lock surfaces only.
+        if self.is_locked() {
+            return self.lock_surface_under(pos);
+        }
+        if let Some(hit) = self.layer_surface_under(pos, &crate::layer::ABOVE_WINDOWS) {
+            return Some(hit);
+        }
         // Title bars and resize edges belong to the compositor, not to the client.
         if self.chrome_hit_at(pos).is_some() {
             return None;
@@ -353,6 +418,7 @@ impl State {
                     .surface_under(pos - location.to_f64(), WindowSurfaceType::ALL)
                     .map(|(surface, offset)| (surface, (offset + location).to_f64()))
             })
+            .or_else(|| self.layer_surface_under(pos, &crate::layer::BELOW_WINDOWS))
     }
 
     /// The mapped or minimised window whose toplevel is `surface`.

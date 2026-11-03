@@ -6,12 +6,16 @@
 //! bottom and background below.
 
 use smithay::backend::renderer::element::AsRenderElements;
+use smithay::backend::renderer::element::Kind;
 use smithay::backend::renderer::element::memory::MemoryRenderBufferRenderElement;
-use smithay::backend::renderer::element::surface::WaylandSurfaceRenderElement;
+use smithay::backend::renderer::element::surface::{
+    WaylandSurfaceRenderElement, render_elements_from_surface_tree,
+};
 use smithay::backend::renderer::gles::GlesRenderer;
 use smithay::desktop::{LayerMap, LayerSurface, Space, Window, layer_map_for_output};
 use smithay::output::Output;
 use smithay::utils::{Logical, Point, Scale};
+use smithay::wayland::session_lock::LockSurface;
 use smithay::wayland::shell::wlr_layer::Layer;
 
 use crate::decorations::{self, Chrome, frame_geometry};
@@ -36,6 +40,28 @@ pub fn output_elements(
     let output_scale = output.current_scale().fractional_scale();
     let scale = Scale::from(output_scale);
     let mut elements = Vec::new();
+
+    // A locked session shows the lock surface and nothing else (the clear colour where
+    // there is none).
+    if crate::lock::with_output_lock(output, |lock| lock.locked) {
+        if let Some(surface) = crate::lock::with_output_lock(output, |lock| lock.surface.clone())
+            .filter(LockSurface::alive)
+        {
+            elements.extend(
+                render_elements_from_surface_tree::<_, WaylandSurfaceRenderElement<GlesRenderer>>(
+                    renderer,
+                    surface.wl_surface(),
+                    (0, 0),
+                    scale,
+                    1.0,
+                    Kind::Unspecified,
+                )
+                .into_iter()
+                .map(OutputElement::Surface),
+            );
+        }
+        return elements;
+    }
 
     let layer_map = layer_map_for_output(output);
     let (lower, upper): (Vec<&LayerSurface>, Vec<&LayerSurface>) = layer_map

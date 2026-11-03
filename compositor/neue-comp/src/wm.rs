@@ -204,6 +204,10 @@ impl State {
             self.restore_minimized(window);
         }
         self.raise_window(window);
+        // A locked session or an exclusive layer surface (a launcher) keeps the keyboard.
+        if self.is_locked() || self.exclusive_layer_surface().is_some() {
+            return;
+        }
         let serial = SERIAL_COUNTER.next_serial();
         let surface = window.toplevel().map(|t| t.wl_surface().clone());
         let keyboard = self.keyboard.clone();
@@ -244,6 +248,9 @@ impl State {
 
     /// Deactivate every window and drop keyboard focus.
     pub fn clear_focus(&mut self) {
+        if self.is_locked() {
+            return;
+        }
         let serial = SERIAL_COUNTER.next_serial();
         for window in self.space.elements() {
             window.set_activated(false);
@@ -309,6 +316,7 @@ impl State {
         };
         debug!(?location, ?size, "mapping window");
         self.space.map_element(window.clone(), location, true);
+        self.announce_toplevel(&window);
         if let Some(info) = self.window_info(&window, None) {
             Self::with_wm_data(&window, |d| d.reported = Some(info.clone()));
             self.emit(Event::WindowOpened(info));
@@ -331,6 +339,7 @@ impl State {
             self.remembered.insert(app_id, (geo.loc.x, geo.loc.y));
         }
 
+        self.retire_foreign_toplevel(window);
         self.space.unmap_elem(window);
         self.minimized.retain(|(w, _)| w != window);
         if let Some(id) = self.window_id(window) {

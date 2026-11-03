@@ -24,3 +24,4 @@ Don't edit an accepted ADR's decision; supersede it with a new one.
 | [0012](0012-cursors.md) | Cursors: XCursor themes, cursor-shape-v1, resize cursors | Accepted |
 | [0013](0013-server-side-title-bars.md) | Server-side title bars and text in `neue-paint` | Accepted |
 | [0014](0014-chrome-interaction.md) | Chrome interaction: hit-testing, traffic lights, drag, resize edges | Accepted |
+| [0015](0015-shell-facing-protocols.md) | Shell-facing protocols: layer shell, session lock, idle, toplevel list and friends | Accepted |

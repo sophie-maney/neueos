@@ -33,10 +33,13 @@ mod headless;
 mod input;
 pub mod interaction;
 mod ipc;
+mod layer;
+pub mod lock;
 pub mod outputs;
 pub mod placement;
 #[cfg(any(feature = "winit", feature = "tty"))]
 mod render;
+mod shell_protocols;
 pub mod state;
 #[cfg(feature = "tty")]
 mod tty;

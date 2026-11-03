@@ -61,6 +61,7 @@ impl State {
     /// Press or release the key `keycode` (an xkb keycode, evdev + 8). Bindings and the
     /// Escape that cancels a drag are handled here. Tests use this to script input.
     pub fn press_key(&mut self, keycode: Keycode, key_state: KeyState, time: InputTime) {
+        self.notify_activity();
         let serial = SERIAL_COUNTER.next_serial();
         let pressed = key_state == KeyState::Pressed;
         let keyboard = self.keyboard.clone();
@@ -81,12 +82,18 @@ impl State {
                     };
                 }
                 let sym = handle.modified_sym();
-                let cancel_drag =
-                    (state.dnd_active && sym == Keysym::Escape).then_some(KeyAction::CancelDrag);
-                let action = cancel_drag.or_else(|| vt_switch(sym)).or_else(|| {
-                    let name = state.config.bindings.lookup(modifiers, sym)?;
-                    Some(KeyAction::Run(name.to_owned()))
-                });
+                // The lock screen and a client that asked to keep its keys get every key
+                // but the VT switch, which stays as the way out.
+                let action = if state.is_locked() || state.shortcuts_inhibited() {
+                    vt_switch(sym)
+                } else {
+                    let cancel_drag = (state.dnd_active && sym == Keysym::Escape)
+                        .then_some(KeyAction::CancelDrag);
+                    cancel_drag.or_else(|| vt_switch(sym)).or_else(|| {
+                        let name = state.config.bindings.lookup(modifiers, sym)?;
+                        Some(KeyAction::Run(name.to_owned()))
+                    })
+                };
                 match action {
                     Some(action) => {
                         state.config.swallowed.insert(keycode_raw);
@@ -163,6 +170,7 @@ impl State {
     /// Move the pointer to `pos` (global logical coordinates) and update its focus.
     /// Backends call this for absolute and relative motion; tests use it to script input.
     pub fn move_pointer(&mut self, pos: Point<f64, Logical>, time: InputTime) {
+        self.notify_activity();
         let under = self.surface_under(pos);
         let pointer = self.pointer.clone();
         pointer.motion(
@@ -175,7 +183,7 @@ impl State {
             },
         );
         pointer.frame(self);
-        if !pointer.is_grabbed() {
+        if !pointer.is_grabbed() && !self.is_locked() {
             self.update_chrome_hover(pos);
         }
     }
@@ -187,6 +195,7 @@ impl State {
     /// Press or release `button` (a `linux/input-event-codes.h` code) at the pointer.
     /// Pressing on a window raises and focuses it. Tests use this to script input.
     pub fn press_button(&mut self, button: u32, state: ButtonState, time: InputTime) {
+        self.notify_activity();
         let serial = SERIAL_COUNTER.next_serial();
         let pointer = self.pointer.clone();
 
@@ -195,7 +204,14 @@ impl State {
         // the window and starts a grab, so the press never reaches a client.
         if state == ButtonState::Pressed && !pointer.is_grabbed() {
             let location = pointer.current_location();
-            if let Some((window, hit)) = self.chrome_hit_at(location) {
+            if self.is_locked() {
+                self.click_lock_surface(location);
+            } else if self
+                .surface_under(location)
+                .is_some_and(|(surface, _)| self.click_layer(&surface))
+            {
+                // A layer surface took the click (and maybe the keyboard).
+            } else if let Some((window, hit)) = self.chrome_hit_at(location) {
                 debug!(?location, ?hit, "click on chrome");
                 self.press_chrome(window, hit, button, serial);
             } else {
@@ -224,6 +240,7 @@ impl State {
     }
 
     fn on_pointer_axis<I: InputBackend>(&mut self, event: I::PointerAxisEvent) {
+        self.notify_activity();
         let source = event.source();
         let mut frame = AxisFrame::new(event.time()).source(source);
         let pointer_config = &self.config.active.pointer;
