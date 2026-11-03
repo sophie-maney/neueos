@@ -1,0 +1,8 @@
+/target
+**/*.rs.bk
+.DS_Store
+.env
+*.log
+
+# Golden-image test failures (actual output next to the committed golden)
+**/*.actual.png

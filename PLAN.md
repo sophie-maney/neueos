@@ -405,7 +405,7 @@ sequential, 0.4 can start once R2 is in, and 0.6 / 0.7 can run in parallel.
       R1 global menus on Wayland per toolkit, R2 Arch Linux ARM on Parallels,
       R3 Masonry evaluation, R4 vello_cpu maturity.
       *Accept:* four notes, each with a recommendation, open questions and sources.
-- [ ] **0.1 Workspace skeleton** · Sonnet. `LICENSE` (GPL-3.0-or-later), root
+- [x] **0.1 Workspace skeleton** · Sonnet. `LICENSE` (GPL-3.0-or-later), root
       `Cargo.toml` (edition 2024, `[workspace.dependencies]`, `[workspace.lints]`),
       `rust-toolchain.toml`, `rustfmt.toml`, `.gitignore`, and one stub portable crate
       (`crates/neue-paint`) plus one stub Linux-only crate (`compositor/neue-comp`, gated

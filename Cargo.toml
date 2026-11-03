@@ -1,0 +1,30 @@
+[workspace]
+resolver = "3"
+members = ["crates/*", "compositor/*"]
+
+[workspace.package]
+version = "0.0.0"
+edition = "2024"
+rust-version = "1.98"
+license = "GPL-3.0-or-later"
+repository = "https://github.com/sophie-maney/neueos"
+publish = false
+
+# Shared dependency versions. Member crates use `dep.workspace = true`.
+[workspace.dependencies]
+anyhow = "1.0"
+thiserror = "2.0"
+tracing = "0.1"
+
+# Internal crates
+neue-paint = { path = "crates/neue-paint" }
+
+[workspace.lints.rust]
+unsafe_code = "deny"
+missing_debug_implementations = "warn"
+
+[workspace.lints.clippy]
+# No unwrap/expect in non-test code (see AGENTS.md). Tests are exempt via clippy.toml.
+unwrap_used = "warn"
+expect_used = "warn"
+dbg_macro = "warn"
