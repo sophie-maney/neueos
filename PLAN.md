@@ -568,7 +568,7 @@ Decisions to follow: ADR 0001 (Smithay), 0003 (IPC), 0004 (config), 0005 (global
       the edge's resize cursor (`State::set_cursor_override`); the winit backend sets the
       host window's cursor. The cursor plane was already used since 1.4. Headless tests in
       `tests/cursor.rs` (shape requests, stale serials, resize override) and unit tests in
-      `cursor.rs`. **VM check by the owner still open** (`docs/dev-setup.md` §8). Not done:
+      `cursor.rs`. Owner checked cursors by hand in the VM (`docs/dev-setup.md` §8) and found them fine. Not done:
       cursor theme artwork (Phase 3), move-grab cursor, tablet cursors.
 - [ ] **1.10 Server-side title bars** · Opus. xdg-decoration and kde server-decoration;
       title bar and traffic lights drawn with `neue-paint` on `vello_cpu`, nine-sliced and
