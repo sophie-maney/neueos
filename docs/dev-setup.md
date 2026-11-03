@@ -73,7 +73,7 @@ including the Linux-only crates.
 
 ## 2. Parallels VM (Arch Linux ARM)
 
-Route chosen from R2: the **archboot aarch64 ISO** in a Parallels VM, with systemd-boot, the
+Route chosen from R2: the **archboot aarch64 ISO** in a Parallels VM, with GRUB (UEFI), the
 Arch Linux ARM kernel, virtio-gpu and **SSH + rsync** for files. We do not depend on Parallels
 Tools. If archboot fails, the fallback is the ALARM generic rootfs bootstrapped from an arm64
 live ISO; if you end up there, document it below instead of this section.
@@ -107,7 +107,7 @@ The installer is a text menu started with `setup` **(menu names below are approx
    If the installer doesn't add the user to `wheel` or enable sudo for it, do it after the
    first boot as root: `usermod -aG wheel <user>`, then `EDITOR=nano visudo` and uncomment
    `%wheel ALL=(ALL:ALL) ALL` **(verify whether archboot does this itself)**.
-5. Install the bootloader: **systemd-boot**.
+5. Install the bootloader: **GRUB_UEFI**. The installer also offers EFISTUB, which depends on a firmware boot entry that VM firmware can lose. (systemd-boot is not offered by archboot.)
 6. Reboot, eject the ISO (Parallels → Devices → CD/DVD → disconnect).
 
 ### 2.3 First boot: packages and services
