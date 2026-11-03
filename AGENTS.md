@@ -113,15 +113,17 @@ The repo is the memory between threads, not chat history. Before finishing:
   their UI can be iterated on natively.
 
 ## Commands
-> `cargo xtask` lives in `xtask/` (alias in `.cargo/config.toml`). `check`, `linux` and
-> `linux-amd64` work; the other subcommands print "not implemented yet" until their
-> Phase 0 tasks land. Linux-only crates are listed in `LINUX_ONLY_CRATES`
+> `cargo xtask` lives in `xtask/` (alias in `.cargo/config.toml`). `check`, `golden`,
+> `linux` and `linux-amd64` work; the other subcommands print "not implemented yet" until
+> their tasks land. `check` lints with `--all-features`. Golden crates are listed in
+> `GOLDEN_CRATES`. Linux-only crates are listed in `LINUX_ONLY_CRATES`
 > (`xtask/src/main.rs`) and skipped by `check` on other hosts. Machine names default to
 > `neueos-arm64` / `neueos-amd64`; override with `NEUE_ORB_ARM64` / `NEUE_ORB_AMD64`.
 
 ```sh
 cargo xtask check          # fmt --check + clippy -D warnings + tests for the current host
 cargo xtask gallery        # run the widget gallery (works on macOS)
+cargo run -p neue-paint --example poc --features gpu  # paint PoC window (GPU, macOS)
 cargo xtask golden --bless # regenerate golden images (review the diffs!)
 cargo xtask linux <cmd>    # run <cmd> inside the OrbStack Arch machine (arm64)
 cargo xtask linux-amd64 <cmd>  # same, in the amd64 (Rosetta) machine

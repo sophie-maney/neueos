@@ -438,11 +438,14 @@ sequential, 0.4 can start once R2 is in, and 0.6 / 0.7 can run in parallel.
       (virgl GLES 3.0, Vulkan only llvmpipe. anvil works on DRM and nested in weston once
       archboot's kmscon is replaced by getty. `vello_gpu` renders on virgl GL. Run over SSH and
       checked with `prlctl capture`; a few checks at the VM window are listed as open questions.)
-- [ ] **0.6 `neue-paint` proof of concept** · Opus. Procedural linen and an Aqua push
+- [x] **0.6 `neue-paint` proof of concept** · Opus. Procedural linen and an Aqua push
       button (normal + pressed, light + dark) as `neue-paint` code; an example that
       shows them in a winit window via vello on macOS; a test that renders them with
       `vello_cpu` and compares against a committed golden PNG at scale 1 and 2.
       *Accept:* example runs on the Mac; golden test passes in `cargo xtask check`.
+      (Recorded `Scene` replayed into `vello_cpu` and `vello_gpu`; the example uses
+      `vello_gpu` on wgpu behind the `gpu` feature. Notes for ADR 0002 in
+      `docs/research/paint-poc.md`.)
 - [ ] **0.7 Global-menu verification** · Sonnet writes the checklist from R1, **owner
       runs it** in the VM under a stock Plasma Wayland session (Qt6, GTK3, Chromium/
       Electron, Firefox). Results added to `docs/research/global-menu.md`.

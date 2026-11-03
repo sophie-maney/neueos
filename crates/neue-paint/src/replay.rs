@@ -1,0 +1,125 @@
+//! Replays a [`Scene`](crate::Scene) into a vello render context.
+//!
+//! `vello_cpu::RenderContext` and `vello_gpu::Scene` expose the same imperative methods over
+//! the same `vello_common` types but share no trait, so the replay loop is a macro that
+//! expands once per backend.
+
+use vello_common::kurbo::Affine;
+use vello_common::paint::{Image, ImageSource, PaintType};
+use vello_common::peniko::{Extend, ImageQuality, ImageSampler};
+
+use crate::scene::{Brush, TextureBrush};
+
+/// Paint and paint transform for `brush`, drawn with the logical-space shape transform
+/// `shape_transform` at device `scale`. Returns `None` when the brush can't cover any
+/// pixels (a degenerate shape transform under a texture).
+pub(crate) fn paint_for(
+    brush: &Brush,
+    shape_transform: Affine,
+    scale: f64,
+    resolve: &mut impl FnMut(&TextureBrush) -> ImageSource,
+) -> Option<(PaintType, Affine)> {
+    match brush {
+        Brush::Solid(color) => Some((PaintType::Solid(*color), Affine::IDENTITY)),
+        Brush::Gradient(gradient) => {
+            Some((PaintType::Gradient(gradient.clone()), Affine::IDENTITY))
+        }
+        Brush::Texture(texture) => {
+            if shape_transform.determinant().abs() < f64::EPSILON {
+                return None;
+            }
+            // The tile is rendered at device scale, so one texel is 1/scale logical pixels.
+            // The paint transform is relative to the shape's transform; undo it so the
+            // texture is anchored in scene space by `texture.transform`.
+            let paint_transform =
+                shape_transform.inverse() * texture.transform * Affine::scale(1.0 / scale);
+            let image = Image {
+                image: resolve(texture),
+                sampler: ImageSampler {
+                    x_extend: Extend::Repeat,
+                    y_extend: Extend::Repeat,
+                    quality: ImageQuality::Medium,
+                    alpha: 1.0,
+                },
+            };
+            Some((PaintType::Image(image), paint_transform))
+        }
+    }
+}
+
+/// Replay `$scene` into `$ctx` at `$scale`. `$resolve` maps a texture brush to an
+/// `ImageSource` the backend can sample.
+macro_rules! replay {
+    ($ctx:expr, $scene:expr, $scale:expr, $resolve:expr) => {{
+        use vello_common::kurbo::Affine;
+        use $crate::scene::Command;
+
+        let ctx = $ctx;
+        let scale: f64 = $scale;
+        let resolve = $resolve;
+        let root = Affine::scale(scale);
+        for command in $scene.commands() {
+            match command {
+                Command::Fill {
+                    transform,
+                    path,
+                    brush,
+                } => {
+                    if let Some((paint, paint_transform)) =
+                        $crate::replay::paint_for(brush, *transform, scale, &mut *resolve)
+                    {
+                        ctx.set_transform(root * *transform);
+                        ctx.set_paint(paint);
+                        ctx.set_paint_transform(paint_transform);
+                        ctx.fill_path(path);
+                    }
+                }
+                Command::Stroke {
+                    transform,
+                    path,
+                    style,
+                    brush,
+                } => {
+                    if let Some((paint, paint_transform)) =
+                        $crate::replay::paint_for(brush, *transform, scale, &mut *resolve)
+                    {
+                        ctx.set_transform(root * *transform);
+                        ctx.set_paint(paint);
+                        ctx.set_paint_transform(paint_transform);
+                        ctx.set_stroke(style.clone());
+                        ctx.stroke_path(path);
+                    }
+                }
+                Command::BlurredRoundedRect {
+                    transform,
+                    rect,
+                    radius,
+                    std_dev,
+                    color,
+                } => {
+                    ctx.set_transform(root * *transform);
+                    ctx.set_paint(*color);
+                    ctx.reset_paint_transform();
+                    // vello takes f32 radii; logical sizes are small, so this is lossless
+                    // in practice.
+                    #[allow(clippy::cast_possible_truncation, reason = "f64 → f32 for vello")]
+                    ctx.fill_blurred_rounded_rect(rect, *radius as f32, *std_dev as f32, false);
+                }
+                Command::PushLayer {
+                    transform,
+                    clip,
+                    opacity,
+                } => {
+                    ctx.set_transform(root * *transform);
+                    ctx.push_layer(clip.as_ref(), None, Some(*opacity), None, None);
+                }
+                Command::PopLayer => ctx.pop_layer(),
+            }
+        }
+        for _ in 0..$scene.open_layers() {
+            ctx.pop_layer();
+        }
+    }};
+}
+
+pub(crate) use replay;
