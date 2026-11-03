@@ -10,7 +10,7 @@ use std::time::Instant;
 use neue_ipc::{WindowId, WindowInfo};
 use smithay::desktop::{PopupManager, Space, Window, WindowSurfaceType};
 use smithay::input::keyboard::{KeyboardHandle, XkbConfig};
-use smithay::input::pointer::PointerHandle;
+use smithay::input::pointer::{CursorImageStatus, PointerHandle};
 use smithay::input::{Seat, SeatState};
 use smithay::output::Output;
 use smithay::reexports::calloop::{EventLoop, LoopSignal};
@@ -41,6 +41,9 @@ pub enum Backend {
     // Boxed: it holds the GL context and is far larger than the other variants.
     Winit(Box<crate::winit::WinitData>),
     Headless(crate::headless::HeadlessData),
+    #[cfg(feature = "tty")]
+    // Boxed for the same reason as winit.
+    Tty(Box<crate::tty::TtyData>),
 }
 
 impl Backend {
@@ -50,6 +53,8 @@ impl Backend {
             #[cfg(feature = "winit")]
             Self::Winit(data) => data.output(),
             Self::Headless(data) => data.output(),
+            #[cfg(feature = "tty")]
+            Self::Tty(data) => data.output(),
         }
     }
 }
@@ -89,6 +94,9 @@ pub struct State {
     pub seat: Seat<State>,
     pub keyboard: KeyboardHandle<State>,
     pub pointer: PointerHandle<State>,
+    /// What the focused client wants the pointer to look like. Drawn by the tty backend;
+    /// the winit backend shows the host's cursor instead.
+    pub cursor_status: CursorImageStatus,
 }
 
 impl State {
@@ -146,6 +154,7 @@ impl State {
             seat,
             keyboard,
             pointer,
+            cursor_status: CursorImageStatus::default_named(),
         })
     }
 

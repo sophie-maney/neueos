@@ -5,7 +5,7 @@
 
 use neue_ipc::Event;
 use smithay::backend::allocator::dmabuf::Dmabuf;
-#[cfg(feature = "winit")]
+#[cfg(any(feature = "winit", feature = "tty"))]
 use smithay::backend::renderer::ImportDma;
 use smithay::backend::renderer::utils::{RendererSurfaceStateUserData, on_commit_buffer_handler};
 use smithay::desktop::{PopupKind, Window, find_popup_root_surface, get_popup_toplevel_coords};
@@ -184,6 +184,8 @@ impl DmabufHandler for State {
         let imported = match &mut self.backend {
             #[cfg(feature = "winit")]
             Backend::Winit(data) => data.renderer().import_dmabuf(&dmabuf, None).is_ok(),
+            #[cfg(feature = "tty")]
+            Backend::Tty(data) => data.renderer().import_dmabuf(&dmabuf, None).is_ok(),
             // No dmabuf global is advertised without a renderer.
             Backend::Headless(_) => {
                 let _ = dmabuf;
@@ -207,8 +209,10 @@ impl SeatHandler for State {
         &mut self.seat_state
     }
 
-    // Client cursors come with task 1.9; until then the host (winit) cursor is shown.
-    fn cursor_image(&mut self, _seat: &Seat<Self>, _image: CursorImageStatus) {}
+    // The tty backend draws it; winit shows the host cursor. Themes and cursor-shape-v1: 1.9.
+    fn cursor_image(&mut self, _seat: &Seat<Self>, image: CursorImageStatus) {
+        self.cursor_status = image;
+    }
 
     fn focus_changed(&mut self, seat: &Seat<Self>, focused: Option<&WlSurface>) {
         // The clipboard follows keyboard focus.

@@ -13,12 +13,20 @@ name = "neue-comp"
 path = "src/main.rs"
 
 [features]
-default = ["winit"]
+default = ["winit", "tty"]
 # Nested backend for development. Smithay's winit backend force-enables winit's `x11`
 # feature, which pulls in X11 client crates (never used at runtime: winit picks Wayland
 # when WAYLAND_DISPLAY is set). Release/distro builds use `--no-default-features` so the
 # shipped binary contains no X11 code. See ADR 0001 ("winit backend and X11 crates").
 winit = ["smithay/backend_winit"]
+# The real backend: DRM/KMS, GBM, libinput, udev and libseat (task 1.4, ADR 0001). Links
+# libinput, libudev, libseat and libgbm, so headless-only builds can leave it out.
+tty = [
+    "smithay/backend_gbm",
+    "smithay/backend_libinput",
+    "smithay/backend_udev",
+    "smithay/backend_session_libseat",
+]
 
 [dependencies]
 anyhow.workspace = true

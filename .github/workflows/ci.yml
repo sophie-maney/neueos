@@ -43,13 +43,15 @@ jobs:
 
       - uses: Swatinem/rust-cache@v2
 
-      # C libraries neue-comp links, plus libwayland-client, which the headless tests'
-      # clients dlopen (docs/dev-setup.md §1.2).
+      # C libraries neue-comp links (xkbcommon; libinput, libudev, libseat and libgbm for
+      # the tty backend), plus libwayland-client, which the headless tests' clients dlopen
+      # (docs/dev-setup.md §1.2).
       - name: Install Linux build dependencies
         if: runner.os == 'Linux'
         run: >-
           sudo apt-get update && sudo apt-get install -y --no-install-recommends
           libxkbcommon-dev libwayland-client0
+          libinput-dev libudev-dev libseat-dev libgbm-dev
 
       - name: cargo xtask check
         run: cargo xtask check
