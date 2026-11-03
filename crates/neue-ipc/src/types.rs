@@ -40,6 +40,10 @@ pub enum Request {
     Action(ActionParams),
     /// Switch the connection to event mode. Reply: `null`, then only event lines.
     Subscribe(SubscribeParams),
+    /// Re-read the config files now (ADR 0004). Reply: `null` once the new config is
+    /// active, or a `config_error` error naming the file, line and column; the old config
+    /// stays active in that case.
+    ReloadConfig,
     /// Stop the compositor. Reply: `null`, sent before the compositor exits.
     Quit,
 }
@@ -84,6 +88,8 @@ pub enum Topic {
     /// [`Event::WindowOpened`], [`Event::WindowChanged`], [`Event::WindowClosed`] and
     /// [`Event::FocusChanged`].
     Windows,
+    /// [`Event::ConfigError`] and [`Event::ConfigReloaded`].
+    Config,
 }
 
 impl Event {
@@ -94,6 +100,7 @@ impl Event {
             | Self::WindowChanged(_)
             | Self::WindowClosed { .. }
             | Self::FocusChanged { .. } => Topic::Windows,
+            Self::ConfigError(_) | Self::ConfigReloaded { .. } => Topic::Config,
         }
     }
 }
@@ -112,6 +119,37 @@ pub enum Event {
     WindowClosed { window: WindowId },
     /// Keyboard focus moved. `window` is `None` when nothing is focused.
     FocusChanged { window: Option<WindowId> },
+    /// A config file was rejected and the previous config stays active (ADR 0004). Sent for
+    /// every failed reload, from the file watcher or `reload-config`.
+    ConfigError(ConfigErrorInfo),
+    /// A config file was (re)loaded and applied. Clears an earlier `config_error`.
+    ConfigReloaded {
+        /// File name, e.g. `compositor.toml`.
+        file: String,
+    },
+}
+
+/// Where and why a config file was rejected.
+#[derive(Debug, Clone, PartialEq, Eq, Serialize, Deserialize)]
+pub struct ConfigErrorInfo {
+    /// Path of the offending file (one of the config layers).
+    pub file: String,
+    /// 1-based position, when the parser knows it.
+    #[serde(default, skip_serializing_if = "Option::is_none")]
+    pub line: Option<u32>,
+    #[serde(default, skip_serializing_if = "Option::is_none")]
+    pub column: Option<u32>,
+    pub message: String,
+}
+
+impl std::fmt::Display for ConfigErrorInfo {
+    fn fmt(&self, f: &mut std::fmt::Formatter<'_>) -> std::fmt::Result {
+        write!(f, "{}", self.file)?;
+        if let (Some(line), Some(column)) = (self.line, self.column) {
+            write!(f, ":{line}:{column}")?;
+        }
+        write!(f, ": {}", self.message)
+    }
 }
 
 /// Error codes. They are `snake_case` strings on the wire and stable once shipped; a code
@@ -133,6 +171,9 @@ pub enum ErrorCode {
     NoWindow,
     /// The line exceeded [`crate::MAX_LINE_BYTES`].
     LineTooLong,
+    /// `reload-config` found a config file it cannot use; the message has the file, line
+    /// and column.
+    ConfigError,
     /// The compositor failed in a way that is not the client's fault.
     Internal,
     /// A code added by a newer compositor.
@@ -322,6 +363,7 @@ mod tests {
         let requests = [
             Request::Version,
             Request::Quit,
+            Request::ReloadConfig,
             Request::Subscribe(SubscribeParams {
                 topics: vec![Topic::Windows],
             }),
@@ -418,5 +460,25 @@ mod tests {
             json!({"event": "focus_changed", "data": {"window": null}})
         );
         assert_eq!(focus.topic(), Topic::Windows);
+        let error = Event::ConfigError(ConfigErrorInfo {
+            file: "/etc/neueos/compositor.toml".into(),
+            line: Some(3),
+            column: Some(1),
+            message: "bad".into(),
+        });
+        assert_eq!(
+            serde_json::to_value(&error).unwrap(),
+            json!({"event": "config_error", "data": {
+                "file": "/etc/neueos/compositor.toml", "line": 3, "column": 1, "message": "bad"
+            }})
+        );
+        assert_eq!(error.topic(), Topic::Config);
+        assert_eq!(
+            serde_json::to_value(Event::ConfigReloaded {
+                file: "compositor.toml".into()
+            })
+            .unwrap(),
+            json!({"event": "config_reloaded", "data": {"file": "compositor.toml"}})
+        );
     }
 }

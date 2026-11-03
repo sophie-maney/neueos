@@ -158,6 +158,12 @@ impl Client {
         self.call(Request::Action(params)).map(drop)
     }
 
+    /// Make the compositor re-read its config files. An error reply with
+    /// [`crate::ErrorCode::ConfigError`] means the files were rejected; the old config stays.
+    pub fn reload_config(&mut self) -> Result<(), ClientError> {
+        self.call(Request::ReloadConfig).map(drop)
+    }
+
     /// Ask the compositor to exit.
     pub fn quit(&mut self) -> Result<(), ClientError> {
         self.call(Request::Quit).map(drop)

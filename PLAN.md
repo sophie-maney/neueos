@@ -516,12 +516,21 @@ Decisions to follow: ADR 0001 (Smithay), 0003 (IPC), 0004 (config), 0005 (global
       new `window_changed` event. Headless tests in `tests/wm.rs` script pointer input via
       `State::move_pointer`/`press_button`. Owner checked move, resize, zoom and minimise
       by hand in the VM; unminimise only through `neuectl` (no dock yet).
-- [ ] **1.6 `neue-config` + compositor config and hot reload** · Sonnet. New portable crate
+- [x] **1.6 `neue-config` + compositor config and hot reload** · Sonnet. New portable crate
       `neue-config` with the `compositor.toml` schema (keyboard layouts and xkb options,
       pointer, keybindings, output scale), layering and the inotify reload per ADR 0004;
       `reload-config` and `config_error` in `neuectl`.
       *Accept:* changing the xkb layout in the file applies without restart (headless test
       plus VM check).
+      *Done:* loader, schema and chord syntax in `neue-config`; details in ADR 0009.
+      `compositor.toml` has `[keyboard]` (layouts, variants, model, options, repeat),
+      `[pointer]` (natural scroll, scroll factor), `[keybindings]` (default `Super+Q` =
+      `quit`; `"none"` unbinds) and `[outputs."NAME"] scale`. New `neuectl reload-config`,
+      `reload-config` action and `config_error`/`config_reloaded` events (topic `config`).
+      Headless tests in `tests/config.rs` (layout switch, rejected files, bindings). Owner
+      confirmed the hot reload by hand in the VM (`docs/dev-setup.md` §5). Not done: libinput pointer
+      settings (acceleration, tap-to-click) need tty device handling and hardware, so they
+      wait for a later task; real output scaling is 1.7.
 - [ ] **1.7 Multi-monitor and scaling** · Opus. Output layout from config, hotplug,
       fractional-scale-v1, viewporter, per-output scale, windows moving between outputs.
       *Accept:* headless test with two outputs at scales 1 and 1.5; VM hotplug by resizing

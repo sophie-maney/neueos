@@ -59,7 +59,9 @@ enum Command {
         #[arg(long)]
         height: Option<i32>,
     },
-    /// Stream window events until interrupted.
+    /// Re-read the config files now; fails with file, line and column if they are invalid.
+    ReloadConfig,
+    /// Stream window and config events until interrupted.
     #[command(alias = "events")]
     Subscribe,
     /// Stop the compositor.
@@ -114,9 +116,10 @@ fn main() -> Result<()> {
             width,
             height,
         })?,
+        Command::ReloadConfig => client.reload_config()?,
         Command::Quit => client.quit()?,
         Command::Subscribe => {
-            for event in client.subscribe(vec![Topic::Windows])? {
+            for event in client.subscribe(vec![Topic::Windows, Topic::Config])? {
                 let event = event?;
                 // Events are one JSON line each in both modes: stable and greppable.
                 writeln!(out, "{}", serde_json::to_string(&event)?)?;

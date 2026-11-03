@@ -7,6 +7,7 @@
 //! - [`state`]: the Smithay state shared by every backend.
 //! - [`Compositor`]: the event loop, the Wayland display and the state, wired together.
 //! - `handlers`: Wayland protocol handlers (compositor, shm, dmabuf, seat, output, xdg-shell).
+//! - `config`: `compositor.toml` loading, applying, hot reload and key bindings (ADR 0009).
 //! - `input`: input dispatch, focus on click, compositor key bindings.
 //! - [`placement`]: where new windows go (a cascading stack).
 //! - `ipc`: the `neuectl` socket (ADR 0003, ADR 0007).
@@ -19,6 +20,7 @@
 //! each module for what was taken from where.
 #![cfg(target_os = "linux")]
 
+pub mod config;
 #[cfg(feature = "tty")]
 mod cursor;
 mod grabs;
@@ -37,6 +39,7 @@ pub mod wm;
 use std::fmt;
 use std::process::Command;
 
+use neue_config::Layers;
 use smithay::reexports::calloop::generic::Generic;
 use smithay::reexports::calloop::{EventLoop, Interest, LoopHandle, Mode, PostAction};
 use smithay::reexports::wayland_server::Display;
@@ -74,6 +77,8 @@ pub struct Options {
     pub listen: bool,
     /// Where the `neuectl` socket goes.
     pub ipc_socket: IpcSocket,
+    /// Where `compositor.toml` is read from and watched. [`Layers::none`] means defaults only.
+    pub config: Layers,
 }
 
 impl Options {
@@ -84,6 +89,7 @@ impl Options {
             commands: Vec::new(),
             listen: true,
             ipc_socket: IpcSocket::Auto,
+            config: Layers::standard(),
         }
     }
 }
@@ -173,6 +179,7 @@ impl Compositor {
         if let Some(path) = ipc_socket_path(options, &state) {
             state.ipc.listen(&path)?;
         }
+        state.init_config(options.config.clone());
 
         // Wake the loop when clients send requests. They are dispatched in the loop callback
         // of `run`, which owns the `Display`; this keeps the display out of `State` and

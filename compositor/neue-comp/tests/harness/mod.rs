@@ -40,6 +40,7 @@ type Job = Box<dyn FnOnce(&mut State) + Send>;
 pub struct Server {
     jobs: Sender<Job>,
     socket: std::path::PathBuf,
+    config_dir: std::path::PathBuf,
     _socket_dir: tempfile::TempDir,
     thread: Option<JoinHandle<Result<(), neue_comp::Error>>>,
 }
@@ -47,9 +48,21 @@ pub struct Server {
 impl Server {
     /// Start a headless compositor and wait until it is ready.
     pub fn start() -> Self {
+        Self::start_with_config(None)
+    }
+
+    /// Start a headless compositor whose `compositor.toml` holds `config` (none: no file).
+    /// The file lives in a temporary user config directory, never the real one.
+    pub fn start_with_config(config: Option<&str>) -> Self {
         init_tracing();
         let socket_dir = tempfile::tempdir().expect("creating a temporary directory");
         let socket = socket_dir.path().join("comp.sock");
+        let config_dir = socket_dir.path().join("config");
+        std::fs::create_dir(&config_dir).expect("creating the config directory");
+        if let Some(text) = config {
+            std::fs::write(config_dir.join("compositor.toml"), text).expect("writing the config");
+        }
+        let layers = neue_config::Layers::from_dirs([config_dir.clone()]);
         let ipc_socket = IpcSocket::Path(socket.clone());
         let (ready_tx, ready_rx) = mpsc::channel();
         let thread = std::thread::Builder::new()
@@ -58,6 +71,7 @@ impl Server {
                 let options = Options {
                     listen: false,
                     ipc_socket,
+                    config: layers,
                     ..Options::new(BackendKind::Headless)
                 };
                 let compositor = Compositor::new(&options)?;
@@ -79,6 +93,7 @@ impl Server {
             Ok(jobs) => Self {
                 jobs,
                 socket,
+                config_dir,
                 _socket_dir: socket_dir,
                 thread: Some(thread),
             },
@@ -105,6 +120,13 @@ impl Server {
             .expect("compositor thread is gone");
         rx.recv_timeout(STATE_TIMEOUT)
             .expect("compositor did not answer in time")
+    }
+
+    /// Replace `compositor.toml` the way editors do: write a temporary file, rename it over.
+    pub fn write_config(&self, text: &str) {
+        let temp = self.config_dir.join(".compositor.toml.tmp");
+        std::fs::write(&temp, text).expect("writing the config");
+        std::fs::rename(&temp, self.config_dir.join("compositor.toml")).expect("renaming");
     }
 
     /// Connect a new `neuectl` client to the compositor's IPC socket.

@@ -262,3 +262,28 @@ explicit press/release: `prlctl send-key-event neueos-vm -s 29 -e press` (Ctrl),
 **Known log noise on virtio-gpu:** "Failed to destroy old mode property blob" at start-up and
 "Failed to restore previous state. Error: Invalid argument" on exit. The DRM state that fbcon
 left behind is stale. Nothing breaks: the console redraws on exit.
+
+## 5. Checking config and hot reload in the VM (task 1.6)
+Rebuild first (rsync and `cargo build --release -p neue-comp -p neuectl ...` as in §4; the
+old binaries don't know `reload-config`). Run the compositor as in §3 (nested) or §4 (tty), with
+`foot` as the client, then, in a second ssh session (use `XDG_CONFIG_HOME` if you don't want to touch `~/.config`):
+```sh
+export XDG_RUNTIME_DIR=/run/user/1000 WAYLAND_DISPLAY=wayland-1
+export PATH=~/neueos/target/release:$PATH   # neuectl is not installed; §4 builds it here
+mkdir -p ~/.config/neueos
+neuectl events &                      # prints config_reloaded / config_error lines
+cat > ~/.config/neueos/compositor.toml <<'T'
+[keyboard]
+layouts = ["us", "de"]
+options = ["grp:alt_shift_toggle"]
+T
+```
+Expect a `config_reloaded` event within about 150 ms. In `foot`, press Alt+Shift, then
+Z and Y: after the switch they come out swapped (German layout). Then:
+- Write `layouts = ["nonexistent"]` or break the syntax: expect a `config_error` event (and a
+  `neuectl reload-config` error naming the file, line and column) while the German layout
+  keeps working. Fix the file: `config_reloaded`, no restart.
+- Add `[keybindings]` with `"Super+Q" = "none"` and `"Super+Shift+Q" = "quit"`: Super+Q does
+  nothing now, Super+Shift+Q quits.
+- Untested on hardware: `[outputs."<name>"] scale = 1.5` (names from `neuectl outputs`);
+  look for oddly placed windows or cursor and report them for task 1.7.
