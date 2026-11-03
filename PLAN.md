@@ -554,8 +554,11 @@ Decisions to follow: ADR 0001 (Smithay), 0003 (IPC), 0004 (config), 0005 (global
       `wlr-data-control` (what `wl-clipboard` uses today), drag icons drawn on tty and winit
       with offsets following commits. Headless tests in `tests/selection.rs` cover clipboard,
       primary selection and data-control round trips (the `wl-copy`/`wl-paste` wire path),
-      selection replacement, and a full DnD drag between two clients with an icon. Not done:
-      the GTK-to-GTK check in the VM (steps in `docs/dev-setup.md` §7, owner); touch DnD.
+      selection replacement, a full DnD drag between two clients with an icon, and Escape
+      cancelling a drag (the compositor takes the key; Smithay doesn't end the grab when a
+      client destroys its source). Owner checked clipboard, primary selection and file DnD
+      between GTK apps (nautilus, gedit, gnome-text-editor) by hand in the VM
+      (`docs/dev-setup.md` §7). Not done: touch DnD.
 - [ ] **1.9 Cursors** · Sonnet. XCursor theme loading (pure-Rust `xcursor` crate),
       cursor-shape-v1, per-scale cursor sizes, hardware cursor plane on tty.
       *Accept:* correct cursors on resize edges and text fields in the VM.
