@@ -11,7 +11,7 @@ use std::time::Instant;
 use neue_ipc::{OutputInfo, WindowId, WindowInfo};
 use smithay::desktop::{PopupManager, Space, Window, WindowSurfaceType};
 use smithay::input::keyboard::{KeyboardHandle, XkbConfig};
-use smithay::input::pointer::{CursorImageStatus, PointerHandle};
+use smithay::input::pointer::{CursorIcon, CursorImageStatus, PointerHandle};
 use smithay::input::{Seat, SeatState};
 use smithay::output::Output;
 use smithay::reexports::calloop::{EventLoop, LoopHandle, LoopSignal};
@@ -20,6 +20,7 @@ use smithay::reexports::wayland_server::protocol::wl_surface::WlSurface;
 use smithay::reexports::wayland_server::{Client, DisplayHandle};
 use smithay::utils::{Logical, Point};
 use smithay::wayland::compositor::{CompositorClientState, CompositorState};
+use smithay::wayland::cursor_shape::CursorShapeManagerState;
 use smithay::wayland::dmabuf::DmabufState;
 use smithay::wayland::fractional_scale::FractionalScaleManagerState;
 use smithay::wayland::output::OutputManagerState;
@@ -121,14 +122,20 @@ pub struct State {
     pub dnd_active: bool,
     pub xdg_activation_state: XdgActivationState,
     pub fractional_scale_state: FractionalScaleManagerState,
+    /// `wp_cursor_shape_manager_v1`: clients name a cursor, the compositor draws it.
+    pub cursor_shape_state: CursorShapeManagerState,
     pub viewporter_state: ViewporterState,
     pub seat_state: SeatState<State>,
     pub seat: Seat<State>,
     pub keyboard: KeyboardHandle<State>,
     pub pointer: PointerHandle<State>,
-    /// What the focused client wants the pointer to look like. Drawn by the tty backend;
-    /// the winit backend shows the host's cursor instead.
+    /// What the pointer looks like: what the focused client asked for (a named shape or a
+    /// surface), or a shape the compositor chose (a resize grab). Drawn by the tty backend;
+    /// the winit backend sets the host window's cursor instead.
     pub cursor_status: CursorImageStatus,
+    /// A shape the compositor insists on (an interactive resize): clients cannot change
+    /// the cursor while it is set, even though the grab gives them the right to.
+    pub cursor_override: Option<CursorIcon>,
 }
 
 /// The icon of a drag in progress, drawn at the pointer.
@@ -141,6 +148,25 @@ pub struct DndIcon {
 }
 
 impl State {
+    /// Force the cursor to `icon` until called again with `None`, which restores the
+    /// default (the client under the pointer then sets its own).
+    pub fn set_cursor_override(&mut self, icon: Option<CursorIcon>) {
+        self.cursor_override = icon;
+        self.set_cursor(
+            icon.map_or_else(CursorImageStatus::default_named, CursorImageStatus::Named),
+        );
+    }
+
+    /// Change what the pointer looks like. The tty backend draws `image` itself; the winit
+    /// backend passes the shape on to the host window.
+    pub fn set_cursor(&mut self, image: CursorImageStatus) {
+        #[cfg(feature = "winit")]
+        if let Backend::Winit(data) = &self.backend {
+            data.set_host_cursor(&image);
+        }
+        self.cursor_status = image;
+    }
+
     /// Create the protocol globals and, if `listen` is set, the listening socket.
     pub fn new(
         event_loop: &EventLoop<'static, State>,
@@ -163,6 +189,7 @@ impl State {
             WlrDataControlState::new::<Self, _>(&dh, Some(&primary_selection_state), |_| true);
         let xdg_activation_state = XdgActivationState::new::<Self>(&dh);
         let fractional_scale_state = FractionalScaleManagerState::new::<Self>(&dh);
+        let cursor_shape_state = CursorShapeManagerState::new::<Self>(&dh);
         let viewporter_state = ViewporterState::new::<Self>(&dh);
 
         let mut seat_state = SeatState::new();
@@ -209,12 +236,14 @@ impl State {
             dnd_active: false,
             xdg_activation_state,
             fractional_scale_state,
+            cursor_shape_state,
             viewporter_state,
             seat_state,
             seat,
             keyboard,
             pointer,
             cursor_status: CursorImageStatus::default_named(),
+            cursor_override: None,
         };
         for output in initial_outputs {
             state.add_output(output);

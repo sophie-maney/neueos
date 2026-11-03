@@ -29,6 +29,8 @@ pollster = "1.0"
 # per crate; never enable `xwayland`, `backend_x11` or `x11rb_event_source`.
 smithay = { git = "https://github.com/Smithay/smithay", rev = "c7a26ade404dd7593d92514fb571922dccd1050a", default-features = false }
 tracing-subscriber = { version = "0.3", features = ["env-filter"] }
+# XCursor theme parser (pure Rust, MIT, task 1.9, ADR 0012). Already in the tree via winit.
+xcursor = "0.3"
 # Scripted Wayland test clients (neue-comp's headless tests). Versions match Smithay's.
 wayland-client = "0.31"
 wayland-protocols = { version = "0.32", features = ["client", "staging"] }

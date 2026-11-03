@@ -558,6 +558,7 @@ impl State {
         }
         Self::with_wm_data(&window, |d| d.grabbed = true);
         let grab = ResizeGrab::start(start_data, window, edge.into(), geo);
+        self.set_cursor_override(Some(grab.edges.cursor_icon()));
         let pointer = self.pointer.clone();
         pointer.set_grab(self, grab, serial, Focus::Clear);
     }

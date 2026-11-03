@@ -15,6 +15,7 @@ use smithay::desktop::{
 };
 use smithay::input::dnd::{DnDGrab, DndGrabHandler, DndTarget, GrabType, Source};
 use smithay::input::pointer::{CursorImageStatus, Focus};
+use smithay::input::tablet::TabletSeatHandler;
 use smithay::input::{Seat, SeatHandler, SeatState};
 use smithay::reexports::wayland_protocols::xdg::shell::server::xdg_toplevel;
 use smithay::reexports::wayland_server::protocol::{wl_buffer, wl_seat, wl_surface::WlSurface};
@@ -230,9 +231,13 @@ impl SeatHandler for State {
         &mut self.seat_state
     }
 
-    // The tty backend draws it; winit shows the host cursor. Themes and cursor-shape-v1: 1.9.
+    // The tty backend draws it; winit sets the host window's cursor.
     fn cursor_image(&mut self, _seat: &Seat<Self>, image: CursorImageStatus) {
-        self.cursor_status = image;
+        // Not while the compositor has picked a shape (also swallows the reset to the
+        // arrow that Smithay does when the pointer leaves a surface).
+        if self.cursor_override.is_none() {
+            self.set_cursor(image);
+        }
     }
 
     fn focus_changed(&mut self, seat: &Seat<Self>, focused: Option<&WlSurface>) {
@@ -248,6 +253,11 @@ impl SeatHandler for State {
             .and_then(|w| self.window_id(&w));
         self.report_focus(window);
     }
+}
+
+// `cursor-shape-v1` needs the tablet handler trait; the tablet protocols are not enabled.
+impl TabletSeatHandler for State {
+    type ToolFocus = WlSurface;
 }
 
 impl OutputHandler for State {}

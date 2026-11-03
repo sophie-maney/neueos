@@ -13,6 +13,10 @@ use wayland_client::protocol::{
     wl_shm::WlShm, wl_shm_pool::WlShmPool, wl_surface::WlSurface,
 };
 use wayland_client::{Connection, Dispatch, EventQueue, QueueHandle, delegate_noop};
+use wayland_protocols::wp::cursor_shape::v1::client::{
+    wp_cursor_shape_device_v1::{Shape, WpCursorShapeDeviceV1},
+    wp_cursor_shape_manager_v1::WpCursorShapeManagerV1,
+};
 use wayland_protocols::wp::fractional_scale::v1::client::{
     wp_fractional_scale_manager_v1::WpFractionalScaleManagerV1,
     wp_fractional_scale_v1::{self, WpFractionalScaleV1},
@@ -43,6 +47,8 @@ pub struct TestClient {
     activation: XdgActivationV1,
     fractional_scale: WpFractionalScaleManagerV1,
     selection: selection::SelectionObjects,
+    cursor_shape: WpCursorShapeDeviceV1,
+    _cursor_shape_manager: WpCursorShapeManagerV1,
     _pointer: WlPointer,
     _keyboard: WlKeyboard,
     _globals: GlobalList,
@@ -81,6 +87,8 @@ struct ClientData {
     button_serial: Option<u32>,
     /// Serial of the last `wl_keyboard.enter`.
     enter_serial: Option<u32>,
+    /// Serial of the last `wl_pointer.enter`.
+    pointer_enter_serial: Option<u32>,
     /// Number of `wl_keyboard.key` presses seen.
     key_presses: usize,
     /// The last activation token the compositor handed out.
@@ -108,6 +116,10 @@ impl TestClient {
         let pointer = seat.get_pointer(&qh, ());
         let keyboard = seat.get_keyboard(&qh, ());
         let selection = selection::SelectionObjects::new(&globals, &qh, &seat);
+        let cursor_shape_manager: WpCursorShapeManagerV1 = globals
+            .bind(&qh, 1..=2, ())
+            .expect("binding wp_cursor_shape_manager_v1");
+        let cursor_shape = cursor_shape_manager.get_pointer(&pointer, &qh, ());
         let mut data = ClientData::default();
         queue.roundtrip(&mut data).expect("initial roundtrip");
         Self {
@@ -121,6 +133,8 @@ impl TestClient {
             activation,
             fractional_scale,
             selection,
+            cursor_shape,
+            _cursor_shape_manager: cursor_shape_manager,
             _pointer: pointer,
             _keyboard: keyboard,
             _globals: globals,
@@ -147,6 +161,23 @@ impl TestClient {
         self.data
             .button_serial
             .expect("no pointer button press seen")
+    }
+
+    /// Serial of the last pointer enter this client saw.
+    pub fn pointer_enter_serial(&self) -> Option<u32> {
+        self.data.pointer_enter_serial
+    }
+
+    /// `wp_cursor_shape_device_v1.set_shape` with `serial` (a pointer enter serial).
+    pub fn set_cursor_shape_with(&mut self, serial: u32, shape: Shape) {
+        self.cursor_shape.set_shape(serial, shape);
+        self.roundtrip();
+    }
+
+    /// Ask for `shape`, as a client does when the pointer enters a text field.
+    pub fn set_cursor_shape(&mut self, shape: Shape) {
+        let serial = self.pointer_enter_serial().expect("no pointer enter");
+        self.set_cursor_shape_with(serial, shape);
     }
 
     /// Key presses this client has been sent.
@@ -380,13 +411,14 @@ impl Dispatch<WlPointer, ()> for ClientData {
         _: &Connection,
         _: &QueueHandle<Self>,
     ) {
-        if let wl_pointer::Event::Button {
-            serial,
-            state: wayland_client::WEnum::Value(wl_pointer::ButtonState::Pressed),
-            ..
-        } = event
-        {
-            data.button_serial = Some(serial);
+        match event {
+            wl_pointer::Event::Button {
+                serial,
+                state: wayland_client::WEnum::Value(wl_pointer::ButtonState::Pressed),
+                ..
+            } => data.button_serial = Some(serial),
+            wl_pointer::Event::Enter { serial, .. } => data.pointer_enter_serial = Some(serial),
+            _ => {}
         }
     }
 }
@@ -449,3 +481,5 @@ delegate_noop!(ClientData: ignore WlSurface);
 delegate_noop!(ClientData: ignore WlShm);
 delegate_noop!(ClientData: ignore WlShmPool);
 delegate_noop!(ClientData: ignore WlBuffer);
+delegate_noop!(ClientData: ignore WpCursorShapeManagerV1);
+delegate_noop!(ClientData: ignore WpCursorShapeDeviceV1);

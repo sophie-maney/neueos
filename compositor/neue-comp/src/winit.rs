@@ -15,8 +15,10 @@ use smithay::backend::renderer::element::surface::{
 };
 use smithay::backend::renderer::gles::GlesRenderer;
 use smithay::backend::winit::{self, WinitEvent, WinitEventLoop, WinitGraphicsBackend};
+use smithay::input::pointer::{CursorIcon, CursorImageStatus};
 use smithay::output::{Mode, Output, PhysicalProperties, Subpixel};
 use smithay::reexports::wayland_server::DisplayHandle;
+use smithay::reexports::winit::cursor::Cursor;
 use smithay::utils::{IsAlive, Scale, Transform};
 use smithay::wayland::dmabuf::{DmabufFeedbackBuilder, DmabufGlobal, DmabufState};
 use tracing::{info, warn};
@@ -49,6 +51,23 @@ impl fmt::Debug for WinitData {
 }
 
 impl WinitData {
+    /// Show `image` on the host window: named shapes use the host's own theme; a
+    /// client-drawn surface is not rendered when nested, so it shows the default arrow.
+    pub fn set_host_cursor(&self, image: &CursorImageStatus) {
+        let window = self.backend.window();
+        match image {
+            CursorImageStatus::Hidden => window.set_cursor_visible(false),
+            CursorImageStatus::Named(icon) => {
+                window.set_cursor_visible(true);
+                window.set_cursor(Cursor::Icon(*icon));
+            }
+            CursorImageStatus::Surface(_) => {
+                window.set_cursor_visible(true);
+                window.set_cursor(Cursor::Icon(CursorIcon::Default));
+            }
+        }
+    }
+
     pub fn output(&self) -> &Output {
         &self.output
     }

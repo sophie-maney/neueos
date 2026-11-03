@@ -333,3 +333,23 @@ export PATH=~/neueos/target/release:$PATH
 
 Report which of these worked and anything odd (no icon, icon stuck after the drop, icon
 offset from the pointer, paste empty).
+
+## 8. Checking cursors in the VM (task 1.9)
+Install a theme once if the VM has none: `sudo pacman -S --needed adwaita-cursors` (or any
+XCursor theme). Rebuild and start on the tty as in §4 (`-c foot`); optionally set
+`XCURSOR_THEME=Adwaita XCURSOR_SIZE=24` for the compositor. Use `gnome-text-editor`
+(GTK 4, uses cursor-shape-v1) and `foot`:
+1. **Text field:** move over the editor's text area: the pointer becomes an I-beam; over
+   the header bar's buttons it is the arrow. In `foot` it is also an I-beam.
+2. **Links / buttons:** hover a link (e.g. in `gnome-text-editor`'s About dialog, or any
+   GTK link button): the hand pointer.
+3. **Resize edges:** grab a window edge or corner with the mouse (GTK draws its own
+   invisible edges). While dragging, the pointer shows the matching arrow (`nw-resize`,
+   `e-resize`...) even when it leaves the window, and returns to normal on release.
+4. **Scale:** add `[outputs."<name>"] scale = 2` (§6) and check the pointer stays sharp and
+   the same apparent size as at scale 1.
+5. **No theme:** `XCURSOR_THEME=nonexistent`: the built-in arrow is drawn for every shape.
+6. **Hardware plane:** the pointer must move smoothly while a window animates or `foot`
+   scrolls output (the plane is used when the cursor fits it; no log line says so).
+
+Report what showed the wrong cursor and which app it was.

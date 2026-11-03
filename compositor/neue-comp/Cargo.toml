@@ -22,6 +22,7 @@ winit = ["smithay/backend_winit"]
 # The real backend: DRM/KMS, GBM, libinput, udev and libseat (task 1.4, ADR 0001). Links
 # libinput, libudev, libseat and libgbm, so headless-only builds can leave it out.
 tty = [
+    "dep:xcursor",
     "smithay/backend_gbm",
     "smithay/backend_libinput",
     "smithay/backend_udev",
@@ -40,6 +41,7 @@ tracing-subscriber.workspace = true
 
 [target.'cfg(target_os = "linux")'.dependencies]
 rustix.workspace = true
+xcursor = { workspace = true, optional = true }
 smithay = { workspace = true, features = [
     "backend_drm",
     "backend_egl",

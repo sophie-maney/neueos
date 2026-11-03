@@ -5,10 +5,10 @@
 use smithay::desktop::Window;
 use smithay::input::SeatHandler;
 use smithay::input::pointer::{
-    AxisFrame, ButtonEvent, GestureHoldBeginEvent, GestureHoldEndEvent, GesturePinchBeginEvent,
-    GesturePinchEndEvent, GesturePinchUpdateEvent, GestureSwipeBeginEvent, GestureSwipeEndEvent,
-    GestureSwipeUpdateEvent, GrabStartData, MotionEvent, PointerGrab, PointerInnerHandle,
-    RelativeMotionEvent,
+    AxisFrame, ButtonEvent, CursorIcon, GestureHoldBeginEvent, GestureHoldEndEvent,
+    GesturePinchBeginEvent, GesturePinchEndEvent, GesturePinchUpdateEvent, GestureSwipeBeginEvent,
+    GestureSwipeEndEvent, GestureSwipeUpdateEvent, GrabStartData, MotionEvent, PointerGrab,
+    PointerInnerHandle, RelativeMotionEvent,
 };
 use smithay::reexports::wayland_protocols::xdg::shell::server::xdg_toplevel;
 use smithay::reexports::wayland_server::protocol::wl_surface::WlSurface;
@@ -143,6 +143,21 @@ impl From<xdg_toplevel::ResizeEdge> for Edges {
 }
 
 impl Edges {
+    /// The cursor that shows which edges are being dragged.
+    pub fn cursor_icon(self) -> CursorIcon {
+        match (self.left, self.right, self.top, self.bottom) {
+            (true, _, true, _) => CursorIcon::NwResize,
+            (_, true, true, _) => CursorIcon::NeResize,
+            (true, _, _, true) => CursorIcon::SwResize,
+            (_, true, _, true) => CursorIcon::SeResize,
+            (true, ..) => CursorIcon::WResize,
+            (_, true, ..) => CursorIcon::EResize,
+            (_, _, true, _) => CursorIcon::NResize,
+            (.., true) => CursorIcon::SResize,
+            _ => CursorIcon::Default,
+        }
+    }
+
     /// Where a window that started at `initial` goes once it has `size`: the edges that
     /// are not being dragged stay put.
     pub fn anchored_location(
@@ -322,7 +337,9 @@ impl PointerGrab<State> for ResizeGrab {
         &self.start_data
     }
 
-    fn unset(&mut self, _state: &mut State) {
+    fn unset(&mut self, state: &mut State) {
+        // The client under the pointer sets its own cursor when focus returns to it.
+        state.set_cursor_override(None);
         if let Some(toplevel) = self.window.toplevel() {
             toplevel.with_pending_state(|state| {
                 state.states.unset(xdg_toplevel::State::Resizing);
