@@ -122,6 +122,19 @@ ip -4 addr show scope global      # note the IP address
 Log out and back in so the group changes apply. Group membership is needed for the compositor
 to open DRM and input devices through seatd.
 
+archboot sets up `kmscon` as the tty1 console. kmscon keeps DRM master, so no compositor can
+modeset (seatd logs "Could not make device fd drm master: Device or resource busy" and commits
+fail with "Permission denied"). Replace it with the stock getty:
+```sh
+sudo systemctl disable --now kmsconvt@tty1.service
+sudo rm -f /etc/systemd/system/autovt@.service    # archboot's link to kmscon
+sudo systemctl daemon-reload
+sudo systemctl enable --now getty@tty1.service
+```
+For compositor tests you also want a stock Wayland compositor and its demo clients:
+`sudo pacman -S --needed weston wayland-utils`. Compositors run fine from an SSH session
+through seatd, with `XDG_RUNTIME_DIR=/run/user/$(id -u)`. See `docs/research/vm-graphics.md`.
+
 ### 2.4 Reach the VM from the Mac
 Add to `~/.ssh/config` on the Mac (use the IP from the previous step; it is stable on the
 Parallels Shared network, but if it changes, update it):
@@ -160,7 +173,10 @@ every sync. Build output stays on the VM disk (`~/neueos/target`) and is exclude
 - `ssh neueos-vm ls /dev/dri` lists `card0` and `renderD128`. If it is empty, 3D acceleration
   is off or virtio-gpu isn't active; note it, since task 0.5 depends on it.
 
-Deeper graphics checks (`eglinfo`, Smithay's `anvil`, vello demo) are task 0.5, not part of this setup.
+Deeper graphics checks (`eglinfo`, Smithay's `anvil`, vello demo) were task 0.5; results are in
+`docs/research/vm-graphics.md`. To see the VM screen from the Mac, run
+`prlctl capture neueos-vm --file screen.png` (it can return a partial frame while something is
+animating).
 
 ---
 
