@@ -264,10 +264,12 @@ explicit press/release: `prlctl send-key-event neueos-vm -s 29 -e press` (Ctrl),
 left behind is stale. Nothing breaks: the console redraws on exit.
 
 ## 5. Checking config and hot reload in the VM (task 1.6)
-Run the compositor as in §3 (nested) or §4 (tty), with `foot` as the client, then, in a second
-ssh session (use `XDG_CONFIG_HOME` if you don't want to touch `~/.config`):
+Rebuild first (rsync and `cargo build --release -p neue-comp -p neuectl ...` as in §4; the
+old binaries don't know `reload-config`). Run the compositor as in §3 (nested) or §4 (tty), with
+`foot` as the client, then, in a second ssh session (use `XDG_CONFIG_HOME` if you don't want to touch `~/.config`):
 ```sh
 export XDG_RUNTIME_DIR=/run/user/1000 WAYLAND_DISPLAY=wayland-1
+export PATH=~/neueos/target/release:$PATH   # neuectl is not installed; §4 builds it here
 mkdir -p ~/.config/neueos
 neuectl events &                      # prints config_reloaded / config_error lines
 cat > ~/.config/neueos/compositor.toml <<'T'
