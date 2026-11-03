@@ -45,10 +45,13 @@ orb run -m neueos-arm64 -w "$PWD" rustup toolchain install
 orb run -m neueos-amd64 -w "$PWD" rustup toolchain install
 ```
 Library packages for the compositor. Each task that adds a linked C library adds its package
-here. `neue-comp` links only `libxkbcommon` so far (EGL, GLES and libwayland are dlopened):
+here. `neue-comp` links only `libxkbcommon` so far. EGL, GLES and libwayland are dlopened,
+but the headless tests (task 1.2) need `libwayland-client` at runtime: the dev-only `winit`
+feature switches `wayland-client` to the system library for the whole build, so the
+scripted test clients load it too.
 ```sh
-orb run -m neueos-arm64 sudo pacman -S --noconfirm --needed libxkbcommon
-orb run -m neueos-amd64 sudo pacman -S --noconfirm --needed libxkbcommon
+orb run -m neueos-arm64 sudo pacman -S --noconfirm --needed libxkbcommon wayland
+orb run -m neueos-amd64 sudo pacman -S --noconfirm --needed libxkbcommon wayland
 ```
 
 ### 1.3 Check

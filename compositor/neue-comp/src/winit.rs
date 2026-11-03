@@ -122,14 +122,16 @@ pub fn init(
         _dmabuf_global: dmabuf_global,
         full_redraw: 0,
     };
-    Ok((Backend::Winit(data), events))
+    Ok((Backend::Winit(Box::new(data)), events))
 }
 
 /// Handle one event from the host window.
 pub fn handle_event(event: WinitEvent, state: &mut State) {
     match event {
         WinitEvent::Resized { size, .. } => {
-            let Backend::Winit(data) = &mut state.backend;
+            let Backend::Winit(data) = &mut state.backend else {
+                return;
+            };
             let mode = Mode {
                 size,
                 refresh: REFRESH_MHZ,
@@ -147,7 +149,9 @@ pub fn handle_event(event: WinitEvent, state: &mut State) {
 }
 
 fn render(state: &mut State) {
-    let Backend::Winit(data) = &mut state.backend;
+    let Backend::Winit(data) = &mut state.backend else {
+        return;
+    };
     data.full_redraw = data.full_redraw.saturating_sub(1);
     let age = if data.full_redraw > 0 {
         0

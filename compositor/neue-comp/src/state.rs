@@ -3,6 +3,7 @@
 //! Adapted from Smithay's `smallvil` (MIT): `smallvil/src/state.rs`.
 
 use std::ffi::OsString;
+use std::os::unix::net::UnixStream;
 use std::sync::Arc;
 use std::time::Instant;
 
@@ -10,16 +11,17 @@ use smithay::desktop::{PopupManager, Space, Window, WindowSurfaceType};
 use smithay::input::keyboard::{KeyboardHandle, XkbConfig};
 use smithay::input::pointer::PointerHandle;
 use smithay::input::{Seat, SeatState};
+use smithay::output::Output;
 use smithay::reexports::calloop::{EventLoop, LoopSignal};
-use smithay::reexports::wayland_server::DisplayHandle;
 use smithay::reexports::wayland_server::backend::{ClientData, ClientId, DisconnectReason};
 use smithay::reexports::wayland_server::protocol::wl_surface::WlSurface;
+use smithay::reexports::wayland_server::{Client, DisplayHandle};
 use smithay::utils::{Logical, Point, SERIAL_COUNTER};
-use smithay::wayland::compositor::{CompositorClientState, CompositorState};
+use smithay::wayland::compositor::{CompositorClientState, CompositorState, with_states};
 use smithay::wayland::dmabuf::DmabufState;
 use smithay::wayland::output::OutputManagerState;
 use smithay::wayland::selection::data_device::DataDeviceState;
-use smithay::wayland::shell::xdg::XdgShellState;
+use smithay::wayland::shell::xdg::{XdgShellState, XdgToplevelSurfaceData};
 use smithay::wayland::shm::ShmState;
 use smithay::wayland::socket::ListeningSocketSource;
 use tracing::warn;
@@ -34,7 +36,33 @@ const REPEAT_RATE_HZ: i32 = 30;
 #[derive(Debug)]
 pub enum Backend {
     #[cfg(feature = "winit")]
-    Winit(crate::winit::WinitData),
+    // Boxed: it holds the GL context and is far larger than the other variants.
+    Winit(Box<crate::winit::WinitData>),
+    Headless(crate::headless::HeadlessData),
+}
+
+impl Backend {
+    /// The backend's output. Every backend has exactly one until multi-output (task 1.7).
+    pub fn output(&self) -> &Output {
+        match self {
+            #[cfg(feature = "winit")]
+            Self::Winit(data) => data.output(),
+            Self::Headless(data) => data.output(),
+        }
+    }
+}
+
+/// A mapped window as seen from outside the compositor (tests, and later `neuectl`).
+#[derive(Debug, Clone, PartialEq, Eq)]
+pub struct WindowInfo {
+    pub title: Option<String>,
+    pub app_id: Option<String>,
+    /// Position of the window geometry in global logical coordinates.
+    pub location: (i32, i32),
+    /// Size of the window geometry (without client-side shadows).
+    pub size: (i32, i32),
+    /// Whether the window has keyboard focus.
+    pub focused: bool,
 }
 
 /// Everything the compositor knows. One instance, owned by the event loop.
@@ -42,7 +70,8 @@ pub enum Backend {
 pub struct State {
     pub start_time: Instant,
     /// Name of our Wayland socket (e.g. `wayland-1`), relative to `XDG_RUNTIME_DIR`.
-    pub socket_name: OsString,
+    /// `None` when the compositor does not listen (tests connect clients directly).
+    pub socket_name: Option<OsString>,
     pub display_handle: DisplayHandle,
     pub loop_signal: LoopSignal,
     pub backend: Backend,
@@ -69,12 +98,13 @@ pub struct State {
 }
 
 impl State {
-    /// Create the protocol globals and the listening socket.
+    /// Create the protocol globals and, if `listen` is set, the listening socket.
     pub fn new(
         event_loop: &EventLoop<'static, State>,
         dh: DisplayHandle,
         backend: Backend,
         dmabuf_state: DmabufState,
+        listen: bool,
     ) -> Result<Self, Error> {
         let compositor_state = CompositorState::new::<Self>(&dh);
         let xdg_shell_state = XdgShellState::new::<Self>(&dh);
@@ -91,27 +121,14 @@ impl State {
             .map_err(Error::init("loading the default xkb keymap"))?;
         let pointer = seat.add_pointer();
 
-        let socket = ListeningSocketSource::new_auto()
-            .map_err(Error::init("creating the Wayland socket"))?;
-        let socket_name = socket.socket_name().to_os_string();
-        event_loop
-            .handle()
-            .insert_source(socket, |stream, _, state: &mut State| {
-                if let Err(err) = state
-                    .display_handle
-                    .insert_client(stream, Arc::new(ClientState::default()))
-                {
-                    warn!(%err, "failed to add client");
-                }
-            })
-            .map_err(|e| e.error)
-            .map_err(Error::init("adding the Wayland socket source"))?;
+        let socket_name = if listen {
+            Some(listen_on_socket(event_loop)?)
+        } else {
+            None
+        };
 
         let mut space = Space::default();
-        match &backend {
-            #[cfg(feature = "winit")]
-            Backend::Winit(data) => space.map_output(data.output(), (0, 0)),
-        }
+        space.map_output(backend.output(), (0, 0));
 
         Ok(Self {
             start_time: Instant::now(),
@@ -134,6 +151,39 @@ impl State {
             keyboard,
             pointer,
         })
+    }
+
+    /// Add a client connected through `stream`, e.g. one end of a socket pair.
+    pub fn insert_client(&mut self, stream: UnixStream) -> std::io::Result<Client> {
+        self.display_handle
+            .insert_client(stream, Arc::new(ClientState::default()))
+    }
+
+    /// The mapped windows, bottom to top.
+    pub fn windows(&self) -> Vec<WindowInfo> {
+        let focus = self.keyboard.current_focus();
+        self.space
+            .elements()
+            .filter_map(|window| {
+                let toplevel = window.toplevel()?;
+                let (title, app_id) = with_states(toplevel.wl_surface(), |states| {
+                    states
+                        .data_map
+                        .get::<XdgToplevelSurfaceData>()
+                        .and_then(|data| data.lock().ok())
+                        .map(|data| (data.title.clone(), data.app_id.clone()))
+                        .unwrap_or_default()
+                });
+                let geometry = self.space.element_geometry(window)?;
+                Some(WindowInfo {
+                    title,
+                    app_id,
+                    location: (geometry.loc.x, geometry.loc.y),
+                    size: (geometry.size.w, geometry.size.h),
+                    focused: focus.as_ref() == Some(toplevel.wl_surface()),
+                })
+            })
+            .collect()
     }
 
     /// The surface under `pos` and its origin, in global logical coordinates.
@@ -196,6 +246,23 @@ impl State {
             }
         }
     }
+}
+
+/// Listen on a new socket in `XDG_RUNTIME_DIR` and return its name.
+fn listen_on_socket(event_loop: &EventLoop<'static, State>) -> Result<OsString, Error> {
+    let socket =
+        ListeningSocketSource::new_auto().map_err(Error::init("creating the Wayland socket"))?;
+    let socket_name = socket.socket_name().to_os_string();
+    event_loop
+        .handle()
+        .insert_source(socket, |stream, _, state: &mut State| {
+            if let Err(err) = state.insert_client(stream) {
+                warn!(%err, "failed to add client");
+            }
+        })
+        .map_err(|e| e.error)
+        .map_err(Error::init("adding the Wayland socket source"))?;
+    Ok(socket_name)
 }
 
 /// Per-client data.

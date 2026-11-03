@@ -21,6 +21,8 @@ jobs:
   check:
     name: check (${{ matrix.name }})
     runs-on: ${{ matrix.os }}
+    # Compositor tests block on Wayland roundtrips; don't let a hang burn hours.
+    timeout-minutes: 45
     strategy:
       fail-fast: false
       matrix:
@@ -41,10 +43,13 @@ jobs:
 
       - uses: Swatinem/rust-cache@v2
 
-      # C libraries neue-comp links (docs/dev-setup.md §1.2). Others are dlopened.
+      # C libraries neue-comp links, plus libwayland-client, which the headless tests'
+      # clients dlopen (docs/dev-setup.md §1.2).
       - name: Install Linux build dependencies
         if: runner.os == 'Linux'
-        run: sudo apt-get update && sudo apt-get install -y --no-install-recommends libxkbcommon-dev
+        run: >-
+          sudo apt-get update && sudo apt-get install -y --no-install-recommends
+          libxkbcommon-dev libwayland-client0
 
       - name: cargo xtask check
         run: cargo xtask check
