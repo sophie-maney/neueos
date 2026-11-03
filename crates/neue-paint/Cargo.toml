@@ -8,5 +8,27 @@ license.workspace = true
 repository.workspace = true
 publish.workspace = true
 
+[features]
+default = []
+# GPU backend: replays scenes into vello_gpu on wgpu. Off by default so CPU-only users
+# (compositor chrome, tests) don't pull in wgpu.
+gpu = ["dep:vello_gpu", "dep:wgpu"]
+
+[dependencies]
+thiserror.workspace = true
+vello_common.workspace = true
+vello_cpu.workspace = true
+vello_gpu = { workspace = true, optional = true }
+wgpu = { workspace = true, optional = true }
+
+[dev-dependencies]
+anyhow.workspace = true
+pollster.workspace = true
+winit.workspace = true
+
+[[example]]
+name = "poc"
+required-features = ["gpu"]
+
 [lints]
 workspace = true

@@ -16,6 +16,15 @@ anyhow = "1.0"
 thiserror = "2.0"
 tracing = "0.1"
 
+# Rendering. vello_cpu/vello_gpu ship breaking releases every 1-2 months, so pin exactly
+# (docs/research/vello-cpu.md).
+vello_common = "=0.3.0"
+vello_cpu = { version = "=0.3.0", features = ["f32_pipeline"] }
+vello_gpu = "=0.3.0"
+wgpu = "30.0"
+winit = { version = "0.30.13", default-features = false, features = ["rwh_06", "wayland", "wayland-dlopen"] }
+pollster = "1.0"
+
 # Internal crates
 neue-paint = { path = "crates/neue-paint" }
 

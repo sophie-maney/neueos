@@ -26,7 +26,7 @@ Commands:
   linux <cmd...>          run <cmd> in the OrbStack Arch machine (arm64)
   linux-amd64 <cmd...>    run <cmd> in the OrbStack Arch machine (amd64, Rosetta)
   gallery                 run the widget gallery (not implemented yet)
-  golden [--bless]        check or regenerate golden images (not implemented yet)
+  golden [--bless]        check or regenerate golden images
   vm sync|run             sync to the Parallels VM / start a session (not implemented yet)
   package <crate>         build a pacman package (not implemented yet)
   iso [--arch <arch>]     build the install ISO (not implemented yet)
@@ -51,7 +51,8 @@ fn run(args: Vec<String>) -> Result<()> {
         "check" => check(),
         "linux" => linux(&machine("NEUE_ORB_ARM64", ORB_ARM64_DEFAULT), rest),
         "linux-amd64" => linux(&machine("NEUE_ORB_AMD64", ORB_AMD64_DEFAULT), rest),
-        "gallery" | "golden" | "vm" | "package" | "iso" => {
+        "golden" => golden(rest),
+        "gallery" | "vm" | "package" | "iso" => {
             println!("xtask {cmd}: not implemented yet");
             Ok(())
         }
@@ -108,7 +109,9 @@ fn check() -> Result<()> {
     step("cargo fmt --check", fmt)?;
 
     let mut clippy = cargo();
-    clippy.args(["clippy", "--workspace", "--all-targets"]);
+    // --all-features so feature-gated code (e.g. neue-paint's GPU backend and its
+    // example) is linted too.
+    clippy.args(["clippy", "--workspace", "--all-targets", "--all-features"]);
     clippy.args(&excl);
     clippy.args(["--", "-D", "warnings"]);
     step("cargo clippy", clippy)?;
@@ -119,6 +122,32 @@ fn check() -> Result<()> {
     step("cargo test", test)?;
 
     println!("==> all checks passed");
+    Ok(())
+}
+
+/// Crates with golden-image tests, run by `cargo xtask golden`.
+const GOLDEN_CRATES: &[&str] = &["neue-paint"];
+
+/// Run the golden-image tests. With `--bless`, rewrite the goldens instead of comparing.
+fn golden(args: &[String]) -> Result<()> {
+    let bless = match args {
+        [] => false,
+        [flag] if flag == "--bless" => true,
+        _ => bail!("usage: cargo xtask golden [--bless]"),
+    };
+    for krate in GOLDEN_CRATES {
+        let mut test = cargo();
+        test.args(["test", "-p", krate, "--test", "golden"]);
+        if bless {
+            test.env("NEUE_BLESS", "1");
+        }
+        step(&format!("golden tests ({krate})"), test)?;
+    }
+    if bless {
+        println!(
+            "==> goldens rewritten; review `git diff --stat` and the images before committing"
+        );
+    }
     Ok(())
 }
 
@@ -155,6 +184,11 @@ mod tests {
     #[test]
     fn stub_commands_succeed() {
         assert!(run(vec!["gallery".into()]).is_ok());
+    }
+
+    #[test]
+    fn golden_rejects_unknown_flags() {
+        assert!(golden(&["--nope".into()]).is_err());
     }
 
     #[test]
