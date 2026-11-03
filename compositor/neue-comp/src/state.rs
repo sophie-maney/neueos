@@ -117,6 +117,8 @@ pub struct State {
     pub wlr_data_control_state: WlrDataControlState,
     /// The surface a client attached to the running drag as its icon, if any.
     pub dnd_icon: Option<DndIcon>,
+    /// A pointer drag-and-drop is running (with or without an icon). Escape cancels it.
+    pub dnd_active: bool,
     pub xdg_activation_state: XdgActivationState,
     pub fractional_scale_state: FractionalScaleManagerState,
     pub viewporter_state: ViewporterState,
@@ -204,6 +206,7 @@ impl State {
             ext_data_control_state,
             wlr_data_control_state,
             dnd_icon: None,
+            dnd_active: false,
             xdg_activation_state,
             fractional_scale_state,
             viewporter_state,

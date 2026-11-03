@@ -293,10 +293,12 @@ impl DndGrabHandler for State {
         _location: Point<f64, Logical>,
     ) {
         self.dnd_icon = None;
+        self.dnd_active = false;
     }
 
     fn cancelled(&mut self, _seat: Seat<Self>, _location: Point<f64, Logical>) {
         self.dnd_icon = None;
+        self.dnd_active = false;
     }
 }
 
@@ -315,6 +317,7 @@ impl WaylandDndGrabHandler for State {
         let start_data = pointer.as_ref().and_then(|p| p.grab_start_data());
         match (type_, pointer, start_data) {
             (GrabType::Pointer, Some(pointer), Some(start_data)) => {
+                self.dnd_active = true;
                 self.dnd_icon = icon.map(|surface| DndIcon {
                     surface,
                     offset: Point::default(),

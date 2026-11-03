@@ -81,6 +81,8 @@ struct ClientData {
     button_serial: Option<u32>,
     /// Serial of the last `wl_keyboard.enter`.
     enter_serial: Option<u32>,
+    /// Number of `wl_keyboard.key` presses seen.
+    key_presses: usize,
     /// The last activation token the compositor handed out.
     token: Option<String>,
     /// Selection offers and source events (see `selection.rs`).
@@ -145,6 +147,11 @@ impl TestClient {
         self.data
             .button_serial
             .expect("no pointer button press seen")
+    }
+
+    /// Key presses this client has been sent.
+    pub fn key_presses(&self) -> usize {
+        self.data.key_presses
     }
 
     /// Serial of the last keyboard enter this client saw.
@@ -393,8 +400,13 @@ impl Dispatch<WlKeyboard, ()> for ClientData {
         _: &Connection,
         _: &QueueHandle<Self>,
     ) {
-        if let wl_keyboard::Event::Enter { serial, .. } = event {
-            data.enter_serial = Some(serial);
+        match event {
+            wl_keyboard::Event::Enter { serial, .. } => data.enter_serial = Some(serial),
+            wl_keyboard::Event::Key {
+                state: wayland_client::WEnum::Value(wl_keyboard::KeyState::Pressed),
+                ..
+            } => data.key_presses += 1,
+            _ => {}
         }
     }
 }

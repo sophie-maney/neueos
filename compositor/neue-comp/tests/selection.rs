@@ -7,7 +7,8 @@ mod harness;
 
 use harness::{Server, TestClient, Toplevel, read_all};
 use neue_ipc::WindowInfo;
-use smithay::backend::input::{ButtonState, InputTime};
+use smithay::backend::input::{ButtonState, InputTime, KeyState};
+use smithay::input::keyboard::Keycode;
 use smithay::utils::Point;
 
 const BTN_LEFT: u32 = 0x110;
@@ -262,7 +263,8 @@ fn a_file_can_be_dragged_between_clients() {
     b.roundtrip(); // sends the accept and action choice B made on entry
 
     button(&server, ButtonState::Released);
-    b.roundtrip();
+    b.roundtrip(); // receives the drop and answers with `finish`
+    b.roundtrip(); // flushes the `finish`
     a.roundtrip();
     assert_eq!(b.dnd_target_events(), (1, 1), "B did not get the drop");
     assert_eq!(
@@ -271,4 +273,46 @@ fn a_file_can_be_dragged_between_clients() {
         "A did not see the drop finish"
     );
     assert!(server.with_state(|s| s.dnd_icon.is_none()));
+}
+
+#[test]
+fn escape_cancels_a_drag_and_clients_never_see_it() {
+    let Pair {
+        server,
+        mut a,
+        mut b,
+        a_window,
+        ..
+    } = pair();
+    let from = window(&server, "A");
+    let to = window(&server, "B");
+    pointer_to(&server, (from.x + 10, from.y + 10));
+    button(&server, ButtonState::Pressed);
+    a.roundtrip();
+    let serial = a.button_serial();
+    let _drag = a.start_drag(&a_window.surface, serial, true);
+    pointer_to(&server, exclusive_point(&to));
+    b.roundtrip();
+    assert!(server.with_state(|s| s.dnd_icon.is_some()));
+
+    // Escape is evdev KEY_ESC (1) + 8.
+    let esc = Keycode::new(1 + 8);
+    server.with_state(move |s| s.press_key(esc, KeyState::Pressed, InputTime::now()));
+    server.with_state(move |s| s.press_key(esc, KeyState::Released, InputTime::now()));
+    a.roundtrip();
+    b.roundtrip();
+
+    assert!(
+        server.with_state(|s| s.dnd_icon.is_none()),
+        "icon survived Escape"
+    );
+    assert!(!server.with_state(|s| s.dnd_active));
+    assert_eq!(a.cancelled_sources(), 1, "the source was not cancelled");
+    assert_eq!(b.dnd_target_events().1, 0, "the cancelled drag was dropped");
+    assert_eq!(a.key_presses(), 0, "Escape reached the dragging client");
+
+    // The button release afterwards drops nothing.
+    button(&server, ButtonState::Released);
+    b.roundtrip();
+    assert_eq!(b.dnd_target_events().1, 0);
 }

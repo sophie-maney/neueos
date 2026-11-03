@@ -8,7 +8,7 @@ use smithay::backend::input::{
     InputTime, KeyState, KeyboardKeyEvent, PointerAxisEvent, PointerButtonEvent,
     PointerMotionEvent,
 };
-use smithay::input::keyboard::{FilterResult, Keysym};
+use smithay::input::keyboard::{FilterResult, Keycode, Keysym};
 use smithay::input::pointer::{AxisFrame, ButtonEvent, MotionEvent};
 use smithay::utils::{Logical, Point, Rectangle, SERIAL_COUNTER};
 use tracing::{debug, info, warn};
@@ -23,6 +23,9 @@ pub enum KeyAction {
     SwitchVt(i32),
     /// Run the named action of `[keybindings]` (see `neuectl actions`).
     Run(String),
+    /// Escape while a drag is running: end it without a drop. Clients see no Escape;
+    /// the data source is cancelled, as GTK and Qt expect.
+    CancelDrag,
     /// The release of a key whose press was a binding: dropped, not forwarded.
     Swallow,
 }
@@ -52,34 +55,41 @@ impl State {
     }
 
     fn on_key<I: InputBackend>(&mut self, event: I::KeyboardKeyEvent) {
+        self.press_key(event.key_code(), event.state(), event.time());
+    }
+
+    /// Press or release the key `keycode` (an xkb keycode, evdev + 8). Bindings and the
+    /// Escape that cancels a drag are handled here. Tests use this to script input.
+    pub fn press_key(&mut self, keycode: Keycode, key_state: KeyState, time: InputTime) {
         let serial = SERIAL_COUNTER.next_serial();
-        let time = event.time();
-        let pressed = event.state() == KeyState::Pressed;
+        let pressed = key_state == KeyState::Pressed;
         let keyboard = self.keyboard.clone();
-        let keycode = event.key_code().raw();
+        let keycode_raw = keycode.raw();
         let action = keyboard.input::<KeyAction, _>(
             self,
-            event.key_code(),
-            event.state(),
+            keycode,
+            key_state,
             serial,
             time,
             |state, modifiers, handle| {
                 // Bindings fire on press and take the matching release with them.
                 if !pressed {
-                    return if state.config.swallowed.remove(&keycode) {
+                    return if state.config.swallowed.remove(&keycode_raw) {
                         FilterResult::Intercept(KeyAction::Swallow)
                     } else {
                         FilterResult::Forward
                     };
                 }
                 let sym = handle.modified_sym();
-                let action = vt_switch(sym).or_else(|| {
+                let cancel_drag =
+                    (state.dnd_active && sym == Keysym::Escape).then_some(KeyAction::CancelDrag);
+                let action = cancel_drag.or_else(|| vt_switch(sym)).or_else(|| {
                     let name = state.config.bindings.lookup(modifiers, sym)?;
                     Some(KeyAction::Run(name.to_owned()))
                 });
                 match action {
                     Some(action) => {
-                        state.config.swallowed.insert(keycode);
+                        state.config.swallowed.insert(keycode_raw);
                         FilterResult::Intercept(action)
                     }
                     None => FilterResult::Forward,
@@ -94,6 +104,12 @@ impl State {
     fn run_key_action(&mut self, action: KeyAction) {
         match action {
             KeyAction::Swallow => {}
+            KeyAction::CancelDrag => {
+                let serial = SERIAL_COUNTER.next_serial();
+                self.pointer
+                    .clone()
+                    .unset_grab(self, serial, InputTime::now());
+            }
             KeyAction::Run(name) => {
                 info!(action = name, "key binding");
                 let params = neue_ipc::ActionParams {

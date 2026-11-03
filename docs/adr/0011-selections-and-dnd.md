@@ -30,6 +30,11 @@ keyboard focus, and drag icons.
    happens or the drag is cancelled. Both backends draw it just under the cursor and send
    it frame callbacks, so animated icons work. Pointer drags only; touch DnD waits for
    touch input.
+   **Escape cancels a drag.** Smithay doesn't end the grab when a client destroys its data
+   source, so a client-side cancel (GTK on Esc) would leave the icon on screen until the
+   button is released. While a drag runs (`State::dnd_active`), the compositor takes Escape
+   itself: the pointer grab is unset without a drop, the source gets `cancelled`, the icon
+   goes, and clients never see the key.
 5. **No clipboard persistence.** When the owning client exits the selection is gone. A
    clipboard manager built on data-control (a later shell task) can keep it alive.
 
