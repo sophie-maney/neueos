@@ -45,13 +45,15 @@ orb run -m neueos-arm64 -w "$PWD" rustup toolchain install
 orb run -m neueos-amd64 -w "$PWD" rustup toolchain install
 ```
 Library packages for the compositor. Each task that adds a linked C library adds its package
-here. `neue-comp` links only `libxkbcommon` so far. EGL, GLES and libwayland are dlopened,
+here. `neue-comp` links `libxkbcommon`, and with the `tty` feature (task 1.4) `libinput`,
+`libudev` (from `systemd-libs`, already installed), `libseat` (package `seatd`) and `libgbm`
+(package `mesa`). EGL, GLES and libwayland are dlopened,
 but the headless tests (task 1.2) need `libwayland-client` at runtime: the dev-only `winit`
 feature switches `wayland-client` to the system library for the whole build, so the
 scripted test clients load it too.
 ```sh
-orb run -m neueos-arm64 sudo pacman -S --noconfirm --needed libxkbcommon wayland
-orb run -m neueos-amd64 sudo pacman -S --noconfirm --needed libxkbcommon wayland
+orb run -m neueos-arm64 sudo pacman -S --noconfirm --needed libxkbcommon wayland libinput seatd mesa
+orb run -m neueos-amd64 sudo pacman -S --noconfirm --needed libxkbcommon wayland libinput seatd mesa
 ```
 
 ### 1.3 Check
@@ -235,3 +237,28 @@ Quirks: `mousemove --absolute` lands at twice the requested coordinates (relativ
 1:1). Smithay's winit backend ignores pointer-enter, so after the pointer jumps into the
 nested window, send one relative move before clicking, or the click uses a stale position.
 Stop with `sudo pkill -x ydotoold; pkill -x weston` (`pkill -x`, see `vm-graphics.md`).
+
+## 4. Running neue-comp on the VM console (tty backend)
+For compositor tasks checked "in the VM on DRM under seatd". Needs §2.3 (seatd running, the
+user in `seat`, `video` and `input`, kmscon replaced by getty) and nothing else holding DRM
+master (stop weston first: `pkill -x weston`).
+```sh
+rsync -az --delete --exclude target --exclude .git ./ neueos-vm:neueos/
+ssh neueos-vm 'cd neueos && cargo build --release -p neue-comp -p neuectl --no-default-features --features tty'
+ssh neueos-vm 'export XDG_RUNTIME_DIR=/run/user/1000; unset WAYLAND_DISPLAY
+  setsid nohup ~/neueos/target/release/neue-comp --tty -c foot >/tmp/neue-comp.log 2>&1 </dev/null &'
+prlctl capture neueos-vm --file /tmp/shot.png
+```
+Without `WAYLAND_DISPLAY`, the tty backend is the default, so `--tty` is optional. It takes over
+the active VT (tty1). Ctrl+Alt+F1…F12 switch VTs, Super+Q quits, and so does
+`WAYLAND_DISPLAY=wayland-1 neuectl quit` over ssh. The console comes back on exit.
+`NEUE_DRM_DEVICE=/dev/dri/cardN` picks a GPU.
+
+**Scripted input** works as in §3: `prlctl send-key-event` reaches libinput through the VM
+keyboard, and ydotool's uinput device is picked up by libinput as a new device. Chords need
+explicit press/release: `prlctl send-key-event neueos-vm -s 29 -e press` (Ctrl), then 56
+(Alt) and 60 (F2), then the same with `-e release`.
+
+**Known log noise on virtio-gpu:** "Failed to destroy old mode property blob" at start-up and
+"Failed to restore previous state. Error: Invalid argument" on exit. The DRM state that fbcon
+left behind is stale. Nothing breaks: the console redraws on exit.

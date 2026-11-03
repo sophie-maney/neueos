@@ -78,5 +78,28 @@ the hard rule for what we ship:
   `wl_data_device_manager` (foot refuses to start without one; the rest of 1.8 stays there).
 - Revisit if Smithay makes winit's X11 support optional (then drop the feature split).
 
+## Amendment 2 (2026-11-03, task 1.4): tty backend scope
+- **Cargo feature `tty`** (`smithay/backend_gbm`, `backend_libinput`, `backend_udev`,
+  `backend_session_libseat`), on by default next to `winit`. Release builds use
+  `--no-default-features --features tty`; that build has no X11 crates (checked with
+  `cargo tree`). Headless-only builds can drop it and skip linking libinput, libudev, libseat
+  and libgbm.
+- **Plain `GlesRenderer`, not `MultiRenderer` yet.** 1.4 drives one GPU and one output, so the
+  renderer is built directly on EGL/GBM (two `unsafe` constructors with `SAFETY` notes, as in
+  anvil and niri). `MultiRenderer`/`GpuManager` (decision 4) come with hybrid-GPU support.
+  `DrmOutputManager` is used already, so multi-output (1.7) reuses this structure.
+- **No `smithay-drm-extras`.** Connector and CRTC selection is a few lines of `drm-rs`.
+  Its `display-info` default would also pull in `libdisplay-info`, which decision 7 allows
+  only "if Smithay enables it". For now outputs report make and model as "Unknown". EDID
+  parsing gets its own decision (likely with 1.7).
+- **Planes:** the cursor goes on the cursor plane (`FrameFlags::ALLOW_CURSOR_PLANE_SCANOUT`).
+  Overlay planes and primary-plane scanout of client buffers stay off until direct scanout
+  (1.15).
+- **Built-in cursor:** a procedural arrow (`neue-comp/src/cursor.rs`, original artwork) until
+  XCursor themes (1.9), and kept as the fallback when no theme is installed.
+- **Repaint:** after each vblank, and once per refresh interval while nothing is damaged
+  (anvil's scheme). Render-on-commit and the latency-reducing repaint delay are part of the
+  damage review in 1.15.
+
 ## Revisit when
 Smithay resumes regular releases; or we need a Vulkan renderer (HDR, colour management).

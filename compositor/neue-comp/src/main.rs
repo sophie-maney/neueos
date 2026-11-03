@@ -1,11 +1,11 @@
 //! `neue-comp`: the neueOS Wayland compositor.
 //!
 //! ```text
-//! neue-comp [--winit|--headless] [-c|--command <cmd>]...
+//! neue-comp [--tty|--winit|--headless] [-c|--command <cmd>]...
 //! ```
 //!
-//! The default backend is winit when compiled in (the `winit` feature), else headless.
-//! The tty backend (task 1.4) will become the default outside a graphical session.
+//! Default backend: winit inside another Wayland session (`WAYLAND_DISPLAY` set), else tty;
+//! each only when its cargo feature is compiled in, falling back to headless.
 
 #[cfg(target_os = "linux")]
 fn main() -> anyhow::Result<()> {
@@ -17,7 +17,12 @@ fn main() -> anyhow::Result<()> {
         .with_env_filter(EnvFilter::try_from_default_env().unwrap_or_else(|_| "info".into()))
         .init();
 
-    let default_backend = if cfg!(feature = "winit") {
+    let nested = std::env::var_os("WAYLAND_DISPLAY").is_some();
+    let default_backend = if cfg!(feature = "winit") && nested {
+        BackendKind::Winit
+    } else if cfg!(feature = "tty") {
+        BackendKind::Tty
+    } else if cfg!(feature = "winit") {
         BackendKind::Winit
     } else {
         BackendKind::Headless
@@ -26,13 +31,14 @@ fn main() -> anyhow::Result<()> {
     let mut args = std::env::args().skip(1);
     while let Some(arg) = args.next() {
         match arg.as_str() {
+            "--tty" => options.backend = BackendKind::Tty,
             "--winit" => options.backend = BackendKind::Winit,
             "--headless" => options.backend = BackendKind::Headless,
             "-c" | "--command" => options
                 .commands
                 .push(args.next().context("--command needs an argument")?),
             "-h" | "--help" => {
-                println!("usage: neue-comp [--winit|--headless] [-c|--command <cmd>]...");
+                println!("usage: neue-comp [--tty|--winit|--headless] [-c|--command <cmd>]...");
                 return Ok(());
             }
             other => bail!("unknown argument `{other}` (try --help)"),

@@ -495,10 +495,14 @@ Decisions to follow: ADR 0001 (Smithay), 0003 (IPC), 0004 (config), 0005 (global
       *Done:* wire details in ADR 0007. Actions so far: `quit`, `close-window`,
       `focus-window`; `spaces`, `reload-config` and `screenshot` wait for their tasks.
       The harness gives every test server an IPC socket (`Server::ipc()`).
-- [ ] **1.4 tty backend** · Opus. DRM/KMS atomic, GBM, libinput, udev, libseat; single
+- [x] **1.4 tty backend** · Opus. DRM/KMS atomic, GBM, libinput, udev, libseat; single
       output; VT switching; cursor plane.
       *Accept:* in the VM on DRM under seatd, `foot` runs and keyboard/pointer work
       (owner at the VM window confirms input).
+      *Done:* cargo feature `tty`, now the default outside a Wayland session; built-in arrow
+      cursor plus client cursor surfaces; plain `GlesRenderer`, no overlays yet (ADR 0001
+      amendment 2). Verified in the VM with scripted input (Parallels key events, ydotool).
+      The owner hasn't confirmed by hand yet. VM steps: `docs/dev-setup.md` §4.
 - [ ] **1.5 Floating window management** · Opus. Focus and stacking rules, interactive move
       and resize (xdg `move`/`resize`), window placement, minimise/zoom/close as actions,
       xdg-activation focus stealing rules.

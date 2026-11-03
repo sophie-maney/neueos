@@ -11,18 +11,24 @@
 //! - [`placement`]: where new windows go (a cascading stack).
 //! - `ipc`: the `neuectl` socket (ADR 0003, ADR 0007).
 //! - `headless`: a virtual output without rendering or input; used by tests.
+//! - `tty`: DRM/KMS, libinput and libseat on real hardware and the VM (cargo feature `tty`).
+//! - `cursor`: the built-in pointer image.
 //! - `winit`: the nested development backend (cargo feature `winit`).
 //!
 //! The skeleton follows Smithay's `smallvil` and `anvil` examples (MIT); see the comments in
 //! each module for what was taken from where.
 #![cfg(target_os = "linux")]
 
+#[cfg(feature = "tty")]
+mod cursor;
 mod handlers;
 mod headless;
 mod input;
 mod ipc;
 pub mod placement;
 pub mod state;
+#[cfg(feature = "tty")]
+mod tty;
 #[cfg(feature = "winit")]
 mod winit;
 
@@ -50,6 +56,8 @@ pub enum BackendKind {
     Winit,
     /// A virtual output, no rendering and no input devices (tests).
     Headless,
+    /// DRM/KMS and libinput on a seat: real hardware, or the VM console.
+    Tty,
 }
 
 /// Start-up options, parsed from the command line by the binary.
@@ -89,7 +97,7 @@ pub enum Error {
         source: Box<dyn std::error::Error + Send + Sync>,
     },
     /// The requested backend is not compiled into this binary.
-    #[error("backend {0:?} is not compiled in (enable the `winit` cargo feature)")]
+    #[error("backend {0:?} is not compiled in (enable its cargo feature: `winit` or `tty`)")]
     BackendUnavailable(BackendKind),
 }
 
@@ -133,7 +141,8 @@ impl Compositor {
             Display::new().map_err(Error::init("creating the Wayland display"))?;
         let dh = display.handle();
 
-        #[cfg_attr(not(feature = "winit"), allow(unused_mut))] // only winit adds a global
+        // Only winit and tty add a global.
+        #[cfg_attr(not(any(feature = "winit", feature = "tty")), allow(unused_mut))]
         let mut dmabuf_state = DmabufState::new();
         let backend = match options.backend {
             #[cfg(feature = "winit")]
@@ -148,6 +157,10 @@ impl Compositor {
             }
             #[cfg(not(feature = "winit"))]
             BackendKind::Winit => return Err(Error::BackendUnavailable(BackendKind::Winit)),
+            #[cfg(feature = "tty")]
+            BackendKind::Tty => tty::init(&dh, &mut dmabuf_state, &event_loop.handle())?,
+            #[cfg(not(feature = "tty"))]
+            BackendKind::Tty => return Err(Error::BackendUnavailable(BackendKind::Tty)),
             BackendKind::Headless => {
                 headless::start_frame_timer(&event_loop.handle())?;
                 headless::init(&dh)
