@@ -8,5 +8,32 @@ license.workspace = true
 repository.workspace = true
 publish.workspace = true
 
+[[bin]]
+name = "neue-comp"
+path = "src/main.rs"
+
+[features]
+default = ["winit"]
+# Nested backend for development. Smithay's winit backend force-enables winit's `x11`
+# feature, which pulls in X11 client crates (never used at runtime: winit picks Wayland
+# when WAYLAND_DISPLAY is set). Release/distro builds use `--no-default-features` so the
+# shipped binary contains no X11 code. See ADR 0001 ("winit backend and X11 crates").
+winit = ["smithay/backend_winit"]
+
+[dependencies]
+anyhow.workspace = true
+thiserror.workspace = true
+tracing.workspace = true
+tracing-subscriber.workspace = true
+
+[target.'cfg(target_os = "linux")'.dependencies]
+smithay = { workspace = true, features = [
+    "backend_drm",
+    "backend_egl",
+    "renderer_gl",
+    "desktop",
+    "wayland_frontend",
+] }
+
 [lints]
 workspace = true

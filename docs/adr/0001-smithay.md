@@ -64,5 +64,19 @@ seatd, both on DRM and nested in weston. The VM has no hardware Vulkan (llvmpipe
   architecture; cosmic-comp's licence is incompatible. Reading them is enough.
 - **crates.io Smithay 0.7:** too far behind `main` (16 months of fixes and protocol work).
 
+## Amendment 1 (2026-11-03, task 1.1): winit backend and X11 crates
+Smithay's `backend_winit` hard-enables winit's `x11` feature, so it pulls the X11 client
+crates (`x11-dl`, `x11rb`) into the build. They never run in practice: winit picks Wayland
+whenever `WAYLAND_DISPLAY` is set, and we only ever nest inside Wayland compositors. To keep
+the hard rule for what we ship:
+- `neue-comp` has a cargo feature **`winit`** (`smithay/backend_winit`), on by default for
+  development. Release and distro builds (PKGBUILD, ISO) build with `--no-default-features`
+  plus the production backends (`tty`, from task 1.4), so the shipped binary contains no X11
+  code. Until 1.4 lands, building without `winit` is a compile error.
+- Besides the decision-3 list, 1.1 enables `backend_drm` (pure-Rust `drm` ioctls) for the
+  winit backend's linux-dmabuf v4 feedback (render node lookup), and implements the core
+  `wl_data_device_manager` (foot refuses to start without one; the rest of 1.8 stays there).
+- Revisit if Smithay makes winit's X11 support optional (then drop the feature split).
+
 ## Revisit when
 Smithay resumes regular releases; or we need a Vulkan renderer (HDR, colour management).

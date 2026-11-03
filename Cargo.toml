@@ -25,6 +25,11 @@ wgpu = "30.0"
 winit = { version = "0.30.13", default-features = false, features = ["rwh_06", "wayland", "wayland-dlopen"] }
 pollster = "1.0"
 
+# Compositor. Pinned git rev of main per ADR 0001; bump in its own PR. Features are chosen
+# per crate; never enable `xwayland`, `backend_x11` or `x11rb_event_source`.
+smithay = { git = "https://github.com/Smithay/smithay", rev = "c7a26ade404dd7593d92514fb571922dccd1050a", default-features = false }
+tracing-subscriber = { version = "0.3", features = ["env-filter"] }
+
 # Internal crates
 neue-paint = { path = "crates/neue-paint" }
 

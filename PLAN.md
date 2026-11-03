@@ -473,10 +473,13 @@ One task = one thread = one PR, as in Phase 0. Rough order: 1.1 → 1.2 → 1.3 
 and are checked with `cargo xtask linux cargo xtask check` plus a headless test.
 Decisions to follow: ADR 0001 (Smithay), 0003 (IPC), 0004 (config), 0005 (global menu).
 
-- [ ] **1.1 Compositor skeleton on winit** · Opus. calloop loop, Smithay state, compositor,
+- [x] **1.1 Compositor skeleton on winit** · Opus. calloop loop, Smithay state, compositor,
       shm, linux-dmabuf, seat, output, xdg-shell; winit backend; GLES renderer with damage
       tracking; new windows placed in a stack, click to focus; Super+Q quits.
       *Accept:* `foot` and `weston-terminal` show and take input nested under weston in the VM.
+      *Done:* also has the core data device (foot needs it) and dmabuf v4 feedback; the
+      winit backend is a dev-only cargo feature (ADR 0001 amendment 1). VM steps:
+      `docs/dev-setup.md` §3.
 - [ ] **1.2 Headless backend + test harness** · Opus. Headless backend (EGL surfaceless when
       pixels are needed), a scripted test client on `wayland-client`, and a first test
       that maps an `xdg_toplevel` and asserts the window list. Runs in CI on Linux.
@@ -504,7 +507,7 @@ Decisions to follow: ADR 0001 (Smithay), 0003 (IPC), 0004 (config), 0005 (global
       fractional-scale-v1, viewporter, per-output scale, windows moving between outputs.
       *Accept:* headless test with two outputs at scales 1 and 1.5; VM hotplug by resizing
       the Parallels window (owner).
-- [ ] **1.8 Clipboard and DnD** · Sonnet. Data device, primary selection, ext-data-control,
+- [ ] **1.8 Clipboard and DnD** · Sonnet. Data device (core part exists since 1.1), primary selection, ext-data-control,
       DnD with icon surfaces.
       *Accept:* `wl-copy`/`wl-paste` round trip in a headless test; DnD of a file between two
       GTK apps in the VM.
