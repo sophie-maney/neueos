@@ -22,7 +22,8 @@ All first-party code is Rust.
   used only through safe Rust bindings. Any new C dependency needs an ADR in `docs/adr/`.
 - **Wayland only.** Never add X11 or Xorg code, Xlib/XCB crates, or an X11 window manager
   to the compositor. Legacy X11 apps are handled exclusively by the external
-  `xwayland-satellite` process.
+  `xwayland-satellite` process. One exception: `neue-comp`'s dev-only `winit` feature pulls
+  in winit's X11 crates transitively (unused at runtime, never in release builds; ADR 0001).
 - **Audio:** PipeWire only. **App distribution:** Flatpak only (never Snap). **Base:** Arch
   Linux (x86_64) and Arch Linux ARM (aarch64).
 - **No Apple assets.** No Apple icons, textures, fonts (Lucida Grande, Helvetica Neue),

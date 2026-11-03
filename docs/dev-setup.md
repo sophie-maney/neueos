@@ -44,8 +44,12 @@ running rustup inside the repo (it reads the file; the pin is the single source 
 orb run -m neueos-arm64 -w "$PWD" rustup toolchain install
 orb run -m neueos-amd64 -w "$PWD" rustup toolchain install
 ```
-Library packages for the compositor (libinput, mesa, seatd, libxkbcommon, ...) are **not**
-needed yet. The task that adds each dependency adds its package here.
+Library packages for the compositor. Each task that adds a linked C library adds its package
+here. `neue-comp` links only `libxkbcommon` so far (EGL, GLES and libwayland are dlopened):
+```sh
+orb run -m neueos-arm64 sudo pacman -S --noconfirm --needed libxkbcommon
+orb run -m neueos-amd64 sudo pacman -S --noconfirm --needed libxkbcommon
+```
 
 ### 1.3 Check
 ```sh
@@ -195,3 +199,32 @@ deviated, and fill in:
 | `/dev/dri` contents in the VM | by-path, card0, renderD128 |
 | Parallels Tools tried? Shared folders usable? | No |
 | Anything in this doc that was wrong | No |
+
+## 3. Running neue-comp nested in the VM
+For compositor tasks checked "nested under weston in the VM". One-time packages:
+`sudo pacman -S --needed weston foot ydotool`.
+```sh
+rsync -az --delete --exclude target --exclude .git ./ neueos-vm:neueos/
+ssh neueos-vm 'cd neueos && cargo build --release -p neue-comp'
+ssh neueos-vm 'export XDG_RUNTIME_DIR=/run/user/1000
+  setsid nohup weston --backend=drm --idle-time=0 --socket=wl-stock >/tmp/weston.log 2>&1 </dev/null &
+  sleep 2; WAYLAND_DISPLAY=wl-stock setsid nohup ~/neueos/target/release/neue-comp \
+    -c foot -c weston-terminal >/tmp/neue-comp.log 2>&1 </dev/null &'
+prlctl capture neueos-vm --file /tmp/shot.png      # look at the result from the Mac
+```
+`neue-comp -c <cmd>` spawns `<cmd>` as a client (repeatable); `RUST_LOG=neue_comp=debug` logs
+window mapping and clicks. Super+Q quits.
+
+**Scripted input** (until `neuectl` exists, task 1.3): `prlctl send-key-event neueos-vm
+--scancode <set-1 scancode>` types into the focused window. For the pointer, run ydotool's
+daemon as root and drive it as the user:
+```sh
+ssh neueos-vm 'sudo sh -c "setsid nohup ydotoold --socket-path=/tmp/.ydotool_socket \
+  --socket-own=1000:1000 >/dev/null 2>&1 </dev/null &"'
+ssh neueos-vm 'export YDOTOOL_SOCKET=/tmp/.ydotool_socket
+  ydotool mousemove -x 10 -y 10; ydotool click 0xC0; ydotool type "echo ok"; ydotool key 28:1 28:0'
+```
+Quirks: `mousemove --absolute` lands at twice the requested coordinates (relative moves are
+1:1). Smithay's winit backend ignores pointer-enter, so after the pointer jumps into the
+nested window, send one relative move before clicking, or the click uses a stale position.
+Stop with `sudo pkill -x ydotoold; pkill -x weston` (`pkill -x`, see `vm-graphics.md`).

@@ -41,5 +41,10 @@ jobs:
 
       - uses: Swatinem/rust-cache@v2
 
+      # C libraries neue-comp links (docs/dev-setup.md §1.2). Others are dlopened.
+      - name: Install Linux build dependencies
+        if: runner.os == 'Linux'
+        run: sudo apt-get update && sudo apt-get install -y --no-install-recommends libxkbcommon-dev
+
       - name: cargo xtask check
         run: cargo xtask check
