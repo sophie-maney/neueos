@@ -21,7 +21,7 @@ use neue_paint::Appearance;
 use neue_paint::Pixmap;
 use neue_paint::cpu::{CpuRenderer, Quality};
 use neue_paint::materials::title_bar::{
-    self, TITLE_FONT_SIZE, TitleBarSlice, TitleBarStyle,
+    self, TITLE_FONT_SIZE, TitleBarSlice, TitleBarStyle, TrafficLight,
 };
 use neue_paint::text::TextEngine;
 use smithay::backend::allocator::Fourcc;
@@ -59,7 +59,16 @@ pub const TITLE_BAR_HEIGHT: i32 = {
 #[derive(Debug, Default)]
 struct KdeDecoration(RefCell<Option<KdeMode>>);
 
-/// Shared title-bar rendering: the CPU renderer, the text engine and the slice cache.
+/// The window whose traffic lights the pointer is over (or pressing), for drawing.
+#[derive(Debug, Clone, PartialEq)]
+pub struct Hover {
+    pub window: Window,
+    /// The button held down, while the pointer is still over it.
+    pub pressed: Option<TrafficLight>,
+}
+
+/// Shared title-bar rendering (the CPU renderer, the text engine and the slice cache) and
+/// the pointer's interaction state with the chrome (task 1.11, ADR 0014).
 #[derive(Debug)]
 pub struct Chrome {
     renderer: CpuRenderer,
@@ -68,6 +77,13 @@ pub struct Chrome {
     slices: HashMap<(TitleBarStyle, u64), Arc<[Pixmap; 3]>>,
     /// Appearance of every title bar. Light until the appearance setting exists (Phase 3).
     pub appearance: Appearance,
+    /// The traffic lights under the pointer, if any.
+    pub hover: Option<Hover>,
+    /// The pointer is over some chrome (so the cursor is ours, not a client's).
+    pub pointer_over: bool,
+    /// The last title-bar click that did not start a drag: window and time (ms), for
+    /// double-click detection.
+    pub last_click: Option<(Window, u32)>,
 }
 
 impl Default for Chrome {
@@ -77,6 +93,9 @@ impl Default for Chrome {
             text: TextEngine::new(),
             slices: HashMap::new(),
             appearance: Appearance::Light,
+            hover: None,
+            pointer_over: false,
+            last_click: None,
         }
     }
 }
@@ -145,7 +164,9 @@ fn with_window_chrome<T>(window: &Window, f: impl FnOnce(&mut WindowChrome) -> T
 }
 
 impl Chrome {
-    /// The three slices for `style` at `scale`, rendering them on first use.
+    /// The three slices for `style` at `scale`, rendering them on first use. Styles with
+    /// the pointer over the buttons only re-render the left slice; the others come from
+    /// the plain style.
     fn slices(&mut self, style: TitleBarStyle, scale: f64) -> Option<Arc<[Pixmap; 3]>> {
         let key = (style, scale.to_bits());
         if let Some(slices) = self.slices.get(&key) {
@@ -158,8 +179,14 @@ impl Chrome {
                 .map_err(|err| warn!(%err, "rendering a title bar slice failed"))
                 .ok()
         };
-        let [left, middle, right] = TitleBarSlice::ALL.map(&mut render);
-        let slices = Arc::new([left?, middle?, right?]);
+        let slices = if style == style.without_interaction() {
+            let [left, middle, right] = TitleBarSlice::ALL.map(&mut render);
+            Arc::new([left?, middle?, right?])
+        } else {
+            let left = render(TitleBarSlice::Left)?;
+            let plain = self.slices(style.without_interaction(), scale)?;
+            Arc::new([left, plain[1].clone(), plain[2].clone()])
+        };
         debug!(
             ?style,
             scale,
@@ -239,9 +266,15 @@ impl Chrome {
         width: i32,
         scale: f64,
     ) -> Vec<MemoryRenderBufferRenderElement<GlesRenderer>> {
+        let (hover, pressed) = match &self.hover {
+            Some(h) if h.window == *window => (true, h.pressed),
+            _ => (false, None),
+        };
         let style = TitleBarStyle {
             appearance: self.appearance,
             focused: is_activated(window),
+            hover,
+            pressed,
         };
         let Some(slices) = self.slices(style, scale) else {
             return Vec::new();
@@ -260,7 +293,7 @@ impl Chrome {
         self.update_title(
             window,
             title.as_deref().unwrap_or_default(),
-            style,
+            style.without_interaction(),
             scale,
             title_bar::title_max_width(width),
         );
@@ -345,6 +378,18 @@ pub fn title_bar_height(window: &Window) -> i32 {
     } else {
         0
     }
+}
+
+/// `window`'s frame: its client `geometry` plus the title bar, global logical coordinates.
+pub fn frame_geometry(
+    window: &Window,
+    geometry: Rectangle<i32, Logical>,
+) -> Rectangle<i32, Logical> {
+    let bar = title_bar_height(window);
+    Rectangle::new(
+        (geometry.loc.x, geometry.loc.y - bar).into(),
+        (geometry.size.w, geometry.size.h + bar).into(),
+    )
 }
 
 impl State {

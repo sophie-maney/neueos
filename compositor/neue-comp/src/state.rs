@@ -342,6 +342,10 @@ impl State {
         &self,
         pos: Point<f64, Logical>,
     ) -> Option<(WlSurface, Point<f64, Logical>)> {
+        // Title bars and resize edges belong to the compositor, not to the client.
+        if self.chrome_hit_at(pos).is_some() {
+            return None;
+        }
         self.space
             .element_under(pos)
             .and_then(|(window, location)| {

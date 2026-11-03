@@ -588,10 +588,20 @@ Decisions to follow: ADR 0001 (Smithay), 0003 (IPC), 0004 (config), 0005 (global
       style, zoom fits the client below it; cold slice render ≈0.5 ms, a title 0.05–0.4 ms
       (debug log). Owner checked the bars by hand in the VM (`docs/dev-setup.md` §9) and
       found them fine. Not done: appearance setting (light only), scale-2 check in the VM,
-      interaction (1.11; until then server-decorated windows can't be drag-resized).
-- [ ] **1.11 Chrome interaction** · Sonnet. Traffic-light hover/press and actions, drag to
+      interaction (done in 1.11).
+- [x] **1.11 Chrome interaction** · Sonnet. Traffic-light hover/press and actions, drag to
       move, double-click to zoom/minimise (per config), invisible resize edges.
       *Accept:* headless tests on hit-testing; VM check by the owner.
+      *Done:* rules in ADR 0014. `interaction::hit_test` (pure, unit-tested) and
+      `State::chrome_hit_at` find lights, bar and 5 px edges outside the frame; chrome has no
+      client pointer focus. Left press starts `TrafficLightGrab` (pressed look, action on
+      release over the button), `TitleBarGrab` (move after 3 px, double click otherwise) or
+      the existing `ResizeGrab`; resize cursors on hover. `[windows] title-bar-double-click`
+      (`zoom`/`minimize`/`none`) in `compositor.toml`. `neue-paint`: `TitleBarStyle` gains
+      `hover` (glyphs) and `pressed`; goldens `titlebar-{hover-*,pressed-*}`. Headless tests
+      in `tests/chrome.rs`. Not checked by the owner in the VM yet (`docs/dev-setup.md` §10).
+      Not done: touch and tablet input on chrome, hover refresh without pointer motion,
+      keyboard-driven resize.
 - [ ] **1.12 Shell-facing protocols** · Sonnet. wlr-layer-shell, ext-session-lock,
       ext-idle-notify, idle-inhibit, ext-foreign-toplevel-list, xdg-foreign, xdg-dialog-v1
       (modal flag only; sheets come later), xdg-toplevel-icon, xdg-system-bell,

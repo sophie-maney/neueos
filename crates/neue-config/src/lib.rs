@@ -26,7 +26,7 @@ use serde::de::DeserializeOwned;
 use toml::{Table, Value};
 
 pub use chord::{Chord, ChordError};
-pub use compositor::CompositorConfig;
+pub use compositor::{CompositorConfig, TitleBarDoubleClick, WindowsConfig};
 
 /// Directory name inside each config root.
 const DIR_NAME: &str = "neueos";

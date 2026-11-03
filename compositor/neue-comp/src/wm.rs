@@ -323,6 +323,7 @@ impl State {
             self.keyboard.current_focus().as_ref() == window.toplevel().map(|t| t.wl_surface());
         let parent = self.parent_window(window);
         let client = client_of(window);
+        self.chrome_window_gone(window);
         let geometry = Self::with_wm_data(window, |d| d.zoomed.then_some(d.unzoomed).flatten())
             .or_else(|| self.window_geometry(window));
         if let ((_, Some(app_id)), None, Some(geo)) = (title_and_app_id(window), &parent, geometry)
@@ -532,28 +533,40 @@ impl State {
         let Some(window) = self.window_for_surface(surface) else {
             return;
         };
-        let Some(mut geo) = self.space.element_geometry(&window) else {
+        let Some(initial_location) = self.begin_move(&window, start_data.location) else {
             return;
         };
-        if Self::with_wm_data(&window, |d| d.zoomed) {
-            let unzoomed = Self::with_wm_data(&window, |d| d.unzoomed);
+        let grab = MoveGrab {
+            start_data,
+            window,
+            initial_location,
+        };
+        let pointer = self.pointer.clone();
+        pointer.set_grab(self, grab, serial, Focus::Clear);
+    }
+
+    /// Get `window` ready to be dragged with the pointer at `pointer`: a zoomed window is
+    /// unzoomed first, keeping the pointer at the same relative spot of its title bar, and
+    /// the window is marked as grabbed. Returns where its geometry starts, or `None` if it
+    /// is not mapped.
+    pub(crate) fn begin_move(
+        &mut self,
+        window: &Window,
+        pointer: Point<f64, Logical>,
+    ) -> Option<Point<i32, Logical>> {
+        let mut geo = self.space.element_geometry(window)?;
+        if Self::with_wm_data(window, |d| d.zoomed) {
+            let unzoomed = Self::with_wm_data(window, |d| d.unzoomed);
             let size = unzoomed.map_or(geo.size, |g| g.size);
-            let pointer = start_data.location;
             let fraction = (pointer.x - f64::from(geo.loc.x)) / f64::from(geo.size.w.max(1));
             // Rounded to whole logical pixels on purpose.
             let x = (pointer.x - fraction * f64::from(size.w)).round() as i32;
             let loc = Point::from((x, geo.loc.y));
-            self.set_zoomed(&window, false, Some(loc));
-            geo = self.space.element_geometry(&window).unwrap_or(geo);
+            self.set_zoomed(window, false, Some(loc));
+            geo = self.space.element_geometry(window).unwrap_or(geo);
         }
-        Self::with_wm_data(&window, |d| d.grabbed = true);
-        let grab = MoveGrab {
-            start_data,
-            window,
-            initial_location: geo.loc,
-        };
-        let pointer = self.pointer.clone();
-        pointer.set_grab(self, grab, serial, Focus::Clear);
+        Self::with_wm_data(window, |d| d.grabbed = true);
+        Some(geo.loc)
     }
 
     /// `xdg_toplevel.resize`: drag `edge` with the pointer. Ignored while zoomed.

@@ -10,7 +10,7 @@
 //! Everything is vector-drawn, with a light and a dark variant and a focused and an
 //! unfocused state.
 
-use vello_common::kurbo::{Circle, Point, Rect, RoundedRect, RoundedRectRadii};
+use vello_common::kurbo::{Cap, Circle, Line, Point, Rect, RoundedRect, RoundedRectRadii, Stroke};
 use vello_common::peniko::{Color, Gradient};
 
 use crate::Appearance;
@@ -50,6 +50,23 @@ pub struct TitleBarStyle {
     pub appearance: Appearance,
     /// Whether the window is the focused (key) window.
     pub focused: bool,
+    /// The pointer is over the traffic lights: all three show their glyphs and, in an
+    /// unfocused window, their colour.
+    pub hover: bool,
+    /// The traffic light being pressed (the pointer went down on it and is still over it).
+    pub pressed: Option<TrafficLight>,
+}
+
+impl TitleBarStyle {
+    /// The same style with the pointer interaction removed: what the middle and right
+    /// slices and the title look like, whatever the buttons do.
+    pub fn without_interaction(self) -> Self {
+        Self {
+            hover: false,
+            pressed: None,
+            ..self
+        }
+    }
 }
 
 /// One of the three slices of a title bar.
@@ -196,7 +213,8 @@ impl ButtonPalette {
         } else {
             rgba(1.0, 1.0, 1.0, 0.60)
         };
-        if !style.focused {
+        // Hovering the buttons lights them even in an unfocused window.
+        if !(style.focused || style.hover) {
             return if dark {
                 Self {
                     rim: [grey(0.16), grey(0.12)],
@@ -232,11 +250,26 @@ impl ButtonPalette {
         } else {
             (rim, body)
         };
-        Self {
+        let palette = Self {
             rim,
             body,
             gloss: if dark { [0.45, 0.04] } else { [0.70, 0.06] },
             etch,
+        };
+        if style.pressed == Some(button) {
+            palette.pressed()
+        } else {
+            palette
+        }
+    }
+
+    /// The darker, flatter look of a button held down.
+    fn pressed(self) -> Self {
+        Self {
+            rim: self.rim.map(|c| darken(c, 0.85)),
+            body: self.body.map(|c| darken(c, 0.72)),
+            gloss: self.gloss.map(|a| a * 0.4),
+            etch: self.etch,
         }
     }
 }
@@ -303,6 +336,40 @@ fn button(scene: &mut Scene, which: TrafficLight, style: TitleBarStyle) {
             &[(0.0, white(p.gloss[0])), (1.0, white(p.gloss[1]))],
         ),
     );
+    if style.hover {
+        glyph(scene, which, center, p.rim[1]);
+    }
+}
+
+/// Half the length of a glyph stroke, from its centre.
+const GLYPH_REACH: f64 = 2.6;
+/// Line width of the glyphs.
+const GLYPH_WIDTH: f64 = 1.5;
+
+/// The symbol a button shows while the pointer is over the traffic lights: a cross, a
+/// bar and a plus.
+fn glyph(scene: &mut Scene, which: TrafficLight, center: Point, color: Color) {
+    let stroke = Stroke::new(GLYPH_WIDTH).with_caps(Cap::Round);
+    let r = GLYPH_REACH;
+    let mut line = |dx0: f64, dy0: f64, dx1: f64, dy1: f64| {
+        scene.stroke(
+            &Line::new(center + (dx0, dy0), center + (dx1, dy1)),
+            &stroke,
+            color,
+        );
+    };
+    match which {
+        TrafficLight::Close => {
+            let d = r * 0.85;
+            line(-d, -d, d, d);
+            line(-d, d, d, -d);
+        }
+        TrafficLight::Minimize => line(-r, 0.0, r, 0.0),
+        TrafficLight::Zoom => {
+            line(-r, 0.0, r, 0.0);
+            line(0.0, -r, 0.0, r);
+        }
+    }
 }
 
 /// Draw `slice` with its top-left corner at the origin. Every slice is cut out of the same
@@ -418,6 +485,7 @@ mod tests {
         let style = TitleBarStyle {
             appearance: Appearance::Light,
             focused: true,
+            ..TitleBarStyle::default()
         };
         let mut renderer = CpuRenderer::new(Quality::Reference);
         let mut full = Scene::new(MIN_WIDTH, TITLE_BAR_HEIGHT);

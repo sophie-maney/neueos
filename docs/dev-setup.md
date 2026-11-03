@@ -375,6 +375,27 @@ ssh neueos-vm 'export XDG_RUNTIME_DIR=/run/user/1000 RUST_LOG=info,neue_comp::de
 6. **Timings:** `grep rendered /tmp/neue-comp.log` shows "rendered title bar slices" and
    "rendered window title" with `micros=`.
 
-Not yet: clicking the buttons, dragging the bar or drag-resizing a server-decorated window
-(it has no resize edges until task 1.11; use `neuectl action resize-window`). Header-bar apps
-(`gnome-text-editor`, `gtk3-demo`) keep their own title bars by design.
+Header-bar apps (`gnome-text-editor`, `gtk3-demo`) keep their own title bars by design.
+Clicking, dragging and resizing the bars is §10.
+
+## 10. Checking chrome interaction in the VM (task 1.11)
+Rebuild and start as in §9 (`-c foot -c mousepad`; add `RUST_LOG=info,neue_comp=debug` to see
+"click on chrome"). Use the VM's own pointer. Check each line:
+1. **Hover:** move over the three buttons: all three show their glyphs (×, −, +), also in
+   the unfocused window, where they turn coloured. Moving off puts them back.
+2. **Press:** hold the mouse down on a button: it darkens. Drag off it: it pops back up;
+   release there and nothing happens. Release on it: close ends the app, minimise hides the
+   window (bring it back with `neuectl action unminimize-window --window ID`), zoom fills
+   the work area and a second click restores it.
+3. **Drag:** drag the bar: the window follows the pointer. A click that wobbles by 1–2 px
+   does not move it. Drag a zoomed window: it restores under the pointer.
+4. **Double click:** double-click the bar to zoom and again to restore. With
+   `[windows]` `title-bar-double-click = "minimize"` in `compositor.toml` (and
+   `neuectl action reload-config`) it minimises instead; `"none"` does nothing.
+5. **Edges:** the pointer turns into a resize cursor 5 px outside the window's left, right,
+   top and bottom edges and at the corners; dragging resizes (mousepad and foot). A
+   zoomed window has no edges.
+6. **Focus:** clicking an unfocused window's bar focuses and raises it. Clicking a
+   button of an unfocused window does not.
+7. **Clients don't see it:** moving over the bar must not change a text cursor to the
+   client's, and clicking on it must not move the text caret in mousepad.

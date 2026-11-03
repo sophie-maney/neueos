@@ -16,6 +16,10 @@ use smithay::utils::{Logical, Point, Rectangle, Size};
 use smithay::wayland::compositor::with_states;
 use smithay::wayland::shell::xdg::SurfaceCachedState;
 
+use neue_paint::materials::title_bar::TrafficLight;
+
+use crate::decorations::Hover;
+use crate::interaction::ChromeHit;
 use crate::state::State;
 use crate::wm::ResizeState;
 
@@ -215,13 +219,28 @@ pub fn size_limits(surface: &WlSurface) -> (Size<i32, Logical>, Size<i32, Logica
 }
 
 /// The left button, from `linux/input-event-codes.h`.
-const BTN_LEFT: u32 = 0x110;
+pub(crate) const BTN_LEFT: u32 = 0x110;
 
 /// Dragging a window by its title bar.
 pub struct MoveGrab {
     pub start_data: GrabStartData<State>,
     pub window: Window,
     pub initial_location: Point<i32, Logical>,
+}
+
+impl MoveGrab {
+    /// Put the window where a pointer at `pointer` drags it.
+    fn drag_to(&self, state: &mut State, pointer: Point<f64, Logical>) {
+        let delta = pointer - self.start_data.location;
+        let location = (self.initial_location.to_f64() + delta).to_i32_round();
+        state.move_window_to(&self.window, location);
+    }
+
+    /// The grab ended: the window's changes are reported again.
+    fn finish(&self, state: &mut State) {
+        State::with_wm_data(&self.window, |data| data.grabbed = false);
+        state.notify_window_changed(&self.window);
+    }
 }
 
 impl PointerGrab<State> for MoveGrab {
@@ -234,9 +253,7 @@ impl PointerGrab<State> for MoveGrab {
     ) {
         // No client has pointer focus during the grab.
         handle.motion(state, None, event);
-        let delta = event.location - self.start_data.location;
-        let location = (self.initial_location.to_f64() + delta).to_i32_round();
-        state.move_window_to(&self.window, location);
+        self.drag_to(state, event.location);
     }
 
     fn button(
@@ -256,8 +273,143 @@ impl PointerGrab<State> for MoveGrab {
     }
 
     fn unset(&mut self, state: &mut State) {
-        State::with_wm_data(&self.window, |data| data.grabbed = false);
-        state.notify_window_changed(&self.window);
+        self.finish(state);
+    }
+
+    forward_grab_events!();
+}
+
+/// How far (logical pixels) the pointer must travel with the button down on a title bar
+/// before it is a drag and not a click.
+const DRAG_THRESHOLD: f64 = 3.0;
+
+/// A press on a server-side title bar (task 1.11). It becomes a window move once the
+/// pointer has travelled [`DRAG_THRESHOLD`]; released before that, it is a click, and two
+/// clicks in a row are a double click ([`State::title_bar_clicked`]).
+pub struct TitleBarGrab {
+    pub start_data: GrabStartData<State>,
+    pub window: Window,
+    /// The move, once the press turned into a drag.
+    pub moving: Option<MoveGrab>,
+}
+
+impl PointerGrab<State> for TitleBarGrab {
+    fn motion(
+        &mut self,
+        state: &mut State,
+        handle: &mut PointerInnerHandle<'_, State>,
+        _focus: Focus,
+        event: &MotionEvent,
+    ) {
+        handle.motion(state, None, event);
+        if self.moving.is_none() {
+            let d = event.location - self.start_data.location;
+            if d.x.hypot(d.y) < DRAG_THRESHOLD {
+                return;
+            }
+            self.moving = state
+                .begin_move(&self.window, self.start_data.location)
+                .map(|initial_location| MoveGrab {
+                    start_data: self.start_data.clone(),
+                    window: self.window.clone(),
+                    initial_location,
+                });
+        }
+        if let Some(moving) = &self.moving {
+            moving.drag_to(state, event.location);
+        }
+    }
+
+    fn button(
+        &mut self,
+        state: &mut State,
+        handle: &mut PointerInnerHandle<'_, State>,
+        event: &ButtonEvent,
+    ) {
+        handle.button(state, event);
+        if !handle.current_pressed().contains(&BTN_LEFT) {
+            let pos = handle.current_location();
+            handle.unset_grab(self, state, event.serial, event.time, true);
+            if self.moving.is_none() && event.button == BTN_LEFT {
+                state.title_bar_clicked(&self.window, event.time.millis());
+            }
+            state.update_chrome_hover(pos);
+        }
+    }
+
+    fn start_data(&self) -> &GrabStartData<State> {
+        &self.start_data
+    }
+
+    fn unset(&mut self, state: &mut State) {
+        if let Some(moving) = &self.moving {
+            moving.finish(state);
+        }
+    }
+
+    forward_grab_events!();
+}
+
+/// A press on a traffic light (task 1.11). The button shows as pressed while the pointer
+/// is over it; releasing it there runs its action.
+pub struct TrafficLightGrab {
+    pub start_data: GrabStartData<State>,
+    pub window: Window,
+    pub button: TrafficLight,
+}
+
+impl TrafficLightGrab {
+    /// Update what the buttons look like for a pointer at `pos`; whether it is over our
+    /// button.
+    fn track(&self, state: &mut State, pos: Point<f64, Logical>) -> bool {
+        let over = match state.chrome_hit_at(pos) {
+            Some((window, ChromeHit::Button(button))) if window == self.window => Some(button),
+            _ => None,
+        };
+        state.chrome.hover = over.map(|_| Hover {
+            window: self.window.clone(),
+            pressed: (over == Some(self.button)).then_some(self.button),
+        });
+        over == Some(self.button)
+    }
+}
+
+impl PointerGrab<State> for TrafficLightGrab {
+    fn motion(
+        &mut self,
+        state: &mut State,
+        handle: &mut PointerInnerHandle<'_, State>,
+        _focus: Focus,
+        event: &MotionEvent,
+    ) {
+        handle.motion(state, None, event);
+        self.track(state, event.location);
+    }
+
+    fn button(
+        &mut self,
+        state: &mut State,
+        handle: &mut PointerInnerHandle<'_, State>,
+        event: &ButtonEvent,
+    ) {
+        handle.button(state, event);
+        if !handle.current_pressed().contains(&BTN_LEFT) {
+            let pos = handle.current_location();
+            let activate = self.track(state, pos) && event.button == BTN_LEFT;
+            handle.unset_grab(self, state, event.serial, event.time, true);
+            if activate {
+                state.activate_traffic_light(&self.window, self.button);
+            }
+            state.update_chrome_hover(pos);
+        }
+    }
+
+    fn start_data(&self) -> &GrabStartData<State> {
+        &self.start_data
+    }
+
+    fn unset(&mut self, state: &mut State) {
+        state.chrome.hover = None;
     }
 
     forward_grab_events!();
