@@ -170,12 +170,12 @@ deviated, and fill in:
 
 | Item | Result |
 |---|---|
-| macOS / Parallels / OrbStack versions | |
+| macOS / Parallels / OrbStack versions | macOS 27.2 / Parallels 27.1.0 / Orbstack 2.2.5 |
 | `neueos-arm64`: created, `cargo xtask linux cargo check` passes | |
-| `neueos-amd64`: created, `cargo xtask linux-amd64 cargo check` passes | |
-| archboot ISO file name and version used | |
-| Parallels install route (archboot, or fallback) | |
-| Keyboard worked in installer without the Cmd+Tab workaround? | |
-| `/dev/dri` contents in the VM | |
-| Parallels Tools tried? Shared folders usable? | |
-| Anything in this doc that was wrong | |
+| `neueos-amd64`: created, `cargo xtask linux-amd64 cargo check` passes | Yes |
+| archboot ISO file name and version used | archboot-2026.11.02-02.34-7.3.1-2-aarch64-ARCH-aarch64 |
+| Parallels install route (archboot, or fallback) | archboot |
+| Keyboard worked in installer without the Cmd+Tab workaround? | Yes |
+| `/dev/dri` contents in the VM | by-path, card0, renderD128 |
+| Parallels Tools tried? Shared folders usable? | No |
+| Anything in this doc that was wrong | No |
