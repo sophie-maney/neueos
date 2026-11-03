@@ -1,5 +1,8 @@
 # Global menu verification checklist (task 0.7)
 
+**Status: run on 2026-11-03 by Claude over SSH, with the owner's Plasma session open in the
+VM (results in §3).** Skipped or only partly run checks are marked in the tables.
+
 Owner runs this in the Parallels VM under a stock Plasma Wayland session. It verifies the
 desk research in `global-menu.md` (R1), so we can settle ADR 0005. Record results in the
 tables at the end, then copy the summary table into `global-menu.md`.
@@ -154,65 +157,111 @@ normally for the visual check.
 
 ## 3. Results
 
-Fill in. One row per check; leave the notes short and paste key log lines (3–5 lines
-max) under "Evidence" below the table.
+Run on 2026-11-03, in the Parallels VM (aarch64), Plasma 6.8.2 Wayland on KWin, driven over
+SSH against the live session. Screenshots (`prlctl capture`) are in
+`docs/research/img/global-menu/`. "Protocol" = what `WAYLAND_DEBUG=1` showed the app send.
+"Widget" = the Plasma Global Menu widget in the top panel.
 
-| # | Check | Status (tested / observed / not run) | Protocol request seen? | Menu in widget? | Click works? | Notes |
+**How this was run, and its limits.** There is no input injection in the VM (no `ydotool` or
+`xdotool`, and `sudo` needs a password), so nothing was clicked with the mouse. "Click works"
+means a DBusMenu `Event(clicked)` sent to the app's menu object opened the item (About
+dialog); clicking in the widget itself was not tested. Alt was not pressed in Firefox.
+Every app was started from SSH with the session's environment. Plasma's own bus
+(`/tmp/dbus-*`, not `/run/user/1000/bus`) must be used or the registrar is not visible.
+
+| # | Check | Status | Protocol | Widget | Click works? | Notes |
 |---|---|---|---|---|---|---|
-| 1.1 | Registrar present, owner | | n/a | n/a | n/a | |
-| 1.2 | Globals listed | | n/a | n/a | n/a | |
-| 2.1 | Qt6 KDE theme, registrar | | | | | |
-| 2.2 | Qt6 KDE theme, no registrar | | | | | |
-| 2.3 | Qt6 no KDE theme | | | | | |
-| 2.4 | Qt6 Dolphin, updates | | | | | |
-| 2.5 | Qt5 (optional) | | | | | |
-| 2.6 | GTK3 GtkApplication menubar | | | | | |
-| 2.7 | GTK3 GtkMenuBar | | | | | |
-| 2.8 | GTK4 set_menubar | | | | | |
-| 2.9 | GTK4 / libadwaita | | | | | |
-| 2.10 | Chromium default | | | | | |
-| 2.11 | Chromium no registrar | | | | | |
-| 2.12 | Firefox default | | | | | |
-| 2.13 | Firefox prefs on | | | | | |
-| 2.14 | Thunderbird (optional) | | | | | |
-| 2.15 | Electron | | | | | |
-| 2.16 | LibreOffice (kf6 / gtk3) | | | | | |
-| 2.17 | X11 app | | | | | |
-| 2.18 | Flatpak default | | | | | |
-| 2.19 | Flatpak + registrar permission | | | | | |
-| 2.20 | Flatpak sandbox call-in | | | | | |
+| 1.1 | Registrar present, owner | tested | n/a | n/a | n/a | `com.canonical.AppMenu.Registrar` is owned by `kded6` (its `appmenu` module). `gmenudbusmenuproxy` also runs (X11 GTK bridge). |
+| 1.2 | Globals listed | tested | n/a | n/a | n/a | `org_kde_kwin_appmenu_manager` v2 only. **No `gtk_shell1`** in KWin. |
+| 2.1 | Qt6, KDE theme, registrar | tested | `create` + `set_address(:1.41, /MenuBar/1)`, then `release` and a new object `/MenuBar/2` | Yes (Kate, 26.08.2) | Yes, by `Event` on "About Kate" | App serves `com.canonical.dbusmenu` (`GetLayout` works). |
+| 2.2 | Qt6, KDE theme, no registrar | tested | none (only binds the manager) | No (empty) | n/a | In-window menu bar shown instead. The registrar is required. |
+| 2.3 | Qt6 without the KDE theme | tested, **result differs from R1** | `set_address` sent | Yes | n/a | Still exports with `QT_QPA_PLATFORMTHEME=generic` and with `XDG_CURRENT_DESKTOP` unset. No plasma platform-theme plugin was loaded. `libQt6WaylandClient.so.6.12.0` itself contains `org_kde_kwin_appmenu`, so Qt 6.12's Wayland plugin has a native client. |
+| 2.4 | Qt6 Dolphin | tested | `set_address(:1.46, /MenuBar/1)`, objects re-created | Yes | not run | Menu updates (`LayoutUpdated`) not observed: no input to change state. |
+| 2.5 | Qt5 | not run | | | | No Qt5 app with a menu bar installed. |
+| 2.6 | GTK3 `GtkApplication` menubar | tested | none (KWin offers no `gtk_shell1`, so no `set_dbus_properties` can be sent) | No | `org.gtk.Menus.Start` answered | `gtk3-demo-application` exports `org.gtk.Demo2` on the session bus with `/org/gtk/Demo2/menus/{appmenu,menubar}` without any GTK module. The in-window menu bar stays. |
+| 2.7 | GTK3 `GtkMenuBar` | not run separately | | | | Covered in part by 2.6 (the demo's bar is built from a `GMenuModel`). No app with a hand-built `GtkMenuBar` was tried. |
+| 2.8 | GTK4 `set_menubar` | not run | | | | `gtk4-demo` is not installed (separate package, needs `sudo`). |
+| 2.9 | GTK4 / libadwaita | tested (Loupe 51.rc, Flatpak) | none | No | n/a | Nothing exported, as expected. |
+| 2.10 | Chromium default | tested (156.0.8078.79) | `create` + `set_address(:1.64, /com/canonical/menu/1)` | Yes (File Edit View History Tools Profiles Help) | not run | `--ozone-platform=wayland` only; no flag needed. |
+| 2.11 | Chromium without registrar | tested | none at start; **`set_address` appeared 11 s later, when the registrar was loaded again** | Yes after reload | n/a | Chromium waits for the registrar and exports when it shows up. Required, but picks up later. |
+| 2.12 | Firefox default | tested (159.0) | binds the manager (v2), never calls `create` | No | n/a | |
+| 2.13 | Firefox prefs on | tested, did not work | none | No | n/a | `widget.gtk.global-menu.enabled` and `.wayland.enabled` both `true` (in `prefs.js`, strings exist in `libxul`), plus menubar autohide off via `xulstore.json`: still no `create`. Two attempts, so stopped. Alt key and the blank-bar bug (1995226) not reached. |
+| 2.14 | Thunderbird | not run | | | | Not installed. |
+| 2.15 | Electron (VS Code 1.139.1, Flatpak) | tested | not seen (no Wayland trace inside the sandbox) | No | n/a | Screenshot only. The in-window menu (File Edit Selection View …) **stays visible**, so R1's "hides its menu" did not show. |
+| 2.16 | LibreOffice 26.8.1.1 | tested | `kf6`: `create`+`set_address`; `qt6`: `set_address`; `gtk3`: none | `kf6`: Yes; `qt6`: **empty**; `gtk3`: empty | not run | With `gtk3` the in-window menu bar is also gone, so no menu anywhere (first-run dialog was open). `gtk4` plugin not tried; default plugin not recorded. |
+| 2.17 | X11 app (GTK3 via Xwayland) | tested, **result differs from R1** | n/a (X11) | **Yes** (Preferences, Help) | not run | Plasma's `gmenudbusmenuproxy` bridges the `_GTK_*` X11 properties. X11-only; nothing found says xwayland-satellite does this. No X11 Java/Swing app tried. |
+| 2.18 | Flatpak Kate 26.04.2, default permissions | tested | not seen (see 2.15) | Yes | see 2.20 | The Kate manifest already grants `com.canonical.AppMenu.Registrar=talk`. |
+| 2.19 | Flatpak Kate, registrar permission removed (`--no-talk-name=`) | tested | no `/MenuBar` on its bus name | No | n/a | In-window menu shown. The permission is required inside the sandbox. |
+| 2.20 | Flatpak call-in | tested | n/a | n/a | Yes | The host called `GetLayout` and `Event` on the app's `xdg-dbus-proxy` name (`:1.156 /MenuBar/2`); the About dialog opened. |
 
 ### Versions
 
 | Item | Value |
 |---|---|
-| Plasma / KWin / Qt | |
-| Chromium / Firefox / Electron | |
-| GTK3 / GTK4 | |
-| LibreOffice | |
+| Plasma / KWin / Qt | 6.8.2 / 6.8.2 / qt6-base 6.12.0-3, qt6-wayland 6.12.0-1 |
+| Kate / Dolphin (host) | 26.08.2 / 26.08.2 |
+| Chromium / Firefox / VS Code (Electron) | 156.0.8078.79 / 159.0 / 1.139.1 (Flatpak) |
+| GTK3 / GTK4 | 3.24.52 / 4.24.1 |
+| LibreOffice | 26.8.1.1 (plugins present: gen, gtk3, gtk4, kf6, qt6) |
+| Flatpak apps | Kate 26.04.2 (KDE 6.10 runtime), Loupe 51.rc and gedit 51.0 (GNOME 51), VS Code 1.139.1 |
 
 ### Evidence
 
-(Paste short log lines or screenshot paths here, one heading per check number.)
+- 1.1/1.2: `busctl --user list` shows `com.canonical.AppMenu.Registrar` owned by `kded6`;
+  `wayland-info` lists only `org_kde_kwin_appmenu_manager` (v2), no `gtk_shell1`.
+- 2.1: `org_kde_kwin_appmenu_manager#18.create(...)` then
+  `org_kde_kwin_appmenu#44.set_address(":1.41", "/MenuBar/1")`, then `release()` and a second
+  object. Images: `2.1-kate.png`, `2.1-kate-click.png`.
+- 2.2: `2.2-kate-noregistrar.png` (menu inside the window, widget empty).
+- 2.3: `libQt6WaylandClient.so.6.12.0` matches `grep -a org_kde_kwin_appmenu`; Kate's `maps` has no
+  platform-theme plugin. Image: `2.3-kate-generic-nodesktop.png`.
+- 2.6: `org.gtk.Menus.Start au 1 0` on `/org/gtk/Demo2/menus/menubar` returned the Preferences and
+  Help submenus. Image: `2.6-gtk3-application.png`.
+- 2.10/2.11: chromium `set_address(":1.64", "/com/canonical/menu/1")`. In the no-registrar run
+  the only `set_address` is stamped 18:53:31, when the `appmenu` kded module was loaded again.
+  Images: `2.10-chromium.png`, `2.11-chromium-noregistrar.png` (taken after the reload, so it
+  shows the menu).
+- 2.12/2.13: `2.12-firefox-default.png`, `2.13-firefox-prefs-menubar.png`. The black strip at the
+  bottom of the Firefox window is a rendering glitch on virgl, unrelated to menus.
+- 2.15–2.20: `2.15-vscode.png`, `2.16-libreoffice-{kf6,qt6,gtk3}.png`, `2.17-x11-gtk3.png`,
+  `2.18-flatpak-kate.png`, `2.19-flatpak-kate-no-registrar-perm.png`,
+  `2.20-flatpak-kate-click.png`.
 
 ### Open questions found
 
-(Anything surprising, or anything you could not test and why.)
+1. **Firefox 159:** why no `create` with both prefs on? Try the Alt key and `MOZ_LOG`, ideally
+   on a real session where input works, or check whether the build needs another pref.
+2. **LibreOffice `qt6` plugin:** `set_address` is sent but the widget stayed empty. Retest
+   without the first-run dialog.
+3. **GTK on Wayland:** KWin has no `gtk_shell1`, so whether GTK sends `set_dbus_properties`
+   (and with what values) cannot be observed here. It needs our compositor (Phase 1) or a
+   compositor that implements `gtk_shell1`. What *is* confirmed: GTK3 exports `org.gtk.Menus`
+   and `org.gtk.Actions` on the session bus without any module.
+4. **Qt6:** the Wayland client is built into `qt6-wayland` 6.12, so `plasma-integration` is not
+   needed. Retest with an older Qt (6.8 LTS?) if we must support it.
+5. **Menu updates and widget-side clicks** (`LayoutUpdated`, `AboutToShow`) were not observed;
+   no input injection in the VM.
+6. **xwayland-satellite** vs the X11 route (2.17): untested, because it is not installed. Does
+   it forward `_GTK_*` or `_KDE_NET_WM_APPMENU_*` properties?
+7. GTK4 `set_menubar` (2.8), Qt5 (2.5), Thunderbird (2.14), LibreOffice `gtk4`: not run.
+
+### Things left on the VM
+
+Flatpak apps installed for the user (about 5.4 GB under `~/.local/share/flatpak`),
+`~/vsc-data`, and throw-away profiles under `/tmp`. Remove with
+`flatpak --user uninstall --all` if you want the space.
 
 ## 4. After you finish
 
-1. Copy a short coverage table (toolkit × tested/observed status × works?) into
-   `global-menu.md`, replacing the "Manual VM checklist" section with a link to this file.
-2. Tick task 0.7 in `PLAN.md`.
-3. Where a result contradicts the "Coverage" table in `global-menu.md`, fix that row.
-   ADR 0005 (task 0.8) is written from the corrected table.
+Done for 0.7 (2026-11-03): the coverage summary is in `global-menu.md` and the plan box is
+ticked. Remaining owner-only items are the open questions above that need real input.
 
 ## What the results feed into
 
-| Question | Decides |
-|---|---|
-| Registrar needed for Qt/Chromium? (2.2, 2.11) | Whether neue-comp/neue-shell must own `com.canonical.AppMenu.Registrar` in Phase 1 |
-| GTK sends `set_dbus_properties` without a module? (2.6, 2.8) | Whether `gtk_shell1` + a GMenuModel client is enough |
-| Chromium flag / Firefox prefs (2.10–2.13) | What the distro must ship as defaults |
-| Electron (2.15) | Fallback menu only, or wait for the upstream fix |
-| Flatpak (2.18–2.20) | Needed `--talk-name` overrides and sandbox access |
+| Question | Answer from the VM | Decides |
+|---|---|---|
+| Registrar needed for Qt/Chromium? (2.2, 2.11) | Yes for both. Chromium exports when it appears later; Qt did not export when started without it | neue-comp/neue-shell must own `com.canonical.AppMenu.Registrar` in Phase 1 |
+| GTK sends `set_dbus_properties` without a module? (2.6, 2.8) | Cannot tell on KWin (no `gtk_shell1`). The `org.gtk.Menus` export works without a module | Still needs `gtk_shell1` + a GMenuModel client; verify on our compositor |
+| Chromium flag / Firefox prefs (2.10–2.13) | Chromium: no flag. Firefox: prefs did not work in 159 | Ship Chromium defaults as they are; Firefox: fallback until retested |
+| Electron (2.15) | Nothing exported; the in-window menu stayed visible | Fallback only; wait for the upstream fix |
+| Flatpak (2.18–2.20) | Needs `--talk-name=com.canonical.AppMenu.Registrar` (Kate ships it); host can call into the sandbox | Document the override; check which Flatpak apps lack it |

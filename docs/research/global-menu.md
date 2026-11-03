@@ -47,20 +47,32 @@ Hyprland: nothing native; the third-party `hypr-appmenu` plugin bridges the KDE 
 
 Keep the PLAN.md design with one correction: for GTK on Wayland use `gtk_shell1`, not `appmenu-gtk-module`. Order: kde-appmenu + registrar + DBusMenu client (Qt, Chromium, Firefox); then `gtk_shell1` + GMenuModel; fallback menu for everything else (Electron, libadwaita, X11, Java).
 
-## Manual VM checklist
+## VM verification (2026-11-03, task 0.7)
 
-The full step-by-step version is `global-menu-checklist.md` (task 0.7). Summary:
+Run on KWin (Plasma 6.8.2 Wayland) in the Parallels VM; details, versions and screenshots in
+`global-menu-checklist.md`. "Tested" = run and seen; no input injection was available, so
+clicks were sent as DBusMenu `Event`s, not mouse clicks.
 
-- [ ] Qt6 with the KDE theme, with and without our registrar.
-- [ ] Plain Qt6 without the KDE theme: confirm nothing exported.
-- [ ] Chromium/Chrome: any flag needed? registrar required?
-- [ ] Firefox: prefs work on our compositor? Blank bar?
-- [ ] GTK3 `GtkApplication` app (Inkscape/GIMP): `set_dbus_properties` arrives without a module?
-- [ ] GTK4 app with `set_menubar`.
-- [ ] Electron (VS Code): confirm broken; retest after the PR merges.
-- [ ] LibreOffice kf6 plugin, then Flatpak.
-- [ ] Flatpak Qt/GTK apps with default permissions: do menus arrive? Can the shell call into the sandbox?
-- [ ] X11 app via xwayland-satellite shows the fallback menu.
+| Toolkit | Status | Result on KWin | vs. the desk research above |
+|---|---|---|---|
+| Qt6 (Kate, Dolphin) | tested | Exports, widget shows the menu. No registrar: no export. | **No `plasma-integration` needed:** `qt6-wayland` 6.12 has the client built in; still exports with `QT_QPA_PLATFORMTHEME=generic`. Registrar required. |
+| Qt5 | not run | | |
+| GTK3 `GtkApplication` | tested (partial) | `org.gtk.Menus` exported on the bus with no module; KWin has no `gtk_shell1`, so no protocol request to observe | Module not needed for the bus export. Wayland side unverified. |
+| GTK3 `GtkMenuBar`, GTK4 `set_menubar` | not run | | |
+| GTK4 / libadwaita (Loupe) | tested | Nothing exported | As expected |
+| Chromium 156 | tested | Exports with no flag; waits for the registrar and exports when it appears | Registrar required, confirmed |
+| Firefox 159 | tested, failed | Never calls `create`, even with both prefs on | Prefs alone are not enough here; unresolved |
+| Electron (VS Code 1.139.1, Flatpak) | tested | Nothing exported; in-window menu stays visible | R1 said the in-window menu is hidden; it was not |
+| Thunderbird | not run | | |
+| LibreOffice 26.8 | tested | `kf6`: works. `qt6`: `set_address` sent, widget empty. `gtk3`: no export and the in-window menu is gone | `gtk3` plugin can leave no menu at all |
+| Java / Swing | not run | | |
+| Flatpak (Kate) | tested | Works when the sandbox may talk to `com.canonical.AppMenu.Registrar` (Kate ships that); without it nothing is exported. The host can call into the sandbox | Confirmed |
+| X11 app (GTK3 under Xwayland) | tested | The widget showed the menu, via Plasma's `gmenudbusmenuproxy` and the `_GTK_*` X11 properties | R1 said X11 apps get nothing; true only without that proxy. xwayland-satellite untested |
+
+Consequences for ADR 0005: we need our own `com.canonical.AppMenu.Registrar` first (Qt,
+Chromium and Flatpak apps all depend on it). Then the KDE protocol, then `gtk_shell1` with a
+GMenuModel client, checked on our compositor (KWin cannot show it). Electron, Firefox and
+libadwaita get the fallback menu until retested.
 
 ## Sources
 
