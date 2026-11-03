@@ -171,7 +171,7 @@ deviated, and fill in:
 | Item | Result |
 |---|---|
 | macOS / Parallels / OrbStack versions | macOS 27.2 / Parallels 27.1.0 / Orbstack 2.2.5 |
-| `neueos-arm64`: created, `cargo xtask linux cargo check` passes | |
+| `neueos-arm64`: created, `cargo xtask linux cargo check` passes | Yes |
 | `neueos-amd64`: created, `cargo xtask linux-amd64 cargo check` passes | Yes |
 | archboot ISO file name and version used | archboot-2026.11.02-02.34-7.3.1-2-aarch64-ARCH-aarch64 |
 | Parallels install route (archboot, or fallback) | archboot |

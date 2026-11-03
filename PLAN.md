@@ -422,13 +422,13 @@ sequential, 0.4 can start once R2 is in, and 0.6 / 0.7 can run in parallel.
       Linux x86_64 and Linux arm64, with a pinned toolchain and caching.
       *Accept:* all three jobs green on the PR; required checks enabled on `main`.
       (Jobs green in PR #6. Enabling required checks on `main` is an owner step in GitHub settings.)
-- [ ] **0.4 Dev machines + `docs/dev-setup.md`** · Sonnet writes, **owner runs**.
+- [x] **0.4 Dev machines + `docs/dev-setup.md`** · Sonnet writes, **owner runs**.
       Exact steps for the OrbStack Arch machines (arm64 and amd64) and the Parallels
       Arch Linux ARM VM (route chosen from R2), file sync (Parallels Tools or
       virtiofs/SSH + rsync), and the Rust toolchain in each.
       *Accept:* owner has all three machines; the doc matches what was actually done.
-      (Doc drafted in `docs/dev-setup.md`, untested. Tick once the owner has run it and
-      filled in the "Record what you actually did" table.)
+      (Owner ran `docs/dev-setup.md`; results recorded at its end. GRUB_UEFI used, since
+      archboot offers no systemd-boot.)
 - [ ] **0.5 VM graphics checks** · Opus, owner at the VM. Record `eglinfo` (virgl vs.
       llvmpipe), run Smithay's `anvil` on the VM's DRM device and nested under a stock
       Wayland session, and run a vello demo in the VM. Results in
