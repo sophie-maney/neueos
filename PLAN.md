@@ -450,6 +450,7 @@ sequential, 0.4 can start once R2 is in, and 0.6 / 0.7 can run in parallel.
       runs it** in the VM under a stock Plasma Wayland session (Qt6, GTK3, Chromium/
       Electron, Firefox). Results added to `docs/research/global-menu.md`.
       *Accept:* a coverage table with tested/observed status per toolkit.
+      (Checklist written in `docs/research/global-menu-checklist.md`; owner still has to run it.)
 - [ ] **0.8 ADRs 0001–0005** · Opus. 0001 Smithay, 0002 toolkit stack and Masonry (from
       R3, R4, 0.6), 0003 IPC, 0004 config format, 0005 global-menu strategy (from R1,
       0.7). Then split Phase 1 into tasks.

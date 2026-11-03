@@ -49,6 +49,8 @@ Keep the PLAN.md design with one correction: for GTK on Wayland use `gtk_shell1`
 
 ## Manual VM checklist
 
+The full step-by-step version is `global-menu-checklist.md` (task 0.7). Summary:
+
 - [ ] Qt6 with the KDE theme, with and without our registrar.
 - [ ] Plain Qt6 without the KDE theme: confirm nothing exported.
 - [ ] Chromium/Chrome: any flag needed? registrar required?
