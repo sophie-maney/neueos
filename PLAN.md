@@ -418,9 +418,10 @@ sequential, 0.4 can start once R2 is in, and 0.6 / 0.7 can run in parallel.
       subcommands print "not implemented yet". Update "Commands" in `AGENTS.md`.
       *Accept:* `cargo xtask check` passes on macOS; `cargo xtask linux cargo check`
       works once 0.4 is done.
-- [ ] **0.3 CI** · Sonnet. GitHub Actions running `cargo xtask check` on macOS (aarch64),
+- [x] **0.3 CI** · Sonnet. GitHub Actions running `cargo xtask check` on macOS (aarch64),
       Linux x86_64 and Linux arm64, with a pinned toolchain and caching.
       *Accept:* all three jobs green on the PR; required checks enabled on `main`.
+      (Jobs green in PR #6. Enabling required checks on `main` is an owner step in GitHub settings.)
 - [ ] **0.4 Dev machines + `docs/dev-setup.md`** · Sonnet writes, **owner runs**.
       Exact steps for the OrbStack Arch machines (arm64 and amd64) and the Parallels
       Arch Linux ARM VM (route chosen from R2), file sync (Parallels Tools or
