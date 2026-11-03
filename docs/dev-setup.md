@@ -399,3 +399,28 @@ Rebuild and start as in §9 (`-c foot -c mousepad`; add `RUST_LOG=info,neue_comp
    button of an unfocused window does not.
 7. **Clients don't see it:** moving over the bar must not change a text cursor to the
    client's, and clicking on it must not move the text caret in mousepad.
+
+## 11. Checking the shell-facing protocols in the VM (task 1.12)
+Install the clients once: `sudo pacman -S --needed swaylock swaybg swayidle fuzzel waybar foot`.
+Rebuild and start on the tty as in §4 (`-c foot`, `RUST_LOG=info,neue_comp=debug`), then run
+each client from a foot terminal (the compositor's `WAYLAND_DISPLAY` is set there).
+1. **Panel (layer shell, exclusive zone):** `waybar` appears along the top edge. New windows
+   open below it, and `neuectl action zoom-window --window ID` fills only the space under
+   it. Killing waybar gives the space back and zoomed windows refit.
+2. **Background:** `swaybg -c '#336699'` paints behind the windows; windows stay on top and
+   clicking it focuses nothing (the focused window loses focus).
+3. **Launcher (exclusive keyboard):** `fuzzel` opens on top, takes the keyboard (typing goes
+   to it), and Escape closes it; the previous window has the keyboard again
+   (`neuectl focused-window`). Clicking another window while it is open does not take the
+   keyboard.
+4. **Session lock:** `swaylock -c 000000` covers the screen. Typing and clicking never reach
+   the windows underneath, Super+Q (or any binding) does nothing, Ctrl+Alt+F2 still
+   switches VT. Type your password (the VM user's) and the session unlocks with the
+   previous window focused. Kill swaylock with `pkill -9 swaylock` while locked: the screen
+   stays locked; starting `swaylock` again and unlocking works.
+5. **Idle:** `swayidle -w timeout 5 'echo idle' resume 'echo resume'` prints `idle` after
+   5 s without input and `resume` on the next key or pointer move.
+6. **Globals:** `wayland-info | grep -E 'layer_shell|session_lock|idle_notifier|idle_inhibit|foreign_toplevel_list|xdg_foreign|xdg_wm_dialog|toplevel_icon|system_bell|shortcuts_inhibit'`
+   lists all of them. The toplevel list's identifiers (`window-<id>`) are covered by the
+   headless tests.
+Record which of these you ran in the PR.

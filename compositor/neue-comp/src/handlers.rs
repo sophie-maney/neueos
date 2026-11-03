@@ -84,6 +84,7 @@ impl CompositorHandler for State {
             }
         }
 
+        self.commit_layer(surface);
         self.commit_unmapped(surface);
         self.commit_popup(surface);
         self.commit_dnd_icon(surface);
@@ -246,6 +247,8 @@ impl SeatHandler for State {
         let client = focused.and_then(|s| dh.get_client(s.id()).ok());
         set_data_device_focus(dh, seat, client.clone());
         set_primary_focus(dh, seat, client);
+
+        self.update_shortcut_inhibitor(focused);
 
         // Tell `neuectl` subscribers, once per actual change.
         let window = focused
@@ -493,6 +496,7 @@ impl State {
 
     fn toplevel_changed(&mut self, surface: &ToplevelSurface) {
         if let Some(window) = self.window_for_surface(surface.wl_surface()) {
+            self.update_foreign_toplevel(&window);
             self.notify_window_changed(&window);
         }
     }

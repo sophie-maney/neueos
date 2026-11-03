@@ -33,9 +33,11 @@ use wayland_protocols::xdg::shell::client::{
 
 mod decoration;
 mod selection;
+mod shell;
 
 pub use decoration::{KdeDefaultMode, KdeMode, XdgMode};
 pub use selection::{Drag, read_all};
+pub use shell::{Anchor, ForeignToplevel, KeyboardInteractivity, Layer, LayerHandle, SessionLock};
 
 /// A connected client with the core globals bound.
 pub struct TestClient {
@@ -99,6 +101,8 @@ struct ClientData {
     offers: selection::Offers,
     /// Decoration objects and modes (see `decoration.rs`).
     decorations: decoration::Decorations,
+    /// Shell-facing protocol objects and events (see `shell.rs`).
+    shell: shell::ShellData,
 }
 
 impl TestClient {
