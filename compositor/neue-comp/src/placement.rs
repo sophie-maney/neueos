@@ -1,88 +1,164 @@
-//! Window placement: new windows cascade down and to the right, like a stack of papers.
+//! Window placement and position constraints (task 1.5, ADR 0008).
 //!
-//! Pure geometry so it can be tested without a Wayland server. Floating window management
-//! proper (centring, remembering positions, avoiding the menu bar) comes in task 1.5.
+//! Pure geometry so it can be tested without a Wayland server. All rectangles are window
+//! geometry (without client-side shadows) in global logical coordinates. The *work area*
+//! is the part of an output not reserved by panels such as the menu bar (layer-shell
+//! exclusive zones, task 1.12); until then it is the whole output.
 
-/// Offset between consecutive windows in the cascade, in logical pixels.
+/// Offset between a window and the next window of the same app, in logical pixels.
 pub const CASCADE_STEP: i32 = 24;
-/// Distance of the first window from the output's top-left corner, in logical pixels.
-pub const CASCADE_ORIGIN: i32 = 32;
 
 /// A rectangle in logical coordinates: `(x, y, width, height)`.
 pub type Rect = (i32, i32, i32, i32);
 
-/// Position of the `index`-th window (0-based) in the cascade on `output`.
+/// What placement knows about a new window.
+#[derive(Debug, Clone, Copy, Default)]
+pub struct NewWindow {
+    /// Size of the new window.
+    pub size: (i32, i32),
+    /// Geometry of its parent (`xdg_toplevel.set_parent`), if mapped.
+    pub parent: Option<Rect>,
+    /// Geometry of the topmost mapped window of the same app.
+    pub sibling: Option<Rect>,
+    /// Where the last closed window of the same app was, this session.
+    pub remembered: Option<(i32, i32)>,
+}
+
+/// Where a new window goes, in order of preference:
 ///
-/// The cascade restarts at the origin, shifted right by one step per restart, once a
-/// window of `size` would extend past the bottom or right edge of the output. Windows
-/// larger than the output are placed at the origin.
-pub fn cascade(output: Rect, size: (i32, i32), index: usize) -> (i32, i32) {
-    let (ox, oy, ow, oh) = output;
-    let (w, h) = size;
-    let step = CASCADE_STEP;
+/// 1. centred on its parent (dialogs);
+/// 2. one step down and right of the topmost window of the same app (cascade), restarting
+///    at the work area's edge when that would run off it;
+/// 3. where the app's last window was closed;
+/// 4. centred horizontally, with a third of the free height above it and two thirds below
+///    (a little above the centre, which reads as centred).
+///
+/// The result is then [`constrain`]ed to the work area.
+pub fn place(work: Rect, new: &NewWindow) -> (i32, i32) {
+    let (w, h) = new.size;
+    let (wx, wy, ww, wh) = work;
+    let pos = if let Some((px, py, pw, ph)) = new.parent {
+        (px + (pw - w) / 2, py + (ph - h) / 2)
+    } else if let Some((sx, sy, _, _)) = new.sibling {
+        let mut x = sx + CASCADE_STEP;
+        let mut y = sy + CASCADE_STEP;
+        if x + w > wx + ww {
+            x = wx;
+        }
+        if y + h > wy + wh {
+            y = wy;
+        }
+        (x, y)
+    } else if let Some(pos) = new.remembered {
+        pos
+    } else {
+        (wx + (ww - w) / 2, wy + (wh - h) / 3)
+    };
+    constrain(work, new.size, pos)
+}
 
-    // How many windows fit before one would cross an edge.
-    let room_x = ow - CASCADE_ORIGIN - w;
-    let room_y = oh - CASCADE_ORIGIN - h;
-    if room_x < 0 || room_y < 0 {
-        return (ox + CASCADE_ORIGIN.min(ow.saturating_sub(w).max(0)), oy);
-    }
-    let per_column = usize::try_from(room_y / step).unwrap_or(0) + 1;
-    let column = index / per_column;
-    let row = index % per_column;
+/// `pos` moved so a window of `size` lies inside `work` where it fits. A window wider or
+/// taller than the work area is aligned to its left or top edge. The top edge is never
+/// above the work area, so the title bar can't slide under the menu bar.
+pub fn constrain(work: Rect, size: (i32, i32), pos: (i32, i32)) -> (i32, i32) {
+    let (wx, wy, ww, wh) = work;
+    let clamp = |p: i32, len: i32, start: i32, room: i32| {
+        if len >= room {
+            start
+        } else {
+            p.clamp(start, start + room - len)
+        }
+    };
+    (clamp(pos.0, size.0, wx, ww), clamp(pos.1, size.1, wy, wh))
+}
 
-    // `row` and `column` are bounded by the output size divided by the step, so they fit
-    // in an i32. Fall back to 0 rather than panic if that ever changes.
-    let row = i32::try_from(row).unwrap_or(0);
-    let column = i32::try_from(column).unwrap_or(0);
-    let x = (CASCADE_ORIGIN + row * step + column * step * 2).min(CASCADE_ORIGIN + room_x);
-    let y = CASCADE_ORIGIN + row * step;
-    (ox + x, oy + y)
+/// The position for an interactive or scripted move to `pos`: free, except that the top
+/// edge stays at or below the top of the work area (OS X keeps title bars below the menu
+/// bar) and above its bottom, so the window can always be grabbed again.
+pub fn constrain_move(work: Rect, pos: (i32, i32)) -> (i32, i32) {
+    let (_, wy, _, wh) = work;
+    (pos.0, pos.1.clamp(wy, (wy + wh - 1).max(wy)))
 }
 
 #[cfg(test)]
 mod tests {
     use super::*;
 
-    const OUTPUT: Rect = (0, 0, 1280, 800);
+    const WORK: Rect = (0, 0, 1280, 800);
+
+    fn new(size: (i32, i32)) -> NewWindow {
+        NewWindow {
+            size,
+            ..NewWindow::default()
+        }
+    }
 
     #[test]
-    fn first_window_at_origin() {
+    fn first_window_is_centred_a_little_high() {
+        assert_eq!(place(WORK, &new((640, 500))), (320, 100));
+    }
+
+    #[test]
+    fn dialogs_centre_on_their_parent() {
+        let dialog = NewWindow {
+            parent: Some((100, 100, 600, 400)),
+            ..new((200, 100))
+        };
+        assert_eq!(place(WORK, &dialog), (300, 250));
+    }
+
+    #[test]
+    fn same_app_cascades_from_its_topmost_window() {
+        let second = NewWindow {
+            sibling: Some((300, 200, 640, 480)),
+            ..new((640, 480))
+        };
         assert_eq!(
-            cascade(OUTPUT, (640, 480), 0),
-            (CASCADE_ORIGIN, CASCADE_ORIGIN)
+            place(WORK, &second),
+            (300 + CASCADE_STEP, 200 + CASCADE_STEP)
         );
     }
 
     #[test]
-    fn windows_cascade_down_and_right() {
-        let a = cascade(OUTPUT, (640, 480), 0);
-        let b = cascade(OUTPUT, (640, 480), 1);
-        assert_eq!((b.0 - a.0, b.1 - a.1), (CASCADE_STEP, CASCADE_STEP));
+    fn cascade_restarts_at_the_edges() {
+        let next = NewWindow {
+            sibling: Some((630, 310, 640, 480)),
+            ..new((640, 480))
+        };
+        assert_eq!(place(WORK, &next), (0, 0));
     }
 
     #[test]
-    fn cascade_wraps_and_stays_on_screen() {
-        let size = (640, 480);
-        for i in 0..200 {
-            let (x, y) = cascade(OUTPUT, size, i);
-            assert!(x >= 0 && x + size.0 <= OUTPUT.2, "x out of bounds at {i}");
-            assert!(y >= 0 && y + size.1 <= OUTPUT.3, "y out of bounds at {i}");
-        }
-        // After wrapping, the cascade restarts at the top.
-        let per_column = (800 - CASCADE_ORIGIN - 480) / CASCADE_STEP + 1;
-        let wrapped = cascade(OUTPUT, size, per_column as usize);
-        assert_eq!(wrapped.1, CASCADE_ORIGIN);
+    fn remembered_position_is_reused_and_constrained() {
+        let reopened = NewWindow {
+            remembered: Some((50, 60)),
+            ..new((300, 200))
+        };
+        assert_eq!(place(WORK, &reopened), (50, 60));
+        let off_screen = NewWindow {
+            remembered: Some((5000, -40)),
+            ..new((300, 200))
+        };
+        assert_eq!(place(WORK, &off_screen), (980, 0));
     }
 
     #[test]
-    fn respects_output_offset() {
-        let (x, y) = cascade((1280, 100, 1280, 800), (640, 480), 0);
-        assert_eq!((x, y), (1280 + CASCADE_ORIGIN, 100 + CASCADE_ORIGIN));
+    fn work_area_offset_keeps_windows_below_the_menu_bar() {
+        let work = (0, 22, 1280, 778);
+        let (_, y) = place(work, &new((640, 900)));
+        assert_eq!(y, 22);
+        let dialog = NewWindow {
+            parent: Some((0, 22, 200, 100)),
+            ..new((400, 300))
+        };
+        assert_eq!(place(work, &dialog), (0, 22));
     }
 
     #[test]
-    fn oversized_window_goes_to_top_left() {
-        assert_eq!(cascade(OUTPUT, (2000, 2000), 3), (0, 0));
+    fn moves_stay_below_the_top_of_the_work_area() {
+        let work = (0, 22, 1280, 778);
+        assert_eq!(constrain_move(work, (-300, 0)), (-300, 22));
+        assert_eq!(constrain_move(work, (2000, 5000)), (2000, 799));
+        assert_eq!(constrain_move(work, (10, 400)), (10, 400));
     }
 }

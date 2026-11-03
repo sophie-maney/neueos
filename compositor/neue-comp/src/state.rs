@@ -2,6 +2,7 @@
 //!
 //! Adapted from Smithay's `smallvil` (MIT): `smallvil/src/state.rs`.
 
+use std::collections::HashMap;
 use std::ffi::OsString;
 use std::os::unix::net::UnixStream;
 use std::sync::Arc;
@@ -17,14 +18,15 @@ use smithay::reexports::calloop::{EventLoop, LoopSignal};
 use smithay::reexports::wayland_server::backend::{ClientData, ClientId, DisconnectReason};
 use smithay::reexports::wayland_server::protocol::wl_surface::WlSurface;
 use smithay::reexports::wayland_server::{Client, DisplayHandle};
-use smithay::utils::{Logical, Point, SERIAL_COUNTER};
-use smithay::wayland::compositor::{CompositorClientState, CompositorState, with_states};
+use smithay::utils::{Logical, Point};
+use smithay::wayland::compositor::{CompositorClientState, CompositorState};
 use smithay::wayland::dmabuf::DmabufState;
 use smithay::wayland::output::OutputManagerState;
 use smithay::wayland::selection::data_device::DataDeviceState;
-use smithay::wayland::shell::xdg::{XdgShellState, XdgToplevelSurfaceData};
+use smithay::wayland::shell::xdg::XdgShellState;
 use smithay::wayland::shm::ShmState;
 use smithay::wayland::socket::ListeningSocketSource;
+use smithay::wayland::xdg_activation::XdgActivationState;
 use tracing::warn;
 
 use crate::Error;
@@ -75,8 +77,10 @@ pub struct State {
     /// Toplevels that exist but have not committed a buffer yet. They are placed and mapped
     /// on their first buffer commit, once their size is known.
     pub unmapped: Vec<Window>,
-    /// Number of windows placed so far; drives the cascade in [`crate::placement`].
-    pub placed: usize,
+    /// Minimised windows and where they were, in the order they were minimised.
+    pub minimized: Vec<(Window, Point<i32, Logical>)>,
+    /// Where the last window of each app (by app id) was when it closed, this session.
+    pub remembered: HashMap<String, (i32, i32)>,
     pub popups: PopupManager,
     /// Id for the next toplevel (see [`State::window_id`]). Ids start at 1 and are never
     /// reused.
@@ -90,6 +94,7 @@ pub struct State {
     pub dmabuf_state: DmabufState,
     pub output_manager_state: OutputManagerState,
     pub data_device_state: DataDeviceState,
+    pub xdg_activation_state: XdgActivationState,
     pub seat_state: SeatState<State>,
     pub seat: Seat<State>,
     pub keyboard: KeyboardHandle<State>,
@@ -115,6 +120,7 @@ impl State {
         // Clipboard. Some clients (foot) refuse to start without it. Primary selection,
         // data-control and DnD icons are task 1.8.
         let data_device_state = DataDeviceState::new::<Self>(&dh);
+        let xdg_activation_state = XdgActivationState::new::<Self>(&dh);
 
         let mut seat_state = SeatState::new();
         let mut seat: Seat<Self> = seat_state.new_wl_seat(&dh, "seat0");
@@ -140,7 +146,8 @@ impl State {
             backend,
             space,
             unmapped: Vec::new(),
-            placed: 0,
+            minimized: Vec::new(),
+            remembered: HashMap::new(),
             popups: PopupManager::default(),
             next_window_id: 1,
             ipc: IpcServer::new(event_loop.handle()),
@@ -150,6 +157,7 @@ impl State {
             dmabuf_state,
             output_manager_state,
             data_device_state,
+            xdg_activation_state,
             seat_state,
             seat,
             keyboard,
@@ -176,10 +184,17 @@ impl State {
         window.user_data().get::<WindowId>().copied()
     }
 
-    /// The mapped window with `id`.
+    /// Mapped windows bottom to top, after minimised ones.
+    fn all_windows(&self) -> impl Iterator<Item = &Window> {
+        self.minimized
+            .iter()
+            .map(|(w, _)| w)
+            .chain(self.space.elements())
+    }
+
+    /// The mapped or minimised window with `id`.
     pub fn window_by_id(&self, id: WindowId) -> Option<Window> {
-        self.space
-            .elements()
+        self.all_windows()
             .find(|w| self.window_id(w) == Some(id))
             .cloned()
     }
@@ -191,11 +206,10 @@ impl State {
             .and_then(|w| self.window_id(&w))
     }
 
-    /// The mapped windows, bottom to top.
+    /// The windows: minimised ones first, then mapped ones bottom to top.
     pub fn windows(&self) -> Vec<WindowInfo> {
         let focus = self.keyboard.current_focus();
-        self.space
-            .elements()
+        self.all_windows()
             .filter_map(|window| self.window_info(window, focus.as_ref()))
             .collect()
     }
@@ -203,15 +217,10 @@ impl State {
     /// `window` as seen from outside, with `focus` the surface that has keyboard focus.
     pub fn window_info(&self, window: &Window, focus: Option<&WlSurface>) -> Option<WindowInfo> {
         let toplevel = window.toplevel()?;
-        let (title, app_id) = with_states(toplevel.wl_surface(), |states| {
-            states
-                .data_map
-                .get::<XdgToplevelSurfaceData>()
-                .and_then(|data| data.lock().ok())
-                .map(|data| (data.title.clone(), data.app_id.clone()))
-                .unwrap_or_default()
-        });
-        let geometry = self.space.element_geometry(window)?;
+        let (title, app_id) = crate::wm::title_and_app_id(window);
+        let geometry = self.window_geometry(window)?;
+        let (zoomed, demands_attention) =
+            Self::with_wm_data(window, |d| (d.zoomed, d.demands_attention));
         Some(WindowInfo {
             id: self.window_id(window)?,
             title,
@@ -221,6 +230,10 @@ impl State {
             width: geometry.size.w,
             height: geometry.size.h,
             focused: focus == Some(toplevel.wl_surface()),
+            minimized: self.is_minimized(window),
+            zoomed,
+            demands_attention,
+            parent: self.parent_window(window).and_then(|p| self.window_id(&p)),
         })
     }
 
@@ -238,51 +251,11 @@ impl State {
             })
     }
 
-    /// The mapped window whose toplevel is `surface`.
+    /// The mapped or minimised window whose toplevel is `surface`.
     pub fn window_for_surface(&self, surface: &WlSurface) -> Option<Window> {
-        self.space
-            .elements()
+        self.all_windows()
             .find(|w| w.toplevel().is_some_and(|t| t.wl_surface() == surface))
             .cloned()
-    }
-
-    /// Raise `window`, give it keyboard focus and mark it activated (and every other
-    /// window deactivated).
-    pub fn focus_window(&mut self, window: &Window) {
-        let serial = SERIAL_COUNTER.next_serial();
-        self.space.raise_element(window, true);
-        let surface = window.toplevel().map(|t| t.wl_surface().clone());
-        let keyboard = self.keyboard.clone();
-        keyboard.set_focus(self, surface, serial);
-        self.send_pending_configures();
-    }
-
-    /// Focus the topmost window, or nothing when no window is left.
-    pub fn focus_topmost(&mut self) {
-        let topmost = self.space.elements().next_back().cloned();
-        match topmost {
-            Some(window) => self.focus_window(&window),
-            None => self.clear_focus(),
-        }
-    }
-
-    /// Deactivate every window and drop keyboard focus.
-    pub fn clear_focus(&mut self) {
-        let serial = SERIAL_COUNTER.next_serial();
-        for window in self.space.elements() {
-            window.set_activated(false);
-        }
-        let keyboard = self.keyboard.clone();
-        keyboard.set_focus(self, None, serial);
-        self.send_pending_configures();
-    }
-
-    fn send_pending_configures(&self) {
-        for window in self.space.elements() {
-            if let Some(toplevel) = window.toplevel() {
-                toplevel.send_pending_configure();
-            }
-        }
     }
 }
 

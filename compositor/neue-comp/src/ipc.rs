@@ -42,15 +42,51 @@ pub enum IpcSocket {
     Path(PathBuf),
 }
 
-/// The actions `neuectl action` accepts. Window management actions (minimise, zoom, …)
-/// join this list in task 1.5.
-const ACTIONS: &[(&str, &str, WindowArg)] = &[
-    ("quit", "Stop the compositor", WindowArg::None),
-    ("close-window", "Ask a window to close", WindowArg::Optional),
+/// The actions `neuectl action` accepts: name, description, window argument and the
+/// other required arguments.
+const ACTIONS: &[(&str, &str, WindowArg, &[&str])] = &[
+    ("quit", "Stop the compositor", WindowArg::None, &[]),
+    (
+        "close-window",
+        "Ask a window to close",
+        WindowArg::Optional,
+        &[],
+    ),
     (
         "focus-window",
-        "Raise a window and give it keyboard focus",
+        "Raise a window and give it keyboard focus (restores it if minimised)",
         WindowArg::Required,
+        &[],
+    ),
+    (
+        "minimize-window",
+        "Hide a window and its dialogs",
+        WindowArg::Optional,
+        &[],
+    ),
+    (
+        "unminimize-window",
+        "Show a minimised window again and focus it",
+        WindowArg::Required,
+        &[],
+    ),
+    (
+        "zoom-window",
+        "Toggle between filling the work area and the previous size",
+        WindowArg::Optional,
+        &[],
+    ),
+    (
+        "move-window",
+        "Move a window's top-left corner to x, y",
+        WindowArg::Optional,
+        &["x", "y"],
+    ),
+    (
+        "resize-window",
+        "Ask a window to take width x height",
+        WindowArg::Optional,
+        &["width", "height"],
     ),
 ];
 
@@ -327,10 +363,11 @@ impl State {
             Request::Actions => json(
                 &ACTIONS
                     .iter()
-                    .map(|&(name, description, window)| ActionInfo {
+                    .map(|&(name, description, window, args)| ActionInfo {
                         name: name.to_owned(),
                         description: description.to_owned(),
                         window,
+                        args: args.iter().map(|&a| a.to_owned()).collect(),
                     })
                     .collect::<Vec<_>>(),
             ),
@@ -361,6 +398,45 @@ impl State {
             "focus-window" => {
                 let window = self.window_arg(params.window, WindowArg::Required)?;
                 self.focus_window(&window);
+                Ok(())
+            }
+            "minimize-window" => {
+                let window = self.window_arg(params.window, WindowArg::Optional)?;
+                self.minimize_window(&window);
+                Ok(())
+            }
+            "unminimize-window" => {
+                let window = self.window_arg(params.window, WindowArg::Required)?;
+                self.unminimize_window(&window);
+                Ok(())
+            }
+            "zoom-window" => {
+                let window = self.window_arg(params.window, WindowArg::Optional)?;
+                let zoomed = Self::with_wm_data(&window, |d| d.zoomed);
+                self.set_zoomed(&window, !zoomed, None);
+                Ok(())
+            }
+            "move-window" => {
+                let (x, y) = (required(params.x, "x")?, required(params.y, "y")?);
+                let window = self.window_arg(params.window, WindowArg::Optional)?;
+                if Self::with_wm_data(&window, |d| d.zoomed) {
+                    self.set_zoomed(&window, false, None);
+                }
+                self.move_window_to(&window, (x, y).into());
+                self.notify_window_changed(&window);
+                Ok(())
+            }
+            "resize-window" => {
+                let width = required(params.width, "width")?;
+                let height = required(params.height, "height")?;
+                if width <= 0 || height <= 0 {
+                    return Err(ErrorBody::new(
+                        ErrorCode::InvalidParams,
+                        "width and height must be positive",
+                    ));
+                }
+                let window = self.window_arg(params.window, WindowArg::Optional)?;
+                self.resize_window(&window, (width, height).into());
                 Ok(())
             }
             other => Err(ErrorBody::new(
@@ -424,6 +500,16 @@ impl State {
     pub(crate) fn emit(&mut self, event: Event) {
         self.ipc.broadcast(&event);
     }
+}
+
+/// An action argument that must be present.
+fn required(value: Option<i32>, name: &str) -> Result<i32, ErrorBody> {
+    value.ok_or_else(|| {
+        ErrorBody::new(
+            ErrorCode::InvalidParams,
+            format!("this action needs `{name}`"),
+        )
+    })
 }
 
 fn json<T: serde::Serialize>(value: &T) -> Result<Value, ErrorBody> {

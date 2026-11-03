@@ -8,10 +8,15 @@ use std::os::unix::net::UnixStream;
 
 use wayland_client::globals::{GlobalList, GlobalListContents, registry_queue_init};
 use wayland_client::protocol::{
-    wl_buffer::WlBuffer, wl_compositor::WlCompositor, wl_registry::WlRegistry, wl_shm,
+    wl_buffer::WlBuffer, wl_compositor::WlCompositor, wl_keyboard, wl_keyboard::WlKeyboard,
+    wl_pointer, wl_pointer::WlPointer, wl_registry::WlRegistry, wl_seat::WlSeat, wl_shm,
     wl_shm::WlShm, wl_shm_pool::WlShmPool, wl_surface::WlSurface,
 };
 use wayland_client::{Connection, Dispatch, EventQueue, QueueHandle, delegate_noop};
+use wayland_protocols::xdg::activation::v1::client::{
+    xdg_activation_token_v1::{self, XdgActivationTokenV1},
+    xdg_activation_v1::XdgActivationV1,
+};
 use wayland_protocols::xdg::shell::client::{
     xdg_surface::{self, XdgSurface},
     xdg_toplevel::{self, XdgToplevel},
@@ -26,6 +31,10 @@ pub struct TestClient {
     compositor: WlCompositor,
     shm: WlShm,
     wm_base: XdgWmBase,
+    pub seat: WlSeat,
+    activation: XdgActivationV1,
+    _pointer: WlPointer,
+    _keyboard: WlKeyboard,
     _globals: GlobalList,
 }
 
@@ -36,6 +45,8 @@ pub struct Toplevel {
     pub xdg_surface: XdgSurface,
     pub toplevel: XdgToplevel,
     buffer: Option<WlBuffer>,
+    /// Size of the attached buffer.
+    pub size: (i32, i32),
 }
 
 /// What the compositor has told us about one toplevel.
@@ -53,6 +64,12 @@ pub struct ToplevelEvents {
 #[derive(Default)]
 struct ClientData {
     toplevels: Vec<ToplevelEvents>,
+    /// Serial of the last `wl_pointer.button` press.
+    button_serial: Option<u32>,
+    /// Serial of the last `wl_keyboard.enter`.
+    enter_serial: Option<u32>,
+    /// The last activation token the compositor handed out.
+    token: Option<String>,
 }
 
 impl TestClient {
@@ -64,6 +81,12 @@ impl TestClient {
         let compositor = globals.bind(&qh, 4..=6, ()).expect("binding wl_compositor");
         let shm = globals.bind(&qh, 1..=1, ()).expect("binding wl_shm");
         let wm_base = globals.bind(&qh, 1..=6, ()).expect("binding xdg_wm_base");
+        let seat: WlSeat = globals.bind(&qh, 1..=7, ()).expect("binding wl_seat");
+        let activation = globals
+            .bind(&qh, 1..=1, ())
+            .expect("binding xdg_activation_v1");
+        let pointer = seat.get_pointer(&qh, ());
+        let keyboard = seat.get_keyboard(&qh, ());
         let mut data = ClientData::default();
         queue.roundtrip(&mut data).expect("initial roundtrip");
         Self {
@@ -73,8 +96,64 @@ impl TestClient {
             compositor,
             shm,
             wm_base,
+            seat,
+            activation,
+            _pointer: pointer,
+            _keyboard: keyboard,
             _globals: globals,
         }
+    }
+
+    /// Serial of the last pointer button press this client saw.
+    pub fn button_serial(&self) -> u32 {
+        self.data
+            .button_serial
+            .expect("no pointer button press seen")
+    }
+
+    /// Serial of the last keyboard enter this client saw.
+    pub fn enter_serial(&self) -> Option<u32> {
+        self.data.enter_serial
+    }
+
+    /// Ask for an xdg-activation token, optionally tied to an input `serial` and the
+    /// requesting `surface`.
+    pub fn activation_token(&mut self, serial: Option<u32>, surface: Option<&WlSurface>) -> String {
+        self.data.token = None;
+        let token = self.activation.get_activation_token(&self.qh, ());
+        if let Some(serial) = serial {
+            token.set_serial(serial, &self.seat);
+        }
+        if let Some(surface) = surface {
+            token.set_surface(surface);
+        }
+        token.commit();
+        self.roundtrip();
+        token.destroy();
+        self.data.token.take().expect("no activation token")
+    }
+
+    /// Ask the compositor to activate `toplevel` with `token`.
+    pub fn activate(&mut self, toplevel: &Toplevel, token: &str) {
+        self.activation
+            .activate(token.to_owned(), &toplevel.surface);
+        self.roundtrip();
+    }
+
+    /// Ack the last configure and commit a buffer of the configured size (or the current
+    /// size when the compositor leaves it to us).
+    pub fn ack_and_commit(&mut self, toplevel: &mut Toplevel) {
+        self.roundtrip();
+        let events = self.data.toplevels[toplevel.index].clone();
+        let serial = events.configure_serial.expect("no configure to ack");
+        toplevel.xdg_surface.ack_configure(serial);
+        let size = match events.size {
+            (w, h) if w > 0 && h > 0 => (w, h),
+            _ => toplevel.size,
+        };
+        self.attach_buffer(toplevel, size);
+        toplevel.surface.commit();
+        self.roundtrip();
     }
 
     /// Send pending requests and process every event the compositor sends in reply.
@@ -93,6 +172,18 @@ impl TestClient {
     /// buffer, so the compositor maps it. Uses the configured size if the compositor
     /// sets one.
     pub fn create_toplevel(&mut self, title: &str, app_id: &str, size: (i32, i32)) -> Toplevel {
+        self.create_toplevel_with(title, app_id, size, |_| {})
+    }
+
+    /// [`TestClient::create_toplevel`], calling `setup` on the `xdg_toplevel` before the
+    /// first commit (e.g. to set a parent or ask for the maximized state).
+    pub fn create_toplevel_with(
+        &mut self,
+        title: &str,
+        app_id: &str,
+        size: (i32, i32),
+        setup: impl FnOnce(&XdgToplevel),
+    ) -> Toplevel {
         let index = self.data.toplevels.len();
         self.data.toplevels.push(ToplevelEvents::default());
 
@@ -101,6 +192,7 @@ impl TestClient {
         let toplevel = xdg_surface.get_toplevel(&self.qh, index);
         toplevel.set_title(title.to_owned());
         toplevel.set_app_id(app_id.to_owned());
+        setup(&toplevel);
         surface.commit();
         self.roundtrip();
 
@@ -120,6 +212,7 @@ impl TestClient {
             xdg_surface,
             toplevel,
             buffer: None,
+            size,
         };
         self.attach_buffer(&mut toplevel, size);
         toplevel.surface.commit();
@@ -154,6 +247,7 @@ impl TestClient {
         if let Some(old) = toplevel.buffer.replace(buffer) {
             old.destroy();
         }
+        toplevel.size = (w, h);
     }
 }
 
@@ -228,6 +322,58 @@ impl Dispatch<XdgToplevel, usize> for ClientData {
     }
 }
 
+impl Dispatch<WlPointer, ()> for ClientData {
+    fn event(
+        data: &mut Self,
+        _: &WlPointer,
+        event: wl_pointer::Event,
+        _: &(),
+        _: &Connection,
+        _: &QueueHandle<Self>,
+    ) {
+        if let wl_pointer::Event::Button {
+            serial,
+            state: wayland_client::WEnum::Value(wl_pointer::ButtonState::Pressed),
+            ..
+        } = event
+        {
+            data.button_serial = Some(serial);
+        }
+    }
+}
+
+impl Dispatch<WlKeyboard, ()> for ClientData {
+    fn event(
+        data: &mut Self,
+        _: &WlKeyboard,
+        event: wl_keyboard::Event,
+        _: &(),
+        _: &Connection,
+        _: &QueueHandle<Self>,
+    ) {
+        if let wl_keyboard::Event::Enter { serial, .. } = event {
+            data.enter_serial = Some(serial);
+        }
+    }
+}
+
+impl Dispatch<XdgActivationTokenV1, ()> for ClientData {
+    fn event(
+        data: &mut Self,
+        _: &XdgActivationTokenV1,
+        event: xdg_activation_token_v1::Event,
+        _: &(),
+        _: &Connection,
+        _: &QueueHandle<Self>,
+    ) {
+        if let xdg_activation_token_v1::Event::Done { token } = event {
+            data.token = Some(token);
+        }
+    }
+}
+
+delegate_noop!(ClientData: ignore WlSeat);
+delegate_noop!(ClientData: ignore XdgActivationV1);
 delegate_noop!(ClientData: ignore WlCompositor);
 delegate_noop!(ClientData: ignore WlSurface);
 delegate_noop!(ClientData: ignore WlShm);

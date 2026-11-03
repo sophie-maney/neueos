@@ -146,11 +146,16 @@ impl Client {
 
     /// Run the named action, on `window` if given.
     pub fn action(&mut self, name: &str, window: Option<WindowId>) -> Result<(), ClientError> {
-        self.call(Request::Action(ActionParams {
+        self.action_with(ActionParams {
             name: name.to_owned(),
             window,
-        }))
-        .map(drop)
+            ..ActionParams::default()
+        })
+    }
+
+    /// Run an action with arguments (e.g. `move-window` with `x` and `y`).
+    pub fn action_with(&mut self, params: ActionParams) -> Result<(), ClientError> {
+        self.call(Request::Action(params)).map(drop)
     }
 
     /// Ask the compositor to exit.

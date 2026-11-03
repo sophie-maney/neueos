@@ -127,7 +127,8 @@ impl State {
     }
 
     /// Move the pointer to `pos` (global logical coordinates) and update its focus.
-    fn move_pointer(&mut self, pos: Point<f64, Logical>, time: InputTime) {
+    /// Backends call this for absolute and relative motion; tests use it to script input.
+    pub fn move_pointer(&mut self, pos: Point<f64, Logical>, time: InputTime) {
         let under = self.surface_under(pos);
         let pointer = self.pointer.clone();
         pointer.motion(
@@ -143,8 +144,13 @@ impl State {
     }
 
     fn on_pointer_button<I: InputBackend>(&mut self, event: I::PointerButtonEvent) {
+        self.press_button(event.button_code(), event.state(), event.time());
+    }
+
+    /// Press or release `button` (a `linux/input-event-codes.h` code) at the pointer.
+    /// Pressing on a window raises and focuses it. Tests use this to script input.
+    pub fn press_button(&mut self, button: u32, state: ButtonState, time: InputTime) {
         let serial = SERIAL_COUNTER.next_serial();
-        let state = event.state();
         let pointer = self.pointer.clone();
 
         // Click to focus: a press on a window raises and focuses it; a press on the
@@ -164,10 +170,10 @@ impl State {
         pointer.button(
             self,
             &ButtonEvent {
-                button: event.button_code(),
+                button,
                 state,
                 serial,
-                time: event.time(),
+                time,
             },
         );
         pointer.frame(self);

@@ -18,6 +18,10 @@ fn window(id: u64) -> WindowInfo {
         width: 300,
         height: 200,
         focused: true,
+        minimized: false,
+        zoomed: false,
+        demands_attention: false,
+        parent: None,
     }
 }
 
@@ -63,6 +67,7 @@ fn typed_calls_and_error_replies() {
             Request::Action(ActionParams {
                 name: "close-window".into(),
                 window: Some(WindowId(9)),
+                ..ActionParams::default()
             })
         );
         let reply = Reply {

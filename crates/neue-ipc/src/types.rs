@@ -53,12 +53,22 @@ pub struct RequestEnvelope {
 }
 
 /// Parameters of [`Request::Action`].
-#[derive(Debug, Clone, PartialEq, Eq, Serialize, Deserialize)]
+#[derive(Debug, Clone, Default, PartialEq, Eq, Serialize, Deserialize)]
 pub struct ActionParams {
     pub name: String,
     /// Target window. Actions that take a window default to the focused one.
     #[serde(default, skip_serializing_if = "Option::is_none")]
     pub window: Option<WindowId>,
+    /// New position in global logical coordinates (`move-window`).
+    #[serde(default, skip_serializing_if = "Option::is_none")]
+    pub x: Option<i32>,
+    #[serde(default, skip_serializing_if = "Option::is_none")]
+    pub y: Option<i32>,
+    /// New size in logical pixels (`resize-window`).
+    #[serde(default, skip_serializing_if = "Option::is_none")]
+    pub width: Option<i32>,
+    #[serde(default, skip_serializing_if = "Option::is_none")]
+    pub height: Option<i32>,
 }
 
 /// Parameters of [`Request::Subscribe`].
@@ -71,7 +81,8 @@ pub struct SubscribeParams {
 #[derive(Debug, Clone, Copy, PartialEq, Eq, Hash, Serialize, Deserialize)]
 #[serde(rename_all = "snake_case")]
 pub enum Topic {
-    /// [`Event::WindowOpened`], [`Event::WindowClosed`] and [`Event::FocusChanged`].
+    /// [`Event::WindowOpened`], [`Event::WindowChanged`], [`Event::WindowClosed`] and
+    /// [`Event::FocusChanged`].
     Windows,
 }
 
@@ -79,9 +90,10 @@ impl Event {
     /// The topic a client must subscribe to in order to receive this event.
     pub fn topic(&self) -> Topic {
         match self {
-            Self::WindowOpened(_) | Self::WindowClosed { .. } | Self::FocusChanged { .. } => {
-                Topic::Windows
-            }
+            Self::WindowOpened(_)
+            | Self::WindowChanged(_)
+            | Self::WindowClosed { .. }
+            | Self::FocusChanged { .. } => Topic::Windows,
         }
     }
 }
@@ -92,6 +104,10 @@ impl Event {
 pub enum Event {
     /// A window was mapped.
     WindowOpened(WindowInfo),
+    /// Something in a window's [`WindowInfo`] other than `focused` changed: its title,
+    /// geometry, or minimised, zoomed or attention state. Sent once the change is done
+    /// (at the end of an interactive move, not for every pointer motion).
+    WindowChanged(WindowInfo),
     /// A window was unmapped or destroyed.
     WindowClosed { window: WindowId },
     /// Keyboard focus moved. `window` is `None` when nothing is focused.
@@ -182,6 +198,19 @@ pub struct WindowInfo {
     pub height: i32,
     /// Whether the window has keyboard focus.
     pub focused: bool,
+    /// Minimised windows are hidden and keep the position they had (task 1.5).
+    #[serde(default)]
+    pub minimized: bool,
+    /// Zoomed windows fill the work area (`xdg_toplevel` maximized state).
+    #[serde(default)]
+    pub zoomed: bool,
+    /// The window asked for focus and was refused (xdg-activation). Cleared when it is
+    /// focused. The dock will bounce its icon.
+    #[serde(default)]
+    pub demands_attention: bool,
+    /// The window this one is a child of (`xdg_toplevel.set_parent`), e.g. a dialog.
+    #[serde(default, skip_serializing_if = "Option::is_none")]
+    pub parent: Option<WindowId>,
 }
 
 /// An output (monitor).
@@ -219,6 +248,9 @@ pub struct ActionInfo {
     pub name: String,
     pub description: String,
     pub window: WindowArg,
+    /// Required [`ActionParams`] fields besides `window`, e.g. `["x", "y"]`.
+    #[serde(default, skip_serializing_if = "Vec::is_empty")]
+    pub args: Vec<String>,
 }
 
 #[cfg(test)]
@@ -252,6 +284,7 @@ mod tests {
             Request::Action(ActionParams {
                 name: "close-window".into(),
                 window: Some(WindowId(42)),
+                ..ActionParams::default()
             })
         );
     }
@@ -263,7 +296,7 @@ mod tests {
             env.request,
             Request::Action(ActionParams {
                 name: "quit".into(),
-                window: None
+                ..ActionParams::default()
             })
         );
     }
@@ -295,6 +328,13 @@ mod tests {
             Request::Action(ActionParams {
                 name: "focus-window".into(),
                 window: Some(WindowId(7)),
+                ..ActionParams::default()
+            }),
+            Request::Action(ActionParams {
+                name: "move-window".into(),
+                x: Some(-10),
+                y: Some(20),
+                ..ActionParams::default()
             }),
         ];
         for request in requests {
