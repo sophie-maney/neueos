@@ -7,10 +7,11 @@
 //! let windows = server.with_state(|state| state.windows());
 //! ```
 //!
-//! The compositor runs without a listening socket; each client gets one end of a socket
-//! pair, so tests need no `XDG_RUNTIME_DIR` and can run in parallel. Client calls block
+//! The compositor has no Wayland listening socket: each client gets one end of a socket
+//! pair, so tests need no `XDG_RUNTIME_DIR` and can run in parallel. It does serve
+//! `neuectl` on a socket in a temporary directory ([`Server::ipc`]). Client calls block
 //! until the compositor has answered (`wl_display.sync`), so after a client call returns,
-//! [`Server::with_state`] sees every request that client sent before it.
+//! [`Server::with_state`] and the IPC socket see every request that client sent before it.
 
 #![allow(dead_code)]
 // Each test binary uses a different subset of the harness.
@@ -24,7 +25,7 @@ use std::sync::mpsc;
 use std::thread::JoinHandle;
 use std::time::Duration;
 
-use neue_comp::{BackendKind, Compositor, Options, State};
+use neue_comp::{BackendKind, Compositor, IpcSocket, Options, State};
 use smithay::reexports::calloop::channel::{self, Event, Sender};
 
 #[allow(unused_imports)] // Not every test binary names both types.
@@ -38,6 +39,8 @@ type Job = Box<dyn FnOnce(&mut State) + Send>;
 /// A headless compositor running on a background thread. Stopped on drop.
 pub struct Server {
     jobs: Sender<Job>,
+    socket: std::path::PathBuf,
+    _socket_dir: tempfile::TempDir,
     thread: Option<JoinHandle<Result<(), neue_comp::Error>>>,
 }
 
@@ -45,12 +48,16 @@ impl Server {
     /// Start a headless compositor and wait until it is ready.
     pub fn start() -> Self {
         init_tracing();
+        let socket_dir = tempfile::tempdir().expect("creating a temporary directory");
+        let socket = socket_dir.path().join("comp.sock");
+        let ipc_socket = IpcSocket::Path(socket.clone());
         let (ready_tx, ready_rx) = mpsc::channel();
         let thread = std::thread::Builder::new()
             .name("neue-comp".into())
             .spawn(move || {
                 let options = Options {
                     listen: false,
+                    ipc_socket,
                     ..Options::new(BackendKind::Headless)
                 };
                 let compositor = Compositor::new(&options)?;
@@ -71,6 +78,8 @@ impl Server {
         match ready_rx.recv() {
             Ok(jobs) => Self {
                 jobs,
+                socket,
+                _socket_dir: socket_dir,
                 thread: Some(thread),
             },
             // The thread returned before sending: report its error.
@@ -96,6 +105,11 @@ impl Server {
             .expect("compositor thread is gone");
         rx.recv_timeout(STATE_TIMEOUT)
             .expect("compositor did not answer in time")
+    }
+
+    /// Connect a new `neuectl` client to the compositor's IPC socket.
+    pub fn ipc(&self) -> neue_ipc::Client {
+        neue_ipc::Client::connect(&self.socket).expect("connecting to the IPC socket")
     }
 
     /// Connect a new scripted client.

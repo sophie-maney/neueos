@@ -7,6 +7,7 @@ use std::os::unix::net::UnixStream;
 use std::sync::Arc;
 use std::time::Instant;
 
+use neue_ipc::{WindowId, WindowInfo};
 use smithay::desktop::{PopupManager, Space, Window, WindowSurfaceType};
 use smithay::input::keyboard::{KeyboardHandle, XkbConfig};
 use smithay::input::pointer::PointerHandle;
@@ -27,6 +28,7 @@ use smithay::wayland::socket::ListeningSocketSource;
 use tracing::warn;
 
 use crate::Error;
+use crate::ipc::IpcServer;
 
 /// Key repeat delay and rate until keyboard settings come from config (task 1.6).
 const REPEAT_DELAY_MS: i32 = 300;
@@ -52,19 +54,6 @@ impl Backend {
     }
 }
 
-/// A mapped window as seen from outside the compositor (tests, and later `neuectl`).
-#[derive(Debug, Clone, PartialEq, Eq)]
-pub struct WindowInfo {
-    pub title: Option<String>,
-    pub app_id: Option<String>,
-    /// Position of the window geometry in global logical coordinates.
-    pub location: (i32, i32),
-    /// Size of the window geometry (without client-side shadows).
-    pub size: (i32, i32),
-    /// Whether the window has keyboard focus.
-    pub focused: bool,
-}
-
 /// Everything the compositor knows. One instance, owned by the event loop.
 #[derive(Debug)]
 pub struct State {
@@ -84,6 +73,11 @@ pub struct State {
     /// Number of windows placed so far; drives the cascade in [`crate::placement`].
     pub placed: usize,
     pub popups: PopupManager,
+    /// Id for the next toplevel (see [`State::window_id`]). Ids start at 1 and are never
+    /// reused.
+    next_window_id: u64,
+    /// The `neuectl` socket and its connections.
+    pub ipc: IpcServer,
 
     pub compositor_state: CompositorState,
     pub xdg_shell_state: XdgShellState,
@@ -140,6 +134,8 @@ impl State {
             unmapped: Vec::new(),
             placed: 0,
             popups: PopupManager::default(),
+            next_window_id: 1,
+            ipc: IpcServer::new(event_loop.handle()),
             compositor_state,
             xdg_shell_state,
             shm_state,
@@ -159,31 +155,64 @@ impl State {
             .insert_client(stream, Arc::new(ClientState::default()))
     }
 
+    /// Give `window` the next window id. Called once per toplevel, when it is created.
+    pub fn assign_window_id(&mut self, window: &Window) {
+        let id = WindowId(self.next_window_id);
+        self.next_window_id += 1;
+        window.user_data().insert_if_missing_threadsafe(|| id);
+    }
+
+    /// The id of `window`, if it has one.
+    pub fn window_id(&self, window: &Window) -> Option<WindowId> {
+        window.user_data().get::<WindowId>().copied()
+    }
+
+    /// The mapped window with `id`.
+    pub fn window_by_id(&self, id: WindowId) -> Option<Window> {
+        self.space
+            .elements()
+            .find(|w| self.window_id(w) == Some(id))
+            .cloned()
+    }
+
+    /// The id of the window with keyboard focus.
+    pub fn focused_window_id(&self) -> Option<WindowId> {
+        let focus = self.keyboard.current_focus()?;
+        self.window_for_surface(&focus)
+            .and_then(|w| self.window_id(&w))
+    }
+
     /// The mapped windows, bottom to top.
     pub fn windows(&self) -> Vec<WindowInfo> {
         let focus = self.keyboard.current_focus();
         self.space
             .elements()
-            .filter_map(|window| {
-                let toplevel = window.toplevel()?;
-                let (title, app_id) = with_states(toplevel.wl_surface(), |states| {
-                    states
-                        .data_map
-                        .get::<XdgToplevelSurfaceData>()
-                        .and_then(|data| data.lock().ok())
-                        .map(|data| (data.title.clone(), data.app_id.clone()))
-                        .unwrap_or_default()
-                });
-                let geometry = self.space.element_geometry(window)?;
-                Some(WindowInfo {
-                    title,
-                    app_id,
-                    location: (geometry.loc.x, geometry.loc.y),
-                    size: (geometry.size.w, geometry.size.h),
-                    focused: focus.as_ref() == Some(toplevel.wl_surface()),
-                })
-            })
+            .filter_map(|window| self.window_info(window, focus.as_ref()))
             .collect()
+    }
+
+    /// `window` as seen from outside, with `focus` the surface that has keyboard focus.
+    pub fn window_info(&self, window: &Window, focus: Option<&WlSurface>) -> Option<WindowInfo> {
+        let toplevel = window.toplevel()?;
+        let (title, app_id) = with_states(toplevel.wl_surface(), |states| {
+            states
+                .data_map
+                .get::<XdgToplevelSurfaceData>()
+                .and_then(|data| data.lock().ok())
+                .map(|data| (data.title.clone(), data.app_id.clone()))
+                .unwrap_or_default()
+        });
+        let geometry = self.space.element_geometry(window)?;
+        Some(WindowInfo {
+            id: self.window_id(window)?,
+            title,
+            app_id,
+            x: geometry.loc.x,
+            y: geometry.loc.y,
+            width: geometry.size.w,
+            height: geometry.size.h,
+            focused: focus == Some(toplevel.wl_surface()),
+        })
     }
 
     /// The surface under `pos` and its origin, in global logical coordinates.

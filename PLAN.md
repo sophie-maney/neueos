@@ -487,11 +487,14 @@ Decisions to follow: ADR 0001 (Smithay), 0003 (IPC), 0004 (config), 0005 (global
       *Done:* in-process harness (`compositor/neue-comp/tests/harness/`) with socket-pair
       clients and `Server::with_state`; headless backend has no renderer yet, EGL moves to
       1.16 (ADR 0006). Linux checks need `libwayland-client` (dev-setup §1.2).
-- [ ] **1.3 `neue-ipc` + `neuectl`** · Sonnet. New portable crate `neue-ipc` and the
+- [x] **1.3 `neue-ipc` + `neuectl`** · Sonnet. New portable crate `neue-ipc` and the
       `neuectl` binary per ADR 0003: `version`, `windows`, `outputs`, `focused-window`,
       `action`, `actions`, `subscribe` (window events), `quit`.
       *Accept:* headless test drives the compositor through the socket; `neue-ipc` tests
       pass on macOS.
+      *Done:* wire details in ADR 0007. Actions so far: `quit`, `close-window`,
+      `focus-window`; `spaces`, `reload-config` and `screenshot` wait for their tasks.
+      The harness gives every test server an IPC socket (`Server::ipc()`).
 - [ ] **1.4 tty backend** · Opus. DRM/KMS atomic, GBM, libinput, udev, libseat; single
       output; VT switching; cursor plane.
       *Accept:* in the VM on DRM under seatd, `foot` runs and keyboard/pointer work

@@ -218,7 +218,11 @@ prlctl capture neueos-vm --file /tmp/shot.png      # look at the result from the
 `neue-comp -c <cmd>` spawns `<cmd>` as a client (repeatable); `RUST_LOG=neue_comp=debug` logs
 window mapping and clicks. Super+Q quits.
 
-**Scripted input** (until `neuectl` exists, task 1.3): `prlctl send-key-event neueos-vm
+**State and actions:** inside the VM session `neuectl windows`, `neuectl outputs` and
+`neuectl action <name>` talk to the compositor (`NEUE_SOCKET` is set for `-c` children;
+over ssh set `XDG_RUNTIME_DIR` and `WAYLAND_DISPLAY`). It has no input injection.
+
+**Scripted input:** `prlctl send-key-event neueos-vm
 --scancode <set-1 scancode>` types into the focused window. For the pointer, run ydotool's
 daemon as root and drive it as the user:
 ```sh

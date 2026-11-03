@@ -3,6 +3,7 @@
 //! Adapted from Smithay's `smallvil` (MIT): `smallvil/src/handlers/` and, for dmabuf,
 //! `anvil/src/winit.rs`.
 
+use neue_ipc::Event;
 use smithay::backend::allocator::dmabuf::Dmabuf;
 #[cfg(feature = "winit")]
 use smithay::backend::renderer::ImportDma;
@@ -112,6 +113,9 @@ impl State {
         self.placed += 1;
         debug!(x, y, w = size.w, h = size.h, "mapping window");
         self.space.map_element(window.clone(), (x, y), true);
+        if let Some(info) = self.window_info(&window, None) {
+            self.emit(Event::WindowOpened(info));
+        }
         self.focus_window(&window);
     }
 
@@ -211,6 +215,12 @@ impl SeatHandler for State {
         let dh = &self.display_handle;
         let client = focused.and_then(|s| dh.get_client(s.id()).ok());
         set_data_device_focus(dh, seat, client);
+
+        // Tell `neuectl` subscribers, once per actual change.
+        let window = focused
+            .and_then(|s| self.window_for_surface(s))
+            .and_then(|w| self.window_id(&w));
+        self.report_focus(window);
     }
 }
 
@@ -259,7 +269,9 @@ impl XdgShellHandler for State {
     }
 
     fn new_toplevel(&mut self, surface: ToplevelSurface) {
-        self.unmapped.push(Window::new_wayland_window(surface));
+        let window = Window::new_wayland_window(surface);
+        self.assign_window_id(&window);
+        self.unmapped.push(window);
     }
 
     fn toplevel_destroyed(&mut self, surface: ToplevelSurface) {
@@ -268,9 +280,16 @@ impl XdgShellHandler for State {
             .retain(|w| w.toplevel().is_none_or(|t| t.wl_surface() != surface));
         if let Some(window) = self.window_for_surface(surface) {
             let was_focused = self.keyboard.current_focus().as_ref() == Some(surface);
+            let id = self.window_id(&window);
             self.space.unmap_elem(&window);
+            if let Some(window) = id {
+                self.emit(Event::WindowClosed { window });
+            }
             if was_focused {
                 self.focus_topmost();
+                // Smithay does not call `focus_changed` when the destroyed surface already
+                // cleared the focus, so report it ourselves (a no-op if it was reported).
+                self.report_focus(self.focused_window_id());
             }
         }
     }
