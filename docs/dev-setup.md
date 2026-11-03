@@ -102,7 +102,11 @@ The installer is a text menu started with `setup` **(menu names below are approx
 2. Network: the Shared network should come up with DHCP. Check with `ping archlinux.org`.
 3. Install packages: accept the Arch Linux ARM base set. Make sure the kernel is `linux-aarch64`.
 4. Configure the system: hostname `neueos-vm`, a user matching your Mac username (add to
-   `wheel`), root password, timezone, locale `en_US.UTF-8`.
+   `wheel`, the admin group), a non-empty root password and user password (sshd rejects
+   empty ones; a short throwaway is fine), timezone, locale `en_US.UTF-8`.
+   If the installer doesn't add the user to `wheel` or enable sudo for it, do it after the
+   first boot as root: `usermod -aG wheel <user>`, then `EDITOR=nano visudo` and uncomment
+   `%wheel ALL=(ALL:ALL) ALL` **(verify whether archboot does this itself)**.
 5. Install the bootloader: **systemd-boot**.
 6. Reboot, eject the ISO (Parallels → Devices → CD/DVD → disconnect).
 
