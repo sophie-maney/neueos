@@ -8,38 +8,33 @@ use smithay::backend::input::{
     InputTime, KeyState, KeyboardKeyEvent, PointerAxisEvent, PointerButtonEvent,
     PointerMotionEvent,
 };
-use smithay::input::keyboard::{FilterResult, Keysym, ModifiersState};
+use smithay::input::keyboard::{FilterResult, Keysym};
 use smithay::input::pointer::{AxisFrame, ButtonEvent, MotionEvent};
 use smithay::utils::{Logical, Point, Rectangle, SERIAL_COUNTER};
-use tracing::{debug, info};
+use tracing::{debug, info, warn};
 
 use crate::state::State;
 
-/// Actions bound to keys in the compositor itself. Configurable bindings come with 1.6.
-#[derive(Debug, Clone, Copy, PartialEq, Eq)]
+/// What a key press that the compositor takes for itself does.
+#[derive(Debug, Clone, PartialEq, Eq)]
 pub enum KeyAction {
-    /// Quit the compositor (Super+Q).
-    Quit,
     /// Switch to virtual terminal N (Ctrl+Alt+FN; xkb turns these into `XF86Switch_VT_N`).
-    /// Only the tty backend acts on it.
+    /// Only the tty backend acts on it. Not configurable.
     SwitchVt(i32),
+    /// Run the named action of `[keybindings]` (see `neuectl actions`).
+    Run(String),
+    /// The release of a key whose press was a binding: dropped, not forwarded.
+    Swallow,
 }
 
-/// The compositor binding for a key press, if any.
-pub fn binding(modifiers: &ModifiersState, keysym: Keysym) -> Option<KeyAction> {
-    let only_logo = modifiers.logo && !modifiers.ctrl && !modifiers.alt && !modifiers.shift;
-    let vt = keysym
+/// The VT switch for `keysym`, if it is one.
+fn vt_switch(keysym: Keysym) -> Option<KeyAction> {
+    keysym
         .raw()
         .checked_sub(Keysym::XF86_Switch_VT_1.raw())
-        .filter(|offset| *offset < 12);
-    if let Some(offset) = vt {
+        .filter(|offset| *offset < 12)
         // offset < 12, so the cast is lossless.
-        return Some(KeyAction::SwitchVt(offset as i32 + 1));
-    }
-    match keysym {
-        Keysym::q | Keysym::Q if only_logo => Some(KeyAction::Quit),
-        _ => None,
-    }
+        .map(|offset| KeyAction::SwitchVt(offset as i32 + 1))
 }
 
 impl State {
@@ -61,18 +56,33 @@ impl State {
         let time = event.time();
         let pressed = event.state() == KeyState::Pressed;
         let keyboard = self.keyboard.clone();
+        let keycode = event.key_code().raw();
         let action = keyboard.input::<KeyAction, _>(
             self,
             event.key_code(),
             event.state(),
             serial,
             time,
-            |_, modifiers, handle| {
-                // Bindings fire on press. The release is forwarded; clients ignore releases of
-                // keys they never saw pressed. (Suppressing releases comes with 1.6 bindings.)
-                match binding(modifiers, handle.modified_sym()) {
-                    Some(action) if pressed => FilterResult::Intercept(action),
-                    _ => FilterResult::Forward,
+            |state, modifiers, handle| {
+                // Bindings fire on press and take the matching release with them.
+                if !pressed {
+                    return if state.config.swallowed.remove(&keycode) {
+                        FilterResult::Intercept(KeyAction::Swallow)
+                    } else {
+                        FilterResult::Forward
+                    };
+                }
+                let sym = handle.modified_sym();
+                let action = vt_switch(sym).or_else(|| {
+                    let name = state.config.bindings.lookup(modifiers, sym)?;
+                    Some(KeyAction::Run(name.to_owned()))
+                });
+                match action {
+                    Some(action) => {
+                        state.config.swallowed.insert(keycode);
+                        FilterResult::Intercept(action)
+                    }
+                    None => FilterResult::Forward,
                 }
             },
         );
@@ -83,9 +93,16 @@ impl State {
 
     fn run_key_action(&mut self, action: KeyAction) {
         match action {
-            KeyAction::Quit => {
-                info!("quit requested (Super+Q)");
-                self.loop_signal.stop();
+            KeyAction::Swallow => {}
+            KeyAction::Run(name) => {
+                info!(action = name, "key binding");
+                let params = neue_ipc::ActionParams {
+                    name,
+                    ..neue_ipc::ActionParams::default()
+                };
+                if let Err(err) = self.run_action(params) {
+                    warn!(message = err.message, "key binding failed");
+                }
             }
             KeyAction::SwitchVt(vt) => match &mut self.backend {
                 #[cfg(feature = "tty")]
@@ -182,16 +199,22 @@ impl State {
     fn on_pointer_axis<I: InputBackend>(&mut self, event: I::PointerAxisEvent) {
         let source = event.source();
         let mut frame = AxisFrame::new(event.time()).source(source);
+        let pointer_config = &self.config.active.pointer;
+        let factor = if pointer_config.natural_scroll {
+            -pointer_config.scroll_factor
+        } else {
+            pointer_config.scroll_factor
+        };
         for axis in [Axis::Horizontal, Axis::Vertical] {
             let v120 = event.amount_v120(axis);
             let amount = event
                 .amount(axis)
                 .unwrap_or_else(|| v120.unwrap_or(0.0) * 15.0 / 120.0);
             if amount != 0.0 {
-                frame = frame.value(axis, amount);
+                frame = frame.value(axis, amount * factor);
                 if let Some(discrete) = v120 {
                     // v120 values are small integers carried as f64.
-                    frame = frame.v120(axis, discrete as i32);
+                    frame = frame.v120(axis, (discrete * factor).round() as i32);
                 }
             }
             if source == AxisSource::Finger && event.amount(axis) == Some(0.0) {
@@ -217,16 +240,15 @@ mod tests {
 
     #[test]
     fn ctrl_alt_f_keys_switch_vt() {
-        let none = ModifiersState::default();
         assert_eq!(
-            binding(&none, Keysym::XF86_Switch_VT_1),
+            vt_switch(Keysym::XF86_Switch_VT_1),
             Some(KeyAction::SwitchVt(1))
         );
         assert_eq!(
-            binding(&none, Keysym::XF86_Switch_VT_12),
+            vt_switch(Keysym::XF86_Switch_VT_12),
             Some(KeyAction::SwitchVt(12))
         );
-        assert_eq!(binding(&none, Keysym::F1), None);
+        assert_eq!(vt_switch(Keysym::F1), None);
     }
 
     #[test]
@@ -240,31 +262,5 @@ mod tests {
             clamp_to(Point::from((10.5, 20.25)), output),
             Point::from((10.5, 20.25))
         );
-    }
-
-    fn mods(logo: bool, shift: bool) -> ModifiersState {
-        ModifiersState {
-            logo,
-            shift,
-            ..ModifiersState::default()
-        }
-    }
-
-    #[test]
-    fn super_q_quits() {
-        assert_eq!(
-            binding(&mods(true, false), Keysym::q),
-            Some(KeyAction::Quit)
-        );
-    }
-
-    #[test]
-    fn plain_q_is_forwarded() {
-        assert_eq!(binding(&mods(false, false), Keysym::q), None);
-    }
-
-    #[test]
-    fn super_shift_q_is_not_quit() {
-        assert_eq!(binding(&mods(true, true), Keysym::Q), None);
     }
 }

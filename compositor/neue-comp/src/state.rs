@@ -30,9 +30,11 @@ use smithay::wayland::xdg_activation::XdgActivationState;
 use tracing::warn;
 
 use crate::Error;
+use crate::config::ConfigRuntime;
 use crate::ipc::IpcServer;
 
-/// Key repeat delay and rate until keyboard settings come from config (task 1.6).
+/// Key repeat delay and rate of the seat's keyboard until the config is loaded. They
+/// match the config defaults, which `State::init_config` applies right after start-up.
 const REPEAT_DELAY_MS: i32 = 300;
 const REPEAT_RATE_HZ: i32 = 30;
 
@@ -87,6 +89,8 @@ pub struct State {
     next_window_id: u64,
     /// The `neuectl` socket and its connections.
     pub ipc: IpcServer,
+    /// `compositor.toml`: the active config, key bindings and reload machinery.
+    pub config: ConfigRuntime,
 
     pub compositor_state: CompositorState,
     pub xdg_shell_state: XdgShellState,
@@ -151,6 +155,7 @@ impl State {
             popups: PopupManager::default(),
             next_window_id: 1,
             ipc: IpcServer::new(event_loop.handle()),
+            config: ConfigRuntime::new(event_loop.handle()),
             compositor_state,
             xdg_shell_state,
             shm_state,

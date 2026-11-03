@@ -47,6 +47,12 @@ pub enum IpcSocket {
 const ACTIONS: &[(&str, &str, WindowArg, &[&str])] = &[
     ("quit", "Stop the compositor", WindowArg::None, &[]),
     (
+        "reload-config",
+        "Re-read compositor.toml now",
+        WindowArg::None,
+        &[],
+    ),
+    (
         "close-window",
         "Ask a window to close",
         WindowArg::Optional,
@@ -372,6 +378,10 @@ impl State {
                     .collect::<Vec<_>>(),
             ),
             Request::Action(params) => self.run_action(params).map(|()| Value::Null),
+            Request::ReloadConfig => self
+                .reload_config()
+                .map(|()| Value::Null)
+                .map_err(|info| ErrorBody::new(ErrorCode::ConfigError, info.to_string())),
             Request::Quit => {
                 info!("quit requested over neuectl");
                 self.loop_signal.stop();
@@ -382,12 +392,15 @@ impl State {
         }
     }
 
-    fn run_action(&mut self, params: ActionParams) -> Result<(), ErrorBody> {
+    pub(crate) fn run_action(&mut self, params: ActionParams) -> Result<(), ErrorBody> {
         match params.name.as_str() {
             "quit" => {
                 self.loop_signal.stop();
                 Ok(())
             }
+            "reload-config" => self
+                .reload_config()
+                .map_err(|info| ErrorBody::new(ErrorCode::ConfigError, info.to_string())),
             "close-window" => {
                 let window = self.window_arg(params.window, WindowArg::Optional)?;
                 if let Some(toplevel) = window.toplevel() {
@@ -500,6 +513,11 @@ impl State {
     pub(crate) fn emit(&mut self, event: Event) {
         self.ipc.broadcast(&event);
     }
+}
+
+/// Whether `name` is an action `neuectl action` (and `[keybindings]`) accepts.
+pub(crate) fn is_action(name: &str) -> bool {
+    ACTIONS.iter().any(|&(n, ..)| n == name)
 }
 
 /// An action argument that must be present.

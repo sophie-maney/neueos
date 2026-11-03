@@ -40,9 +40,13 @@ serde_json = "1.0"
 clap = { version = "4", default-features = false, features = ["std", "derive", "help", "usage", "error-context", "suggestions"] }
 tempfile = "3"
 
+# Configuration (neue-config, ADR 0004). `toml` is MIT OR Apache-2.0.
+toml = "1"
+
 # Internal crates
 neue-paint = { path = "crates/neue-paint" }
 neue-ipc = { path = "crates/neue-ipc" }
+neue-config = { path = "crates/neue-config" }
 
 [workspace.lints.rust]
 unsafe_code = "deny"
