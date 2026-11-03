@@ -527,8 +527,8 @@ Decisions to follow: ADR 0001 (Smithay), 0003 (IPC), 0004 (config), 0005 (global
       `[pointer]` (natural scroll, scroll factor), `[keybindings]` (default `Super+Q` =
       `quit`; `"none"` unbinds) and `[outputs."NAME"] scale`. New `neuectl reload-config`,
       `reload-config` action and `config_error`/`config_reloaded` events (topic `config`).
-      Headless tests in `tests/config.rs` (layout switch, rejected files, bindings). **VM
-      check still to do by hand:** `docs/dev-setup.md` §5. Not done: libinput pointer
+      Headless tests in `tests/config.rs` (layout switch, rejected files, bindings). Owner
+      confirmed the hot reload by hand in the VM (`docs/dev-setup.md` §5). Not done: libinput pointer
       settings (acceleration, tap-to-click) need tty device handling and hardware, so they
       wait for a later task; real output scaling is 1.7.
 - [ ] **1.7 Multi-monitor and scaling** · Opus. Output layout from config, hotplug,
