@@ -27,6 +27,10 @@ use wayland_protocols::xdg::shell::client::{
     xdg_wm_base::{self, XdgWmBase},
 };
 
+mod selection;
+
+pub use selection::{Drag, read_all};
+
 /// A connected client with the core globals bound.
 pub struct TestClient {
     queue: EventQueue<ClientData>,
@@ -38,6 +42,7 @@ pub struct TestClient {
     pub seat: WlSeat,
     activation: XdgActivationV1,
     fractional_scale: WpFractionalScaleManagerV1,
+    selection: selection::SelectionObjects,
     _pointer: WlPointer,
     _keyboard: WlKeyboard,
     _globals: GlobalList,
@@ -78,6 +83,8 @@ struct ClientData {
     enter_serial: Option<u32>,
     /// The last activation token the compositor handed out.
     token: Option<String>,
+    /// Selection offers and source events (see `selection.rs`).
+    offers: selection::Offers,
 }
 
 impl TestClient {
@@ -98,6 +105,7 @@ impl TestClient {
             .expect("binding wp_fractional_scale_manager_v1");
         let pointer = seat.get_pointer(&qh, ());
         let keyboard = seat.get_keyboard(&qh, ());
+        let selection = selection::SelectionObjects::new(&globals, &qh, &seat);
         let mut data = ClientData::default();
         queue.roundtrip(&mut data).expect("initial roundtrip");
         Self {
@@ -110,6 +118,7 @@ impl TestClient {
             seat,
             activation,
             fractional_scale,
+            selection,
             _pointer: pointer,
             _keyboard: keyboard,
             _globals: globals,
@@ -260,6 +269,17 @@ impl TestClient {
 
     /// Attach a new transparent ARGB8888 shm buffer of `size` to the toplevel's surface.
     fn attach_buffer(&mut self, toplevel: &mut Toplevel, (w, h): (i32, i32)) {
+        let buffer = self.shm_buffer((w, h));
+        toplevel.surface.attach(Some(&buffer), 0, 0);
+        toplevel.surface.damage_buffer(0, 0, w, h);
+        if let Some(old) = toplevel.buffer.replace(buffer) {
+            old.destroy();
+        }
+        toplevel.size = (w, h);
+    }
+
+    /// A transparent ARGB8888 shm buffer of `size`.
+    fn shm_buffer(&mut self, (w, h): (i32, i32)) -> WlBuffer {
         let stride = w * 4;
         let len = stride * h;
         let fd = rustix::fs::memfd_create("neue-comp-test", rustix::fs::MemfdFlags::CLOEXEC)
@@ -269,12 +289,7 @@ impl TestClient {
         let pool = self.shm.create_pool(file.as_fd(), len, &self.qh, ());
         let buffer = pool.create_buffer(0, w, h, stride, wl_shm::Format::Argb8888, &self.qh, ());
         pool.destroy();
-        toplevel.surface.attach(Some(&buffer), 0, 0);
-        toplevel.surface.damage_buffer(0, 0, w, h);
-        if let Some(old) = toplevel.buffer.replace(buffer) {
-            old.destroy();
-        }
-        toplevel.size = (w, h);
+        buffer
     }
 }
 
