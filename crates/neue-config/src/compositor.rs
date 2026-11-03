@@ -20,6 +20,8 @@ pub struct CompositorConfig {
     pub keyboard: KeyboardConfig,
     /// `[pointer]`: scrolling.
     pub pointer: PointerConfig,
+    /// `[windows]`: title-bar behaviour.
+    pub windows: WindowsConfig,
     /// `[keybindings]`: key chord (`"Super+Q"`) to action name. Action names are those of
     /// `neuectl actions`. The value `"none"` removes a binding that a lower layer (or the
     /// built-in defaults) made.
@@ -33,6 +35,7 @@ impl Default for CompositorConfig {
         Self {
             keyboard: KeyboardConfig::default(),
             pointer: PointerConfig::default(),
+            windows: WindowsConfig::default(),
             keybindings: BTreeMap::from([(
                 Chord {
                     logo: true,
@@ -137,6 +140,28 @@ impl Default for PointerConfig {
             scroll_factor: 1.0,
         }
     }
+}
+
+/// `[windows]`.
+#[derive(Debug, Clone, Default, PartialEq, Serialize, Deserialize)]
+#[serde(default, rename_all = "kebab-case")]
+pub struct WindowsConfig {
+    /// What a double click on a server-side title bar does: `"zoom"` (the default),
+    /// `"minimize"` or `"none"`.
+    pub title_bar_double_click: TitleBarDoubleClick,
+}
+
+/// The action of a double click on a title bar (`[windows] title-bar-double-click`).
+#[derive(Debug, Clone, Copy, Default, PartialEq, Eq, Serialize, Deserialize)]
+#[serde(rename_all = "kebab-case")]
+pub enum TitleBarDoubleClick {
+    /// Zoom the window, or restore it if it is zoomed.
+    #[default]
+    Zoom,
+    /// Minimise the window.
+    Minimize,
+    /// Do nothing.
+    None,
 }
 
 /// `[outputs."<name>"]`.
@@ -288,7 +313,20 @@ position = [-1280, 0]
         assert_eq!(c.pointer.scroll_factor, 2.5);
         assert_eq!(c.outputs["HDMI-A-1"].scale, Some(1.5));
         assert_eq!(c.outputs["HDMI-A-1"].position, Some([-1280, 0]));
+        assert_eq!(c.windows.title_bar_double_click, TitleBarDoubleClick::Zoom);
         assert!(loaded.unknown_keys.is_empty(), "{:?}", loaded.unknown_keys);
+    }
+
+    #[test]
+    fn title_bar_double_click_loads_and_rejects_typos() {
+        let c = load_text("[windows]\ntitle-bar-double-click = \"minimize\"\n")
+            .unwrap()
+            .config;
+        assert_eq!(
+            c.windows.title_bar_double_click,
+            TitleBarDoubleClick::Minimize
+        );
+        assert!(load_text("[windows]\ntitle-bar-double-click = \"shade\"\n").is_err());
     }
 
     #[test]

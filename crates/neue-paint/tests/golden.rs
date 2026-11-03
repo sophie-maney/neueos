@@ -15,7 +15,7 @@ use std::io::Cursor;
 use std::path::{Path, PathBuf};
 
 use neue_paint::cpu::{CpuRenderer, Quality};
-use neue_paint::materials::title_bar::{self, TitleBarStyle};
+use neue_paint::materials::title_bar::{self, TitleBarStyle, TrafficLight};
 use neue_paint::text::TextEngine;
 use neue_paint::{Appearance, Pixmap, Scene, demo};
 
@@ -130,11 +130,7 @@ fn sheet_dark_2x() {
 /// Width of the title bar goldens: wide enough for a centred title.
 const TITLE_BAR_WIDTH: f64 = 320.0;
 
-fn render_title_bar(appearance: Appearance, focused: bool, scale: f64) -> Pixmap {
-    let style = TitleBarStyle {
-        appearance,
-        focused,
-    };
+fn render_title_bar(style: TitleBarStyle, scale: f64) -> Pixmap {
     let title = TextEngine::new().line_truncated(
         "Untitled — Edited",
         title_bar::TITLE_FONT_SIZE,
@@ -153,9 +149,43 @@ fn title_bar_goldens() {
     for (appearance, a) in [(Appearance::Light, "light"), (Appearance::Dark, "dark")] {
         for (focused, f) in [(true, "focused"), (false, "unfocused")] {
             for (scale, s) in [(1.0, "1x"), (2.0, "2x")] {
+                let style = TitleBarStyle {
+                    appearance,
+                    focused,
+                    ..TitleBarStyle::default()
+                };
                 check(
                     &format!("titlebar-{f}-{a}@{s}"),
-                    render_title_bar(appearance, focused, scale),
+                    render_title_bar(style, scale),
+                );
+            }
+        }
+    }
+}
+
+/// Traffic-light interaction goldens: pointer over the buttons (focused and unfocused),
+/// and each button held down, × light/dark × 1x/2x.
+#[test]
+fn title_bar_interaction_goldens() {
+    let states = [
+        ("hover-focused", true, None),
+        ("hover-unfocused", false, None),
+        ("pressed-close", true, Some(TrafficLight::Close)),
+        ("pressed-minimize", true, Some(TrafficLight::Minimize)),
+        ("pressed-zoom", true, Some(TrafficLight::Zoom)),
+    ];
+    for (appearance, a) in [(Appearance::Light, "light"), (Appearance::Dark, "dark")] {
+        for (name, focused, pressed) in states {
+            for (scale, s) in [(1.0, "1x"), (2.0, "2x")] {
+                let style = TitleBarStyle {
+                    appearance,
+                    focused,
+                    hover: true,
+                    pressed,
+                };
+                check(
+                    &format!("titlebar-{name}-{a}@{s}"),
+                    render_title_bar(style, scale),
                 );
             }
         }

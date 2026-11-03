@@ -11,28 +11,16 @@ use smithay::backend::renderer::element::surface::WaylandSurfaceRenderElement;
 use smithay::backend::renderer::gles::GlesRenderer;
 use smithay::desktop::{LayerMap, LayerSurface, Space, Window, layer_map_for_output};
 use smithay::output::Output;
-use smithay::utils::{Logical, Point, Rectangle, Scale};
+use smithay::utils::{Logical, Point, Scale};
 use smithay::wayland::shell::wlr_layer::Layer;
 
-use crate::decorations::{self, Chrome};
+use crate::decorations::{self, Chrome, frame_geometry};
 
 smithay::backend::renderer::element::render_elements! {
     /// Windows, their title bars and layer surfaces on one output, topmost first.
     pub OutputElement<=GlesRenderer>;
     Surface=WaylandSurfaceRenderElement<GlesRenderer>,
     Chrome=MemoryRenderBufferRenderElement<GlesRenderer>,
-}
-
-/// `window`'s frame: its geometry plus the title bar, global logical coordinates.
-pub fn frame_geometry(
-    window: &Window,
-    geometry: Rectangle<i32, Logical>,
-) -> Rectangle<i32, Logical> {
-    let bar = decorations::title_bar_height(window);
-    Rectangle::new(
-        (geometry.loc.x, geometry.loc.y - bar).into(),
-        (geometry.size.w, geometry.size.h + bar).into(),
-    )
 }
 
 /// Everything on `output`, topmost first. Empty if the output is not in `space`.

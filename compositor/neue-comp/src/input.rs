@@ -175,6 +175,9 @@ impl State {
             },
         );
         pointer.frame(self);
+        if !pointer.is_grabbed() {
+            self.update_chrome_hover(pos);
+        }
     }
 
     fn on_pointer_button<I: InputBackend>(&mut self, event: I::PointerButtonEvent) {
@@ -188,16 +191,23 @@ impl State {
         let pointer = self.pointer.clone();
 
         // Click to focus: a press on a window raises and focuses it; a press on the
-        // background clears focus.
+        // background clears focus. Window chrome (title bar, edges) is ours: it focuses
+        // the window and starts a grab, so the press never reaches a client.
         if state == ButtonState::Pressed && !pointer.is_grabbed() {
-            let clicked = self
-                .space
-                .element_under(pointer.current_location())
-                .map(|(window, _)| window.clone());
-            debug!(location = ?pointer.current_location(), hit = clicked.is_some(), "click");
-            match clicked {
-                Some(window) => self.focus_window(&window),
-                None => self.clear_focus(),
+            let location = pointer.current_location();
+            if let Some((window, hit)) = self.chrome_hit_at(location) {
+                debug!(?location, ?hit, "click on chrome");
+                self.press_chrome(window, hit, button, serial);
+            } else {
+                let clicked = self
+                    .space
+                    .element_under(location)
+                    .map(|(window, _)| window.clone());
+                debug!(?location, hit = clicked.is_some(), "click");
+                match clicked {
+                    Some(window) => self.focus_window(&window),
+                    None => self.clear_focus(),
+                }
             }
         }
 
