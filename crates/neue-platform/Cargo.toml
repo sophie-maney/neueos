@@ -26,6 +26,7 @@ ui-events-winit.workspace = true
 winit.workspace = true
 
 [target.'cfg(target_os = "linux")'.dependencies]
+accesskit_unix.workspace = true
 raw-window-handle.workspace = true
 smithay-client-toolkit.workspace = true
 wayland-backend = { workspace = true, features = ["client_system", "dlopen"] }

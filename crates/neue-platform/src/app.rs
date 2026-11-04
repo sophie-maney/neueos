@@ -34,6 +34,12 @@ pub struct WindowSpec {
     /// Cleared to before the widgets paint. Opaque: windows aren't transparent.
     pub background: Color,
     pub kind: WindowKind,
+    /// The window this one belongs to (`xdg_toplevel.set_parent`): the compositor keeps it
+    /// above its parent. Toplevels only; Wayland only for now.
+    pub parent: Option<WindowId>,
+    /// A modal dialog (xdg-dialog `set_modal`): its parent takes no input while it's open.
+    /// Wayland only for now.
+    pub modal: bool,
 }
 
 impl WindowSpec {
@@ -47,6 +53,8 @@ impl WindowSpec {
             root,
             background: Color::from_rgb8(0xec, 0xec, 0xec),
             kind: WindowKind::Toplevel,
+            parent: None,
+            modal: false,
         }
     }
 }

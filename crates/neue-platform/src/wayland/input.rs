@@ -18,12 +18,15 @@ pub(super) const MOUSE: PointerInfo = PointerInfo {
     pointer_type: PointerType::Mouse,
 };
 
+/// The middle button's evdev code: pastes the primary selection.
+pub(super) const BTN_MIDDLE: u32 = 0x112;
+
 /// Maps a Linux evdev button code (`BTN_*`) to a pointer button.
 pub(super) fn button(code: u32) -> Option<PointerButton> {
     match code {
         0x110 => Some(PointerButton::Primary),
         0x111 => Some(PointerButton::Secondary),
-        0x112 => Some(PointerButton::Auxiliary),
+        BTN_MIDDLE => Some(PointerButton::Auxiliary),
         0x113 => Some(PointerButton::X1),
         0x114 => Some(PointerButton::X2),
         _ => None,

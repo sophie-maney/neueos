@@ -10,14 +10,20 @@
 //! - text-input-v3 into Masonry's IME events;
 //! - Masonry layers (menus, tooltips) as xdg-popups: still laid out and hit-tested by
 //!   Masonry in window coordinates, but painted into the popup's own `wl_surface`, with
-//!   pointer input on the popup translated back into window coordinates.
-//!
-//! Task 2.6 adds popup positioning for every layer kind (`xdg_popup.reposition`), the
-//! clipboard, xdg-activation and AccessKit.
+//!   pointer input on the popup translated back into window coordinates. Placement per
+//!   layer kind, so the compositor flips them at screen edges; `xdg_popup.reposition`;
+//!   submenus nest on the menu they open from;
+//! - the text clipboard and pasting the primary selection;
+//! - xdg-activation (Masonry's `TakeFocus`, `XDG_ACTIVATION_TOKEN` at start-up),
+//!   parent windows and modal dialogs (xdg-dialog);
+//! - AccessKit through `accesskit_unix` (AT-SPI).
 
+mod access;
+mod clipboard;
 mod handle;
 mod input;
 mod keymap;
+mod popup;
 mod seat;
 mod shell;
 
@@ -28,16 +34,20 @@ use std::time::Instant;
 use masonry_core::app::{
     RenderRoot, RenderRootOptions, RenderRootSignal, VisualLayerKind, WindowSizePolicy,
 };
-use masonry_core::core::{CursorIcon, ErasedAction, Ime, NewWidget, TextEvent, Widget, WidgetId};
+use masonry_core::core::{
+    CursorIcon, ErasedAction, Ime, LayerType, NewWidget, TextEvent, Widget, WidgetId,
+};
 use masonry_core::core::{ResizeDirection, WindowEvent};
 use masonry_core::dpi::PhysicalSize;
 use masonry_core::imaging::record::Scene;
 use masonry_core::kurbo::{Affine, Point, Rect, Vec2};
 use masonry_core::peniko::Color;
 use masonry_imaging::{Layer as ImagingLayer, PreparedFrame};
-use smithay_client_toolkit::compositor::{CompositorState, FrameCallbackData};
+use smithay_client_toolkit::activation::{ActivationHandler, ActivationState, RequestData};
+use smithay_client_toolkit::compositor::{CompositorState, FrameCallbackData, Region};
 use smithay_client_toolkit::dispatch2::Dispatch2;
 use smithay_client_toolkit::output::OutputState;
+use smithay_client_toolkit::reexports::calloop::channel::{self as calloop_channel, Sender};
 use smithay_client_toolkit::reexports::calloop::{EventLoop, LoopHandle};
 use smithay_client_toolkit::reexports::calloop_wayland_source::WaylandSource;
 use smithay_client_toolkit::registry::{ProvidesRegistryState, RegistryState};
@@ -46,7 +56,7 @@ use smithay_client_toolkit::shell::WaylandSurface;
 use smithay_client_toolkit::shell::wlr_layer::{self, LayerShell, LayerSurface};
 use smithay_client_toolkit::shell::xdg::popup::Popup;
 use smithay_client_toolkit::shell::xdg::window::{Window, WindowDecorations};
-use smithay_client_toolkit::shell::xdg::{XdgPositioner, XdgShell, XdgSurface as _};
+use smithay_client_toolkit::shell::xdg::{XdgShell, XdgSurface as _};
 use smithay_client_toolkit::shm::Shm;
 use smithay_client_toolkit::{delegate_dispatch2, delegate_registry, registry_handlers};
 use wayland_client::globals::{GlobalList, registry_queue_init};
@@ -63,7 +73,10 @@ use wayland_protocols::wp::text_input::zv3::client::{
 use wayland_protocols::wp::viewporter::client::{
     wp_viewport::WpViewport, wp_viewporter::WpViewporter,
 };
-use wayland_protocols::xdg::shell::client::{xdg_positioner, xdg_toplevel};
+use wayland_protocols::xdg::dialog::v1::client::{
+    xdg_dialog_v1::XdgDialogV1, xdg_wm_dialog_v1::XdgWmDialogV1,
+};
+use wayland_protocols::xdg::shell::client::xdg_toplevel;
 
 use crate::app::{DriverWindow, Registry};
 use crate::gpu::{Gpu, GpuError, SurfaceTarget};
@@ -71,6 +84,9 @@ use crate::{
     Anchor, App, Ctx, LayerKeyboard, LayerSpec, Options, ShellLayer, WindowId, WindowKind,
     WindowSpec,
 };
+use access::{Access, AccessEvent};
+use clipboard::Clipboard;
+use popup::Placement;
 
 /// Driver errors.
 #[derive(Debug, thiserror::Error)]
@@ -116,6 +132,17 @@ pub fn run_with_connection(
         .insert(event_loop.handle())
         .map_err(|e| Error::Loop(e.to_string()))?;
 
+    // AccessKit's adapters call in from their own thread.
+    let (access_tx, access_rx) = calloop_channel::channel();
+    event_loop
+        .handle()
+        .insert_source(access_rx, |event, (), state: &mut State| {
+            if let calloop_channel::Event::Msg((window, event)) = event {
+                state.access_event(window, event);
+            }
+        })
+        .map_err(|e| Error::Loop(e.to_string()))?;
+
     let instance = wgpu::Instance::new(wgpu::InstanceDescriptor::new_with_display_handle_from_env(
         Box::new(handle::Display(conn.clone())),
     ));
@@ -126,6 +153,14 @@ pub fn run_with_connection(
         instance,
         g: Globals::bind(&globals, &qh)?,
         shm: Shm::bind(&globals, &qh)?,
+        clipboard: Clipboard::bind(&globals, &qh),
+        access_tx,
+        // Activates the first toplevel. Left in the environment: removing it is unsafe
+        // with threads around, and a used token is worthless to children.
+        startup_token: std::env::var("XDG_ACTIVATION_TOKEN")
+            .ok()
+            .filter(|t| !t.is_empty()),
+        reposition_token: 0,
         registry: RegistryState::new(&globals),
         seats: SeatState::new(&globals, &qh),
         outputs: OutputState::new(&globals, &qh),
@@ -166,6 +201,8 @@ struct Globals {
     fractional: Option<WpFractionalScaleManagerV1>,
     viewporter: Option<WpViewporter>,
     text_input: Option<ZwpTextInputManagerV3>,
+    activation: Option<ActivationState>,
+    dialog: Option<XdgWmDialogV1>,
 }
 
 impl Globals {
@@ -179,10 +216,14 @@ impl Globals {
         let fractional = globals.bind(qh, 1..=1, NoEvents).ok();
         let viewporter = globals.bind(qh, 1..=1, NoEvents).ok();
         let text_input = globals.bind(qh, 1..=1, NoEvents).ok();
+        let activation = ActivationState::bind(globals, qh).ok();
+        let dialog = globals.bind(qh, 1..=1, NoEvents).ok();
         optional("zwlr_layer_shell_v1", layer_shell.is_some());
         optional("wp_fractional_scale_manager_v1", fractional.is_some());
         optional("wp_viewporter", viewporter.is_some());
         optional("zwp_text_input_manager_v3", text_input.is_some());
+        optional("xdg_activation_v1", activation.is_some());
+        optional("xdg_wm_dialog_v1", dialog.is_some());
         Ok(Self {
             compositor: CompositorState::bind(globals, qh)?,
             xdg: XdgShell::bind(globals, qh)?,
@@ -191,6 +232,8 @@ impl Globals {
             fractional: fractional.filter(|_| viewporter.is_some()),
             viewporter,
             text_input,
+            activation,
+            dialog,
         })
     }
 }
@@ -319,8 +362,13 @@ struct PopupLayer {
     // Field order is drop order: the surface's wgpu target before the popup's wl_surface.
     surf: Surf,
     /// Owns the xdg_popup and its wl_surface: dropping it destroys both.
-    _popup: Popup,
+    popup: Popup,
     root_id: WidgetId,
+    /// The menu this one opened from (its xdg parent), or `None` for the window.
+    parent: Option<WidgetId>,
+    placement: Placement,
+    /// Where Masonry asked for the layer, in window coordinates.
+    requested: Point,
     /// Popup top-left in window (logical) coordinates, as configured by the compositor.
     origin: Point,
     /// Masonry's layer position minus its bounding-box origin.
@@ -355,12 +403,45 @@ struct Win {
     ime_allowed: bool,
     ime_area: Rect,
     cursor: CursorIcon,
+    accesskit: Access,
+    /// The xdg-dialog object of a modal toplevel.
+    dialog: Option<XdgDialogV1>,
+}
+
+impl Win {
+    /// Removes the popup at `pi` and the popups nested on it, newest first, and returns
+    /// their layers.
+    fn take_popups(&mut self, pi: usize) -> Vec<WidgetId> {
+        let mut gone = vec![self.popups[pi].root_id];
+        for p in &self.popups[pi + 1..] {
+            if p.parent.is_some_and(|parent| gone.contains(&parent)) {
+                gone.push(p.root_id);
+            }
+        }
+        // xdg-shell forbids destroying a popup under another one.
+        for i in (pi..self.popups.len()).rev() {
+            if gone.contains(&self.popups[i].root_id) {
+                self.popups.remove(i);
+            }
+        }
+        gone
+    }
+
+    /// Window-coordinate origin of the surface a popup is placed against.
+    fn parent_origin(&self, parent: Option<WidgetId>) -> Vec2 {
+        parent
+            .and_then(|parent| self.popups.iter().find(|p| p.root_id == parent))
+            .map_or(Vec2::ZERO, |p| p.origin.to_vec2())
+    }
 }
 
 impl Drop for Win {
     fn drop(&mut self) {
         // Newest popup first: xdg-shell forbids destroying a popup under another one.
         while self.popups.pop().is_some() {}
+        if let Some(dialog) = self.dialog.take() {
+            dialog.destroy();
+        }
     }
 }
 
@@ -388,6 +469,12 @@ struct State {
     seats: SeatState,
     outputs: OutputState,
     input: seat::Input,
+    clipboard: Clipboard,
+    access_tx: Sender<(WindowId, AccessEvent)>,
+    /// `XDG_ACTIVATION_TOKEN` from our launcher, until the first toplevel uses it.
+    startup_token: Option<String>,
+    /// Serial for `xdg_popup.reposition`.
+    reposition_token: u32,
     loop_handle: LoopHandle<'static, State>,
     qh: QueueHandle<State>,
     /// Kept alive for the raw display handle wgpu holds.
@@ -450,21 +537,50 @@ impl State {
         }
         let surf = Surf::new(&self.g, &qh, wl.clone(), wgpu_surface, true);
         let size = (spec.width, spec.height);
+        let mut dialog = None;
         let shell = match (spec.kind, &self.g.layer_shell) {
             (WindowKind::Layer(layer), Some(layer_shell)) => {
                 Shell::Layer(create_layer(layer_shell, &qh, wl, &layer, size))
             }
             _ => {
-                let window = self
-                    .g
-                    .xdg
-                    .create_window(wl, WindowDecorations::ServerDefault, &qh);
+                let window =
+                    self.g
+                        .xdg
+                        .create_window(wl.clone(), WindowDecorations::ServerDefault, &qh);
                 window.set_title(spec.title);
                 if !spec.app_id.is_empty() {
                     window.set_app_id(spec.app_id);
                 }
+                let parent = spec
+                    .parent
+                    .and_then(|p| self.reg.windows.get(&p))
+                    .and_then(|p| match &p.shell {
+                        Shell::Toplevel(parent) => Some(parent),
+                        Shell::Layer(_) => None,
+                    });
+                if let Some(parent) = parent {
+                    window.set_parent(Some(parent));
+                } else if spec.parent.is_some() {
+                    tracing::warn!(%id, "the parent isn't an open toplevel; ignoring it");
+                }
+                if spec.modal {
+                    match &self.g.dialog {
+                        Some(wm) => {
+                            let d = wm.get_xdg_dialog(window.xdg_toplevel(), &qh, NoEvents);
+                            d.set_modal();
+                            dialog = Some(d);
+                        }
+                        None => tracing::warn!(%id, "no xdg-dialog: the window isn't modal"),
+                    }
+                }
                 // The initial commit, without a buffer, asks for the first configure.
                 window.commit();
+                if let (Some(token), Some(activation)) =
+                    (self.startup_token.take(), &self.g.activation)
+                {
+                    tracing::debug!(%id, "activating with the launcher's token");
+                    activation.activate::<State>(&wl, token);
+                }
                 Shell::Toplevel(window)
             }
         };
@@ -509,6 +625,8 @@ impl State {
                 ime_allowed: false,
                 ime_area: Rect::ZERO,
                 cursor: CursorIcon::Default,
+                accesskit: Access::new(id, self.access_tx.clone()),
+                dialog,
             },
         );
         Ok(())
@@ -543,6 +661,7 @@ impl State {
         let (pw, ph) = w.surf.physical(w.scale);
         w.root
             .handle_window_event(WindowEvent::Resize(PhysicalSize::new(pw, ph)));
+        w.accesskit.set_size((pw, ph));
         w.configured = true;
         w.dirty = true;
     }
@@ -563,6 +682,7 @@ impl State {
             let (pw, ph) = w.surf.physical(scale);
             w.root
                 .handle_window_event(WindowEvent::Resize(PhysicalSize::new(pw, ph)));
+            w.accesskit.set_size((pw, ph));
             for p in &mut w.popups {
                 p.surf.int_scale = w.surf.int_scale;
                 if p.configured {
@@ -667,26 +787,25 @@ impl State {
             RenderRootSignal::Exit => self.reg.exit = true,
             RenderRootSignal::NewLayer(kind, widget, pos) => {
                 tracing::debug!(?kind, ?pos, "new Masonry layer");
-                self.open_popup(id, widget, pos);
+                self.open_popup(id, &kind, widget, pos);
             }
             RenderRootSignal::RemoveLayer(layer) => {
                 w.root.remove_layer(layer);
                 if let Some(pi) = w.popups.iter().position(|p| p.root_id == layer) {
-                    w.popups.remove(pi);
+                    // Menus nested on this one go with it.
+                    let nested = w.take_popups(pi).into_iter().filter(|l| *l != layer);
+                    w.dismissed.extend(nested);
                 }
                 w.inline_layers.retain(|l| *l != layer);
                 w.dismissed.retain(|l| *l != layer);
                 w.dirty = true;
             }
             RenderRootSignal::RepositionLayer(layer, pos) => {
-                // Masonry moves the layer; the popup keeps its first placement until task
-                // 2.6 maps this to xdg_popup.reposition.
                 w.root.reposition_layer(layer, pos);
+                self.reposition_popup(id, layer, pos);
             }
-            // Task 2.6: wl_data_device and xdg-activation.
-            RenderRootSignal::ClipboardStore(_) | RenderRootSignal::TakeFocus => {
-                tracing::trace!(%id, "clipboard and activation arrive with task 2.6");
-            }
+            RenderRootSignal::ClipboardStore(text) => self.store_clipboard(text),
+            RenderRootSignal::TakeFocus => self.request_activation(id),
             RenderRootSignal::WidgetSelectedInInspector(widget) => {
                 tracing::info!(%id, %widget, "widget selected in the inspector");
             }
@@ -706,8 +825,15 @@ impl State {
         }
     }
 
-    /// Adds `widget` as a Masonry layer and shows it in an xdg-popup at its bounding box.
-    fn open_popup(&mut self, id: WindowId, widget: NewWidget<dyn Widget>, pos: Point) {
+    /// Adds `widget` as a Masonry layer and shows it in an xdg-popup at its bounding box,
+    /// placed for its `kind` (see [`popup`]).
+    fn open_popup(
+        &mut self,
+        id: WindowId,
+        kind: &LayerType,
+        widget: NewWidget<dyn Widget>,
+        pos: Point,
+    ) {
         let layer = widget.id();
         let qh = self.qh.clone();
         let (seat, serial) = (self.input.seat.clone(), self.input.last_serial);
@@ -720,12 +846,23 @@ impl State {
             .root
             .get_widget(layer)
             .map(|r| r.ctx().bounding_box())
-            .unwrap_or_else(|| Rect::from_origin_size(pos, (1.0, 1.0)))
-            .expand();
-        let width = (bbox.width() as u32).max(1);
-        let height = (bbox.height() as u32).max(1);
+            .unwrap_or_else(|| Rect::from_origin_size(pos, (1.0, 1.0)));
+        let owner = popup::owner_rect(w.root.get_layer_root(0), pos);
+        let placement = Placement::new(kind, pos, bbox, owner);
+        // A menu opened from a menu nests on it: a grab must come from the topmost grabbing
+        // popup. Everything else hangs off the window.
+        let parent = placement
+            .grab
+            .then(|| w.popups.iter().rev().find(|p| p.placement.grab))
+            .flatten();
+        let parent_id = parent.map(|p| p.root_id);
+        let parent_surface = match (parent, &w.shell) {
+            (Some(p), _) => Some(p.popup.xdg_surface()),
+            (None, Shell::Toplevel(window)) => Some(window.xdg_surface()),
+            (None, Shell::Layer(_)) => None,
+        };
 
-        let positioner = match XdgPositioner::new(&self.g.xdg) {
+        let positioner = match placement.positioner(&self.g.xdg, w.parent_origin(parent_id)) {
             Ok(p) => p,
             Err(err) => {
                 tracing::error!(%err, "no xdg_positioner; painting the layer inline");
@@ -733,16 +870,6 @@ impl State {
                 return;
             }
         };
-        positioner.set_size(width as i32, height as i32);
-        positioner.set_anchor_rect(bbox.x0 as i32, bbox.y0 as i32, 1, 1);
-        positioner.set_anchor(xdg_positioner::Anchor::TopLeft);
-        positioner.set_gravity(xdg_positioner::Gravity::BottomRight);
-        positioner.set_constraint_adjustment(
-            xdg_positioner::ConstraintAdjustment::FlipY
-                | xdg_positioner::ConstraintAdjustment::SlideX
-                | xdg_positioner::ConstraintAdjustment::SlideY,
-        );
-
         let wl = self.g.compositor.create_surface(&qh);
         let wgpu_surface = match handle::create_surface(
             gpu_instance(&self.gpu, &self.instance),
@@ -756,38 +883,94 @@ impl State {
                 return;
             }
         };
-        let parent = match &w.shell {
-            Shell::Toplevel(window) => Some(window.xdg_surface()),
-            Shell::Layer(_) => None,
-        };
-        let popup = match Popup::from_surface(parent, &positioner, &qh, wl.clone(), &self.g.xdg) {
-            Ok(p) => p,
-            Err(err) => {
-                tracing::error!(%err, "can't create an xdg-popup; painting the layer inline");
-                w.inline_layers.push(layer);
-                return;
-            }
-        };
-        if let Shell::Layer(layer_surface) = &w.shell {
+        let popup =
+            match Popup::from_surface(parent_surface, &positioner, &qh, wl.clone(), &self.g.xdg) {
+                Ok(p) => p,
+                Err(err) => {
+                    tracing::error!(%err, "can't create an xdg-popup; painting the layer inline");
+                    w.inline_layers.push(layer);
+                    return;
+                }
+            };
+        if let (None, Shell::Layer(layer_surface)) = (parent_id, &w.shell) {
             layer_surface.get_popup(popup.xdg_popup());
         }
-        // Grab before the initial commit, so the compositor dismisses the popup on an
-        // outside click (xdg_popup.grab must precede mapping).
-        if let (Some(seat), Some(serial)) = (&seat, serial) {
-            popup.xdg_popup().grab(seat, serial);
+        if placement.grab {
+            // Before the initial commit, so the compositor dismisses the popup on an
+            // outside click (xdg_popup.grab must precede mapping).
+            if let (Some(seat), Some(serial)) = (&seat, serial) {
+                popup.xdg_popup().grab(seat, serial);
+            }
+        } else {
+            // Tooltips let the pointer through to the window.
+            match Region::new(&self.g.compositor) {
+                Ok(region) => wl.set_input_region(Some(region.wl_region())),
+                Err(err) => tracing::debug!(%err, "no wl_region for the tooltip"),
+            }
         }
         let mut surf = Surf::new(&self.g, &qh, wl, wgpu_surface, false);
-        surf.size = (width, height);
+        surf.size = (placement.size.0 as u32, placement.size.1 as u32);
         surf.int_scale = w.surf.int_scale;
         popup.wl_surface().commit();
         w.popups.push(PopupLayer {
             surf,
-            _popup: popup,
+            popup,
             root_id: layer,
+            parent: parent_id,
+            placement,
+            requested: pos,
             origin: bbox.origin(),
             layer_offset: pos - bbox.origin(),
             configured: false,
         });
+    }
+
+    /// Follows Masonry moving a layer: places its popup again (`xdg_popup.reposition`).
+    fn reposition_popup(&mut self, id: WindowId, layer: WidgetId, pos: Point) {
+        let Some(w) = self.reg.windows.get_mut(&id) else {
+            return;
+        };
+        let Some(pi) = w.popups.iter().position(|p| p.root_id == layer) else {
+            return;
+        };
+        let parent_origin = w.parent_origin(w.popups[pi].parent);
+        let p = &mut w.popups[pi];
+        p.placement = p.placement.moved(pos - p.requested);
+        p.requested = pos;
+        if p.popup.xdg_popup().version() < 3 {
+            tracing::debug!("xdg_popup.reposition needs xdg_wm_base v3; the popup stays");
+            return;
+        }
+        match p.placement.positioner(&self.g.xdg, parent_origin) {
+            Ok(positioner) => {
+                self.reposition_token = self.reposition_token.wrapping_add(1);
+                p.popup.reposition(&positioner, self.reposition_token);
+            }
+            Err(err) => tracing::error!(%err, "no xdg_positioner; the popup stays"),
+        }
+    }
+
+    /// Asks the compositor to focus window `id` (Masonry's `TakeFocus`): xdg-activation,
+    /// with the latest input serial and the focused surface as proof of user intent.
+    fn request_activation(&mut self, id: WindowId) {
+        let Some(activation) = &self.g.activation else {
+            tracing::debug!(%id, "no xdg-activation: can't take focus");
+            return;
+        };
+        let surface = self
+            .input
+            .kb_focus
+            .and_then(|f| self.reg.windows.get(&f))
+            .map(|w| w.surf.wl.clone());
+        activation.request_token(
+            &self.qh,
+            RequestData {
+                app_id: None,
+                seat_and_serial: self.input.seat.clone().zip(self.input.last_serial),
+                surface,
+                udata: id,
+            },
+        );
     }
 
     // --- text-input-v3 ------------------------------------------------------------------
@@ -885,7 +1068,10 @@ impl State {
         w.root.handle_window_event(WindowEvent::AnimFrame(elapsed));
         w.last_anim = w.root.needs_anim().then_some(now);
 
-        let (plan, _access) = w.root.redraw();
+        let (plan, access) = w.root.redraw();
+        if let Some(update) = access {
+            w.accesskit.update(update);
+        }
 
         // Split the plan: each layer root starts a group; sub-layers follow their root.
         let mut main: Vec<ImagingLayer<'_>> = Vec::new();
@@ -992,6 +1178,17 @@ fn resize_edge(direction: ResizeDirection) -> xdg_toplevel::ResizeEdge {
         ResizeDirection::SouthWest => ResizeEdge::BottomLeft,
         ResizeDirection::West => ResizeEdge::Left,
         ResizeDirection::NorthWest => ResizeEdge::TopLeft,
+    }
+}
+
+impl ActivationHandler for State {
+    type RequestUdata = WindowId;
+
+    fn new_token(&mut self, token: String, data: &RequestData<WindowId>) {
+        if let (Some(activation), Some(w)) = (&self.g.activation, self.reg.windows.get(&data.udata))
+        {
+            activation.activate::<State>(&w.surf.wl, token);
+        }
     }
 }
 
