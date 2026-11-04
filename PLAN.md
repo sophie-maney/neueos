@@ -715,9 +715,15 @@ Decisions to follow: ADR 0001 (Smithay), 0003 (IPC), 0004 (config), 0005 (global
         (`tty::pointer_elements`, shared `render::ScreenElement`); privileged globals
         (ADR 0022). `tests/screencopy.rs`, golden `tests/golden.rs` (neue-comp joins
         `GOLDEN_CRATES`). Not done: cursor sessions, dmabuf on winit/headless.
-  - [ ] **1.16c Toplevel sources** · Sonnet. `ext-foreign-toplevel-list` and the toplevel
+  - [x] **1.16c Toplevel sources** · Sonnet. `ext-foreign-toplevel-list` and the toplevel
         capture source (offscreen render of one window).
         *Accept:* a scripted client captures one window and the pixels match a golden.
+        *Done:* the foreign toplevel list was already there (1.12). Smithay's toplevel
+        source global (unrestricted clients only); sessions now have a `Subject` (output
+        or window) and a window capture draws its surfaces on a transparent background
+        at the geometry size (no title bar or cursor); resize sends new constraints,
+        closing the window stops the session, minimised windows work (ADR 0023).
+        `tests/screencopy.rs`, golden `screencopy-toplevel`.
   - [ ] **1.16d `neuectl screenshot` + VM check** · Sonnet. IPC request that captures an
         output and encodes a PNG (ADR 0003 amendment); `grim` steps in
         `docs/dev-setup.md`, run by the owner, covering what CI can't: dmabuf captures

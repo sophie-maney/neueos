@@ -32,3 +32,4 @@ Don't edit an accepted ADR's decision; supersede it with a new one.
 | [0020](0020-direct-scanout-and-vrr.md) | Direct scanout (primary plane) and adaptive sync per output | Accepted |
 | [0021](0021-headless-gles-renderer.md) | Headless GLES renderer on Mesa's software EGL device | Accepted |
 | [0022](0022-screencopy-output-capture.md) | Screencopy of outputs with ext-image-copy-capture | Accepted |
+| [0023](0023-screencopy-toplevel-capture.md) | Screencopy of toplevels with ext-image-copy-capture | Accepted |
