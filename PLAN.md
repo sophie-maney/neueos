@@ -750,8 +750,9 @@ Decisions to follow: ADR 0001 (Smithay), 0003 (IPC), 0004 (config), 0005 (global
       (`dbus_menu` or `gmenu`, amends ADR 0003), `window_changed` on change, `neuectl
       windows` prints it. `gtk_shell1.capabilities` is 0 until the Phase 3 menu bar shows
       the menus (GTK would otherwise hide its own). `tests/appmenu.rs`.
-      **Owner:** run `docs/dev-setup.md` §18 in the VM (Kate with a stand-in registrar,
-      GNOME Text Editor); not done by the agent.
+      **Owner:** ran `docs/dev-setup.md` §18 in the VM: Kate `[menu dbusmenu :1.11
+      /MenuBar/2]`, GNOME Text Editor `[menu gmenu :1.1 app=/org/gnome/TextEditor
+      win=/org/gnome/TextEditor/window/1]` (no `menubar=`: it only has a primary menu).
 - [ ] **1.18 xwayland-satellite on demand** · Sonnet. Reserve X display sockets, spawn
       `xwayland-satellite` on first connection, export `DISPLAY` (ADR 0001).
       *Accept:* `xeyes` (or another X11 app) appears in the VM; nothing X-related runs before.
