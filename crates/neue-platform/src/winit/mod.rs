@@ -197,6 +197,9 @@ impl Driver<'_> {
         if let WindowKind::Layer(layer) = &spec.kind {
             tracing::warn!(namespace = %layer.namespace, "no layer shell on macOS; opening a window");
         }
+        if spec.parent.is_some() || spec.modal {
+            tracing::debug!(%id, "parent and modal windows are Wayland only; opening a plain window");
+        }
         let attributes = WindowAttributes::default()
             .with_title(spec.title)
             .with_inner_size(LogicalSize::new(spec.width, spec.height))

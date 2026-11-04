@@ -63,11 +63,19 @@ the paper and leather materials move to Phase 6/7 (Widgets, Write).
       `sctk_spike`; `neue-comp/tests/platform.rs` maps and draws a driver window. VM check
       `docs/checks/phase-2.md` §3 passed: steps 1–4 run by the agent, 5–6 (cursor shapes,
       scale 1.5) by the owner.
-- [ ] **2.6 Wayland driver: popups, clipboard, a11y** · Opus. xdg-popup positioning for
+- [x] **2.6 Wayland driver: popups, clipboard, a11y** · Opus. xdg-popup positioning for
       all Masonry layers, clipboard and primary selection, xdg-activation, xdg-dialog,
       AccessKit on Linux (`accesskit_unix`).
       *Accept:* in the VM, a popup flips at screen edges, copy and paste works with foot,
       and Orca or `accerciser` sees the tree.
+      *Done:* ADR 0034. Per-kind placement (menus anchor to the widget they open under,
+      tooltips don't grab), nested menus, `xdg_popup.reposition`; clipboard both ways;
+      primary selection **paste only** (Masonry reports no selections: 2.14);
+      `TakeFocus` and the start-up token through xdg-activation; `WindowSpec::parent` and
+      `modal`; one `accesskit_unix` adapter per window. Also fixes neue-comp, which never
+      unconstrained layer-shell popups. VM check `docs/checks/phase-2.md` §4, run by the
+      agent: an AT-SPI client from Python stands in for Orca and accerciser (neither is
+      installed).
 - [ ] **2.7 `neue-kit` app model** · Opus. Our public API over Masonry: widget facade,
       Elm-style app model, background tasks returning messages. ADR.
       *Accept:* counter and async examples on macOS; app crates don't depend on

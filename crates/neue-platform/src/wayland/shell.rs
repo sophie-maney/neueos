@@ -206,6 +206,8 @@ impl PopupHandler for State {
             height = config.height,
             "popup configured"
         );
+        // The position is relative to the parent: the window, or the menu it nests on.
+        let origin = origin + w.parent_origin(w.popups[pi].parent);
         let p = &mut w.popups[pi];
         if origin != p.origin {
             // The compositor flipped or slid the popup: move the Masonry layer to match.
@@ -230,8 +232,8 @@ impl PopupHandler for State {
             return;
         };
         tracing::debug!(%id, "popup dismissed by the compositor");
-        // Newer popups sit on this one and are dismissed with it.
-        let gone: Vec<_> = w.popups.drain(pi..).rev().map(|p| p.root_id).collect();
+        // Menus nested on this one are dismissed with it.
+        let gone = w.take_popups(pi);
         // Masonry's menu layers close themselves on a pointer cancel; whatever is still
         // there after the signals are handled is removed in `pump`.
         w.root

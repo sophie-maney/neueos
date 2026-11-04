@@ -43,3 +43,4 @@ Don't edit an accepted ADR's decision; supersede it with a new one.
 | [0031](0031-neue-theme-tokens.md) | `neue-theme`: design tokens selected by a `Variant` | Accepted |
 | [0032](0032-winit-driver.md) | neue-platform's winit driver: macOS only, one shared renderer | Accepted |
 | [0033](0033-wayland-driver.md) | neue-platform's Wayland driver: one app API, paced by frame callbacks | Accepted |
+| [0034](0034-wayland-popups-clipboard-a11y.md) | Wayland driver: popup placement, clipboard, activation, dialogs, AccessKit | Accepted |

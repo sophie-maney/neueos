@@ -65,6 +65,8 @@ impl WlrLayerShellHandler for State {
     }
 
     fn new_popup(&mut self, _parent: WlrLayerSurface, popup: PopupSurface) {
+        // Only now does the popup have its layer parent (xdg's `new_popup` came first).
+        self.unconstrain_popup(&popup);
         if let Err(err) = self.popups.track_popup(PopupKind::Xdg(popup)) {
             warn!(?err, "failed to track a layer popup");
         }

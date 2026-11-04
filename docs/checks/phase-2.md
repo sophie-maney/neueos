@@ -130,6 +130,8 @@ unchanged. "Close" in window 2 closes only it. Closing the last window (red butt
 Report: which steps passed, and the log lines of any step that didn't.
 
 ## 3. Checking the Wayland driver (task 2.5)
+Since task 2.6 the demo's strip sits at the bottom edge with a selector, and the window
+has a "Dialog" button; the coordinates below are from before that change.
 The same demo as §2, under neue-comp in the VM, set up as in §1 (session running, ydotoold
 started, output at scale 1). The agent ran steps 1–4 on 2026-11-04 against the installed
 session; the owner ran steps 5 and 6 (cursor shapes, scale 1.5) the same day. All passed.
@@ -203,3 +205,114 @@ Expected: `scale 1.5` and one `scale changed ... scale=1.5` line for the window.
 ```sh
 ssh neueos-vm 'pkill -x demo; pkill -x ime_probe; true'
 ```
+
+## 4. Checking popups, clipboard, dialogs and AccessKit (task 2.6)
+Runs under a dev build of neue-comp (`docs/dev-setup.md` §1.3), because the layer-popup
+fix is in neue-comp. Output at scale 1, ydotoold running, the demo from §3. `click_at X Y`
+clicks at absolute logical coordinates (the ydotool quirk of §1.7 halves them). The agent
+ran every step on 2026-11-04 and all passed. Orca and accerciser aren't installed in the
+VM, so step 5 reads the tree with an AT-SPI client in Python (python-gobject and
+at-spi2-core are installed); the owner can repeat it with accerciser.
+
+**1. Sync, build, start neue-comp and the demo:**
+```sh
+rsync -az --delete --exclude target --exclude .git ./ neueos-vm:neueos/
+ssh neueos-vm 'cd neueos && cargo build --release -p neue-comp -p neuectl --no-default-features --features tty && cargo build --release -p neue-platform --examples'
+ssh -t neueos-vm 'sudo systemctl stop greetd; true'
+ssh neueos-vm 'export XDG_RUNTIME_DIR=/run/user/1000 RUST_LOG=info; unset WAYLAND_DISPLAY
+  setsid nohup ~/neueos/target/release/neue-comp --tty >/tmp/comp.log 2>&1 </dev/null &
+  sleep 3; . ~/neueos/docs/vm-env.sh; export WGPU_BACKEND=gl RUST_LOG=info,neue_platform=debug
+  setsid nohup ~/neueos/target/release/examples/demo >/tmp/demo.log 2>&1 </dev/null &
+  sleep 4; neuectl windows; grep -E "WARN|ERROR" /tmp/demo.log | cut -c1-200'
+```
+Expected: demo window 1 at 440x360+292+150, the strip centred on the bottom edge, no
+`WARN` or `ERROR`.
+
+**2. The strip's menu flips above it; the window's menu still drops down:**
+```sh
+ssh neueos-vm '. ~/neueos/docs/vm-env.sh; export YDOTOOL_SOCKET=/tmp/.ydotool_socket
+  click_at() { ydotool mousemove --absolute -x $(($1 / 2)) -y $(($2 / 2)); sleep 0.2; ydotool mousemove -x 1 -y 0; ydotool click 0xC0; }
+  click_at 590 743; sleep 1; neuectl screenshot /tmp/g2.png; click_at 553 679; sleep 1
+  click_at 511 314; sleep 1; click_at 900 100; sleep 0.5
+  grep -oE "popup configured.*|popup dismissed.*|SelectionChanged.*" /tmp/demo.log | cut -c1-120'
+scp 'neueos-vm:/tmp/g*.png' ~/Desktop/neueos-shots/
+```
+Expected: the first popup is configured at `origin=(192.0, -89.0)`, above the strip, and
+`g2.png` shows One, Two and Three above the strip. Clicking "Two" logs
+`SelectionChanged { selected_content: "Two", index: 1 }`. The window's selector menu is
+configured at `(153.0, 184.0)`, below the selector, and the outside click dismisses it.
+
+**3. Copy and paste with foot, both ways, and the primary selection:**
+```sh
+ssh neueos-vm '. ~/neueos/docs/vm-env.sh; export YDOTOOL_SOCKET=/tmp/.ydotool_socket; rm -f /tmp/pasted
+  move_to() { ydotool mousemove --absolute -x $(($1 / 2)) -y $(($2 / 2)); sleep 0.2; ydotool mousemove -x 1 -y 0; sleep 0.1; }
+  setsid nohup foot sh -c "echo neuefoot; cat > /tmp/pasted" >/dev/null 2>&1 </dev/null &
+  sleep 2; F=$(neuectl --json windows | jq -r ".[] | select(.app_id==\"foot\") | .id")
+  neuectl action resize-window --window $F --width 440 --height 160; neuectl action move-window --window $F --x 292 --y 540; sleep 0.5
+  move_to 314 564; ydotool click -r 2 -D 60 0xC0; ydotool key 29:1 42:1 46:1 46:0 42:0 29:0; sleep 0.3
+  move_to 500 241; ydotool click 0xC0; ydotool key 29:1 47:1 47:0 29:0; sleep 0.5; ydotool key 28:1 28:0; sleep 0.5
+  ydotool key 29:1 30:1 30:0 29:0; ydotool type neueclip; ydotool key 29:1 30:1 30:0 29:0 29:1 46:1 46:0 29:0; sleep 0.5
+  move_to 500 640; ydotool click 0xC0; ydotool key 29:1 42:1 47:1 47:0 42:0 29:0; sleep 0.5; ydotool key 28:1 28:0; sleep 0.5
+  echo "foot got: $(cat /tmp/pasted)"
+  move_to 314 564; ydotool click -r 2 -D 60 0xC0; sleep 0.3
+  move_to 600 241; ydotool click 0xC0; ydotool key 29:1 30:1 30:0 29:0 14:1 14:0; sleep 0.2
+  ydotool click 0xC2; sleep 0.6; ydotool key 28:1 28:0; sleep 0.5
+  grep -oE "Entered.*" /tmp/demo.log'
+```
+Expected:
+- The word "neuefoot", selected and copied in foot (Ctrl-Shift-C), pastes into the
+  demo's field with Ctrl-V: `Entered("neuefoot")`.
+- "neueclip", copied in the demo with Ctrl-C, pastes into foot with Ctrl-Shift-V:
+  `foot got: neueclip`.
+- With the field emptied, a middle click pastes foot's primary selection: a second
+  `Entered("neuefoot")`.
+
+**4. A modal dialog.** Start the demo in step 1 with `WAYLAND_DEBUG=1`, so its log shows
+the requests:
+```sh
+ssh neueos-vm '. ~/neueos/docs/vm-env.sh; export YDOTOOL_SOCKET=/tmp/.ydotool_socket
+  move_to() { ydotool mousemove --absolute -x $(($1 / 2)) -y $(($2 / 2)); sleep 0.2; ydotool mousemove -x 1 -y 0; sleep 0.1; }
+  move_to 540 359; ydotool click 0xC0; sleep 1.5; neuectl windows
+  grep -oE "(xdg_wm_dialog_v1|xdg_dialog_v1)#[0-9]+\.[a-z_]+\([^)]*\)|xdg_toplevel#[0-9]+\.set_parent\([^)]*\)" /tmp/demo.log'
+```
+Expected:
+- "neue-platform: dialog" opens at 300x120, listed as `[child of N]` of the demo window.
+- The log has `set_parent`, `get_xdg_dialog` and `xdg_dialog_v1#….set_modal()`.
+- Its OK button closes it, and the log shows `xdg_dialog_v1#….destroy()` before the
+  toplevel's `destroy()`.
+
+neue-comp only records the modal hint so far; sheets come with Phase 4.
+
+**5. The accessibility tree:**
+```sh
+ssh neueos-vm '. ~/neueos/docs/vm-env.sh; export DBUS_SESSION_BUS_ADDRESS=unix:path=$XDG_RUNTIME_DIR/bus
+  busctl --user set-property org.a11y.Bus /org/a11y/bus org.a11y.Status IsEnabled b true
+  pkill -x demo; sleep 0.5; export WGPU_BACKEND=gl
+  setsid nohup ~/neueos/target/release/examples/demo >/tmp/demo.log 2>&1 </dev/null &
+  sleep 5; timeout 20 python3 - <<"EOF"
+import gi
+gi.require_version("Atspi", "2.0")
+from gi.repository import Atspi
+def walk(node, depth=0):
+    print("  " * depth + node.get_role_name(), repr(node.get_name()))
+    for i in range(node.get_child_count()):
+        walk(node.get_child_at_index(i), depth + 1)
+    if node.get_role_name() == "button" and node.get_name() == "New window":
+        node.get_action_iface().do_action(0)
+desktop = Atspi.get_desktop(0)
+for i in range(desktop.get_child_count()):
+    app = desktop.get_child_at_index(i)
+    if app is not None and app.get_name() == "demo":
+        walk(app)
+EOF
+  sleep 1.5; neuectl windows'
+```
+Expected:
+- `application 'demo'` has two frames. The window's frame holds labels,
+  `button 'Aqua button'`, an `entry`, a `combo box` with `label 'Linen'`, and the New
+  window, Close and Dialog buttons. The strip's frame holds a label and a `combo box`
+  with `label 'One'`.
+- Pressing "New window" through AT-SPI opens "neue-platform: demo 2".
+- Frames have no name yet (ADR 0034).
+
+**6. Done:** give the console back as in `docs/dev-setup.md` §1.3 step 4.

@@ -18,6 +18,7 @@ use wayland_client::protocol::{wl_keyboard, wl_pointer, wl_seat, wl_surface};
 use wayland_client::{Connection, QueueHandle};
 use wayland_protocols::wp::text_input::zv3::client::zwp_text_input_v3::ZwpTextInputV3;
 
+use super::clipboard::{self, Selection};
 use super::{State, TextInputData, input};
 use crate::WindowId;
 
@@ -32,7 +33,7 @@ pub(super) struct Input {
     pub(super) text_input: Option<TextInput>,
     /// Window whose surface has text-input focus.
     pub(super) ti_focus: Option<WindowId>,
-    kb_focus: Option<WindowId>,
+    pub(super) kb_focus: Option<WindowId>,
     /// Window whose surface lost keyboard focus; reported to Masonry after the event batch
     /// unless one of its surfaces gets focus back.
     kb_pending_leave: Option<WindowId>,
@@ -77,6 +78,7 @@ impl State {
                 pending_commit: None,
             });
         }
+        self.clipboard.adopt_seat(&self.qh, &seat);
         self.input.seat = Some(seat);
     }
 
@@ -87,19 +89,21 @@ impl State {
         {
             w.root
                 .handle_text_event(TextEvent::WindowFocusChange(false));
+            w.accesskit.set_focused(false);
         }
     }
 
     fn key(&mut self, event: &KeyEvent, state: KeyState, repeat: bool) {
-        let Some(w) = self
-            .input
-            .kb_focus
-            .and_then(|id| self.reg.windows.get_mut(&id))
-        else {
+        let Some(id) = self.input.kb_focus else {
             return;
         };
         let ev = input::key_event(event, state, self.input.modifiers, repeat);
-        w.root.handle_text_event(TextEvent::Keyboard(ev));
+        if clipboard::is_paste(&ev) {
+            // Answered with the clipboard's text, as Masonry's text widgets expect.
+            self.paste(id, Selection::Clipboard);
+        } else if let Some(w) = self.reg.windows.get_mut(&id) {
+            w.root.handle_text_event(TextEvent::Keyboard(ev));
+        }
     }
 
     fn pointer_state(&self, id: WindowId, pos: Point, time: u32) -> PointerState {
@@ -251,6 +255,7 @@ impl KeyboardHandler for State {
             self.flush_focus_leave();
             if let Some(w) = self.reg.windows.get_mut(&id) {
                 w.root.handle_text_event(TextEvent::WindowFocusChange(true));
+                w.accesskit.set_focused(true);
             }
         }
     }
@@ -389,6 +394,14 @@ impl PointerHandler for State {
             };
             if let Some(w) = self.reg.windows.get_mut(&id) {
                 w.root.handle_pointer_event(masonry);
+            }
+            if let PointerEventKind::Press {
+                button: input::BTN_MIDDLE,
+                ..
+            } = event.kind
+            {
+                // After Masonry saw the press, which may have moved the caret.
+                self.paste(id, Selection::Primary);
             }
         }
     }

@@ -11,7 +11,7 @@ use std::time::Duration;
 
 use smithay::desktop::{
     PopupKeyboardGrab, PopupKind, PopupPointerGrab, PopupUngrabStrategy, Window,
-    find_popup_root_surface, get_popup_toplevel_coords,
+    find_popup_root_surface, get_popup_toplevel_coords, layer_map_for_output,
 };
 use smithay::input::dnd::{DnDGrab, DndGrabHandler, DndTarget, GrabType, Source};
 use smithay::input::pointer::{CursorImageStatus, Focus};
@@ -22,7 +22,7 @@ use smithay::reexports::wayland_protocols::xdg::shell::server::xdg_toplevel;
 use smithay::reexports::wayland_server::protocol::wl_output::WlOutput;
 use smithay::reexports::wayland_server::protocol::{wl_buffer, wl_seat, wl_surface::WlSurface};
 use smithay::reexports::wayland_server::{Client, Resource};
-use smithay::utils::{Logical, Point, Serial};
+use smithay::utils::{Logical, Point, Rectangle, Serial};
 use smithay::wayland::buffer::BufferHandler;
 use smithay::wayland::compositor::{
     CompositorClientState, CompositorHandler, CompositorState, SurfaceAttributes, get_parent,
@@ -166,31 +166,40 @@ impl State {
         }
     }
 
-    /// Keep a popup inside the output its window is mostly on.
-    fn unconstrain_popup(&self, popup: &PopupSurface) {
+    /// Keep a popup inside the output its window, or its layer surface, is (mostly) on.
+    pub(crate) fn unconstrain_popup(&self, popup: &PopupSurface) {
         let Ok(root) = find_popup_root_surface(&PopupKind::Xdg(popup.clone())) else {
             return;
         };
-        let Some(window) = self.window_for_surface(&root) else {
-            return;
-        };
-        let Some(output_geo) = crate::outputs::primary_output(&self.space, &window)
-            .or_else(|| self.space.outputs().next().cloned())
-            .and_then(|o| self.space.output_geometry(&o))
-        else {
-            return;
-        };
-        let Some(window_geo) = self.space.element_geometry(&window) else {
+        let Some((output_geo, root_loc)) = self.popup_root_placement(&root) else {
             return;
         };
 
         // The positioner works relative to the parent's geometry.
         let mut target = output_geo;
         target.loc -= get_popup_toplevel_coords(&PopupKind::Xdg(popup.clone()));
-        target.loc -= window_geo.loc;
+        target.loc -= root_loc;
         popup.with_pending_state(|state| {
             state.geometry = state.positioner.get_unconstrained_geometry(target);
         });
+    }
+
+    /// The output a popup's root surface is on and the root's global position: a window's
+    /// in the space, or a layer surface's in its output's layer map.
+    fn popup_root_placement(
+        &self,
+        root: &WlSurface,
+    ) -> Option<(Rectangle<i32, Logical>, Point<i32, Logical>)> {
+        if let Some(window) = self.window_for_surface(root) {
+            let output_geo = crate::outputs::primary_output(&self.space, &window)
+                .or_else(|| self.space.outputs().next().cloned())
+                .and_then(|o| self.space.output_geometry(&o))?;
+            return Some((output_geo, self.space.element_geometry(&window)?.loc));
+        }
+        let (layer, output) = self.layer_for_surface(root)?;
+        let output_geo = self.space.output_geometry(&output)?;
+        let layer_geo = layer_map_for_output(&output).layer_geometry(&layer)?;
+        Some((output_geo, output_geo.loc + layer_geo.loc))
     }
 }
 

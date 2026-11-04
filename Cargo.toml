@@ -56,6 +56,9 @@ raw-window-handle = "0.6"
 accesskit_winit = { version = "0.34.2", default-features = false, features = ["rwh_06"] }
 ui-events-winit = { version = "0.3.0", default-features = false }
 arboard = { version = "3.6", default-features = false }
+# neue-platform's Wayland driver (task 2.6, ADR 0034): AccessKit over AT-SPI. Pure Rust
+# (zbus), MIT OR Apache-2.0; already in Cargo.lock through accesskit_winit.
+accesskit_unix = "0.24.1"
 
 # IPC (neue-ipc, neuectl)
 serde = { version = "1.0", features = ["derive"] }
