@@ -55,4 +55,11 @@ pub mod control {
     pub const PROGRESS_WIDTH: f64 = 150.0;
     /// Side of a spinner.
     pub const SPINNER_SIZE: f64 = 16.0;
+    /// Default width of a text, search or secure field.
+    pub const TEXT_FIELD_WIDTH: f64 = 200.0;
+    /// Space between a text field's edge and its text.
+    pub const TEXT_FIELD_INSET: f64 = 4.0;
+    /// Space between a search field's rounded ends and its text (room for the magnifier
+    /// on the left and the cancel button on the right).
+    pub const SEARCH_FIELD_INSET: f64 = 22.0;
 }

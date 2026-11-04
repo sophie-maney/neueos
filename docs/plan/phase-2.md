@@ -144,8 +144,20 @@ the paper and leather materials move to Phase 6/7 (Widgets, Write).
       macOS and Linux aarch64 (x86_64 not run). New
       widget types must be added to `theme::default_properties` (ADR 0041 §8). Not yet:
       slider ticks, vertical slider, stepper hold-to-repeat.
-- [ ] **2.14 Text fields** · Opus. Text, search and secure fields.
+- [x] **2.14 Text fields** · Opus. Text, search and secure fields.
       *Accept also:* IME composition works on macOS and in the VM.
+      *Done:* ADR 0042. `neue_kit::TextField` (`new`, `search`, `secure`) on parley's
+      `PlainEditor`: one line that scrolls to the caret, `on_change` and `on_submit`
+      (without a submit handler Return reaches the default button), Tab selects all,
+      Escape and the cancel button clear a search field, blinking caret (steady under
+      reduced motion). Secure fields hold bullets in the editor, so the real text never
+      reaches layout or AccessKit; no copy, no IME. Well in
+      `neue_paint::materials::text_field`; new tokens `text_selection`,
+      `TEXT_FIELD_WIDTH`, caret blink. `Fixture::{type_text, select_text, compose}`;
+      gallery page "Fields"; 68 goldens, passing on macOS and Linux aarch64 (x86_64 not
+      run). IME: VM check `docs/checks/phase-2.md` §6 (input-method probe); macOS IME
+      step for the owner in the same section. Not yet: undo, primary selection (2.28),
+      context menu (2.17).
 - [ ] **2.15 Scroll view** · Opus. Overlay scrollbars and virtual scrolling (the base for
       tables and collection views).
 - [ ] **2.16 Text view** · Sonnet. Multi-line text in the scroll view.
@@ -181,5 +193,12 @@ the paper and leather materials move to Phase 6/7 (Widgets, Write).
       layer surface on a 1.5 output gets `preferred_scale` 180, and 240 after a config
       reload to 2; in the VM, `docs/checks/phase-2.md` §3 step 6 shows the demo's
       layer-shell strip sharp. Order: any time, but before 2.5's VM check.
+- [ ] **2.28 Primary selection from text fields** · Sonnet. Found in 2.14: the Wayland
+      driver pastes the primary selection but never owns it. Add a platform call to set
+      the primary selection (`Ctx`, no-op on winit), a runner hook, and have
+      `TextField` report its selected text when a pointer or Shift selection ends (not in
+      secure fields). ADR amendment to 0034.
+      *Accept:* in the VM, selecting text in the gallery's field and middle-clicking in
+      foot pastes it.
 - **Exit:** the gallery shows the whole widget set, in light and dark, identically on
   macOS and in the VM.

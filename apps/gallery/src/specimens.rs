@@ -2,7 +2,7 @@
 
 use neue_kit::{
     BevelButton, Button, CheckState, Checkbox, MaterialTile, ProgressBar, Radio, Segmented, Slider,
-    Specimen, Spinner, Stepper,
+    Specimen, Spinner, Stepper, TextField,
 };
 
 /// Golden window size for one push button (logical pixels): the button with the fixture's
@@ -113,6 +113,35 @@ pub fn barber_pole() -> ProgressBar {
 /// A turning spinner.
 pub fn spinner() -> Spinner {
     Spinner::new()
+}
+
+/// Golden window size for one text, search or secure field (the default width plus the
+/// fixture's margin, room for the focus ring).
+pub const FIELD_SIZE: (u32, u32) = (220, 40);
+
+/// An empty text field with a placeholder.
+pub fn text_field<M: 'static>() -> TextField<M> {
+    TextField::new().placeholder("Name")
+}
+
+/// A text field holding text.
+pub fn text_field_filled<M: 'static>() -> TextField<M> {
+    text_field().text("Mountain pass")
+}
+
+/// An empty search field (placeholder "Search").
+pub fn search_field<M: 'static>() -> TextField<M> {
+    TextField::search()
+}
+
+/// A search field holding text: the cancel button shows.
+pub fn search_field_filled<M: 'static>() -> TextField<M> {
+    search_field().text("granite")
+}
+
+/// An empty secure field with a placeholder.
+pub fn secure_field<M: 'static>() -> TextField<M> {
+    TextField::secure().placeholder("Password")
 }
 
 /// A material over a stand-in for a blurred desktop: opaque, or translucent if

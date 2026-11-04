@@ -52,6 +52,9 @@ pub enum Message {
     Slider(f64),
     /// The Values page's stepper changed to this value.
     Stepper(f64),
+    /// The Fields page: a field's text changed, or Return submitted it.
+    Field(&'static str, String),
+    Submitted(String),
 }
 
 fn appearance_label(theme: Theme) -> String {
@@ -225,6 +228,17 @@ impl Application for Gallery {
             }
             Message::Stepper(value) => {
                 self.handles.stepper_value.set_text(cx, format!("{value}"));
+            }
+            Message::Field(name, text) => {
+                let text = if name == "Password" {
+                    format!("{} characters", text.chars().count())
+                } else {
+                    format!("“{text}”")
+                };
+                self.status.set_text(cx, format!("{name}: {text}"));
+            }
+            Message::Submitted(text) => {
+                self.status.set_text(cx, format!("Submitted “{text}”"));
             }
             Message::Radio(n) => {
                 // The app owns the choice: the others turn off.

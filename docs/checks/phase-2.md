@@ -358,3 +358,58 @@ compare a pixel of the "OK" button's gel: it brightens and fades (the agent meas
 (105,117,134) → (150,158,170) → (117,127,144) with dark graphite at zoom 2×).
 
 **5. Done:** give the console back as in `docs/dev-setup.md` §1.3 step 4.
+
+## 6. Checking text fields and IME (task 2.14)
+Steps 1–3 run in the VM, set up as in `docs/dev-setup.md` §1.3 (greetd stopped, ydotoold
+started, output at scale 1). The agent ran them on 2026-11-04: all passed. Step 4 is on
+the Mac, for the owner.
+
+**1. Build and start the input-method probe, then the gallery on its Fields page:**
+```sh
+rsync -az --delete --exclude target --exclude .git ./ neueos-vm:neueos/
+ssh neueos-vm 'cd neueos && cargo build --release -p neue-comp -p neuectl --no-default-features --features tty && cargo build --release -p neue-gallery -p neue-platform --examples --bins'
+ssh neueos-vm 'export XDG_RUNTIME_DIR=/run/user/1000 RUST_LOG=info; unset WAYLAND_DISPLAY
+  setsid nohup ~/neueos/target/release/neue-comp --tty >/tmp/comp.log 2>&1 </dev/null &
+  sleep 3; . ~/neueos/docs/vm-env.sh
+  setsid nohup ~/neueos/target/release/examples/ime_probe neue "neueOS IME" >/tmp/ime.log 2>&1 </dev/null &
+  sleep 0.5; export WGPU_BACKEND=gl RUST_LOG=info NEUE_GALLERY_PAGE=3
+  setsid nohup ~/neueos/target/release/neue-gallery >/tmp/gallery.log 2>&1 </dev/null &
+  sleep 4; neuectl windows; grep -E "WARN|ERROR" /tmp/gallery.log; neuectl screenshot /tmp/f1.png'
+```
+Expected: "Widget Gallery" at 860x560+82+84, no `WARN` or `ERROR`. `f1.png`: the Fields
+page with an empty "Name" field, a disabled "Mountain pass" field, the round search field
+with its magnifier, a "Password" field, and a narrow field showing "Longer than" (the
+start of its text: unfocused fields aren't scrolled).
+
+**2. IME composition, commit, Return:**
+```sh
+ssh neueos-vm '. ~/neueos/docs/vm-env.sh; export YDOTOOL_SOCKET=/tmp/.ydotool_socket
+  click_in_window 271 168; sleep 0.8; neuectl screenshot /tmp/f2.png
+  sleep 2; neuectl screenshot /tmp/f3.png
+  ydotool type "!"; sleep 0.3; ydotool key 28:1 28:0; sleep 0.5; neuectl screenshot /tmp/f4.png
+  tail -3 /tmp/ime.log'
+scp 'neueos-vm:/tmp/f*.png' ~/Desktop/neueos-shots/
+```
+Expected: `ime.log` ends with `activated`, `preedit neue`, `commit neueOS IME`. `f2.png`:
+the Name field focused with "neue" underlined (preedit) and the status line unchanged
+("Press a specimen…"). `f3.png`: "neueOS IME" without underline and the status line
+`Name: “neueOS IME”`. `f4.png`: `Submitted “neueOS IME!”`.
+
+**3. The secure field bypasses the IME:**
+```sh
+ssh neueos-vm '. ~/neueos/docs/vm-env.sh; export YDOTOOL_SOCKET=/tmp/.ydotool_socket
+  click_in_window 271 324; sleep 2; ydotool type "abc"; sleep 0.5; neuectl screenshot /tmp/f5.png
+  tail -1 /tmp/ime.log'
+```
+Expected: `ime.log` ends with `deactivated` (no new `activated`, no commit into the
+field); `f5.png` shows three bullets and `Password: 3 characters`. Give the console back
+as in `docs/dev-setup.md` §1.3 step 4.
+
+**4. macOS (owner):** `cargo xtask gallery`, open the Fields page. Add Japanese – Romaji in
+System Settings → Keyboard → Text Input, switch to it, click the Name field and type
+`nihon`: the preedit is underlined, the candidate window sits under the field, and the
+status line doesn't change until you commit (Return), when it shows the committed text.
+Japanese glyphs show as boxes (bundled fonts only, ADR 0030). Then on the ABC layout:
+Option-E, E gives `é`; in the Password field the input menu greys out (no IME) and
+typing shows bullets. Also check Cmd-A/C/X/V, Option-Left/Right (words) and
+Cmd-Left/Right (ends) in the Name field, and that Escape clears the search field.

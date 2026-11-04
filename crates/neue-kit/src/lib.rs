@@ -64,7 +64,7 @@ pub use neue_platform::WindowId;
 pub use task::{Sender, Task};
 pub use widgets::{
     Align, BevelButton, Button, CheckState, Checkbox, Label, MaterialTile, ProgressBar, Radio,
-    Segmented, Slider, Specimen, Spinner, Stack, Stepper, TextStyle, Zoom,
+    Segmented, Slider, Specimen, Spinner, Stack, Stepper, TextField, TextStyle, Zoom,
 };
 
 /// Design tokens (colours, metrics, type scale, motion).
