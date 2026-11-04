@@ -76,10 +76,17 @@ the paper and leather materials move to Phase 6/7 (Widgets, Write).
       unconstrained layer-shell popups. VM check `docs/checks/phase-2.md` §4, run by the
       agent: an AT-SPI client from Python stands in for Orca and accerciser (neither is
       installed).
-- [ ] **2.7 `neue-kit` app model** · Opus. Our public API over Masonry: widget facade,
+- [x] **2.7 `neue-kit` app model** · Opus. Our public API over Masonry: widget facade,
       Elm-style app model, background tasks returning messages. ADR.
       *Accept:* counter and async examples on macOS; app crates don't depend on
       `masonry_*` (checked by xtask).
+      *Done:* ADR 0035. New crate `neue-kit`: `Application` (model, `Message`, `update`)
+      over retained widgets changed through `Handle`s; builders `Label`, `Button`,
+      `Stack` (interim looks; 2.9 makes the real push button); `Cx::spawn`,
+      `spawn_future`, `sender` and cancellable `Task`s. neue-platform gains `Ctx::waker`
+      and `App::on_wake`. Examples `counter` and `async_tasks` checked on macOS; headless
+      app-model tests on a fake host. `cargo xtask check` fails if a crate under `apps/`
+      or `shell/` depends on `masonry*`. No goldens yet: 2.9 builds the golden helper.
 - [ ] **2.8 Springs and animation** · Opus. Spring animation on `on_anim_frame` with the
       `neue-theme` presets, honouring reduced motion.
       *Accept:* unit tests step deterministically; reduced motion snaps to the end value.

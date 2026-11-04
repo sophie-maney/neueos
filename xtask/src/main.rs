@@ -108,6 +108,9 @@ fn excludes() -> Vec<String> {
 fn check() -> Result<()> {
     let excl = excludes();
 
+    println!("==> app crates don't depend on Masonry");
+    check_app_deps()?;
+
     let mut fmt = cargo();
     fmt.args(["fmt", "--all", "--check"]);
     step("cargo fmt --check", fmt)?;
@@ -127,6 +130,66 @@ fn check() -> Result<()> {
 
     println!("==> all checks passed");
     Ok(())
+}
+
+/// Workspace directories whose crates are apps or the shell. They build on neue-kit's API
+/// and never depend on Masonry directly (ADR 0002 §4, ADR 0035).
+const APP_DIRS: &[&str] = &["apps", "shell"];
+
+/// Fails if a crate under [`APP_DIRS`] depends on a `masonry*` crate.
+fn check_app_deps() -> Result<()> {
+    let root = workspace_root()?;
+    let output = cargo()
+        .args(["metadata", "--format-version", "1", "--no-deps"])
+        .current_dir(&root)
+        .output()
+        .context("failed to start `cargo metadata`")?;
+    if !output.status.success() {
+        bail!("`cargo metadata` failed ({})", output.status);
+    }
+    let metadata: serde_json::Value =
+        serde_json::from_slice(&output.stdout).context("can't parse `cargo metadata`")?;
+    let violations = masonry_dependents(&metadata, &root);
+    if !violations.is_empty() {
+        bail!(
+            "app crates must use neue-kit, not Masonry (ADR 0002 §4):\n  {}",
+            violations.join("\n  ")
+        );
+    }
+    Ok(())
+}
+
+/// `crate → dependency` for every direct `masonry*` dependency of a crate under
+/// [`APP_DIRS`], in `cargo metadata` output.
+fn masonry_dependents(metadata: &serde_json::Value, root: &Path) -> Vec<String> {
+    let mut found = Vec::new();
+    let packages = metadata["packages"]
+        .as_array()
+        .map_or(&[][..], Vec::as_slice);
+    for package in packages {
+        let manifest = Path::new(package["manifest_path"].as_str().unwrap_or_default());
+        let Ok(relative) = manifest.strip_prefix(root) else {
+            continue;
+        };
+        let in_app_dir = relative
+            .components()
+            .next()
+            .is_some_and(|dir| APP_DIRS.iter().any(|app| dir.as_os_str() == *app));
+        if !in_app_dir {
+            continue;
+        }
+        let name = package["name"].as_str().unwrap_or("?");
+        let deps = package["dependencies"]
+            .as_array()
+            .map_or(&[][..], Vec::as_slice);
+        for dep in deps {
+            let dep_name = dep["name"].as_str().unwrap_or_default();
+            if dep_name.starts_with("masonry") {
+                found.push(format!("{name} → {dep_name}"));
+            }
+        }
+    }
+    found
 }
 
 /// Crates with golden-image tests, run by `cargo xtask golden`.
@@ -331,6 +394,24 @@ fn linux(machine: &str, cmd: &[String]) -> Result<()> {
 
 #[cfg(test)]
 mod tests {
+    #[test]
+    fn app_crates_must_not_depend_on_masonry() {
+        let metadata = serde_json::json!({ "packages": [
+            { "name": "calc", "manifest_path": "/ws/apps/calc/Cargo.toml",
+              "dependencies": [{ "name": "neue-kit" }, { "name": "masonry_core" }] },
+            { "name": "menubar", "manifest_path": "/ws/shell/menubar/Cargo.toml",
+              "dependencies": [{ "name": "masonry" }] },
+            { "name": "fine", "manifest_path": "/ws/apps/fine/Cargo.toml",
+              "dependencies": [{ "name": "neue-kit" }] },
+            { "name": "neue-kit", "manifest_path": "/ws/crates/neue-kit/Cargo.toml",
+              "dependencies": [{ "name": "masonry_core" }] },
+        ]});
+        assert_eq!(
+            super::masonry_dependents(&metadata, std::path::Path::new("/ws")),
+            ["calc → masonry_core", "menubar → masonry"]
+        );
+    }
+
     use super::*;
 
     #[test]

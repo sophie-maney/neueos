@@ -5,6 +5,8 @@
 //! (macOS) and the Wayland driver (Linux); [`crate::run`] picks the host's.
 
 use std::collections::HashMap;
+use std::sync::Arc;
+use std::sync::atomic::{AtomicBool, Ordering};
 
 use masonry_core::app::RenderRoot;
 use masonry_core::core::{ErasedAction, NewWidget, Widget, WidgetId};
@@ -13,6 +15,14 @@ use masonry_core::peniko::Color;
 /// Identifies a window for the lifetime of the driver. Never reused.
 #[derive(Debug, Clone, Copy, PartialEq, Eq, Hash, PartialOrd, Ord)]
 pub struct WindowId(u64);
+
+impl WindowId {
+    /// An id made outside a driver, for fakes of the app API in tests (neue-kit's). Never
+    /// mix such ids with a running driver's.
+    pub const fn from_raw(raw: u64) -> Self {
+        Self(raw)
+    }
+}
 
 impl std::fmt::Display for WindowId {
     fn fmt(&self, f: &mut std::fmt::Formatter<'_>) -> std::fmt::Result {
@@ -179,6 +189,50 @@ pub trait App {
     fn on_close_requested(&mut self, cx: &mut Ctx<'_>, window: WindowId) {
         cx.close_window(window);
     }
+
+    /// Another thread called [`Waker::wake`]. Wakes coalesce: one call can stand for
+    /// several, so drain whatever the other threads queued.
+    fn on_wake(&mut self, _cx: &mut Ctx<'_>) {}
+}
+
+/// Wakes a driver's event loop from any thread; the loop then calls [`App::on_wake`].
+/// Get one from [`Ctx::waker`].
+#[derive(Clone)]
+pub struct Waker {
+    /// A wake is queued and [`App::on_wake`] hasn't run for it yet.
+    pending: Arc<AtomicBool>,
+    notify: Arc<dyn Fn() + Send + Sync>,
+}
+
+impl std::fmt::Debug for Waker {
+    fn fmt(&self, f: &mut std::fmt::Formatter<'_>) -> std::fmt::Result {
+        f.debug_struct("Waker")
+            .field("pending", &self.pending.load(Ordering::Relaxed))
+            .finish_non_exhaustive()
+    }
+}
+
+impl Waker {
+    /// A waker that runs `notify` to wake the loop, at most once per [`Waker::take`].
+    pub(crate) fn new(notify: impl Fn() + Send + Sync + 'static) -> Self {
+        Self {
+            pending: Arc::new(AtomicBool::new(false)),
+            notify: Arc::new(notify),
+        }
+    }
+
+    /// Makes the loop call [`App::on_wake`] soon. Cheap when a wake is already pending.
+    pub fn wake(&self) {
+        if !self.pending.swap(true, Ordering::AcqRel) {
+            (self.notify)();
+        }
+    }
+
+    /// Clears the pending wake; true if there was one. The driver calls this before
+    /// [`App::on_wake`], so a wake from inside the callback queues another.
+    pub(crate) fn take(&self) -> bool {
+        self.pending.swap(false, Ordering::AcqRel)
+    }
 }
 
 /// What an [`App`] can do from a callback.
@@ -225,6 +279,11 @@ impl<'a> Ctx<'a> {
     pub fn exit(&mut self) {
         self.host.exit();
     }
+
+    /// A handle other threads use to wake the loop (see [`App::on_wake`]).
+    pub fn waker(&self) -> Waker {
+        self.host.waker()
+    }
 }
 
 /// The driver side of [`Ctx`].
@@ -234,6 +293,7 @@ pub(crate) trait Host {
     fn render_root(&mut self, window: WindowId) -> Option<&mut RenderRoot>;
     fn window_ids(&self) -> Vec<WindowId>;
     fn exit(&mut self);
+    fn waker(&self) -> Waker;
 }
 
 /// A driver's open windows, the windows queued to open, and the exit flag.
@@ -243,15 +303,17 @@ pub(crate) struct Registry<W> {
     pub(crate) opening: Vec<(WindowId, WindowSpec)>,
     next_id: u64,
     pub(crate) exit: bool,
+    pub(crate) waker: Waker,
 }
 
-impl<W> Default for Registry<W> {
-    fn default() -> Self {
+impl<W> Registry<W> {
+    pub(crate) fn new(waker: Waker) -> Self {
         Self {
             windows: HashMap::new(),
             opening: Vec::new(),
             next_id: 0,
             exit: false,
+            waker,
         }
     }
 }
@@ -297,6 +359,10 @@ impl<W: DriverWindow> Host for Registry<W> {
     fn exit(&mut self) {
         self.exit = true;
     }
+
+    fn waker(&self) -> Waker {
+        self.waker.clone()
+    }
 }
 
 impl<W> Registry<W> {
@@ -325,7 +391,7 @@ mod tests {
 
     #[test]
     fn ids_are_never_reused() {
-        let mut reg = Registry::<Dummy>::default();
+        let mut reg = Registry::<Dummy>::new(Waker::new(|| {}));
         let a = Ctx::new(&mut reg).open_window(spec());
         Ctx::new(&mut reg).close_window(a);
         let b = Ctx::new(&mut reg).open_window(spec());
@@ -334,8 +400,24 @@ mod tests {
     }
 
     #[test]
+    fn wakes_coalesce_until_taken() {
+        let count = Arc::new(std::sync::atomic::AtomicUsize::new(0));
+        let c = count.clone();
+        let waker = Waker::new(move || {
+            c.fetch_add(1, Ordering::Relaxed);
+        });
+        waker.wake();
+        waker.clone().wake();
+        assert_eq!(count.load(Ordering::Relaxed), 1);
+        assert!(waker.take());
+        assert!(!waker.take());
+        waker.wake();
+        assert_eq!(count.load(Ordering::Relaxed), 2);
+    }
+
+    #[test]
     fn done_when_no_window_is_open_or_queued() {
-        let mut reg = Registry::<Dummy>::default();
+        let mut reg = Registry::<Dummy>::new(Waker::new(|| {}));
         assert!(reg.done());
         let id = Ctx::new(&mut reg).open_window(spec());
         assert!(!reg.done());

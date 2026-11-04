@@ -1,0 +1,29 @@
+[package]
+name = "neue-kit"
+description = "neueOS's toolkit: widgets, an Elm-style app model and background tasks over Masonry"
+version.workspace = true
+edition.workspace = true
+rust-version.workspace = true
+license.workspace = true
+repository.workspace = true
+publish.workspace = true
+
+# Portable crate (AGENTS.md platform matrix). Masonry stays behind this crate's API: app
+# crates depend on neue-kit, never on `masonry_*` (ADR 0002 §4, ADR 0035; checked by
+# `cargo xtask check`).
+[dependencies]
+masonry_core.workspace = true
+neue-paint = { workspace = true, features = ["imaging"] }
+neue-platform.workspace = true
+neue-theme.workspace = true
+pollster.workspace = true
+thiserror.workspace = true
+tracing.workspace = true
+
+[dev-dependencies]
+anyhow.workspace = true
+masonry_testing.workspace = true
+tracing-subscriber.workspace = true
+
+[lints]
+workspace = true

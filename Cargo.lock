@@ -2494,6 +2494,22 @@ dependencies = [
 ]
 
 [[package]]
+name = "neue-kit"
+version = "0.0.0"
+dependencies = [
+ "anyhow",
+ "masonry_core",
+ "masonry_testing",
+ "neue-paint",
+ "neue-platform",
+ "neue-theme",
+ "pollster 1.0.1",
+ "thiserror 2.0.21",
+ "tracing",
+ "tracing-subscriber",
+]
+
+[[package]]
 name = "neue-paint"
 version = "0.0.0"
 dependencies = [
@@ -5939,6 +5955,7 @@ name = "xtask"
 version = "0.0.0"
 dependencies = [
  "anyhow",
+ "serde_json",
 ]
 
 [[package]]

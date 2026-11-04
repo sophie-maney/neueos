@@ -45,7 +45,7 @@ use winit::window::{
 
 use crate::app::{DriverWindow, Registry};
 use crate::gpu::{Gpu, GpuError, SurfaceTarget};
-use crate::{App, Ctx, Options, WindowId, WindowKind, WindowSpec};
+use crate::{App, Ctx, Options, Waker, WindowId, WindowKind, WindowSpec};
 use clipboard::Clipboard;
 
 /// Driver errors.
@@ -75,8 +75,13 @@ pub fn run(app: &mut dyn App, options: Options) -> Result<(), Error> {
     let instance = wgpu::Instance::new(wgpu::InstanceDescriptor::new_with_display_handle_from_env(
         Box::new(event_loop.owned_display_handle()),
     ));
+    let proxy = event_loop.create_proxy();
+    let waker = Waker::new(move || {
+        // Fails only once the loop has ended, when nobody is left to wake.
+        let _ = proxy.send_event(UserEvent::Wake);
+    });
     let mut driver = Driver {
-        shared: Shared::default(),
+        shared: Shared::new(waker),
         by_winit: HashMap::new(),
         gpu: None,
         instance,
@@ -94,13 +99,18 @@ pub fn run(app: &mut dyn App, options: Options) -> Result<(), Error> {
     }
 }
 
-/// Events sent to the loop from other threads: AccessKit requests.
+/// Events sent to the loop from other threads.
 #[derive(Debug)]
-struct UserEvent(accesskit_winit::Event);
+enum UserEvent {
+    /// An AccessKit request.
+    Access(accesskit_winit::Event),
+    /// [`Waker::wake`].
+    Wake,
+}
 
 impl From<accesskit_winit::Event> for UserEvent {
     fn from(event: accesskit_winit::Event) -> Self {
-        Self(event)
+        Self::Access(event)
     }
 }
 
@@ -438,7 +448,18 @@ impl ApplicationHandler<UserEvent> for Driver<'_> {
         self.pump(event_loop);
     }
 
-    fn user_event(&mut self, event_loop: &ActiveEventLoop, UserEvent(event): UserEvent) {
+    fn user_event(&mut self, event_loop: &ActiveEventLoop, event: UserEvent) {
+        let event = match event {
+            UserEvent::Access(event) => event,
+            UserEvent::Wake => {
+                if self.shared.waker.take() {
+                    let app = &mut *self.app;
+                    app.on_wake(&mut Ctx::new(&mut self.shared));
+                    self.pump(event_loop);
+                }
+                return;
+            }
+        };
         let window = self
             .by_winit
             .get(&event.window_id)
