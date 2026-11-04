@@ -65,6 +65,8 @@ pub enum Message {
     /// The Icons page: the items selected in a collection; an item opened.
     CollectionSelected(Vec<u32>),
     CollectionOpened(u32),
+    /// The Panes page: a split view's panes were resized to these lengths.
+    SplitResized(Vec<f64>),
     OpenFile(usize),
     SortFiles(usize, neue_kit::SortOrder),
 }
@@ -333,6 +335,11 @@ impl Application for Gallery {
             Message::CollectionOpened(id) => {
                 let text = format!("Opened “{}”", specimens::collection_label(id));
                 self.status.set_text(cx, text);
+            }
+            Message::SplitResized(lengths) => {
+                let parts: Vec<String> = lengths.iter().map(|l| format!("{l:.0}")).collect();
+                self.status
+                    .set_text(cx, format!("Panes: {}", parts.join(" · ")));
             }
             Message::OpenFile(row) => {
                 if let Some(name) = self.handles.file_name(row) {
