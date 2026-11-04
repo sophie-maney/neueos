@@ -27,7 +27,7 @@ pub enum ButtonState {
     Pressed,
 }
 
-fn vertical(rect: Rect, stops: &[(f32, Color)]) -> Gradient {
+pub(super) fn vertical(rect: Rect, stops: &[(f32, Color)]) -> Gradient {
     Gradient::new_linear(Point::new(0.0, rect.y0), Point::new(0.0, rect.y1)).with_stops(stops)
 }
 
@@ -68,10 +68,10 @@ pub fn push_button(scene: &mut Scene, rect: Rect, button: PushButton, variant: i
     };
     if button.disabled {
         scene.push_opacity(DISABLED_OPACITY);
-        draw(scene, rect, &palette);
+        draw(scene, rect, RADIUS.min(rect.height() / 2.0), &palette);
         scene.pop_layer();
     } else {
-        draw(scene, rect, &palette);
+        draw(scene, rect, RADIUS.min(rect.height() / 2.0), &palette);
         if button.focused {
             focus_ring(scene, push_button_outline(rect), variant);
         }
@@ -83,16 +83,18 @@ pub fn push_button(scene: &mut Scene, rect: Rect, button: PushButton, variant: i
 /// button at rest, or any button held down. `variant` accepts an [`crate::Appearance`] for
 /// the default accent and contrast. [`push_button`] covers every other look.
 pub fn aqua_button(scene: &mut Scene, rect: Rect, state: ButtonState, variant: impl Into<Variant>) {
+    let radius = RADIUS.min(rect.height() / 2.0);
     draw(
         scene,
         rect,
+        radius,
         &Palette::new(variant.into(), state == ButtonState::Pressed),
     );
 }
 
-fn draw(scene: &mut Scene, rect: Rect, p: &Palette) {
-    let radius = RADIUS.min(rect.height() / 2.0);
-
+/// The whole gel button in `rect` with corner `radius`: etch, shadow, rim, body and gloss.
+/// Checkboxes, radio buttons and segmented controls reuse it.
+pub(super) fn draw(scene: &mut Scene, rect: Rect, radius: f64, p: &Palette) {
     // Etched highlight below the button, then the drop shadow.
     scene.fill(
         &RoundedRect::from_rect(rect + Vec2::new(0.0, ETCH_OFFSET), radius),
@@ -109,9 +111,13 @@ fn draw(scene: &mut Scene, rect: Rect, p: &Palette) {
     let rim = RoundedRect::from_rect(rect, radius);
     scene.fill(&rim, vertical(rect, &[(0.0, p.rim[0]), (1.0, p.rim[1])]));
 
-    // Gel body with a hard step at the midline.
-    let body_rect = rect.inset(-RIM);
-    let body = RoundedRect::from_rect(body_rect, (radius - RIM).max(0.0));
+    gel_body(scene, rect.inset(-RIM), (radius - RIM).max(0.0), p);
+}
+
+/// The gel inside the rim: body with a hard step at the midline, and the gloss over the
+/// upper half, clipped to the body. `body_rect` is the rim's inner edge.
+pub(super) fn gel_body(scene: &mut Scene, body_rect: Rect, radius: f64, p: &Palette) {
+    let body = RoundedRect::from_rect(body_rect, radius);
     let [top, hi, lo, bottom] = p.gel;
     scene.fill(
         &body,
@@ -121,7 +127,6 @@ fn draw(scene: &mut Scene, rect: Rect, p: &Palette) {
         ),
     );
 
-    // Gloss over the upper half, clipped to the body.
     scene.push_clip(&body);
     let gloss_rect = Rect::new(
         body_rect.x0 + GLOSS_INSET,
@@ -129,7 +134,7 @@ fn draw(scene: &mut Scene, rect: Rect, p: &Palette) {
         body_rect.x1 - GLOSS_INSET,
         body_rect.center().y,
     );
-    let gloss_radius = (radius - RIM - GLOSS_INSET).max(0.0);
+    let gloss_radius = (radius - GLOSS_INSET).max(0.0);
     let gloss = RoundedRect::from_rect(
         gloss_rect,
         RoundedRectRadii::new(gloss_radius, gloss_radius, 0.0, 0.0),

@@ -16,6 +16,8 @@ use masonry_testing::{TestHarness, TestHarnessParams};
 use neue_platform::{WindowId, WindowSpec};
 use neue_theme::Theme;
 
+mod controls;
+
 use crate::app::{Host, Runner};
 use crate::theme::default_properties;
 use crate::widgets::{ButtonWidget, LabelWidget, StackWidget};

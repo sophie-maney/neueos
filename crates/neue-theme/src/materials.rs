@@ -239,6 +239,34 @@ pub mod aqua_button {
             }
         }
 
+        /// The colour `t` of the way from this palette to `other` (0: this, 1: `other`):
+        /// checkboxes, radio buttons and segments fade from neutral to accent gel.
+        #[must_use]
+        pub fn mix_with(self, other: Self, t: f32) -> Self {
+            let t = t.clamp(0.0, 1.0);
+            let m = |a: Color, b: Color| mix(a, b, t);
+            Self {
+                shadow: m(self.shadow, other.shadow),
+                etch: m(self.etch, other.etch),
+                rim: [m(self.rim[0], other.rim[0]), m(self.rim[1], other.rim[1])],
+                gel: std::array::from_fn(|i| m(self.gel[i], other.gel[i])),
+                gloss: [
+                    m(self.gloss[0], other.gloss[0]),
+                    m(self.gloss[1], other.gloss[1]),
+                ],
+            }
+        }
+
+        /// The gel darkened by `factor` (1: unchanged): a neutral control held down.
+        #[must_use]
+        pub fn dimmed(self, factor: f32) -> Self {
+            Self {
+                gel: self.gel.map(|c| darken(c, factor)),
+                gloss: self.gloss.map(|c| mix(c, black(c.components[3]), 0.5)),
+                ..self
+            }
+        }
+
         fn with_contrast(self, variant: Variant) -> Self {
             if variant.is_increased_contrast() {
                 Self {
@@ -277,6 +305,230 @@ pub mod aqua_button {
             assert_eq!(increased.gel, standard.gel);
         }
     }
+}
+
+/// Bevel and recessed buttons: flat, square-ish buttons for toolbars and inspectors.
+pub mod bevel_button {
+    use super::CONTRAST_RIM;
+    use crate::{Appearance, Color, Variant, black, darken, grey, metrics, mix, radii, white};
+
+    /// Corner radius.
+    pub const RADIUS: f64 = radii::CONTROL;
+    /// Rim thickness.
+    pub const RIM: f64 = metrics::control::RIM;
+    /// How far the etched highlight sits below the button.
+    pub const ETCH_OFFSET: f64 = 1.0;
+    /// How far the drop shadow sits below the button.
+    pub const SHADOW_OFFSET: f64 = 0.5;
+    /// Blur radius (standard deviation) of the drop shadow.
+    pub const SHADOW_BLUR: f64 = 0.75;
+    /// Height of the inner shadow along the top of a pressed or on button.
+    pub const INNER_SHADOW: f64 = 3.0;
+    /// Opacity of a disabled button.
+    pub const DISABLED_OPACITY: f32 = 0.5;
+
+    /// Colours of a bevel button, between rest and pressed.
+    #[derive(Clone, Copy, Debug, PartialEq)]
+    pub struct Palette {
+        /// Drop shadow.
+        pub shadow: Color,
+        /// Etched highlight below the button.
+        pub etch: Color,
+        /// Rim gradient, top and bottom.
+        pub rim: [Color; 2],
+        /// Body gradient, top and bottom.
+        pub body: [Color; 2],
+        /// Inner shadow along the top edge (fully transparent at rest).
+        pub inner_shadow: Color,
+    }
+
+    impl Palette {
+        /// Colours for `variant`, `depth` of the way from rest (0) to pressed in (1).
+        pub fn new(variant: Variant, depth: f32) -> Self {
+            let (rest, held) = match variant.appearance {
+                Appearance::Light => (
+                    Self {
+                        shadow: black(0.25),
+                        etch: white(0.55),
+                        rim: [grey(0.62), grey(0.46)],
+                        body: [grey(0.99), grey(0.88)],
+                        inner_shadow: black(0.0),
+                    },
+                    Self {
+                        shadow: black(0.12),
+                        etch: white(0.55),
+                        rim: [grey(0.46), grey(0.40)],
+                        body: [grey(0.74), grey(0.84)],
+                        inner_shadow: black(0.28),
+                    },
+                ),
+                Appearance::Dark => (
+                    Self {
+                        shadow: black(0.60),
+                        etch: white(0.07),
+                        rim: [grey(0.10), grey(0.05)],
+                        body: [grey(0.45), grey(0.31)],
+                        inner_shadow: black(0.0),
+                    },
+                    Self {
+                        shadow: black(0.40),
+                        etch: white(0.07),
+                        rim: [grey(0.05), grey(0.03)],
+                        body: [grey(0.22), grey(0.30)],
+                        inner_shadow: black(0.45),
+                    },
+                ),
+            };
+            let t = depth.clamp(0.0, 1.0);
+            let p = Self {
+                shadow: mix(rest.shadow, held.shadow, t),
+                etch: mix(rest.etch, held.etch, t),
+                rim: [
+                    mix(rest.rim[0], held.rim[0], t),
+                    mix(rest.rim[1], held.rim[1], t),
+                ],
+                body: [
+                    mix(rest.body[0], held.body[0], t),
+                    mix(rest.body[1], held.body[1], t),
+                ],
+                inner_shadow: mix(rest.inner_shadow, held.inner_shadow, t),
+            };
+            if variant.is_increased_contrast() {
+                Self {
+                    rim: p.rim.map(|c| darken(c, CONTRAST_RIM)),
+                    ..p
+                }
+            } else {
+                p
+            }
+        }
+    }
+
+    /// The recessed button: no chrome at rest, a dark pill with an inner shadow when on
+    /// (or held down).
+    pub mod recessed {
+        use crate::{Appearance, Color, Variant, black, grey, metrics, mix, white};
+
+        /// Corner radius of a regular-height pill (half its height); shorter ones use half
+        /// their height.
+        pub const RADIUS: f64 = metrics::control::REGULAR_HEIGHT / 2.0;
+        /// Rim thickness.
+        pub const RIM: f64 = metrics::control::RIM;
+        /// Height of the inner shadow along the top of the pill.
+        pub const INNER_SHADOW: f64 = 3.0;
+        /// Opacity of a disabled button.
+        pub const DISABLED_OPACITY: f32 = 0.5;
+
+        /// Colours of the on pill, scaled by how far on it is.
+        #[derive(Clone, Copy, Debug, PartialEq)]
+        pub struct Palette {
+            /// Highlight under the pill.
+            pub etch: Color,
+            /// Rim gradient, top and bottom.
+            pub rim: [Color; 2],
+            /// Body gradient, top and bottom.
+            pub body: [Color; 2],
+            /// Inner shadow along the top edge.
+            pub inner_shadow: Color,
+            /// The label while on.
+            pub label_on: Color,
+        }
+
+        impl Palette {
+            /// The pill for `variant`, `amount` (0: invisible, 1: fully on).
+            pub fn new(variant: Variant, amount: f32) -> Self {
+                let full = match variant.appearance {
+                    Appearance::Light => Self {
+                        etch: white(0.55),
+                        rim: [grey(0.30), grey(0.42)],
+                        body: [grey(0.46), grey(0.58)],
+                        inner_shadow: black(0.40),
+                        label_on: white(0.95),
+                    },
+                    Appearance::Dark => Self {
+                        etch: white(0.08),
+                        rim: [grey(0.04), grey(0.10)],
+                        body: [grey(0.13), grey(0.20)],
+                        inner_shadow: black(0.55),
+                        label_on: white(0.95),
+                    },
+                };
+                let a = amount.clamp(0.0, 1.0);
+                let fade = |c: Color| {
+                    let [r, g, b, alpha] = c.components;
+                    Color::new([r, g, b, alpha * a])
+                };
+                Self {
+                    etch: fade(full.etch),
+                    rim: full.rim.map(fade),
+                    body: full.body.map(fade),
+                    inner_shadow: fade(full.inner_shadow),
+                    label_on: full.label_on,
+                }
+            }
+
+            /// The label colour: `rest` fades to [`Self::label_on`] as `amount` goes 0 to 1.
+            pub fn label(&self, rest: Color, amount: f32) -> Color {
+                mix(rest, self.label_on, amount.clamp(0.0, 1.0))
+            }
+        }
+    }
+}
+
+/// Checkboxes and radio buttons: a small gel box or disc, accent gel when on, with a
+/// white mark.
+pub mod toggle {
+    use crate::{Color, black, metrics, radii, white};
+
+    /// Side of the box (checkbox) or diameter of the disc (radio button).
+    pub const SIZE: f64 = metrics::control::CHECKBOX_SIZE;
+    /// Corner radius of a checkbox.
+    pub const RADIUS: f64 = radii::CONTROL_SMALL;
+    /// Stroke width of the check mark and the dash.
+    pub const MARK_WIDTH: f64 = 2.0;
+    /// Diameter of a radio button's dot, as a fraction of [`SIZE`].
+    pub const DOT: f64 = 0.4;
+    /// How far the mark's shadow sits below it.
+    pub const MARK_SHADOW_OFFSET: f64 = 1.0;
+    /// How much a neutral box darkens while held down (1: not at all).
+    pub const PRESSED_DIM: f32 = 0.86;
+    /// Opacity of a disabled checkbox or radio button.
+    pub const DISABLED_OPACITY: f32 = 0.5;
+    /// The check mark, dash and dot.
+    pub const MARK: Color = white(1.0);
+    /// The mark's shadow.
+    pub const MARK_SHADOW: Color = black(0.45);
+}
+
+/// The segmented control: a row of segments in one rounded body; the selected one is
+/// accent gel.
+pub mod segmented {
+    use crate::{Color, Variant, black, white};
+
+    /// Corner radius of the whole control.
+    pub const RADIUS: f64 = crate::radii::CONTROL;
+    /// Width of the divider between segments.
+    pub const DIVIDER: f64 = 1.0;
+    /// Opacity of a disabled control.
+    pub const DISABLED_OPACITY: f32 = 0.5;
+    /// How much a neutral segment darkens while held down (1: not at all).
+    pub const PRESSED_DIM: f32 = 0.86;
+
+    /// The divider between two unselected segments.
+    pub fn divider(variant: Variant) -> Color {
+        let c = match variant.appearance {
+            crate::Appearance::Light => black(0.30),
+            crate::Appearance::Dark => black(0.55),
+        };
+        if variant.is_increased_contrast() {
+            black(c.components[3] + 0.2)
+        } else {
+            c
+        }
+    }
+
+    /// The label on a selected segment (on accent gel).
+    pub const SELECTED_LABEL: Color = white(1.0);
 }
 
 /// Procedural linen.

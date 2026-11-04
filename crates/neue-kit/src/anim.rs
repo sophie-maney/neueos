@@ -55,6 +55,7 @@ impl Animated {
     }
 
     /// Whether the value is still moving.
+    #[cfg(test)]
     pub(crate) fn is_animating(&self) -> bool {
         self.value.is_animating()
     }

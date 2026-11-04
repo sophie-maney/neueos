@@ -126,8 +126,14 @@ the paper and leather materials move to Phase 6/7 (Widgets, Write).
       `neue_kit::Specimen`; `neue-paint/tests/gpu.rs` compares CPU and GPU renders (max
       channel difference 2 on Apple GPUs; skips without an adapter). Gallery page
       "Materials" (window now 860×560). Goldens pass on macOS, Linux aarch64 and x86_64.
-- [ ] **2.12 Buttons batch** · Sonnet. Bevel and recessed buttons, checkbox, radio,
+- [x] **2.12 Buttons batch** · Sonnet. Bevel and recessed buttons, checkbox, radio,
       segmented control.
+      *Done:* ADR 0040. `neue_paint::materials::{bevel_button, recessed_button, toggle,
+      segmented}` (gel reused from the push button), neue-kit `BevelButton` (bevel and
+      recessed, momentary or toggle), `Checkbox` (with mixed), `Radio`, `Segmented`; the
+      first springs in use (check mark fade, sliding highlight). Gallery page "Buttons";
+      168 goldens (42 states × light/dark × 1x/2x). Radio groups are the app's job for now
+      (no arrow keys between radio buttons); segments are not separate AccessKit nodes.
 - [ ] **2.13 Value controls** · Sonnet. Slider, stepper, progress bar with barber pole,
       spinner.
 - [ ] **2.14 Text fields** · Opus. Text, search and secure fields.
