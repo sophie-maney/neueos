@@ -9,10 +9,12 @@ use std::sync::Arc;
 use masonry_core::app::RenderRoot;
 use masonry_core::core::{ErasedAction, FromDynWidget, NewWidget, Widget, WidgetId, WidgetMut};
 use masonry_core::peniko::Blob;
-use neue_platform::{WindowId, WindowSpec};
+use neue_platform::{MenuAddress, WindowId, WindowSpec};
 use neue_theme::Theme;
 
 use crate::element::{Element, Handle, Handler, Wiring};
+use crate::menu::Menu;
+use crate::menubar::MenuBars;
 use crate::task::{Mailbox, Sender, Task};
 use crate::theme;
 use crate::widgets::{ButtonWidget, Pressed, Rewired, RootAction, RootWidget, RowsWidget};
@@ -75,6 +77,7 @@ pub struct Window<M> {
     app_id: Option<String>,
     parent: Option<WindowId>,
     modal: bool,
+    menu_bar: Option<Menu<M>>,
 }
 
 impl<M> std::fmt::Debug for Window<M> {
@@ -84,6 +87,7 @@ impl<M> std::fmt::Debug for Window<M> {
             .field("size", &self.size)
             .field("parent", &self.parent)
             .field("modal", &self.modal)
+            .field("menu_bar", &self.menu_bar)
             .finish_non_exhaustive()
     }
 }
@@ -98,6 +102,7 @@ impl<M> Window<M> {
             app_id: None,
             parent: None,
             modal: false,
+            menu_bar: None,
         }
     }
 
@@ -121,6 +126,15 @@ impl<M> Window<M> {
         self.modal = modal;
         self
     }
+
+    /// The window's menu bar: its items are the menu titles, each a submenu. Shown in the
+    /// global menu bar on neueOS (exported over D-Bus, ADR 0047); not shown on macOS
+    /// hosts yet. Change it with [`Cx::set_menu_bar`].
+    #[must_use]
+    pub fn menu_bar(mut self, menu: Menu<M>) -> Self {
+        self.menu_bar = Some(menu);
+        self
+    }
 }
 
 /// What [`Cx`] needs from the platform; `neue_platform::Ctx` in an app, a fake in tests.
@@ -130,6 +144,7 @@ pub(crate) trait Host {
     fn render_root(&mut self, window: WindowId) -> Option<&mut RenderRoot>;
     fn windows(&self) -> Vec<WindowId>;
     fn exit(&mut self);
+    fn set_menu_address(&mut self, window: WindowId, address: Option<MenuAddress>);
 }
 
 impl Host for neue_platform::Ctx<'_> {
@@ -148,6 +163,9 @@ impl Host for neue_platform::Ctx<'_> {
     fn exit(&mut self) {
         neue_platform::Ctx::exit(self);
     }
+    fn set_menu_address(&mut self, window: WindowId, address: Option<MenuAddress>) {
+        neue_platform::Ctx::set_menu_address(self, window, address);
+    }
 }
 
 /// neue-kit's side of the app: message handlers, the message queue and the mailbox.
@@ -160,6 +178,19 @@ pub(crate) struct Kit<M> {
     /// Messages for `update`, in order.
     queue: VecDeque<M>,
     mailbox: Mailbox<M>,
+    menu_bars: MenuBars<M>,
+}
+
+impl<M: Send + 'static> Kit<M> {
+    /// The next message for `update`: queued ones first, then mailed ones, then chosen
+    /// menu-bar items.
+    fn next_message(&mut self) -> Option<M> {
+        if let Some(message) = self.queue.pop_front().or_else(|| self.mailbox.try_recv()) {
+            return Some(message);
+        }
+        self.queue.extend(self.menu_bars.take_messages());
+        self.queue.pop_front()
+    }
 }
 
 impl<M> std::fmt::Debug for Kit<M> {
@@ -203,12 +234,21 @@ impl<M> Cx<'_, M> {
         spec.modal = window.modal;
         let id = self.host.open_window(spec);
         self.register_wiring(id, wiring);
+        if let Some(menu) = window.menu_bar {
+            self.set_menu_bar(id, menu);
+        }
         id
+    }
+
+    /// Replaces `window`'s menu bar (see [`Window::menu_bar`]); an empty menu removes it.
+    pub fn set_menu_bar(&mut self, window: WindowId, menu: Menu<M>) {
+        self.kit.menu_bars.set(self.host, window, menu);
     }
 
     /// Closes `window`. Unknown or closed ids are ignored.
     pub fn close_window(&mut self, window: WindowId) {
         self.host.close_window(window);
+        self.kit.menu_bars.remove(window);
         self.kit.handlers.retain(|_, (w, _)| *w != window);
         self.kit.defaults.remove(&window);
     }
@@ -334,6 +374,9 @@ pub(crate) struct Runner<A: Application> {
     /// Created at start, when the platform hands out a waker.
     kit: Option<Kit<A::Message>>,
     settings: Option<Settings>,
+    /// A peer-to-peer connection for menu bars instead of the session bus.
+    #[cfg(all(test, target_os = "linux"))]
+    pub(crate) dbus: Option<neue_dbus::zbus::blocking::Connection>,
 }
 
 impl<A: Application> std::fmt::Debug for Runner<A> {
@@ -350,6 +393,8 @@ impl<A: Application> Runner<A> {
             app,
             kit: None,
             settings: Some(settings),
+            #[cfg(all(test, target_os = "linux"))]
+            dbus: None,
         }
     }
 
@@ -360,8 +405,13 @@ impl<A: Application> Runner<A> {
             handlers: HashMap::new(),
             defaults: HashMap::new(),
             queue: VecDeque::new(),
-            mailbox: Mailbox::new(wake),
+            mailbox: Mailbox::new(wake.clone()),
+            menu_bars: MenuBars::new(wake),
         });
+        #[cfg(all(test, target_os = "linux"))]
+        if let Some(conn) = self.dbus.take() {
+            kit.menu_bars.use_connection(conn);
+        }
         self.app.start(&mut Cx { host, kit });
         self.drain(host);
     }
@@ -457,7 +507,7 @@ impl<A: Application> Runner<A> {
     /// Feeds every queued and mailed message to `update`, including ones `update` sends.
     pub(crate) fn drain(&mut self, host: &mut dyn Host) {
         let Some(kit) = &mut self.kit else { return };
-        while let Some(message) = kit.queue.pop_front().or_else(|| kit.mailbox.try_recv()) {
+        while let Some(message) = kit.next_message() {
             self.app.update(&mut Cx { host, kit }, message);
         }
     }

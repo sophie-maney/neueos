@@ -539,3 +539,40 @@ drag to an item, release: it chooses. Click the pop-up, release, click an item. 
 pop-up: Space, Return and Down open it; type "s" while it is closed. Two-finger click a text
 field: the edit menu; Cut and Copy put text on the clipboard (paste it into another app);
 Paste is missing on purpose (ADR 0046).
+
+## 10. Checking the DBusMenu export (task 2.18)
+Not run yet (the agent had no VM). Run in the VM, set up as in `docs/dev-setup.md` §1.3.
+The gallery exports a menu bar: View (Dark Appearance, Graphite Accent, Increase
+Contrast, Reduce Motion, Next Zoom) and Pages (one radio item per page). Item ids are the
+menu model's depth-first ids plus one, so View is 1 and Dark Appearance is 2. The session
+bus is the user's (`$XDG_RUNTIME_DIR/bus`); check it exists first.
+
+**1. Build, start, and read the address:**
+```sh
+rsync -az --delete --exclude target --exclude .git ./ neueos-vm:neueos/
+ssh neueos-vm 'cd neueos && cargo build --release -p neue-comp -p neuectl --no-default-features --features tty && cargo build --release -p neue-gallery'
+ssh neueos-vm 'export XDG_RUNTIME_DIR=/run/user/1000 RUST_LOG=info; unset WAYLAND_DISPLAY
+  test -S $XDG_RUNTIME_DIR/bus || echo "NO SESSION BUS"
+  setsid nohup ~/neueos/target/release/neue-comp --tty >/tmp/comp.log 2>&1 </dev/null &
+  sleep 3; . ~/neueos/docs/vm-env.sh; export WGPU_BACKEND=gl RUST_LOG=info
+  setsid nohup ~/neueos/target/release/neue-gallery >/tmp/gallery.log 2>&1 </dev/null &
+  sleep 4; neuectl windows; grep -E "WARN|ERROR" /tmp/gallery.log; neuectl screenshot /tmp/d1.png'
+```
+Expected: the gallery's line ends in `[menu dbusmenu :1.N /org/neueos/MenuBar/0]`; no
+`WARN` or `ERROR` (in particular no "no session bus").
+
+**2. Introspect, read the layout, and choose an item:**
+```sh
+ssh neueos-vm '. ~/neueos/docs/vm-env.sh
+  svc=$(neuectl --json windows | jq -r ".[0].menu.service"); p=/org/neueos/MenuBar/0
+  gdbus introspect --session --dest $svc --object-path $p | grep -A3 "interface com.canonical.dbusmenu"
+  gdbus call --session --dest $svc --object-path $p --method com.canonical.dbusmenu.GetLayout -- 0 -1 "[]" | cut -c1-400
+  gdbus call --session --dest $svc --object-path $p --method com.canonical.dbusmenu.Event -- 2 clicked "<0>" 0
+  sleep 1; neuectl screenshot /tmp/d2.png
+  gdbus call --session --dest $svc --object-path $p --method com.canonical.dbusmenu.GetLayout -- 1 1 "[\"label\",\"toggle-state\"]"'
+scp 'neueos-vm:/tmp/d*.png' ~/Desktop/neueos-shots/
+```
+Expected: the introspection shows `com.canonical.dbusmenu` with `GetLayout`; the first
+layout starts `(uint32 1, (0, …` with `'View'` and `'Pages'` and the page items' `radio`
+toggles; `d2.png` shows the gallery in the dark appearance; the last call starts
+`(uint32 2,` and Dark Appearance has `'toggle-state': <1>`.

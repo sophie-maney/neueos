@@ -22,6 +22,21 @@ impl WindowId {
     pub const fn from_raw(raw: u64) -> Self {
         Self(raw)
     }
+
+    /// The number inside, unique for the driver's lifetime (for names such as D-Bus paths).
+    pub const fn to_raw(self) -> u64 {
+        self.0
+    }
+}
+
+/// Where a window's menu bar is exported over D-Bus (`com.canonical.dbusmenu`), for the
+/// global menu (ADR 0005, ADR 0047).
+#[derive(Clone, Debug, PartialEq, Eq, Hash)]
+pub struct MenuAddress {
+    /// The exporting connection's bus name (`:1.42`).
+    pub service: String,
+    /// The menu's object path.
+    pub path: String,
 }
 
 impl std::fmt::Display for WindowId {
@@ -289,6 +304,12 @@ impl<'a> Ctx<'a> {
     pub fn waker(&self) -> Waker {
         self.host.waker()
     }
+
+    /// Tells the compositor where `window`'s menu bar is exported (`None`: it has none).
+    /// On Wayland through `org_kde_kwin_appmenu`, for toplevels only; elsewhere ignored.
+    pub fn set_menu_address(&mut self, window: WindowId, address: Option<MenuAddress>) {
+        self.host.set_menu_address(window, address);
+    }
 }
 
 /// The driver side of [`Ctx`].
@@ -299,6 +320,7 @@ pub(crate) trait Host {
     fn window_ids(&self) -> Vec<WindowId>;
     fn exit(&mut self);
     fn waker(&self) -> Waker;
+    fn set_menu_address(&mut self, window: WindowId, address: Option<MenuAddress>);
 }
 
 /// A driver's open windows, the windows queued to open, and the exit flag.
@@ -306,6 +328,8 @@ pub(crate) struct Registry<W> {
     pub(crate) windows: HashMap<WindowId, W>,
     /// Queued by [`Ctx::open_window`]; the driver creates them after the callback.
     pub(crate) opening: Vec<(WindowId, WindowSpec)>,
+    /// Queued by [`Ctx::set_menu_address`]; the driver applies them after opening windows.
+    pub(crate) menu_addresses: Vec<(WindowId, Option<MenuAddress>)>,
     next_id: u64,
     pub(crate) exit: bool,
     pub(crate) waker: Waker,
@@ -316,6 +340,7 @@ impl<W> Registry<W> {
         Self {
             windows: HashMap::new(),
             opening: Vec::new(),
+            menu_addresses: Vec::new(),
             next_id: 0,
             exit: false,
             waker,
@@ -367,6 +392,10 @@ impl<W: DriverWindow> Host for Registry<W> {
 
     fn waker(&self) -> Waker {
         self.waker.clone()
+    }
+
+    fn set_menu_address(&mut self, window: WindowId, address: Option<MenuAddress>) {
+        self.menu_addresses.push((window, address));
     }
 }
 

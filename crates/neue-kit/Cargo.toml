@@ -26,6 +26,10 @@ pollster.workspace = true
 thiserror.workspace = true
 tracing.workspace = true
 
+# The menu-bar export (task 2.18, ADR 0047). D-Bus is Linux-only (AGENTS.md).
+[target.'cfg(target_os = "linux")'.dependencies]
+neue-dbus.workspace = true
+
 [dev-dependencies]
 anyhow.workspace = true
 masonry_testing.workspace = true

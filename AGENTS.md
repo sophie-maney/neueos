@@ -160,7 +160,8 @@ Use these to verify visual and behavioural changes in the VM instead of guessing
 - **Logging:** `tracing`. No `println!` in libraries or daemons.
 - **Async and event loops:**
   - The compositor is single-threaded on `calloop`. Do not block in it.
-  - Services use `tokio` together with `zbus`.
+  - Services use `tokio` together with `zbus`. `neue-dbus`, which apps use too, runs zbus
+    on its own `async-io` executor instead (ADR 0047).
   - Toolkit apps use neue-kit's loop. Run blocking work on background tasks.
 - **D-Bus:** use `zbus`. Our interface names live under `org.neueos.*`.
 - **Config:** TOML, schema in `neue-config`, with every field documented. Add new settings
