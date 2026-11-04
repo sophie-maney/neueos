@@ -32,6 +32,8 @@ pub struct SemanticColors {
     pub unfocused_selection: Color,
     /// Text on [`Self::selection`].
     pub selected_label: Color,
+    /// Selected text in a focused text field or text view (the text keeps its colour).
+    pub text_selection: Color,
     /// Keyboard focus ring.
     pub focus_ring: Color,
     /// Drop shadows of windows, menus and popovers.
@@ -67,6 +69,7 @@ impl SemanticColors {
         selection: rgb(0.22, 0.46, 0.84),
         unfocused_selection: grey(0.83),
         selected_label: grey(1.0),
+        text_selection: rgb(0.70, 0.84, 1.0),
         focus_ring: rgba(0.30, 0.56, 0.96, 0.75),
         shadow: black(0.35),
     };
@@ -85,6 +88,7 @@ impl SemanticColors {
         selection: rgb(0.16, 0.38, 0.75),
         unfocused_selection: grey(0.30),
         selected_label: grey(1.0),
+        text_selection: rgb(0.20, 0.34, 0.56),
         focus_ring: rgba(0.36, 0.60, 1.0, 0.75),
         shadow: black(0.60),
     };
@@ -95,6 +99,7 @@ impl SemanticColors {
             (Accent::Graphite, Appearance::Light) => Self {
                 accent: rgb(0.45, 0.50, 0.57),
                 selection: rgb(0.47, 0.52, 0.59),
+                text_selection: rgb(0.80, 0.82, 0.86),
                 focus_ring: rgba(0.50, 0.56, 0.65, 0.75),
                 alternate_row: rgb(0.941, 0.945, 0.953),
                 ..self
@@ -102,6 +107,7 @@ impl SemanticColors {
             (Accent::Graphite, Appearance::Dark) => Self {
                 accent: rgb(0.58, 0.62, 0.69),
                 selection: rgb(0.36, 0.40, 0.46),
+                text_selection: rgb(0.30, 0.33, 0.38),
                 focus_ring: rgba(0.60, 0.65, 0.73, 0.75),
                 ..self
             },

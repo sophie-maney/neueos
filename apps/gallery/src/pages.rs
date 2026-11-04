@@ -3,7 +3,7 @@
 use neue_kit::tokens::metrics::spacing;
 use neue_kit::{
     BevelButton, Button, Checkbox, Element, Handle, Label, MaterialTile, ProgressBar, Radio,
-    Segmented, Slider, Spinner, Stack, Stepper, TextStyle,
+    Segmented, Slider, Spinner, Stack, Stepper, TextField, TextStyle,
 };
 
 use crate::Message;
@@ -40,6 +40,10 @@ pub const PAGES: &[Page] = &[
     Page {
         title: "Values",
         build: values,
+    },
+    Page {
+        title: "Fields",
+        build: fields,
     },
     Page {
         title: "Text",
@@ -253,6 +257,41 @@ fn values(handles: &mut PageHandles) -> Element<Message> {
                         )),
                 ),
         )
+        .into()
+}
+
+fn fields(_: &mut PageHandles) -> Element<Message> {
+    Stack::column()
+        .spacing(spacing::L)
+        .with(heading(
+            "Fields",
+            "Return submits the first field · Escape or × clears the search field · \
+             the status line shows what each field sends",
+        ))
+        .with(section(
+            "Text field",
+            Stack::column()
+                .with(
+                    specimens::text_field()
+                        .on_change(|t| Message::Field("Name", t))
+                        .on_submit(Message::Submitted),
+                )
+                .with(specimens::text_field_filled().disabled(true)),
+        ))
+        .with(section(
+            "Search field",
+            Stack::column()
+                .with(specimens::search_field().on_change(|t| Message::Field("Search", t))),
+        ))
+        .with(section(
+            "Secure field",
+            Stack::column()
+                .with(specimens::secure_field().on_change(|t| Message::Field("Password", t))),
+        ))
+        .with(section(
+            "Narrow (scrolls to keep the caret in view)",
+            Stack::column().with(TextField::new().width(90.0).text("Longer than the field")),
+        ))
         .into()
 }
 

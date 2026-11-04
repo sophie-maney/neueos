@@ -9,7 +9,7 @@
 //!   or be us) and hands the text over as `TextEvent::ClipboardPaste`. Our own selection
 //!   is pasted straight from memory.
 //! - **Primary selection:** a middle click pastes it the same way. Masonry doesn't report
-//!   text selections, so the driver doesn't own the primary selection yet (task 2.14).
+//!   text selections, so the driver doesn't own the primary selection yet (task 2.28).
 
 use std::io::{ErrorKind, Read as _, Write as _};
 

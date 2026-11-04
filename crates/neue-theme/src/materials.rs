@@ -1277,6 +1277,83 @@ pub mod stepper {
     }
 }
 
+/// Text, search and secure fields: a white well with a hairline border, darker along the
+/// top, and an inner shadow under it. Search fields are rounded and carry a magnifier and
+/// a cancel button.
+pub mod text_field {
+    use super::CONTRAST_RIM;
+    use crate::{Appearance, Color, Variant, black, darken, grey, white};
+
+    /// Border thickness.
+    pub const BORDER: f64 = crate::metrics::control::RIM;
+    /// Height of the inner shadow under the top border.
+    pub const SHADOW: f64 = 2.0;
+    /// Width of the text caret.
+    pub const CARET_WIDTH: f64 = 1.0;
+    /// Opacity of a disabled field's well (its text uses the disabled label colour).
+    pub const DISABLED_OPACITY: f32 = 0.5;
+    /// Diameter of the magnifier's lens.
+    pub const MAGNIFIER_LENS: f64 = 7.0;
+    /// Stroke width of the magnifier.
+    pub const MAGNIFIER_STROKE: f64 = 1.5;
+    /// Diameter of the cancel button's disc.
+    pub const CANCEL: f64 = 13.0;
+    /// Half the length of each stroke of the cancel button's cross.
+    pub const CANCEL_CROSS: f64 = 2.5;
+    /// How much the cancel button darkens while held down (1: not at all).
+    pub const PRESSED_DIM: f32 = 0.75;
+
+    /// Colours of a field's well.
+    #[derive(Clone, Copy, Debug, PartialEq)]
+    pub struct Palette {
+        /// Inside the field.
+        pub fill: Color,
+        /// The top border.
+        pub border_top: Color,
+        /// The side and bottom borders.
+        pub border: Color,
+        /// The inner shadow at the top edge, fading out over [`SHADOW`].
+        pub shadow: Color,
+        /// The magnifier.
+        pub glyph: Color,
+        /// The cancel button's disc (its cross is [`Self::fill`]).
+        pub cancel: Color,
+    }
+
+    impl Palette {
+        /// Colours for `variant`.
+        pub fn new(variant: Variant) -> Self {
+            let p = match variant.appearance {
+                Appearance::Light => Self {
+                    fill: grey(1.0),
+                    border_top: grey(0.55),
+                    border: grey(0.70),
+                    shadow: black(0.12),
+                    glyph: black(0.55),
+                    cancel: black(0.35),
+                },
+                Appearance::Dark => Self {
+                    fill: grey(0.118),
+                    border_top: grey(0.03),
+                    border: grey(0.08),
+                    shadow: black(0.35),
+                    glyph: white(0.55),
+                    cancel: white(0.40),
+                },
+            };
+            if variant.is_increased_contrast() {
+                Self {
+                    border_top: darken(p.border_top, CONTRAST_RIM),
+                    border: darken(p.border, CONTRAST_RIM),
+                    ..p
+                }
+            } else {
+                p
+            }
+        }
+    }
+}
+
 /// The spinner: twelve spokes, the newest dark and the rest fading behind it.
 pub mod spinner {
     use crate::{Appearance, Color, Variant, black, white};

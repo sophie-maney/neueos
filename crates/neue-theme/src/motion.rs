@@ -28,6 +28,10 @@ pub const DEFAULT_BUTTON_PULSE: Duration = Duration::from_millis(1400);
 pub const BARBER_POLE_PERIOD: Duration = Duration::from_millis(600);
 /// Time the spinner takes for one full turn.
 pub const SPINNER_PERIOD: Duration = Duration::from_millis(1000);
+/// One blink of the text caret: shown for the first half, hidden for the second.
+pub const CARET_BLINK: Duration = Duration::from_millis(1000);
+/// The caret stops blinking, and stays shown, after this long without typing.
+pub const CARET_BLINK_TIMEOUT: Duration = Duration::from_secs(10);
 /// Delay before a tooltip appears.
 pub const TOOLTIP_DELAY: Duration = Duration::from_millis(1000);
 

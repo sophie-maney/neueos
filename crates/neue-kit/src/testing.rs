@@ -20,7 +20,8 @@
 use std::sync::Arc;
 use std::time::Duration;
 
-use masonry_core::core::{NewWidget, TextEvent, WidgetId};
+use masonry_core::core::keyboard::{Key, KeyState, KeyboardEvent, Modifiers, NamedKey};
+use masonry_core::core::{Ime, NewWidget, TextEvent, WidgetId};
 use masonry_core::dpi::PhysicalSize;
 use masonry_core::kurbo::Axis;
 use masonry_core::peniko::{Blob, Color};
@@ -128,6 +129,43 @@ impl Fixture {
     pub fn set_window_focused(&mut self, focused: bool) {
         self.harness
             .process_text_event(TextEvent::WindowFocusChange(focused));
+    }
+
+    /// Types `text` into the focused widget, one key per character.
+    pub fn type_text(&mut self, text: &str) {
+        for c in text.chars() {
+            self.key(Key::Character(c.to_string()), Modifiers::empty());
+        }
+    }
+
+    /// Selects all of a focused text field's text (Home, then Shift-End).
+    pub fn select_text(&mut self) {
+        self.key(Key::Named(NamedKey::Home), Modifiers::empty());
+        self.key(Key::Named(NamedKey::End), Modifiers::SHIFT);
+    }
+
+    /// An input method's uncommitted text at the caret of the focused widget, with the
+    /// IME's caret at its end.
+    pub fn compose(&mut self, preedit: &str) {
+        self.harness
+            .process_text_event(TextEvent::Ime(Ime::Enabled));
+        let end = preedit.len();
+        self.harness.process_text_event(TextEvent::Ime(Ime::Preedit(
+            preedit.to_owned(),
+            Some((end, end)),
+        )));
+    }
+
+    fn key(&mut self, key: Key, modifiers: Modifiers) {
+        for state in [KeyState::Down, KeyState::Up] {
+            self.harness
+                .process_text_event(TextEvent::Keyboard(KeyboardEvent {
+                    state,
+                    key: key.clone(),
+                    modifiers,
+                    ..KeyboardEvent::default()
+                }));
+        }
     }
 
     /// Lets animations run for `by`, in one frame.

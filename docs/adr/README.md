@@ -51,3 +51,4 @@ Don't edit an accepted ADR's decision; supersede it with a new one.
 | [0039](0039-translucent-materials.md) | Translucent materials: opaque fallback, theme alpha, Specimen widget | Accepted |
 | [0040](0040-button-family-widgets.md) | The button family: checkbox, radio, bevel, recessed, segmented | Accepted |
 | [0041](0041-value-controls.md) | Value controls: slider, stepper, progress bar, spinner | Accepted |
+| [0042](0042-text-fields.md) | Text fields: our own editor widget, secure input, search field | Accepted |

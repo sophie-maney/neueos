@@ -11,8 +11,8 @@
 use std::time::Duration;
 
 use neue_gallery::specimens::{
-    self, BEVEL_SIZE, PROGRESS_SIZE, PUSH_BUTTON_SIZE, SEGMENTED_SIZE, SLIDER_SIZE, SPINNER_SIZE,
-    STEPPER_SIZE, TOGGLE_SIZE,
+    self, BEVEL_SIZE, FIELD_SIZE, PROGRESS_SIZE, PUSH_BUTTON_SIZE, SEGMENTED_SIZE, SLIDER_SIZE,
+    SPINNER_SIZE, STEPPER_SIZE, TOGGLE_SIZE,
 };
 use neue_kit::testing::{
     self, DISABLED, FOCUSED, Fixture, Goldens, INACTIVE, NORMAL, PRESSED, State,
@@ -78,6 +78,39 @@ fn default_button_graphite() {
 /// The barber pole a quarter period on (150 ms of its 600 ms).
 const STRIPES_MOVED: State = ("moved", |f: &mut Fixture| {
     f.advance(Duration::from_millis(150))
+});
+
+/// A focused field after typing.
+const TYPED: State = ("typed", |f: &mut Fixture| {
+    f.focus();
+    f.type_text("Typed text");
+});
+
+/// A focused field with all its text selected.
+const SELECTED: State = ("selected", |f: &mut Fixture| {
+    f.focus();
+    f.type_text("Selected");
+    f.select_text();
+});
+
+/// A focused field while an input method composes (underlined preedit after the caret).
+const COMPOSING: State = ("composing", |f: &mut Fixture| {
+    f.focus();
+    f.type_text("Hi ");
+    f.compose("there");
+});
+
+/// Typed past the right edge: the text scrolls to keep the caret in view.
+const SCROLLED: State = ("scrolled", |f: &mut Fixture| {
+    f.focus();
+    f.type_text("A sentence too long to fit in the field");
+});
+
+/// Typed into, in a window that is no longer active: no ring, no caret.
+const TYPED_INACTIVE: State = ("inactive", |f: &mut Fixture| {
+    f.focus();
+    f.type_text("Typed text");
+    f.set_window_focused(false);
 });
 
 /// The spinner three of its twelve steps on (250 ms of its 1 s).
@@ -153,4 +186,10 @@ control_goldens! {
     progress_full: "progress-full", PROGRESS_SIZE, &[NORMAL], specimens::progress_bar(1.0);
     barber_pole: "barber-pole", PROGRESS_SIZE, &[NORMAL, STRIPES_MOVED, DISABLED], specimens::barber_pole();
     spinner: "spinner", SPINNER_SIZE, &[NORMAL, SPOKES_TURNED, DISABLED], specimens::spinner();
+
+    text_field: "text-field", FIELD_SIZE, &[NORMAL, FOCUSED, TYPED, SELECTED, COMPOSING, SCROLLED, TYPED_INACTIVE], specimens::text_field();
+    text_field_filled: "text-field-filled", FIELD_SIZE, &[NORMAL, DISABLED], specimens::text_field_filled();
+    search_field: "search-field", FIELD_SIZE, &[NORMAL, FOCUSED, TYPED], specimens::search_field();
+    search_field_filled: "search-field-filled", FIELD_SIZE, &[NORMAL, DISABLED], specimens::search_field_filled();
+    secure_field: "secure-field", FIELD_SIZE, &[NORMAL, TYPED, SELECTED], specimens::secure_field();
 }
