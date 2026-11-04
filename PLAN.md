@@ -785,7 +785,7 @@ Decisions to follow: ADR 0001 (Smithay), 0003 (IPC), 0004 (config), 0005 (global
       build without winit); `cargo xtask package <crate> [--arch aarch64|x86_64|all]` packages
       the working tree and runs `makepkg` in the OrbStack machines. Both architectures build.
       **Diverged:** git deps are fetched by `cargo fetch --locked`, not vendored (ADR 0028).
-      **Owner, still to do:** install in the VM (`docs/dev-setup.md` §21).
+      **Owner:** installed the packages in the VM (`docs/dev-setup.md` §21): passes.
 - [ ] **1.21 Daily-drive pass** · Opus with the owner. foot/Alacritty, Firefox, a Qt app, a
       Flatpak, an X11 app on the NVIDIA PC, an AMD/Intel PC and the VM; fix or file bugs.
       *Accept:* the Phase 1 exit criterion below, with a results table in
