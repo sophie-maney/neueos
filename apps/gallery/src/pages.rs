@@ -97,6 +97,10 @@ pub const PAGES: &[Page] = &[
         build: tables,
     },
     Page {
+        title: "Sidebar",
+        build: sidebar,
+    },
+    Page {
         title: "Text",
         build: text,
     },
@@ -472,6 +476,40 @@ fn tables(handles: &mut PageHandles) -> Element<Message> {
                 )),
         )
         .with(section("Outline (folders)", Stack::column().with(folders)))
+        .into()
+}
+
+fn sidebar(_: &mut PageHandles) -> Element<Message> {
+    let list = specimens::source_list::<Message>()
+        .selected(11)
+        .on_select(|id| Message::SidebarSelected(id.copied()))
+        .on_activate(|&id| Message::SidebarOpened(id))
+        .width(200.0)
+        .height(260.0);
+    let nested = specimens::source_list::<Message>()
+        .expanded([13])
+        .collapsed([2])
+        .on_select(|id| Message::SidebarSelected(id.copied()))
+        .width(200.0)
+        .height(260.0);
+    Stack::column()
+        .spacing(spacing::L)
+        .with(heading(
+            "Sidebar",
+            "Click an item · Up and Down skip the group headers · Right and Left open and \
+             close an item with items · type a name to jump · Return or double-click opens · \
+             point at a group header and click Hide or Show · the selection is blue in the \
+             focused list and grey otherwise",
+        ))
+        .with(
+            Stack::row()
+                .spacing(spacing::L)
+                .with(section("Source list", Stack::column().with(list)))
+                .with(section(
+                    "Nested items, Devices closed",
+                    Stack::column().with(nested),
+                )),
+        )
         .into()
 }
 

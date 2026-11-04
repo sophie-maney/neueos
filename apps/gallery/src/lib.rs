@@ -59,6 +59,9 @@ pub enum Message {
     /// The Tables page: so many rows are selected; a file was opened (its row); the files
     /// table is to be sorted by a column.
     TableSelection(usize),
+    /// The Sidebar page: the item selected (`None`: nothing) or opened.
+    SidebarSelected(Option<u32>),
+    SidebarOpened(u32),
     OpenFile(usize),
     SortFiles(usize, neue_kit::SortOrder),
 }
@@ -304,6 +307,17 @@ impl Application for Gallery {
             Message::TableSelection(n) => {
                 let rows = if n == 1 { "row" } else { "rows" };
                 self.status.set_text(cx, format!("{n} {rows} selected"));
+            }
+            Message::SidebarSelected(id) => {
+                let text = match id {
+                    Some(id) => format!("Selected “{}”", specimens::item_label(id)),
+                    None => "Nothing selected".to_owned(),
+                };
+                self.status.set_text(cx, text);
+            }
+            Message::SidebarOpened(id) => {
+                let text = format!("Opened “{}”", specimens::item_label(id));
+                self.status.set_text(cx, text);
             }
             Message::OpenFile(row) => {
                 if let Some(name) = self.handles.file_name(row) {

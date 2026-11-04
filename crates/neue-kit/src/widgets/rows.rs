@@ -263,6 +263,15 @@ impl Widget for RowsWidget {
         {
             Self::restyle_later(ctx);
         }
+        // The pointer left the body: a source list's group header isn't hovered any more.
+        if self.table.is_some()
+            && matches!(
+                event,
+                Update::HoveredChanged(false) | Update::ChildHoveredChanged(false)
+            )
+        {
+            self.clear_hover(ctx);
+        }
     }
 
     fn property_changed(&mut self, ctx: &mut UpdateCtx<'_>, property_type: std::any::TypeId) {

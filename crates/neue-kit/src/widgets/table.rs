@@ -35,9 +35,11 @@ use masonry_core::layout::{LenDef, LenReq, Length, SizeDef};
 use neue_paint::Scene;
 use neue_paint::imaging::ImagingReplayer;
 use neue_paint::materials::{
-    TableHeader, column_edges, disclosure_rect, disclosure_triangle, outline_text_inset,
+    SourceState, TableHeader, column_edges, disclosure_rect, disclosure_triangle,
+    outline_text_inset, sidebar, source_group_action, source_item, source_list_selection,
     table_header,
 };
+use neue_theme::materials::sidebar::ROW_HEIGHT as SIDEBAR_ROW_HEIGHT;
 use neue_theme::materials::table::{
     CELL_INSET, COLUMN_WIDTH, DIVIDER_GRAB, HEADER_HEIGHT, MIN_COLUMN_WIDTH, Palette, ROW_HEIGHT,
     SORT_ARROW_INSET, SORT_ARROW_WIDTH, TITLE_INSET,
@@ -47,6 +49,7 @@ use super::menu::TypeSelect;
 use super::outline::{Change, FlatTree, RowInfo, SharedTree, Tree};
 use super::rows::{MakeRow, RowsWidget};
 use super::scroll::{Frame, ScrollAxes, ScrollWidget};
+use super::source_list::{Entry, SourceContent};
 use super::stack::Align;
 use super::text::{TextLine, TextStyle};
 use crate::Cx;
@@ -149,6 +152,8 @@ pub struct Cell<M>(CellKind<M>);
 enum CellKind<M> {
     Text(String),
     Element(Box<Element<M>>),
+    /// A source list's group header or item (task 2.19c).
+    Source(Entry),
 }
 
 impl<M> std::fmt::Debug for Cell<M> {
@@ -156,6 +161,7 @@ impl<M> std::fmt::Debug for Cell<M> {
         match &self.0 {
             CellKind::Text(text) => f.debug_tuple("Cell::text").field(text).finish(),
             CellKind::Element(e) => f.debug_tuple("Cell::element").field(e).finish(),
+            CellKind::Source(e) => f.debug_tuple("Cell::source").field(e).finish(),
         }
     }
 }
@@ -171,9 +177,15 @@ impl<M> Cell<M> {
         Self(CellKind::Element(Box::new(element.into())))
     }
 
+    /// A source list's row.
+    pub(super) fn source(entry: Entry) -> Self {
+        Self(CellKind::Source(entry))
+    }
+
     fn into_text(self) -> Option<String> {
         match self.0 {
             CellKind::Text(text) => Some(text),
+            CellKind::Source(entry) => Some(entry.into_label()),
             CellKind::Element(_) => None,
         }
     }
@@ -299,6 +311,10 @@ pub(crate) struct TableState {
     pub(crate) emphasized: bool,
     /// An outline view's flattened tree (ADR 0049); a plain table has none.
     pub(crate) outline: Option<SharedTree>,
+    /// This is a source list (ADR 0050): its group headers can't be selected.
+    pub(crate) source_list: bool,
+    /// The group header the pointer is over (a source list shows Show or Hide on it).
+    pub(crate) hover: Option<usize>,
 }
 
 impl TableState {
@@ -307,10 +323,16 @@ impl TableState {
         self.outline.as_ref()?.borrow().info(row)
     }
 
+    /// Whether `row` can be selected: all but a source list's group headers.
+    pub(crate) fn selectable(&self, row: usize) -> bool {
+        !self.source_list || self.outline_row(row).is_none_or(|i| i.level > 0)
+    }
+
     fn look(&self, row: usize) -> Look {
         Look {
             selected: self.selection.rows.contains(&row),
             emphasized: self.emphasized,
+            hovered: self.hover == Some(row),
         }
     }
 }
@@ -320,8 +342,10 @@ type Shared = Rc<RefCell<TableState>>;
 /// How a row's cells draw their text.
 #[derive(Clone, Copy, Debug, Default, PartialEq, Eq)]
 pub(crate) struct Look {
-    selected: bool,
-    emphasized: bool,
+    pub(super) selected: bool,
+    pub(super) emphasized: bool,
+    /// The pointer is over it (a source list's group header).
+    pub(super) hovered: bool,
 }
 
 /// The widths columns are drawn at in `total`: as set, the last one stretched to fill.
@@ -360,6 +384,8 @@ fn command(mods: Modifiers) -> bool {
 enum CellContent {
     Text(Box<TextLine>),
     Element(WidgetPod<dyn Widget>),
+    /// A source list's group header or item, which draws itself (ADR 0050).
+    Source(Box<SourceContent>),
 }
 
 /// One cell: text it draws itself, or an app element.
@@ -377,7 +403,7 @@ impl std::fmt::Debug for CellWidget {
     fn fmt(&self, f: &mut std::fmt::Formatter<'_>) -> std::fmt::Result {
         let text = match &self.content {
             CellContent::Text(line) => Some(line.text()),
-            CellContent::Element(_) => None,
+            CellContent::Element(_) | CellContent::Source(_) => None,
         };
         f.debug_struct("CellWidget")
             .field("column", &self.column)
@@ -391,14 +417,20 @@ impl CellWidget {
     pub(crate) fn text(&self) -> Option<&str> {
         match &self.content {
             CellContent::Text(line) => Some(line.text()),
+            CellContent::Source(source) => Some(source.label()),
             CellContent::Element(_) => None,
         }
     }
 
     /// How far in from the cell's edge the content starts, beyond the usual inset.
     fn lead(&self) -> f64 {
-        self.outline
-            .map_or(0.0, |o| outline_text_inset(o.level) - CELL_INSET)
+        match self.content {
+            // A source list's cells place their parts themselves.
+            CellContent::Source(_) => 0.0,
+            _ => self
+                .outline
+                .map_or(0.0, |o| outline_text_inset(o.level) - CELL_INSET),
+        }
     }
 
     fn set_look(this: &mut WidgetMut<'_, Self>, look: Look) {
@@ -424,8 +456,10 @@ impl Widget for CellWidget {
         match event {
             Update::DisabledChanged(_) => ctx.request_paint_only(),
             Update::FontsChanged => {
-                if let CellContent::Text(line) = &mut self.content {
-                    line.invalidate();
+                match &mut self.content {
+                    CellContent::Text(line) => line.invalidate(),
+                    CellContent::Source(source) => source.invalidate(),
+                    CellContent::Element(_) => {}
                 }
                 ctx.request_layout();
             }
@@ -478,6 +512,16 @@ impl Widget for CellWidget {
         let colors = theme.colors();
         let on_selection = self.look.selected && self.look.emphasized;
         let size = ctx.content_box().size();
+        if let CellContent::Source(source) = &mut self.content {
+            return source.paint(
+                ctx,
+                painter,
+                &mut self.replayer,
+                theme,
+                self.look,
+                self.outline,
+            );
+        }
         if let Some(outline) = self.outline.filter(|o| o.expandable) {
             let color = if ctx.is_disabled() {
                 colors.disabled_label
@@ -509,7 +553,11 @@ impl Widget for CellWidget {
     }
 
     fn accessibility_role(&self) -> Role {
-        Role::Cell
+        match self.content {
+            // The row is the tree item and carries the label.
+            CellContent::Source(_) => Role::GenericContainer,
+            _ => Role::Cell,
+        }
     }
 
     fn accessibility(
@@ -518,6 +566,9 @@ impl Widget for CellWidget {
         _props: &PropertiesRef<'_>,
         node: &mut Node,
     ) {
+        if matches!(self.content, CellContent::Source(_)) {
+            return;
+        }
         node.set_column_index(self.column);
         if let CellContent::Text(line) = &self.content {
             node.set_label(line.text());
@@ -527,7 +578,7 @@ impl Widget for CellWidget {
     fn children_ids(&self) -> ChildrenIds {
         match &self.content {
             CellContent::Element(child) => ChildrenIds::from_slice(&[child.id()]),
-            CellContent::Text(_) => ChildrenIds::new(),
+            CellContent::Text(_) | CellContent::Source(_) => ChildrenIds::new(),
         }
     }
 
@@ -548,6 +599,8 @@ pub(crate) struct TableRowWidget {
     look: Look,
     /// An outline row's level and state, for assistive technology.
     outline: Option<RowInfo>,
+    /// A source list's label and badge: the row is a tree item that carries them.
+    source: Option<(String, Option<String>)>,
 }
 
 impl TableRowWidget {
@@ -620,7 +673,11 @@ impl Widget for TableRowWidget {
     fn paint(&mut self, _ctx: &mut PaintCtx<'_>, _props: &PropertiesRef<'_>, _: &mut Painter<'_>) {}
 
     fn accessibility_role(&self) -> Role {
-        Role::Row
+        if self.source.is_some() {
+            Role::TreeItem
+        } else {
+            Role::Row
+        }
     }
 
     fn accessibility(
@@ -629,7 +686,14 @@ impl Widget for TableRowWidget {
         _props: &PropertiesRef<'_>,
         node: &mut Node,
     ) {
-        node.set_row_index(self.index);
+        if let Some((label, badge)) = &self.source {
+            node.set_label(label.as_str());
+            if let Some(badge) = badge {
+                node.set_description(badge.as_str());
+            }
+        } else {
+            node.set_row_index(self.index);
+        }
         node.set_selected(self.look.selected);
         node.add_action(Action::Click);
         if let Some(o) = self.outline {
@@ -694,13 +758,18 @@ impl TableBody {
         let mut state = self.shared.borrow_mut();
         let keep = state.selection.keep();
         let change = f(&mut *tree.borrow_mut(), &keep)?;
-        state.selection.remap(&change.kept, change.collapsed);
+        // A source list's group header can't take the selection of what it hides.
+        let collapsed = change.collapsed.filter(|&row| state.selectable(row));
+        state.selection.remap(&change.kept, collapsed);
         Some(change.len)
     }
 
     /// What assistive technology takes the body for: a table, or an outline's tree grid.
     pub(crate) fn role(&self) -> Role {
-        if self.shared.borrow().outline.is_some() {
+        let state = self.shared.borrow();
+        if state.source_list {
+            Role::Tree
+        } else if state.outline.is_some() {
             Role::TreeGrid
         } else {
             Role::Table
@@ -719,6 +788,12 @@ impl TableBody {
 
     pub(crate) fn forget_past(&self, count: usize) {
         self.shared.borrow_mut().selection.forget_past(count);
+    }
+
+    /// The group header the pointer is over, for tests.
+    #[cfg(test)]
+    pub(crate) fn hovered(&self) -> Option<usize> {
+        self.shared.borrow().hover
     }
 
     #[cfg(test)]
@@ -932,8 +1007,39 @@ impl RowsWidget {
         } else {
             let tree = self.table_mut().tree().ok_or(())?;
             let parent = tree.borrow().parent(row);
+            // Not into a source list's group header, which takes no selection.
+            let parent = parent.filter(|&p| self.table_mut().shared.borrow().selectable(p));
             parent.map(Some).ok_or(())
         }
+    }
+
+    /// Moves the pointer's hover to `row` (a source list's group header), showing the change.
+    fn set_hover(&mut self, ctx: &mut EventCtx<'_>, row: Option<usize>) {
+        let state = &mut self.table_mut().shared.borrow_mut();
+        if state.hover != row {
+            state.hover = row;
+            Self::restyle_later(ctx);
+        }
+    }
+
+    /// The pointer left the body: no group header is hovered.
+    pub(super) fn clear_hover(&mut self, ctx: &mut UpdateCtx<'_>) {
+        let state = &mut self.table_mut().shared.borrow_mut();
+        if state.hover.take().is_some() {
+            Self::restyle_later(ctx);
+        }
+    }
+
+    /// The selectable row nearest `row` going `forward` or back, or if there is none that
+    /// way, the nearest the other way.
+    fn selectable_near(&mut self, row: usize, forward: bool) -> Option<usize> {
+        let count = self.count;
+        let state = self.table_mut().shared.borrow();
+        let down = (row..count).find(|&r| state.selectable(r));
+        let up = (0..=row.min(count.saturating_sub(1)))
+            .rev()
+            .find(|&r| state.selectable(r));
+        if forward { down.or(up) } else { up.or(down) }
     }
 
     pub(super) fn table_pointer(&mut self, ctx: &mut EventCtx<'_>, event: &PointerEvent) {
@@ -950,17 +1056,31 @@ impl RowsWidget {
                 let mods = state.modifiers;
                 let multiple = self.table_mut().shared.borrow().multiple;
                 let row = self.row_at(y);
-                // A press on a disclosure triangle opens or closes the row, and leaves the
-                // selection alone.
+                // A press on a disclosure triangle (or a group's Show or Hide) opens or
+                // closes the row, and leaves the selection alone.
                 if let Some(row) = row
                     && let Some(info) = self.outline_row(row).filter(|i| i.expandable)
                 {
-                    let cell = Rect::new(0.0, 0.0, f64::INFINITY, self.row_height);
-                    let column = disclosure_rect(cell, info.level);
+                    let cell = Rect::new(0.0, 0.0, self.window.x1, self.row_height);
+                    let column = if self.table_mut().shared.borrow().source_list {
+                        if info.level == 0 {
+                            source_group_action(cell)
+                        } else {
+                            source_item(cell, info.level, false).disclosure
+                        }
+                    } else {
+                        disclosure_rect(cell, info.level)
+                    };
                     if at.x >= column.x0 && at.x < column.x1 {
                         self.table_mut().dragging = false;
                         return self.outline_toggle(ctx, row, None, mods.alt());
                     }
+                }
+                // A source list's group headers take no selection.
+                let selectable = row.is_none_or(|r| self.table_mut().shared.borrow().selectable(r));
+                if !selectable {
+                    self.table_mut().dragging = false;
+                    return;
                 }
                 self.table_mut().dragging = row.is_some();
                 match row {
@@ -982,9 +1102,21 @@ impl RowsWidget {
                             ctx.submit_untyped_action(Box::new(TableAction::Activated(row)));
                         }
                     }
+                    None if self.table_mut().shared.borrow().source_list => {}
                     None if !mods.shift() && !command(mods) => self.select(ctx, Selection::clear),
                     None => {}
                 }
+            }
+            PointerEvent::Move(PointerUpdate { current, .. })
+                if !ctx.is_active() && self.table_mut().shared.borrow().source_list =>
+            {
+                // Over a group header: its Show or Hide appears.
+                let y = ctx.local_position(current.position).y;
+                let over = self.row_at(y).filter(|&r| {
+                    let state = self.table_mut().shared.borrow();
+                    !state.selectable(r) && state.outline_row(r).is_some_and(|i| i.expandable)
+                });
+                self.set_hover(ctx, over);
             }
             PointerEvent::Move(PointerUpdate { current, .. })
                 if ctx.is_active() && self.table_mut().dragging =>
@@ -994,6 +1126,10 @@ impl RowsWidget {
                 let last = self.count.checked_sub(1);
                 let row = self.row_at(y.max(0.0)).or(last);
                 let Some(row) = row else { return };
+                // Dragging over a source list's group header selects nothing.
+                if !self.table_mut().shared.borrow().selectable(row) {
+                    return;
+                }
                 let multiple = self.table_mut().shared.borrow().multiple;
                 let cursor = self.table_mut().shared.borrow().selection.cursor;
                 if cursor != Some(row) && !command(current.modifiers) {
@@ -1075,6 +1211,11 @@ impl RowsWidget {
             }
             _ => return,
         };
+        // A source list's keys skip its group headers.
+        let forward = cursor.is_none_or(|c| target >= c);
+        let Some(target) = self.selectable_near(target, forward) else {
+            return ctx.set_handled();
+        };
         let multiple = self.table_mut().shared.borrow().multiple;
         self.select(ctx, |s| {
             if mods.shift() && multiple {
@@ -1093,7 +1234,8 @@ impl RowsWidget {
         let table = self.table_mut();
         let prefix = table.typed.push(typed, Instant::now()).to_owned();
         (0..count).find(|&row| {
-            (table.text_of)(row).is_some_and(|text| text.to_lowercase().starts_with(&prefix))
+            table.shared.borrow().selectable(row)
+                && (table.text_of)(row).is_some_and(|text| text.to_lowercase().starts_with(&prefix))
         })
     }
 
@@ -1113,6 +1255,7 @@ impl RowsWidget {
         match event.action {
             Action::Expand => self.outline_toggle(ctx, row, Some(true), false),
             Action::Collapse => self.outline_toggle(ctx, row, Some(false), false),
+            _ if !self.table_mut().shared.borrow().selectable(row) => {}
             _ => self.select(ctx, |s| s.only(row)),
         }
         ctx.set_handled();
@@ -1132,7 +1275,11 @@ impl RowsWidget {
         let state = shared.borrow();
         let focused = state.emphasized && !ctx.is_disabled();
         let mut scene = Scene::new(size.width, size.height);
-        scene.fill(&window, colors.content_background);
+        if state.source_list {
+            sidebar(&mut scene, window, theme.variant);
+        } else {
+            scene.fill(&window, colors.content_background);
+        }
         #[expect(
             clippy::cast_possible_truncation,
             clippy::cast_sign_loss,
@@ -1146,14 +1293,21 @@ impl RowsWidget {
         for i in first..last {
             let (y0, y1) = self.row_span(i);
             let band = Rect::new(window.x0, y0, window.x1, y1);
-            if i < self.count && state.selection.rows.contains(&i) {
+            if i < self.count && state.selection.rows.contains(&i) && state.source_list {
+                source_list_selection(
+                    &mut scene,
+                    band,
+                    SourceState::new(true, focused),
+                    theme.variant,
+                );
+            } else if i < self.count && state.selection.rows.contains(&i) {
                 let fill = if focused {
                     colors.selection
                 } else {
                     colors.unfocused_selection
                 };
                 scene.fill(&band, fill);
-            } else if state.alternating && i % 2 == 1 {
+            } else if state.alternating && !state.source_list && i % 2 == 1 {
                 scene.fill(&band, colors.alternate_row);
             }
         }
@@ -1638,6 +1792,8 @@ pub struct Table<M> {
     /// The header is built last, with the initial sort.
     columns: Vec<Column>,
     sorted: Option<(usize, SortOrder)>,
+    /// A source list has no header.
+    headless: bool,
     on_select: Option<OnSelect<M>>,
     on_activate: Option<OnActivate<M>>,
     on_sort: Option<OnSort<M>>,
@@ -1658,12 +1814,29 @@ impl<M: 'static> Table<M> {
         count: usize,
         cell: impl FnMut(usize, usize) -> C + 'static,
     ) -> Self {
+        Self::build(columns, count, cell, false)
+    }
+
+    /// A table, or with `source_list` the sidebar style of ADR 0050: no header, taller
+    /// rows, no border, and group headers that can't be selected.
+    pub(super) fn build<C: Into<Cell<M>>>(
+        columns: impl IntoIterator<Item = Column>,
+        count: usize,
+        cell: impl FnMut(usize, usize) -> C + 'static,
+        source_list: bool,
+    ) -> Self {
         let columns: Vec<Column> = columns.into_iter().collect();
         let widths = columns.iter().map(|c| c.clamp(c.width)).collect();
         let shared: Shared = Rc::new(RefCell::new(TableState {
             widths,
+            source_list,
             ..TableState::default()
         }));
+        let row_height = if source_list {
+            SIDEBAR_ROW_HEIGHT
+        } else {
+            ROW_HEIGHT
+        };
         let cell = Rc::new(RefCell::new(cell));
         let aligns: Vec<Align> = columns.iter().map(|c| c.align).collect();
 
@@ -1675,6 +1848,7 @@ impl<M: 'static> Table<M> {
                 let state = shared.borrow();
                 let look = state.look(row);
                 let outline = state.outline_row(row);
+                let mut source = None;
                 let cells = aligns
                     .iter()
                     .enumerate()
@@ -1684,6 +1858,11 @@ impl<M: 'static> Table<M> {
                                 CellContent::Text(Box::new(TextLine::new(text, TextStyle::Body)))
                             }
                             CellKind::Element(e) => CellContent::Element(wiring.adopt(*e).to_pod()),
+                            CellKind::Source(entry) => {
+                                let group = outline.is_none_or(|o| o.level == 0);
+                                source = Some((entry.label().to_owned(), entry.badge_text()));
+                                CellContent::Source(Box::new(SourceContent::new(entry, group)))
+                            }
                         };
                         NewWidget::new(CellWidget {
                             column,
@@ -1702,6 +1881,7 @@ impl<M: 'static> Table<M> {
                     widths: state.widths.clone(),
                     look,
                     outline,
+                    source,
                 };
                 (
                     NewWidget::new(widget).erased(),
@@ -1718,10 +1898,19 @@ impl<M: 'static> Table<M> {
             dragging: false,
             replayer: ImagingReplayer::new(),
         };
-        let rows = NewWidget::new(RowsWidget::new(count, ROW_HEIGHT, make).with_table(body));
+        let rows = NewWidget::new(RowsWidget::new(count, row_height, make).with_table(body));
         let body = rows.id();
-        let mut scroll = ScrollWidget::new(rows.erased(), ScrollAxes::Both, true);
-        scroll.frame = Frame::Border;
+        let axes = if source_list {
+            ScrollAxes::Vertical
+        } else {
+            ScrollAxes::Both
+        };
+        let mut scroll = ScrollWidget::new(rows.erased(), axes, true);
+        scroll.frame = if source_list {
+            Frame::Sidebar
+        } else {
+            Frame::Border
+        };
         Self {
             inner: NewWidget::new(scroll),
             shared,
@@ -1729,6 +1918,7 @@ impl<M: 'static> Table<M> {
             body,
             columns,
             sorted: None,
+            headless: source_list,
             on_select: None,
             on_activate: None,
             on_sort: None,
@@ -1843,10 +2033,12 @@ impl<M: 'static> From<Table<M>> for Element<M> {
     fn from(mut table: Table<M>) -> Self {
         let header = NewWidget::new(HeaderWidget::new(table.columns, table.body, table.sorted));
         let header_id = header.id();
-        table
-            .inner
-            .widget
-            .set_header(header.erased(), HEADER_HEIGHT);
+        if !table.headless {
+            table
+                .inner
+                .widget
+                .set_header(header.erased(), HEADER_HEIGHT);
+        }
         let mut element = Element::new(table.inner.erased());
         let (mut on_select, mut on_activate) = (table.on_select, table.on_activate);
         if on_select.is_some() || on_activate.is_some() {

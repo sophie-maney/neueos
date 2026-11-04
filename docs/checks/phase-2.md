@@ -637,3 +637,33 @@ VoiceOver on (Cmd-F5), Tab to the outline: it is announced as an outline (a tree
 its rows; folders read as collapsed or expanded with their level, VO-Right/Left (or
 VO-Shift-Down) opens and closes a folder.
 
+## 13. Checking the source list (task 2.19c)
+Not run yet. Steps 1–3 run in the VM, set up as in `docs/dev-setup.md` §1.3; step 4 is on
+the Mac. The page is "Sidebar" (page 9). The helpers are those of §8.
+
+**1. Build and open the page:** as §8 step 1 with `NEUE_GALLERY_PAGE=9`, screenshot
+`/tmp/s1.png`. Expected: no `WARN` or `ERROR`; two sidebars, light blue-grey with a line
+down the right edge. The left: FAVORITES (Documents selected in grey, Pictures, Music with
+a triangle, Starred with the badge 12) and DEVICES (Disk, Recent with the badge 3). The
+right: Music open (Albums, Artists), Devices closed. Icons are the same grey as the text;
+no row has a stripe, a header row or a border round the list.
+
+**2. Mouse:** click Pictures: the blue gradient with white text, status `Selected
+“Pictures”`. Click the FAVORITES title: nothing changes. Move the pointer over the
+FAVORITES row: Hide appears at the right end in blue; click it: Documents to Starred
+disappear, the selection is gone (`Nothing selected`); click Show: they are back. Move the
+pointer to a row: Hide goes away. Click the triangle of Music: Albums and Artists open and
+nothing is selected. Double-click Disk: `Opened “Disk”`. Click Starred: its badge turns
+white with blue digits.
+
+**3. Keys:** Tab to the list (or click an item). Down and Up step from item to item and
+skip DEVICES; Home and End go to the first and last item; Right on Music opens it, Right
+again moves to Albums, Left moves back, Left again closes it, and Left on Pictures does
+nothing. Type "st": Starred. Switch the window's focus away (Alt-Tab) and the selection
+turns grey with dark text; switch back and it is blue again. Expected: no focus ring
+anywhere.
+
+**4. macOS (owner):** `cargo xtask gallery`, open "Sidebar" and repeat steps 2 and 3. With
+VoiceOver on (Cmd-F5), Tab to the list: it is announced as an outline with its items; items
+read their label (and the badge as a description) with their level, groups read as
+collapsed or expanded, and VO-Right/Left or VO-Shift-Down opens and closes them.

@@ -297,12 +297,29 @@ the paper and leather materials move to Phase 6/7 (Widgets, Write).
       1×/2×; Linux aarch64 and x86_64 not run); 8 end-to-end and 7 tree tests. Steps for
       the VM and macOS in `docs/checks/phase-2.md` §12, not run. Not yet: animated
       expansion, lazy loading placeholders, drag and drop, `on_expand` notifications.
-- [ ] **2.19c Source-list sidebar** · Sonnet (on 2.19b). An outline style: group headers
+- [x] **2.19c Source-list sidebar** · Sonnet (on 2.19b). An outline style: group headers
       (small caps, Show/Hide on hover), rows with icon, label and optional count badge,
       the sidebar background, the source-list selection gradient (focused and unfocused,
       light and dark). Paint materials `sidebar`, `source_list_selection` and tokens.
       *Accept:* gallery page "Sidebar"; goldens (states × light/dark × 1×/2×); keyboard
       and AccessKit roles.
+      *Done:* ADR 0050. `neue_kit::{SourceList<M, Id>, Entry, SourceIcon}`: `SourceList::new(
+      children, entry)` over an `Outline` in the sidebar style; the top level is the groups
+      (small capitals, not selectable, Show or Hide under the pointer), under them items
+      with an `Entry`'s icon, label and count badge, which can nest. `expanded`,
+      `collapsed`, `selected(id)`, `on_select(Option<&Id>)`, `on_activate(&Id)`;
+      `Handle::{reload, set_expanded, set_selection(Option<Id>), scroll_to, set_enabled}`.
+      One selection; Up, Down, Home, End, type-select skip the headers. `Table::build(..,
+      source_list)`, `Frame::Sidebar`, `Cell::source`, `SourceContent` (draws the row).
+      Paint `neue_paint::materials::{sidebar, source_list_selection, source_badge,
+      source_icon, SourceIcon, SourceState, source_item, ...}`; tokens
+      `neue_theme::materials::sidebar`. Gallery page "Sidebar" (page 9); 32 goldens (source
+      list normal, group hovered, disabled, selected, selected focused, nested, nested
+      focused, collapsed × light/dark × 1×/2×; macOS only, Linux aarch64 and x86_64 not
+      run); 11 end-to-end and 4 geometry tests. Steps for the VM and macOS in
+      `docs/checks/phase-2.md` §13, not run. Not yet: label truncation, drag and drop and
+      rename of items, keyboard collapse of groups, multiple selection, a general icon type
+      (2.20).
       Deferred from 2.19: variable row heights, editable cells, column reordering, row drag
       and drop, auto-size on divider double-click, row context menus (beyond wrapping a
       cell in `ContextMenu`).

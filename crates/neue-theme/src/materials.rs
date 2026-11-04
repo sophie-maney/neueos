@@ -1680,3 +1680,171 @@ pub mod table {
         }
     }
 }
+
+/// Source-list sidebars (task 2.19c): a pale tinted background, group headers in small
+/// capitals, rows of an icon, a label and a count badge, and the gradient the selected row
+/// is drawn with, in the accent while the list has focus and grey without. Text and the
+/// disclosure triangle of a selected row use the semantic `selected_label`.
+pub mod sidebar {
+    use crate::{Accent, Appearance, Color, Variant, black, grey, rgb, white};
+
+    /// Height of every row, group headers included.
+    pub const ROW_HEIGHT: f64 = 22.0;
+    /// Space between the left edge and a group header's text.
+    pub const GROUP_INSET: f64 = 8.0;
+    /// Where the icon (or the label, without one) of a first-level item starts.
+    pub const ITEM_INSET: f64 = 14.0;
+    /// How far each level of nested items indents.
+    pub const INDENT: f64 = 14.0;
+    /// Width of the disclosure column, just left of an item's icon.
+    pub const DISCLOSURE_WIDTH: f64 = 14.0;
+    /// Width and height of an icon.
+    pub const ICON_SIZE: f64 = 16.0;
+    /// Space between an icon and its label.
+    pub const ICON_GAP: f64 = 6.0;
+    /// Height of a count badge; a short count makes a circle this wide.
+    pub const BADGE_HEIGHT: f64 = 15.0;
+    /// Space between a badge's edges and its text.
+    pub const BADGE_PADDING: f64 = 6.0;
+    /// Space between a badge and the right edge.
+    pub const BADGE_INSET: f64 = 8.0;
+    /// Space between a group header's Show or Hide and the right edge.
+    pub const ACTION_INSET: f64 = 8.0;
+    /// Width of the press target of Show or Hide, from the right edge.
+    pub const ACTION_WIDTH: f64 = 48.0;
+    /// Width of the line on the sidebar's right edge.
+    pub const EDGE: f64 = 1.0;
+
+    /// Colours of a sidebar.
+    #[derive(Clone, Copy, Debug, PartialEq)]
+    pub struct Palette {
+        /// The sidebar's background.
+        pub background: Color,
+        /// The line on its right edge.
+        pub edge: Color,
+        /// Group headers.
+        pub group_label: Color,
+        /// A group header's Show or Hide, while the pointer is over it.
+        pub group_action: Color,
+        /// Icons (white on a focused selection, the semantic `selected_label`).
+        pub icon: Color,
+        /// The selected row with focus, top and bottom.
+        pub selection: [Color; 2],
+        /// The lines at the top and the bottom of a focused selection.
+        pub selection_edge: [Color; 2],
+        /// The selected row without focus, top and bottom.
+        pub unfocused_selection: [Color; 2],
+        /// The lines at the top and the bottom of an unfocused selection.
+        pub unfocused_edge: [Color; 2],
+        /// The shadow under the white label of a focused selection (one pixel down).
+        pub selected_shadow: Color,
+        /// A count badge.
+        pub badge: Color,
+        /// The count in a badge.
+        pub badge_label: Color,
+        /// A badge on the selected row.
+        pub selected_badge: Color,
+        /// The count in a badge on a focused selection.
+        pub selected_badge_label: Color,
+        /// The count in a badge on an unfocused selection.
+        pub unfocused_badge_label: Color,
+    }
+
+    impl Palette {
+        /// Colours for `variant`; increased contrast firms up the lines and the small text.
+        pub fn new(variant: Variant) -> Self {
+            let contrast = variant.is_increased_contrast();
+            let graphite = variant.accent == Accent::Graphite;
+            match variant.appearance {
+                Appearance::Light => {
+                    let (selection, selection_edge) = if graphite {
+                        (
+                            [rgb(0.60, 0.65, 0.72), rgb(0.42, 0.47, 0.55)],
+                            [rgb(0.36, 0.41, 0.49), rgb(0.33, 0.38, 0.46)],
+                        )
+                    } else {
+                        (
+                            [rgb(0.44, 0.62, 0.84), rgb(0.22, 0.43, 0.72)],
+                            [rgb(0.28, 0.47, 0.74), rgb(0.19, 0.37, 0.64)],
+                        )
+                    };
+                    Self {
+                        background: rgb(0.867, 0.894, 0.925),
+                        edge: if contrast {
+                            black(0.6)
+                        } else {
+                            rgb(0.62, 0.65, 0.70)
+                        },
+                        group_label: if contrast {
+                            rgb(0.25, 0.28, 0.33)
+                        } else {
+                            rgb(0.43, 0.47, 0.53)
+                        },
+                        group_action: if contrast {
+                            rgb(0.10, 0.30, 0.65)
+                        } else {
+                            rgb(0.30, 0.50, 0.80)
+                        },
+                        icon: if contrast {
+                            rgb(0.22, 0.26, 0.32)
+                        } else {
+                            rgb(0.38, 0.42, 0.49)
+                        },
+                        selection,
+                        selection_edge,
+                        unfocused_selection: [rgb(0.78, 0.81, 0.85), rgb(0.66, 0.70, 0.76)],
+                        unfocused_edge: [rgb(0.60, 0.64, 0.70), rgb(0.57, 0.61, 0.67)],
+                        selected_shadow: black(0.40),
+                        badge: rgb(0.55, 0.60, 0.68),
+                        badge_label: white(1.0),
+                        selected_badge: white(0.92),
+                        selected_badge_label: selection[1],
+                        unfocused_badge_label: rgb(0.45, 0.49, 0.56),
+                    }
+                }
+                Appearance::Dark => {
+                    let (selection, selection_edge) = if graphite {
+                        (
+                            [rgb(0.40, 0.44, 0.50), rgb(0.30, 0.34, 0.40)],
+                            [rgb(0.52, 0.56, 0.62), rgb(0.22, 0.25, 0.30)],
+                        )
+                    } else {
+                        (
+                            [rgb(0.22, 0.43, 0.76), rgb(0.13, 0.30, 0.60)],
+                            [rgb(0.38, 0.56, 0.86), rgb(0.08, 0.20, 0.45)],
+                        )
+                    };
+                    Self {
+                        background: rgb(0.150, 0.165, 0.185),
+                        edge: if contrast { white(0.5) } else { black(0.55) },
+                        group_label: if contrast {
+                            white(0.80)
+                        } else {
+                            rgb(0.56, 0.60, 0.67)
+                        },
+                        group_action: if contrast {
+                            rgb(0.55, 0.75, 1.0)
+                        } else {
+                            rgb(0.42, 0.62, 0.92)
+                        },
+                        icon: if contrast {
+                            white(0.85)
+                        } else {
+                            rgb(0.62, 0.66, 0.73)
+                        },
+                        selection,
+                        selection_edge,
+                        unfocused_selection: [grey(0.36), grey(0.30)],
+                        unfocused_edge: [grey(0.46), grey(0.22)],
+                        selected_shadow: black(0.55),
+                        badge: rgb(0.34, 0.38, 0.45),
+                        badge_label: white(0.92),
+                        selected_badge: white(0.90),
+                        selected_badge_label: selection[1],
+                        unfocused_badge_label: grey(0.30),
+                    }
+                }
+            }
+        }
+    }
+}
