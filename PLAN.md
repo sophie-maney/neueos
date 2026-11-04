@@ -753,9 +753,18 @@ Decisions to follow: ADR 0001 (Smithay), 0003 (IPC), 0004 (config), 0005 (global
       **Owner:** ran `docs/dev-setup.md` §18 in the VM: Kate `[menu dbusmenu :1.11
       /MenuBar/2]`, GNOME Text Editor `[menu gmenu :1.1 app=/org/gnome/TextEditor
       win=/org/gnome/TextEditor/window/1]` (no `menubar=`: it only has a primary menu).
-- [ ] **1.18 xwayland-satellite on demand** · Sonnet. Reserve X display sockets, spawn
+- [x] **1.18 xwayland-satellite on demand** · Sonnet. Reserve X display sockets, spawn
       `xwayland-satellite` on first connection, export `DISPLAY` (ADR 0001).
       *Accept:* `xeyes` (or another X11 app) appears in the VM; nothing X-related runs before.
+      *Done:* ADR 0026. `xwayland.rs` reserves the lowest free display (lock file, filesystem
+      and abstract socket), watches both sockets on the loop, spawns `xwayland-satellite :N
+      -listenfd A -listenfd B` on the first connection and watches again when it exits
+      (after 1 s if it died young). `--command` children get `DISPLAY`; no satellite on
+      `PATH` means no display and a warning. Options `--no-xwayland` and
+      `--xwayland-satellite <path>`. 4 headless tests in `tests/xwayland.rs` with a shell
+      script as a stand-in. **Still to do:** the VM check with real `xeyes` (`docs/dev-setup.md`
+      §19); the compositor does not set its own `DISPLAY`, so task 1.19 must import it into
+      the session. Not done: a `compositor.toml` switch.
 - [ ] **1.19 `neue-session` and systemd units** · Sonnet. New `session/neue-session` crate:
       environment import, `graphical-session.target`, units for `neue-comp`, and a greetd /
       wayland-sessions entry.

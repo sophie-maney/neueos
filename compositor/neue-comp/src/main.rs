@@ -2,6 +2,7 @@
 //!
 //! ```text
 //! neue-comp [--tty|--winit|--headless] [-c|--command <cmd>]...
+//!           [--no-xwayland] [--xwayland-satellite <path>]
 //! ```
 //!
 //! Default backend: winit inside another Wayland session (`WAYLAND_DISPLAY` set), else tty;
@@ -37,8 +38,19 @@ fn main() -> anyhow::Result<()> {
             "-c" | "--command" => options
                 .commands
                 .push(args.next().context("--command needs an argument")?),
+            "--no-xwayland" => options.xwayland = None,
+            "--xwayland-satellite" => {
+                let path = args.next().context("--xwayland-satellite needs a path")?;
+                options
+                    .xwayland
+                    .get_or_insert_with(Default::default)
+                    .satellite = path.into();
+            }
             "-h" | "--help" => {
-                println!("usage: neue-comp [--tty|--winit|--headless] [-c|--command <cmd>]...");
+                println!(
+                    "usage: neue-comp [--tty|--winit|--headless] [-c|--command <cmd>]...\n\
+                     \x20                [--no-xwayland] [--xwayland-satellite <path>]"
+                );
                 return Ok(());
             }
             other => bail!("unknown argument `{other}` (try --help)"),
