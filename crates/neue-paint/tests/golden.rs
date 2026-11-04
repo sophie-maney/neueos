@@ -1,5 +1,5 @@
-//! Golden-image tests: render the proof-of-concept sheet, button tiles and title bars with `vello_cpu` and compare it
-//! against committed PNGs in `tests/golden/`.
+//! Golden-image tests: render the proof-of-concept sheet, button tiles, title bars and the
+//! translucent materials with `vello_cpu` and compare them against committed PNGs in `tests/golden/`.
 //!
 //! Regenerate with `cargo xtask golden --bless` (sets `NEUE_BLESS=1`) and inspect the diff
 //! before committing. On a mismatch, the actual image and a diff mask are written to
@@ -14,10 +14,11 @@ mod common;
 
 use common::{button_golden_name, check};
 use neue_paint::cpu::{CpuRenderer, Quality};
+use neue_paint::demo::MaterialTile;
 use neue_paint::materials::ButtonState;
 use neue_paint::materials::title_bar::{self, TitleBarStyle, TrafficLight};
 use neue_paint::text::TextEngine;
-use neue_paint::{Accent, Appearance, Contrast, Pixmap, Scene, Variant, demo};
+use neue_paint::{Accent, Appearance, Backdrop, Contrast, Pixmap, Scene, Variant, demo};
 
 fn render_sheet(appearance: Appearance, scale: f64) -> Pixmap {
     CpuRenderer::new(Quality::Reference)
@@ -178,6 +179,31 @@ fn title_bar_variant_goldens() {
                     &format!("titlebar-{name}-{a}@{s}"),
                     render_title_bar(style, scale),
                 );
+            }
+        }
+    }
+}
+
+/// The translucent materials (menu bar, dock shelf, flat dock shelf, HUD): opaque and
+/// translucent × light/dark × 1x/2x, and increased contrast (always opaque) × light/dark ×
+/// 1x/2x.
+#[test]
+fn material_goldens() {
+    let looks = [
+        ("opaque", Contrast::Standard, Backdrop::Opaque),
+        ("translucent", Contrast::Standard, Backdrop::Translucent),
+        ("contrast", Contrast::Increased, Backdrop::Translucent),
+    ];
+    for tile in MaterialTile::ALL {
+        for (look, contrast, backdrop) in looks {
+            for (appearance, a) in [(Appearance::Light, "light"), (Appearance::Dark, "dark")] {
+                for (scale, s) in [(1.0, "1x"), (2.0, "2x")] {
+                    let variant = Variant::new(appearance).with_contrast(contrast);
+                    let pixmap = CpuRenderer::new(Quality::Reference)
+                        .render(&demo::material_tile(tile, variant, backdrop), scale)
+                        .unwrap();
+                    check(&format!("material-{}-{look}-{a}@{s}", tile.name()), pixmap);
+                }
             }
         }
     }

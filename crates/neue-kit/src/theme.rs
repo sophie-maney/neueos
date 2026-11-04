@@ -4,7 +4,7 @@
 use masonry_core::core::{DefaultProperties, Property};
 use neue_theme::{Appearance, Theme, Variant};
 
-use crate::widgets::{ButtonWidget, LabelWidget, RootWidget, StackWidget};
+use crate::widgets::{ButtonWidget, LabelWidget, RootWidget, SpecimenWidget, StackWidget};
 
 /// The app's [`Theme`], as a default property of every neue-kit widget.
 #[derive(Clone, Copy, Debug, Default, PartialEq)]
@@ -26,6 +26,7 @@ pub(crate) fn default_properties(theme: Theme) -> DefaultProperties {
     let mut props = DefaultProperties::new();
     props.insert::<LabelWidget, _>(ThemeProp(theme));
     props.insert::<ButtonWidget, _>(ThemeProp(theme));
+    props.insert::<SpecimenWidget, _>(ThemeProp(theme));
     props.insert::<StackWidget, _>(ThemeProp(theme));
     props.insert::<RootWidget, _>(ThemeProp(theme));
     props

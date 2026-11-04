@@ -6,17 +6,21 @@
 mod button;
 mod label;
 mod root;
+mod specimen;
 mod stack;
 mod text;
 mod zoom;
 
 use masonry_core::core::NewWidget;
 use masonry_core::kurbo::Axis;
+use neue_paint::Backdrop;
+pub use neue_paint::demo::MaterialTile;
 use neue_theme::metrics::spacing;
 
 pub(crate) use button::{ButtonWidget, Pressed};
 pub(crate) use label::LabelWidget;
 pub(crate) use root::{RootAction, RootWidget};
+pub(crate) use specimen::SpecimenWidget;
 pub use stack::Align;
 pub(crate) use stack::StackWidget;
 pub use text::TextStyle;
@@ -180,6 +184,36 @@ impl<M> Handle<Button<M>> {
     /// Enables or disables the button.
     pub fn set_enabled<N>(&self, cx: &mut Cx<'_, N>, enabled: bool) {
         cx.edit::<ButtonWidget, _>(self, |mut button| button.ctx.set_disabled(!enabled));
+    }
+}
+
+/// One of the translucent materials (menu bar, dock shelf, HUD panel) drawn over a
+/// stand-in for a blurred desktop, in the app's theme. For the gallery's Materials page:
+/// apps get materials through the widgets that use them.
+#[derive(Debug)]
+pub struct Specimen {
+    inner: NewWidget<SpecimenWidget>,
+}
+
+impl Specimen {
+    /// `tile` with an opaque backdrop (what windows without a blur behind them show).
+    pub fn new(tile: MaterialTile) -> Self {
+        Self {
+            inner: NewWidget::new(SpecimenWidget::new(tile, Backdrop::Opaque)),
+        }
+    }
+
+    /// Draws the translucent tint, as over a blurred backdrop (Phase 3).
+    #[must_use]
+    pub fn translucent(mut self) -> Self {
+        self.inner.widget.set_backdrop(Backdrop::Translucent);
+        self
+    }
+}
+
+impl<M> From<Specimen> for Element<M> {
+    fn from(specimen: Specimen) -> Self {
+        Element::new(specimen.inner.erased())
     }
 }
 

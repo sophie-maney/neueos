@@ -45,5 +45,10 @@ masonry_winit.workspace = true
 name = "poc"
 required-features = ["gpu"]
 
+# CPU/GPU parity of the materials (needs a GPU adapter; skips without one).
+[[test]]
+name = "gpu"
+required-features = ["gpu"]
+
 [lints]
 workspace = true

@@ -162,7 +162,7 @@ impl Application for Gallery {
             )
             .with(Zoom::new(ZOOMS[self.zoom], content).bind(&mut self.zoomed));
         let root = Stack::row().with(sidebar).with(main);
-        cx.open_window(Window::new("Widget Gallery", (860, 480), root));
+        cx.open_window(Window::new("Widget Gallery", (860, 560), root));
     }
 
     fn update(&mut self, cx: &mut Cx<'_, Message>, message: Message) {
