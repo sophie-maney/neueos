@@ -752,3 +752,19 @@ whether `READY=1` was sent; if `ExecStop` cannot find the socket, the service lo
 
 Record which of these you ran in the PR. Not covered: the graphical greeter, the shell as a
 unit, lingering users.
+
+## 21. Building and installing the package (task 1.20)
+Build on the Mac (the OrbStack machines need `base-devel`, `git` and `rustup` from §1):
+```sh
+cargo xtask package neue-comp --arch all   # aarch64 first, then x86_64 (Rosetta, slow)
+ls target/package/aarch64 target/package/x86_64
+```
+Install in the VM (aarch64). If §20 was done by hand, remove the hand-installed files first, or
+pass `--overwrite '*'` to pacman:
+```sh
+scp target/package/aarch64/*.pkg.tar.* neueos-vm:/tmp/
+ssh -t neueos-vm 'sudo pacman -U --noconfirm /tmp/neue-comp-*.pkg.tar.* /tmp/neuectl-*.pkg.tar.* /tmp/neue-session-*.pkg.tar.*'
+ssh neueos-vm 'pacman -Ql neue-session | head -20; neuectl --help | head -3; systemd-analyze --user verify neue-comp.service neue-session.target'
+```
+Expected: the three packages install, the units verify, and a greetd login works as in §20
+steps 2 and 5. `sudo pacman -R neue-session neue-comp neuectl` removes them cleanly.

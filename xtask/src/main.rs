@@ -4,7 +4,8 @@
 //! `tracing`.
 
 use std::env;
-use std::path::PathBuf;
+use std::fs;
+use std::path::{Path, PathBuf};
 use std::process::{Command, ExitCode};
 
 use anyhow::{Context, Result, bail};
@@ -28,7 +29,9 @@ Commands:
   gallery                 run the widget gallery (not implemented yet)
   golden [--bless]        check or regenerate golden images
   vm sync|run             sync to the Parallels VM / start a session (not implemented yet)
-  package <crate>         build a pacman package (not implemented yet)
+  package <crate> [--arch aarch64|x86_64|all]
+                          build the pacman package that ships <crate> in the OrbStack Arch
+                          machine(s); default aarch64; output in target/package/
   iso [--arch <arch>]     build the install ISO (not implemented yet)
 ";
 
@@ -52,7 +55,8 @@ fn run(args: Vec<String>) -> Result<()> {
         "linux" => linux(&machine("NEUE_ORB_ARM64", ORB_ARM64_DEFAULT), rest),
         "linux-amd64" => linux(&machine("NEUE_ORB_AMD64", ORB_AMD64_DEFAULT), rest),
         "golden" => golden(rest),
-        "gallery" | "vm" | "package" | "iso" => {
+        "package" => package(rest),
+        "gallery" | "vm" | "iso" => {
             println!("xtask {cmd}: not implemented yet");
             Ok(())
         }
@@ -151,6 +155,159 @@ fn golden(args: &[String]) -> Result<()> {
     Ok(())
 }
 
+/// Crates that ship in a pacman package: (crate, directory under `distro/pkgbuilds/`).
+/// One PKGBUILD can be a split package, so several crates share a directory.
+const PACKAGES: &[(&str, &str)] = &[
+    ("neue-comp", "neue-comp"),
+    ("neuectl", "neue-comp"),
+    ("neue-session", "neue-comp"),
+];
+
+/// Target architectures of `cargo xtask package`.
+#[derive(Clone, Copy, Debug, PartialEq, Eq)]
+enum Arch {
+    Aarch64,
+    X86_64,
+}
+
+impl Arch {
+    fn machine(self) -> String {
+        match self {
+            Arch::Aarch64 => machine("NEUE_ORB_ARM64", ORB_ARM64_DEFAULT),
+            Arch::X86_64 => machine("NEUE_ORB_AMD64", ORB_AMD64_DEFAULT),
+        }
+    }
+}
+
+/// Parse `<crate> [--arch aarch64|x86_64|all]` into the PKGBUILD directory and architectures.
+fn parse_package_args(args: &[String]) -> Result<(&'static str, Vec<Arch>)> {
+    const USAGE: &str = "usage: cargo xtask package <crate> [--arch aarch64|x86_64|all]";
+    let mut krate = None;
+    let mut arches = vec![Arch::Aarch64];
+    let mut it = args.iter();
+    while let Some(arg) = it.next() {
+        match arg.as_str() {
+            "--arch" => {
+                arches = match it.next().map(String::as_str) {
+                    Some("aarch64") => vec![Arch::Aarch64],
+                    Some("x86_64") => vec![Arch::X86_64],
+                    Some("all") => vec![Arch::Aarch64, Arch::X86_64],
+                    _ => bail!("{USAGE}"),
+                };
+            }
+            flag if flag.starts_with('-') => bail!("{USAGE}"),
+            name if krate.is_none() => krate = Some(name),
+            _ => bail!("{USAGE}"),
+        }
+    }
+    let krate = krate.with_context(|| USAGE)?;
+    let dir = PACKAGES
+        .iter()
+        .find(|(name, _)| *name == krate)
+        .map(|(_, dir)| *dir)
+        .with_context(|| {
+            let known: Vec<_> = PACKAGES.iter().map(|(name, _)| *name).collect();
+            format!("no PKGBUILD ships `{krate}` (known: {})", known.join(", "))
+        })?;
+    Ok((dir, arches))
+}
+
+/// Files to put in the source tarball: tracked and untracked-but-not-ignored files that
+/// still exist, so uncommitted edits are packaged and deleted files do not break `tar`.
+fn source_files(root: &Path) -> Result<Vec<String>> {
+    let out = Command::new("git")
+        .args([
+            "ls-files",
+            "-z",
+            "--cached",
+            "--others",
+            "--exclude-standard",
+        ])
+        .current_dir(root)
+        .output()
+        .context("failed to run `git ls-files`")?;
+    if !out.status.success() {
+        bail!("`git ls-files` failed ({})", out.status);
+    }
+    let mut files = Vec::new();
+    for name in String::from_utf8(out.stdout)?
+        .split('\0')
+        .filter(|n| !n.is_empty())
+    {
+        if name.contains('\n') {
+            bail!("file name with a newline is not supported: {name:?}");
+        }
+        if root.join(name).exists() && !files.iter().any(|f| f == name) {
+            files.push(name.to_owned());
+        }
+    }
+    Ok(files)
+}
+
+/// Build the pacman package(s) for `<crate>` with `makepkg` in the OrbStack Arch machine(s).
+///
+/// The source tarball is the working tree (see [`source_files`]); `prepare()` in the PKGBUILD
+/// fetches the locked dependencies, git ones included. Output: `target/package/<arch>/`.
+fn package(args: &[String]) -> Result<()> {
+    let (dir, arches) = parse_package_args(args)?;
+    let root = workspace_root()?;
+    let pkgbuild = root.join("distro/pkgbuilds").join(dir).join("PKGBUILD");
+    let stage = root.join("target/package").join(dir);
+    fs::create_dir_all(&stage)?;
+    fs::copy(&pkgbuild, stage.join("PKGBUILD"))
+        .with_context(|| format!("failed to copy {}", pkgbuild.display()))?;
+
+    println!("==> source tarball");
+    let list = stage.join("files.txt");
+    fs::write(&list, source_files(&root)?.join("\n"))?;
+    let mut tar = Command::new("tar");
+    // COPYFILE_DISABLE: keep macOS tar from adding `._*` AppleDouble files.
+    tar.env("COPYFILE_DISABLE", "1")
+        .arg("-czf")
+        .arg(stage.join("neueos-src.tar.gz"))
+        .arg("-C")
+        .arg(&root)
+        .arg("-T")
+        .arg(&list);
+    step("tar", tar)?;
+
+    for arch in arches {
+        let machine = arch.machine();
+        let out = root
+            .join("target/package")
+            .join(format!("{arch:?}").to_lowercase());
+        fs::create_dir_all(&out)?;
+        let cmd: Vec<String> = [
+            "env".into(),
+            "-C".into(),
+            stage.display().to_string(),
+            // Outside the source tree and shared between runs, so rebuilds are incremental.
+            format!(
+                "CARGO_TARGET_DIR={}",
+                root.join("target")
+                    .join(format!("{machine}-package"))
+                    .display()
+            ),
+            format!(
+                "BUILDDIR={}",
+                root.join("target")
+                    .join(format!("{machine}-pkgbuild"))
+                    .display()
+            ),
+            format!("PKGDEST={}", out.display()),
+            "makepkg".into(),
+            "--syncdeps".into(),
+            "--noconfirm".into(),
+            "--force".into(),
+            "--cleanbuild".into(),
+        ]
+        .into();
+        linux(&machine, &cmd)?;
+        println!("==> packages in {}", out.display());
+    }
+    Ok(())
+}
+
 fn machine(var: &str, default: &str) -> String {
     env::var(var).unwrap_or_else(|_| default.to_owned())
 }
@@ -189,6 +346,43 @@ mod tests {
     #[test]
     fn golden_rejects_unknown_flags() {
         assert!(golden(&["--nope".into()]).is_err());
+    }
+
+    #[test]
+    fn package_args_resolve_crate_and_arch() {
+        let (dir, arches) = parse_package_args(&["neuectl".into()]).unwrap();
+        assert_eq!(dir, "neue-comp");
+        assert_eq!(arches, [Arch::Aarch64]);
+        let args = ["neue-session".into(), "--arch".into(), "all".into()];
+        assert_eq!(parse_package_args(&args).unwrap().1.len(), 2);
+    }
+
+    #[test]
+    fn package_args_reject_bad_input() {
+        assert!(parse_package_args(&[]).is_err());
+        assert!(parse_package_args(&["nope".into()]).is_err());
+        assert!(parse_package_args(&["neuectl".into(), "--arch".into()]).is_err());
+        assert!(parse_package_args(&["neuectl".into(), "--arch".into(), "ppc".into()]).is_err());
+    }
+
+    #[test]
+    fn every_package_has_a_pkgbuild() {
+        let root = workspace_root().unwrap();
+        for (_, dir) in PACKAGES {
+            assert!(
+                root.join("distro/pkgbuilds")
+                    .join(dir)
+                    .join("PKGBUILD")
+                    .is_file()
+            );
+        }
+    }
+
+    #[test]
+    fn source_files_skip_deleted_and_ignored() {
+        let files = source_files(&workspace_root().unwrap()).unwrap();
+        assert!(files.iter().any(|f| f == "Cargo.toml"));
+        assert!(!files.iter().any(|f| f.starts_with("target/")));
     }
 
     #[test]
