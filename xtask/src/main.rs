@@ -126,7 +126,7 @@ fn check() -> Result<()> {
 }
 
 /// Crates with golden-image tests, run by `cargo xtask golden`.
-const GOLDEN_CRATES: &[&str] = &["neue-paint"];
+const GOLDEN_CRATES: &[&str] = &["neue-paint", "neue-comp"];
 
 /// Run the golden-image tests. With `--bless`, rewrite the goldens instead of comparing.
 fn golden(args: &[String]) -> Result<()> {

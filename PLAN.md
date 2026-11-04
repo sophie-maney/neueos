@@ -703,17 +703,25 @@ Decisions to follow: ADR 0001 (Smithay), 0003 (IPC), 0004 (config), 0005 (global
         everywhere (ADR 0021). `State::headless_render` draws an output on demand into a
         per-output renderbuffer with damage tracking and returns ARGB8888 pixels plus
         damage; no pointer or drag icon yet. `tests/render.rs`.
-  - [ ] **1.16b ext-image-copy-capture, output sources** · Sonnet (Opus if the renderer
+  - [x] **1.16b ext-image-copy-capture, output sources** · Sonnet (Opus if the renderer
         interface needs changes). `ext-image-capture-source` (output) and
         `ext-image-copy-capture`: shm and dmabuf buffers, damage tracking. Check that the
         pinned Smithay rev has the helpers before relying on them; ADR for the decision.
         *Accept:* a scripted client captures an output and the pixels match a golden.
+        *Done:* Smithay's helpers drive the protocol; `screencopy.rs` draws each session
+        into its own `OffscreenOutput` (moved from headless into `render.rs`) and copies
+        into shm (readback) or dmabuf (blit, tty only). Frames wait for damage and
+        report damage since the session's last frame; `paint_cursors` works on tty
+        (`tty::pointer_elements`, shared `render::ScreenElement`); privileged globals
+        (ADR 0022). `tests/screencopy.rs`, golden `tests/golden.rs` (neue-comp joins
+        `GOLDEN_CRATES`). Not done: cursor sessions, dmabuf on winit/headless.
   - [ ] **1.16c Toplevel sources** · Sonnet. `ext-foreign-toplevel-list` and the toplevel
         capture source (offscreen render of one window).
         *Accept:* a scripted client captures one window and the pixels match a golden.
   - [ ] **1.16d `neuectl screenshot` + VM check** · Sonnet. IPC request that captures an
         output and encodes a PNG (ADR 0003 amendment); `grim` steps in
-        `docs/dev-setup.md`, run by the owner.
+        `docs/dev-setup.md`, run by the owner, covering what CI can't: dmabuf captures
+        and `grim -c` (cursor) on the tty backend (ADR 0022).
         *Accept:* PNG from `neuectl screenshot <path>` matches a headless golden; `grim`
         works in the VM (owner).
 - [ ] **1.17 Global-menu protocol side** · Sonnet. `org_kde_kwin_appmenu` v2 and `gtk_shell1`

@@ -249,4 +249,7 @@ fn render(state: &mut State) {
     crate::outputs::send_frames(&state.space, output, state.start_time.elapsed());
 
     data.backend.window().request_redraw();
+    // Screencopy frames waiting for damage may have some now.
+    let output = output.clone();
+    state.capture_waiting_frames(&output);
 }

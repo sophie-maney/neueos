@@ -64,6 +64,7 @@ use crate::ipc::IpcServer;
 use crate::lock::SessionLockStatus;
 use crate::outputs::LaidOutOutput;
 use crate::presentation::TearingControlState;
+use crate::screencopy::Screencopy;
 use crate::security::is_unrestricted;
 
 /// Key repeat delay and rate of the seat's keyboard until the config is loaded. They
@@ -216,6 +217,9 @@ pub struct State {
     /// `wp_security_context_v1`: sandboxes create sockets whose clients see fewer globals
     /// (see `security.rs`).
     pub security_context_state: SecurityContextState,
+    /// `ext-image-copy-capture` with output sources, and its sessions (see
+    /// `screencopy.rs`).
+    pub screencopy: Screencopy,
     pub seat_state: SeatState<State>,
     pub seat: Seat<State>,
     pub keyboard: KeyboardHandle<State>,
@@ -326,6 +330,7 @@ impl State {
         let tearing_control_state = TearingControlState::new(&dh);
         // A sandboxed client must not create (and so escape into) a context of its own.
         let security_context_state = SecurityContextState::new::<Self, _>(&dh, is_unrestricted);
+        let screencopy = Screencopy::new(&dh);
 
         let mut seat_state = SeatState::new();
         let mut seat: Seat<Self> = seat_state.new_wl_seat(&dh, "seat0");
@@ -401,6 +406,7 @@ impl State {
             presentation_state,
             tearing_control_state,
             security_context_state,
+            screencopy,
             seat_state,
             seat,
             keyboard,

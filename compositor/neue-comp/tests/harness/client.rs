@@ -31,12 +31,14 @@ use wayland_protocols::xdg::shell::client::{
     xdg_wm_base::{self, XdgWmBase},
 };
 
+mod capture;
 mod decoration;
 mod input;
 mod presentation;
 mod selection;
 mod shell;
 
+pub use capture::{CaptureFrame, CaptureSession, FrameState, SessionEvents};
 pub use decoration::{KdeDefaultMode, KdeMode, XdgMode};
 pub use input::{
     Constraint, ConstraintEvents, GestureSeen, InputMethodEvents, RelativeMotion, TextInputEvents,
@@ -113,6 +115,8 @@ struct ClientData {
     input: input::InputData,
     /// Presentation feedback and tearing control (see `presentation.rs`).
     presentation: presentation::PresentationData,
+    /// Screencopy sessions and frames (see `capture.rs`).
+    capture: capture::CaptureData,
 }
 
 impl TestClient {
