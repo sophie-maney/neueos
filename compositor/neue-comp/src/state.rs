@@ -58,6 +58,7 @@ use smithay::wayland::xdg_toplevel_icon::XdgToplevelIconManager;
 use tracing::warn;
 
 use crate::Error;
+use crate::appmenu::AppmenuState;
 use crate::config::ConfigRuntime;
 use crate::decorations::Chrome;
 use crate::ipc::IpcServer;
@@ -188,6 +189,8 @@ pub struct State {
     pub xdg_dialog_state: XdgDialogState,
     pub toplevel_icon_manager: XdgToplevelIconManager,
     pub system_bell_state: XdgSystemBellState,
+    /// `org_kde_kwin_appmenu` and `gtk_shell1`: where apps export their menus (ADR 0025).
+    pub appmenu_state: AppmenuState,
     pub shortcuts_inhibit_state: KeyboardShortcutsInhibitState,
     /// The shortcut inhibitor of the focused surface, while it is active: key bindings are
     /// off.
@@ -317,6 +320,7 @@ impl State {
         let mut toplevel_icon_manager = XdgToplevelIconManager::new::<Self>(&dh);
         toplevel_icon_manager.replace_icon_sizes([64, 128]);
         let system_bell_state = XdgSystemBellState::new::<Self>(&dh);
+        let appmenu_state = AppmenuState::new(&dh);
         let shortcuts_inhibit_state = KeyboardShortcutsInhibitState::new::<Self>(&dh);
         let pointer_constraints_state = PointerConstraintsState::new::<Self>(&dh);
         let relative_pointer_state = RelativePointerManagerState::new::<Self>(&dh);
@@ -393,6 +397,7 @@ impl State {
             xdg_dialog_state,
             toplevel_icon_manager,
             system_bell_state,
+            appmenu_state,
             shortcuts_inhibit_state,
             active_inhibitor: None,
             pointer_constraints_state,
@@ -489,6 +494,7 @@ impl State {
             fullscreen: Self::is_fullscreen(window),
             demands_attention,
             parent: self.parent_window(window).and_then(|p| self.window_id(&p)),
+            menu: crate::appmenu::menu_address(toplevel.wl_surface()),
         })
     }
 

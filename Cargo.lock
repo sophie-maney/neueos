@@ -1725,6 +1725,7 @@ dependencies = [
  "neue-config",
  "neue-ipc",
  "neue-paint",
+ "neue-protocols",
  "rustix 1.1.6",
  "serde",
  "serde_json",
@@ -1736,6 +1737,7 @@ dependencies = [
  "wayland-client",
  "wayland-protocols",
  "wayland-protocols-misc",
+ "wayland-protocols-plasma",
  "wayland-protocols-wlr",
  "xcursor",
 ]
@@ -1773,6 +1775,16 @@ dependencies = [
  "vello_gpu",
  "wgpu",
  "winit 0.30.13",
+]
+
+[[package]]
+name = "neue-protocols"
+version = "0.0.0"
+dependencies = [
+ "wayland-backend",
+ "wayland-client",
+ "wayland-scanner",
+ "wayland-server",
 ]
 
 [[package]]
@@ -3548,6 +3560,7 @@ dependencies = [
  "wayland-client",
  "wayland-protocols",
  "wayland-scanner",
+ "wayland-server",
 ]
 
 [[package]]

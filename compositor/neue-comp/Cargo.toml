@@ -41,7 +41,9 @@ tracing-subscriber.workspace = true
 
 [target.'cfg(target_os = "linux")'.dependencies]
 neue-paint.workspace = true
+neue-protocols = { workspace = true, features = ["server"] }
 rustix.workspace = true
+wayland-protocols-plasma = { workspace = true, features = ["server"] }
 xcursor = { workspace = true, optional = true }
 smithay = { workspace = true, features = [
     "backend_drm",
@@ -52,10 +54,12 @@ smithay = { workspace = true, features = [
 ] }
 
 [target.'cfg(target_os = "linux")'.dev-dependencies]
+neue-protocols = { workspace = true, features = ["client"] }
 tempfile.workspace = true
 wayland-client.workspace = true
 wayland-protocols.workspace = true
 wayland-protocols-misc.workspace = true
+wayland-protocols-plasma = { workspace = true, features = ["client"] }
 wayland-protocols-wlr.workspace = true
 
 [lints]

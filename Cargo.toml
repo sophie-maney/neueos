@@ -37,6 +37,11 @@ wayland-protocols = { version = "0.32", features = ["client", "staging", "unstab
 wayland-protocols-misc = { version = "0.3", features = ["client"] }
 wayland-protocols-wlr = { version = "0.3", features = ["client"] }
 rustix = { version = "1", features = ["fs"] }
+# Hand-generated protocols (neue-protocols, ADR 0025). Versions match Smithay's.
+wayland-server = "0.31"
+wayland-backend = "0.3"
+wayland-scanner = "0.31"
+wayland-protocols-plasma = "0.3"
 
 # IPC (neue-ipc, neuectl)
 serde = { version = "1.0", features = ["derive"] }
@@ -55,6 +60,7 @@ parley = { version = "0.12", default-features = false, features = ["std"] }
 neue-paint = { path = "crates/neue-paint" }
 neue-ipc = { path = "crates/neue-ipc" }
 neue-config = { path = "crates/neue-config" }
+neue-protocols = { path = "crates/neue-protocols" }
 
 [workspace.lints.rust]
 unsafe_code = "deny"

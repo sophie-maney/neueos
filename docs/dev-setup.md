@@ -632,3 +632,37 @@ Check: `a.png` is the whole screen with the `foot` window and title bar; `cursor
 ssh neueos-vm '. ~/neueos/docs/vm-env.sh; neuectl quit; sudo pkill -x ydotoold; true'
 ```
 Record which steps you ran, and what the log counts in step 6 were, in the PR.
+
+## 18. Checking the global-menu addresses in the VM (task 1.17)
+Runs from the Mac over ssh, as §17. Needs the compositor from §17 step 2 running (rebuild
+it first: the rsync and `cargo build` lines there), and these packages (GTK4 and Qt6 are
+already there from the 0.7 run):
+```sh
+ssh -t neueos-vm 'sudo pacman -S --needed kate gnome-text-editor python-gobject'
+```
+
+**1. Protocols are offered.**
+```sh
+ssh neueos-vm '. ~/neueos/docs/vm-env.sh; wayland-info | grep -E "appmenu|gtk_shell"'
+```
+Expected: `org_kde_kwin_appmenu_manager` version 2 and `gtk_shell1` version 5.
+
+**2. Kate and GNOME Text Editor.** The script starts its own session bus with a stand-in
+registrar (Kate exports nothing without one, ADR 0005), starts both apps, and prints
+`neuectl windows` and the bus names they own after eight seconds:
+```sh
+ssh neueos-vm '. ~/neueos/docs/vm-env.sh; sh ~/neueos/docs/vm-appmenu.sh'
+```
+Expected: the Kate line ends with `[menu dbusmenu :1.N /MenuBar...]` (a unique name and
+`/MenuBar` or `/MenuBar/N`), and the GNOME Text Editor line with `[menu gmenu :1.N
+menubar=... app=/org/gnome/TextEditor win=/org/gnome/TextEditor/window/N]` (it may have no
+`menubar=`: it only has a primary menu; the `app=` and `win=` paths are what matter). Paste the two lines
+into the PR. If a line has no `[menu ...]`, run the app by hand with
+`WAYLAND_DEBUG=1 ... 2>&1 | grep -E "appmenu|set_dbus_properties|set_address"` to see
+whether it sent anything, and compare with `docs/research/global-menu-checklist.md`.
+
+**3. Events.** In a second ssh session, `neuectl events` must print a `window_changed` line
+with `menu` when an app announces its address (run step 2 again to see it).
+
+Record which of these you ran in the PR. Not checkable here: Firefox, Electron and
+libadwaita apps send nothing and get the fallback menu (Phase 3).

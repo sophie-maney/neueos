@@ -31,6 +31,7 @@ use wayland_protocols::xdg::shell::client::{
     xdg_wm_base::{self, XdgWmBase},
 };
 
+mod appmenu;
 mod capture;
 mod decoration;
 mod input;
@@ -117,6 +118,8 @@ struct ClientData {
     presentation: presentation::PresentationData,
     /// Screencopy sessions and frames (see `capture.rs`).
     capture: capture::CaptureData,
+    /// Global-menu protocol objects (see `appmenu.rs`).
+    appmenu: appmenu::AppmenuData,
 }
 
 impl TestClient {
