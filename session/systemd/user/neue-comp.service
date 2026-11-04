@@ -1,0 +1,26 @@
+[Unit]
+Description=neueOS compositor
+Documentation=https://github.com/sophie-maney/neueos
+# Stopping the session stops the compositor.
+PartOf=neue-session.target
+Before=neue-session.target
+After=graphical-session-pre.target
+
+[Service]
+# `--notify` imports WAYLAND_DISPLAY and DISPLAY into the user manager, then sends READY=1.
+Type=notify
+NotifyAccess=main
+ExecStart=/usr/bin/neue-comp --tty --notify
+# Stop through the compositor's own IPC so it leaves its loop and releases the seat; it has no
+# SIGTERM handler (that needs a new dependency, ADR 0027). The environment is read when
+# ExecStop runs, so `neuectl` sees the WAYLAND_DISPLAY that `--notify` imported. systemd
+# sends KillSignal once ExecStop returns, and `quit` replies just before the compositor
+# exits, so use a harmless one; SIGKILL follows after TimeoutStopSec if it hangs.
+ExecStop=/usr/bin/neuectl quit
+KillSignal=SIGCONT
+TimeoutStartSec=30
+TimeoutStopSec=10
+# A crashed compositor ends the session (no restart): neue-session returns and greetd shows
+# the login again.
+Restart=no
+Slice=session.slice

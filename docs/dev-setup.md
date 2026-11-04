@@ -704,3 +704,51 @@ reports no such files and no satellite is left.
 Record which of these you ran in the PR. Not covered: the shell and launcher getting
 `DISPLAY` (the session exports it, task 1.19), global menus for X11 apps, scaling of X11
 windows on HiDPI outputs.
+
+## 20. Checking the session from greetd in the VM (task 1.19)
+Needs a build of `neue-comp` and `neue-session` in `/usr/bin`: no package yet (task 1.20), so
+install by hand from the Mac (sync first: `rsync -az --delete --exclude target --exclude .git ./ neueos-vm:neueos/`, the VM copy is not a git checkout). The VM console is the greetd VT, so steps 3 to 5 are typed
+there; the rest runs over ssh.
+```sh
+ssh neueos-vm 'cd ~/neueos && cargo build --release -p neue-comp -p neue-session -p neuectl'
+ssh -t neueos-vm 'cd ~/neueos && sudo install -m755 target/release/{neue-comp,neue-session,neuectl} /usr/bin/ &&
+  sudo install -m644 session/systemd/user/* /usr/lib/systemd/user/ &&
+  sudo install -m644 session/wayland-sessions/neueos.desktop /usr/share/wayland-sessions/ &&
+  sudo pacman -S --needed greetd greetd-agreety &&
+  sudo install -m644 session/greetd/config.toml /etc/greetd/config.toml &&
+  sudo systemctl enable greetd.service'
+```
+Stop any other display manager first (`sudo systemctl disable --now sddm` or the like) and
+reboot, or `sudo systemctl start greetd` from the console.
+
+**1. Units are valid.**
+`ssh neueos-vm 'systemd-analyze --user verify neue-comp.service neue-session.target'`:
+no errors.
+
+**2. Login.** Log in at the console prompt. Expected: the compositor starts (the cursor
+appears). Over ssh:
+```sh
+ssh neueos-vm 'XDG_RUNTIME_DIR=/run/user/1000 systemctl --user is-active neue-comp.service neue-session.target graphical-session.target'
+ssh neueos-vm 'XDG_RUNTIME_DIR=/run/user/1000 systemctl --user show-environment | grep -E "WAYLAND_DISPLAY|DISPLAY|XDG_CURRENT_DESKTOP|XDG_SESSION_TYPE"'
+```
+Expected: three `active`; `WAYLAND_DISPLAY=wayland-1`, `DISPLAY=:0` (satellite found),
+`XDG_CURRENT_DESKTOP=neueOS`, `XDG_SESSION_TYPE=wayland`.
+
+**3. A client sees the environment.** Units get it: `systemd-run --user --wait --pty env | grep DISPLAY`
+prints both, and `systemd-run --user foot` opens a terminal on the screen.
+
+**4. Second start refuses.** `neue-session` over ssh prints `neue-session.target is already
+active` and exits 1.
+
+**5. Clean logout.** Quit the compositor (Super+Q, or `neuectl quit` over ssh with
+`XDG_RUNTIME_DIR=/run/user/1000 WAYLAND_DISPLAY=wayland-1`). Expected: the console returns to the
+greetd login within a few seconds; `journalctl --user -u neue-comp -b` ends with `neue-comp exited`
+and no SIGKILL; `systemctl --user show-environment | grep -c WAYLAND_DISPLAY` is `0`;
+`ls /tmp/.X0-lock` fails. Also try `neue-session stop` from ssh while logged in.
+
+Things to watch: if the target never reaches active, `journalctl --user -u neue-comp` says
+whether `READY=1` was sent; if `ExecStop` cannot find the socket, the service logs a
+`neuectl` error and the 10 s timeout kills the compositor (a bug to report).
+
+Record which of these you ran in the PR. Not covered: the graphical greeter, the shell as a
+unit, lingering users.

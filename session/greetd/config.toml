@@ -1,0 +1,8 @@
+# greetd for the VM and early installs: the text greeter from the greetd package, then
+# `neue-session`. The graphical greeter (neue-greeter, Phase 3) replaces `command`.
+[terminal]
+vt = 1
+
+[default_session]
+command = "agreety --cmd neue-session"
+user = "greeter"

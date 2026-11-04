@@ -22,6 +22,7 @@
 //! - `cursor`: the built-in pointer image.
 //! - `winit`: the nested development backend (cargo feature `winit`).
 //! - `xwayland`: X11 apps through `xwayland-satellite`, started on demand (ADR 0026).
+//! - [`session`]: environment import and `READY=1` under systemd (ADR 0027).
 //!
 //! The skeleton follows Smithay's `smallvil` and `anvil` examples (MIT); see the comments in
 //! each module for what was taken from where.
@@ -52,6 +53,7 @@ mod render;
 mod scanout;
 mod screencopy;
 mod security;
+pub mod session;
 mod shell_protocols;
 pub mod state;
 mod sync;
@@ -117,6 +119,9 @@ pub struct Options {
     /// Run X11 apps through `xwayland-satellite`, started on the first X connection
     /// (ADR 0026). `None`: no X11 support. Ignored when [`Options::listen`] is off.
     pub xwayland: Option<XwaylandOptions>,
+    /// Run as a `Type=notify` systemd user service (ADR 0027): once listening, import
+    /// `WAYLAND_DISPLAY` and `DISPLAY` into the user manager and send `READY=1`.
+    pub notify: bool,
 }
 
 impl Options {
@@ -130,6 +135,7 @@ impl Options {
             config: Layers::standard(),
             headless_renderer: false,
             xwayland: Some(XwaylandOptions::default()),
+            notify: false,
         }
     }
 }
@@ -314,6 +320,9 @@ pub fn run(options: Options) -> Result<(), Error> {
     let compositor = Compositor::new(&options)?;
     for command in &options.commands {
         spawn(command, &compositor.state);
+    }
+    if options.notify {
+        session::announce(&compositor.state);
     }
     compositor.run()
 }

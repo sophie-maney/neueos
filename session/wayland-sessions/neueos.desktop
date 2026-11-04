@@ -1,0 +1,7 @@
+[Desktop Entry]
+Name=neueOS
+Comment=The neueOS desktop session
+Exec=neue-session
+TryExec=neue-session
+Type=Application
+DesktopNames=neueOS
