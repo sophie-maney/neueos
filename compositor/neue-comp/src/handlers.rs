@@ -115,6 +115,10 @@ impl State {
         };
 
         if !toplevel.is_initial_configure_sent() {
+            // Tell the client how much room there is, so apps that size themselves (mpv,
+            // Firefox, GTK and Qt restoring a large size) don't open larger than the screen.
+            let bounds = self.active_content_area(&window).size;
+            toplevel.with_pending_state(|state| state.bounds = Some(bounds));
             toplevel.send_configure();
             return;
         }
