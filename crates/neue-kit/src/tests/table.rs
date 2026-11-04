@@ -97,7 +97,7 @@ fn setup() -> (Runner<Tabling>, FakeHost) {
     (runner, host)
 }
 
-fn scroll(host: &mut FakeHost, table: WidgetId) -> &ScrollWidget {
+pub(super) fn scroll(host: &mut FakeHost, table: WidgetId) -> &ScrollWidget {
     host.only()
         .get_widget_with_id(table)
         .downcast::<ScrollWidget>()
@@ -105,7 +105,7 @@ fn scroll(host: &mut FakeHost, table: WidgetId) -> &ScrollWidget {
         .inner()
 }
 
-fn body_id(host: &mut FakeHost, table: WidgetId) -> WidgetId {
+pub(super) fn body_id(host: &mut FakeHost, table: WidgetId) -> WidgetId {
     scroll(host, table).content_id()
 }
 
@@ -113,7 +113,7 @@ fn header_id(host: &mut FakeHost, table: WidgetId) -> WidgetId {
     scroll(host, table).header_id().expect("a header")
 }
 
-fn body(host: &mut FakeHost, table: WidgetId) -> &RowsWidget {
+pub(super) fn body(host: &mut FakeHost, table: WidgetId) -> &RowsWidget {
     let id = body_id(host, table);
     host.only()
         .get_widget_with_id(id)
@@ -122,7 +122,7 @@ fn body(host: &mut FakeHost, table: WidgetId) -> &RowsWidget {
         .inner()
 }
 
-fn selected(host: &mut FakeHost, table: WidgetId) -> Vec<usize> {
+pub(super) fn selected(host: &mut FakeHost, table: WidgetId) -> Vec<usize> {
     let body = body(host, table);
     body.table
         .as_ref()
@@ -134,7 +134,7 @@ fn selected(host: &mut FakeHost, table: WidgetId) -> Vec<usize> {
 }
 
 /// The window point at `(x, y)` in the body (content coordinates, before scrolling).
-fn in_body(host: &mut FakeHost, table: WidgetId, x: f64, y: f64) -> Point {
+pub(super) fn in_body(host: &mut FakeHost, table: WidgetId, x: f64, y: f64) -> Point {
     let id = body_id(host, table);
     host.only()
         .get_widget_with_id(id)
@@ -143,13 +143,13 @@ fn in_body(host: &mut FakeHost, table: WidgetId, x: f64, y: f64) -> Point {
 }
 
 /// The window point in the middle of row `row`.
-fn row_point(host: &mut FakeHost, table: WidgetId, row: usize) -> Point {
+pub(super) fn row_point(host: &mut FakeHost, table: WidgetId, row: usize) -> Point {
     #[expect(clippy::cast_precision_loss, reason = "small rows")]
     let y = (row as f64 + 0.5) * ROW_HEIGHT;
     in_body(host, table, 20.0, y)
 }
 
-fn pointer(host: &mut FakeHost, at: Point, mods: Modifiers, count: u8, down: bool) {
+pub(super) fn pointer(host: &mut FakeHost, at: Point, mods: Modifiers, count: u8, down: bool) {
     let harness = host.only();
     harness.mouse_move(at);
     let scale = 1.0;
@@ -175,8 +175,8 @@ fn pointer(host: &mut FakeHost, at: Point, mods: Modifiers, count: u8, down: boo
     });
 }
 
-fn click_with(
-    runner: &mut Runner<Tabling>,
+pub(super) fn click_with<A: Application>(
+    runner: &mut Runner<A>,
     host: &mut FakeHost,
     at: Point,
     mods: Modifiers,
@@ -187,7 +187,7 @@ fn click_with(
     deliver(runner, host);
 }
 
-fn command() -> Modifiers {
+pub(super) fn command() -> Modifiers {
     if cfg!(target_os = "macos") {
         Modifiers::META
     } else {
@@ -195,7 +195,12 @@ fn command() -> Modifiers {
     }
 }
 
-fn key_with(runner: &mut Runner<Tabling>, host: &mut FakeHost, key: Key, mods: Modifiers) {
+pub(super) fn key_with<A: Application>(
+    runner: &mut Runner<A>,
+    host: &mut FakeHost,
+    key: Key,
+    mods: Modifiers,
+) {
     for state in [KeyState::Down, KeyState::Up] {
         host.only()
             .process_text_event(TextEvent::Keyboard(KeyboardEvent {
@@ -208,7 +213,7 @@ fn key_with(runner: &mut Runner<Tabling>, host: &mut FakeHost, key: Key, mods: M
     deliver(runner, host);
 }
 
-fn key(runner: &mut Runner<Tabling>, host: &mut FakeHost, named: NamedKey) {
+pub(super) fn key<A: Application>(runner: &mut Runner<A>, host: &mut FakeHost, named: NamedKey) {
     key_with(runner, host, Key::Named(named), Modifiers::empty());
 }
 

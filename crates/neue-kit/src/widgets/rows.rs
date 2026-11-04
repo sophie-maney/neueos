@@ -147,6 +147,12 @@ impl RowsWidget {
 
     /// Changes the number of rows; rows past the end go.
     pub(crate) fn edit_count(this: &mut WidgetMut<'_, Self>, count: usize) {
+        Self::set_count(this, count);
+        Self::sync(this);
+    }
+
+    /// Sets the number of rows without building rows for it.
+    fn set_count(this: &mut WidgetMut<'_, Self>, count: usize) {
         this.widget.count = count;
         if let Some(table) = &this.widget.table {
             table.forget_past(count);
@@ -154,16 +160,27 @@ impl RowsWidget {
             this.ctx.request_accessibility_update();
         }
         this.ctx.request_layout();
+    }
+
+    /// Changes the number of rows and builds the visible ones again (an outline's rows
+    /// changed). One edit: rows built by a count change aren't in the tree yet to drop.
+    pub(crate) fn edit_count_and_reload(this: &mut WidgetMut<'_, Self>, count: usize) {
+        Self::drop_rows(this);
+        Self::set_count(this, count);
         Self::sync(this);
     }
 
-    /// Drops every row and builds the visible ones again (the data changed).
-    pub(crate) fn edit_reload(this: &mut WidgetMut<'_, Self>) {
+    fn drop_rows(this: &mut WidgetMut<'_, Self>) {
         let rows = std::mem::take(&mut this.widget.rows);
         this.widget.dropped |= !rows.is_empty();
         for row in rows.into_values() {
             this.ctx.remove_child(row);
         }
+    }
+
+    /// Drops every row and builds the visible ones again (the data changed).
+    pub(crate) fn edit_reload(this: &mut WidgetMut<'_, Self>) {
+        Self::drop_rows(this);
         Self::sync(this);
     }
 
@@ -233,6 +250,14 @@ impl Widget for RowsWidget {
     }
 
     fn update(&mut self, ctx: &mut UpdateCtx<'_>, _props: &mut PropertiesMut<'_>, event: &Update) {
+        // An outline's rows can have changed (initial expansion) since the builder set
+        // the count.
+        if matches!(event, Update::WidgetAdded)
+            && let Some(len) = self.table.as_ref().and_then(|t| t.outline_len())
+        {
+            self.count = len;
+            ctx.request_layout();
+        }
         if self.table.is_some()
             && matches!(event, Update::FocusChanged(_) | Update::DisabledChanged(_))
         {
@@ -300,7 +325,8 @@ impl Widget for RowsWidget {
 
     fn accessibility_role(&self) -> Role {
         if self.table.is_some() {
-            Role::Table
+            // `accessibility_role` takes `&self`; a table's role is read through its state.
+            self.table.as_ref().map_or(Role::List, |t| t.role())
         } else {
             Role::List
         }

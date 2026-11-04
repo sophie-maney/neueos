@@ -11,9 +11,9 @@
 use std::time::Duration;
 
 use neue_gallery::specimens::{
-    self, BEVEL_SIZE, COMBO_SIZE, FIELD_SIZE, MENU_SIZE, POPUP_SIZE, PROGRESS_SIZE, PULL_DOWN_SIZE,
-    PUSH_BUTTON_SIZE, SCROLL_SIZE, SEGMENTED_SIZE, SLIDER_SIZE, SPINNER_SIZE, STEPPER_SIZE,
-    SUBMENU_SIZE, TABLE_SIZE, TEXT_VIEW_SIZE, TOGGLE_SIZE,
+    self, BEVEL_SIZE, COMBO_SIZE, FIELD_SIZE, MENU_SIZE, OUTLINE_SIZE, POPUP_SIZE, PROGRESS_SIZE,
+    PULL_DOWN_SIZE, PUSH_BUTTON_SIZE, SCROLL_SIZE, SEGMENTED_SIZE, SLIDER_SIZE, SPINNER_SIZE,
+    STEPPER_SIZE, SUBMENU_SIZE, TABLE_SIZE, TEXT_VIEW_SIZE, TOGGLE_SIZE,
 };
 use neue_kit::testing::{
     self, DISABLED, FOCUSED, Fixture, Goldens, INACTIVE, NORMAL, NavKey, PRESSED, State,
@@ -268,6 +268,13 @@ control_goldens! {
     virtual_list: "virtual-list", SCROLL_SIZE, &[NORMAL, SCROLLED_FAR], specimens::virtual_list(10_000);
     // The second row is selected: grey at rest, the accent with focus.
     table: "table", TABLE_SIZE, &[NORMAL, FOCUSED, ROW_PRESSED, HEADER_PRESSED, DISABLED], specimens::table();
+
+    // Closed, one level open, two levels open, and a nested row selected (grey at rest, the
+    // accent with focus).
+    outline: "outline", OUTLINE_SIZE, &[NORMAL, DISABLED], specimens::outline();
+    outline_expanded: "outline-expanded", OUTLINE_SIZE, &[NORMAL], specimens::outline_expanded();
+    outline_nested: "outline-nested", OUTLINE_SIZE, &[NORMAL], specimens::outline_nested();
+    outline_selected: "outline-selected", OUTLINE_SIZE, &[NORMAL, FOCUSED], specimens::outline_selected();
 
     pop_up_button: "pop-up-button", POPUP_SIZE, &[NORMAL, POPUP_PRESSED, OPEN_BY_KEY, FOCUSED, DISABLED], specimens::pop_up_button();
     pull_down_button: "pull-down-button", PULL_DOWN_SIZE, &[NORMAL, PRESSED, OPEN_BY_KEY, FOCUSED, DISABLED], specimens::pull_down_button(|_| ());

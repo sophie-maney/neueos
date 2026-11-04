@@ -22,6 +22,7 @@ mod fields;
 #[cfg(target_os = "linux")]
 mod menubar;
 mod menus;
+mod outline;
 mod popups;
 mod scroll;
 mod table;
@@ -119,8 +120,13 @@ fn deliver<A: Application>(runner: &mut Runner<A>, host: &mut FakeHost) {
 /// An assistive technology's click. (The harness's `accessibility_click_on` doesn't
 /// collect the actions it causes.)
 fn a11y_click(harness: &mut TestHarness<StackWidget>, widget: WidgetId) {
+    a11y_action(harness, widget, Action::Click);
+}
+
+/// An assistive technology's request for `action` on `widget`.
+fn a11y_action(harness: &mut TestHarness<StackWidget>, widget: WidgetId, action: Action) {
     harness.process_access_event(ActionRequest {
-        action: Action::Click,
+        action,
         target_tree: TreeId::ROOT,
         target_node: NodeId(widget.to_raw()),
         data: None,

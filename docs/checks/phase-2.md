@@ -607,3 +607,33 @@ Cmd-click (adds or removes a row) and Cmd-A. With VoiceOver on (Cmd-F5), Tab to 
 table: it is announced as a table of 10 rows and 3 columns; moving with Down reads the row;
 the titles read as column headers, the sorted one with its order.
 
+## 12. Checking the outline view (task 2.19b)
+Not run yet. Steps 1–3 run in the VM, set up as in `docs/dev-setup.md` §1.3; step 4 is on
+the Mac. The outline is the last section of the gallery's "Tables" page (page 8). The
+helpers are those of §8.
+
+**1. Build and open the page:** as §8 step 1 with `NEUE_GALLERY_PAGE=8`, screenshot
+`/tmp/o1.png`; scroll the page down (wheel) to the "Outline (folders)" section and take
+`/tmp/o2.png`. Expected: no `WARN` or `ERROR`; the outline shows Documents open (Work,
+Letters under it), then Pictures, Music, Field Notes.txt and Recipes.md, with triangles on
+the folders only and the files' names lined up with the folders'.
+
+**2. Mouse:** click the triangle of Pictures: it opens (Beach Photo.jpg, Screenshot.png),
+nothing is selected and the status line doesn't change. Click it again: it closes.
+Option-click the triangle of Documents (`ydotool key 56:1`, click, `ydotool key 56:0`):
+it closes with everything below; click it plain: only Work and Letters show, both closed.
+Option-click again: every level is open. Click "Budget 2026.ods": `1 row selected`, the
+row blue with white text. Close Documents by its triangle: Documents turns blue instead
+(`1 row selected`).
+
+**3. Keys:** Tab to the outline (or click a row). Press Right on a closed folder: it
+opens; Right again: the selection moves to its first child; Left: back to the folder; Left
+again: it closes. Option-Right opens every level, Option-Left closes them. Type "mu": Music.
+Expected: the focus ring round the table throughout, and the status line counting the
+selected rows (it doesn't change when a row only moves because a folder above it opened).
+
+**4. macOS (owner):** `cargo xtask gallery`, open "Tables" and repeat steps 2 and 3. With
+VoiceOver on (Cmd-F5), Tab to the outline: it is announced as an outline (a tree grid) with
+its rows; folders read as collapsed or expanded with their level, VO-Right/Left (or
+VO-Shift-Down) opens and closes a folder.
+
