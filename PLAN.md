@@ -689,7 +689,7 @@ Decisions to follow: ADR 0001 (Smithay), 0003 (IPC), 0004 (config), 0005 (global
         shows `vrr …`. Config parse tests, a headless reload test, neuectl format test.
         Hardware check (`docs/dev-setup.md` §16) still to do by the owner. Not done:
         overlay planes, rotated outputs, tearing, several GPUs.
-- [ ] **1.16 Screencopy** · Split into four PRs (a to d, in order). ext-image-copy-capture
+- [x] **1.16 Screencopy** · Split into four PRs (a to d, in order). ext-image-copy-capture
       (output and toplevel sources), `neuectl screenshot`.
       *Accept (whole task):* `neuectl screenshot` PNG matches a headless golden; `grim`
       works in the VM.
@@ -724,12 +724,21 @@ Decisions to follow: ADR 0001 (Smithay), 0003 (IPC), 0004 (config), 0005 (global
         at the geometry size (no title bar or cursor); resize sends new constraints,
         closing the window stops the session, minimised windows work (ADR 0023).
         `tests/screencopy.rs`, golden `screencopy-toplevel`.
-  - [ ] **1.16d `neuectl screenshot` + VM check** · Sonnet. IPC request that captures an
+  - [x] **1.16d `neuectl screenshot` + VM check** · Sonnet. IPC request that captures an
         output and encodes a PNG (ADR 0003 amendment); `grim` steps in
         `docs/dev-setup.md`, run by the owner, covering what CI can't: dmabuf captures
         and `grim -c` (cursor) on the tty backend (ADR 0022).
         *Accept:* PNG from `neuectl screenshot <path>` matches a headless golden; `grim`
         works in the VM (owner).
+        *Done:* `screenshot` request `{path, output?, cursor?}` (ADR 0024, amends ADR 0003):
+        the event loop draws the output with the code screencopy uses and reads it back, a
+        thread encodes (`Pixmap::into_png`, no new dependency) and writes the file, and the
+        reply comes through a calloop channel. A connection with a screenshot in flight
+        answers nothing else until then, so replies stay ordered. New codes
+        `unknown_output`, `capture_failed`. `neuectl screenshot PATH [--output] [--cursor]`.
+        `tests/golden.rs` (`neuectl_screenshot`, same golden as 1.16b) and `tests/ipc.rs`.
+        **Owner:** run `docs/dev-setup.md` §17 in the VM (grim, `grim -c`, dmabuf with
+        `wl-mirror`); not done by the agent.
 - [ ] **1.17 Global-menu protocol side** · Sonnet. `org_kde_kwin_appmenu` v2 and `gtk_shell1`
       v5 per ADR 0005 (`gtk_shell1` XML in a new `neue-protocols` crate); menu addresses in
       `neuectl windows`.

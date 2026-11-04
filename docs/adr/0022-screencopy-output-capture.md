@@ -74,7 +74,9 @@ with llvmpipe differences between Mesa versions.
 - **Draw straight into the client's buffer.** That needs a damage tracker per client
   buffer (buffer ages) and a GL import of shm buffers as render targets, which GLES
   can't do. The intermediate buffer keeps one path for shm and dmabuf.
-- **wlr-screencopy as well.** Every current client (grim ≥ 1.5, wf-recorder, xdpw)
-  speaks the ext protocol. We can add wlr later if something needs it.
+- **wlr-screencopy as well.** grim ≥ 1.5 and wl-mirror speak the ext protocol,
+  but the wf-recorder packaged for Arch Linux ARM (checked in the VM, task 1.16d) only
+  speaks wlr-screencopy and fails with "compositor doesn't support
+  wlr-screencopy-unstable-v1". We can add wlr later if recording needs it.
 - **Answer every frame at once.** This is simpler, but recording clients would then spin
   at full CPU on a static screen.

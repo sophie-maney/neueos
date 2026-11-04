@@ -544,3 +544,91 @@ called FreeSync) switched on in the monitor's own menu. Rebuild and start on the
    modeset); the desktop has no visible flicker when idle (some panels flicker at low
    rates: if yours does, note it, that is why `fullscreen` exists).
 Record which of these you ran, on which GPU and monitor, in the PR.
+
+## 17. Checking screenshots and screencopy in the VM (task 1.16d)
+Everything runs from the Mac over ssh, from the repo root. `neueos-vm` is the host from
+§2.4; the session is on the tty as in §4. The commands contain no local shell syntax, so
+they work from fish, zsh or bash. Over ssh the Wayland tools need `XDG_RUNTIME_DIR` and
+`WAYLAND_DISPLAY`: `docs/vm-env.sh` (rsynced with the repo) sets them.
+
+**1. Install once** (needs `grim` 1.5 or newer, which speaks `ext-image-copy-capture`;
+older ones only know wlr-screencopy and say the compositor "doesn't support the screen
+capture protocol"):
+```sh
+ssh -t neueos-vm 'sudo pacman -S --needed grim wl-mirror jq ydotool'
+ssh neueos-vm 'grim -h 2>&1 | head -3; wl-mirror --version'
+```
+
+**2. Build, start, and wait until it listens.** Stop weston and any old compositor first.
+```sh
+rsync -az --delete --exclude target --exclude .git ./ neueos-vm:neueos/
+ssh neueos-vm 'cd neueos && cargo build --release -p neue-comp -p neuectl --no-default-features --features tty'
+ssh neueos-vm 'export XDG_RUNTIME_DIR=/run/user/1000
+  pkill -x weston; WAYLAND_DISPLAY=wayland-1 ~/neueos/target/release/neuectl quit 2>/dev/null; sleep 1
+  unset WAYLAND_DISPLAY; export RUST_LOG=info,neue_comp=debug
+  setsid nohup ~/neueos/target/release/neue-comp --tty -c foot >/tmp/comp.log 2>&1 </dev/null &
+  sleep 3; WAYLAND_DISPLAY=wayland-1 ~/neueos/target/release/neuectl windows'
+```
+`neuectl windows` must list one `foot` window. If not, read `ssh neueos-vm tail -30
+/tmp/comp.log` (`seatd` and `/dev/dri` are the usual causes, §2.3).
+
+**3. Put the pointer on the screen** (ydotool as in §3; the cursor is only drawn when the
+pointer is over an output, and the tty backend draws it itself):
+```sh
+ssh neueos-vm 'sudo sh -c "setsid nohup ydotoold --socket-path=/tmp/.ydotool_socket \
+  --socket-own=1000:1000 >/dev/null 2>&1 </dev/null &"; sleep 1
+  YDOTOOL_SOCKET=/tmp/.ydotool_socket ydotool mousemove -x 40 -y 40'
+```
+
+**4. `neuectl screenshot`.** Each line sources `docs/vm-env.sh` on the VM (it sets
+`XDG_RUNTIME_DIR`, `WAYLAND_DISPLAY` and `PATH`). All the commands are single-quoted, so
+they work unchanged from fish, zsh or bash on the Mac.
+```sh
+ssh neueos-vm '. ~/neueos/docs/vm-env.sh; neuectl screenshot /tmp/a.png'
+ssh neueos-vm '. ~/neueos/docs/vm-env.sh; cd /tmp && neuectl --json screenshot b.png'
+ssh neueos-vm '. ~/neueos/docs/vm-env.sh; neuectl screenshot --cursor /tmp/cursor.png'
+ssh neueos-vm '. ~/neueos/docs/vm-env.sh; neuectl screenshot --output NOPE /tmp/c.png'
+ssh neueos-vm '. ~/neueos/docs/vm-env.sh; neuectl screenshot /tmp/nodir/d.png'
+```
+Expected: the first three print the file (or JSON), the output name and its size
+(`1920x1080` or whatever the VM runs); the last two print `unknown_output` and
+`capture_failed` and exit non-zero.
+
+**5. `grim`** (shm captures; `-c` is the cursor path that only the tty backend has):
+```sh
+ssh neueos-vm '. ~/neueos/docs/vm-env.sh; grim /tmp/grim.png; grim -c /tmp/grim-cursor.png'
+ssh neueos-vm '. ~/neueos/docs/vm-env.sh; grim -g "$(window_geometry)" /tmp/grim-win.png'
+```
+
+**6. dmabuf.** `wf-recorder` is no use here: it only speaks `wlr-screencopy`, which
+`neue-comp` does not offer (ADR 0022). `wl-mirror` speaks `ext-image-copy-capture` and asks for
+dmabufs when the GPU allows. It mirrors an output into a window; mirroring the output it
+sits on gives a picture-in-picture tunnel, which is fine for this. The compositor logs which
+kind of buffer each frame went into. Count the log lines before and after, and take a
+screenshot while it runs:
+```sh
+ssh neueos-vm 'grep -c "into a shm buffer" /tmp/comp.log; grep -c "into a dmabuf" /tmp/comp.log'
+ssh neueos-vm '. ~/neueos/docs/vm-env.sh; (timeout -s INT 10 wl-mirror "$(output_name)" >/tmp/mirror.log 2>&1 &); sleep 4; neuectl windows; neuectl screenshot /tmp/mirror.png; sleep 7; cat /tmp/mirror.log'
+ssh neueos-vm 'grep -c "into a shm buffer" /tmp/comp.log; grep -c "into a dmabuf" /tmp/comp.log'
+```
+`neuectl windows` while it runs lists a second window (`wl-mirror`), and `mirror.png`
+shows the screen inside itself. If the `dmabuf` count goes up, the dmabuf path works on
+this GPU; if only the `shm` count goes up, `wl-mirror` chose shm (the VM's virtio GPU may
+not offer one it likes: then dmabuf stays unverified, and the x86_64 PC with a real GPU is
+the place for it). If `/tmp/mirror.log` shows a protocol or EGL error instead, paste it
+into the PR.
+
+**7. Look at the results on the Mac.**
+```sh
+mkdir -p ~/Desktop/neueos-shots && scp 'neueos-vm:/tmp/*.png' ~/Desktop/neueos-shots/
+open ~/Desktop/neueos-shots
+```
+Check: `a.png` is the whole screen with the `foot` window and title bar; `cursor.png` and
+`grim-cursor.png` show a pointer near the top-left and `a.png` and `grim.png` do not;
+`grim-win.png` is only the window; `mirror.png` shows the screen inside itself, repeating.
+
+**8. Clean up.**
+```sh
+ssh neueos-vm '. ~/neueos/docs/vm-env.sh; neuectl quit; sudo pkill -x ydotoold; true'
+```
+Record which steps you ran, and what the log counts in step 6 were, in the PR.

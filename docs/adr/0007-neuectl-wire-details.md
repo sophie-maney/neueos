@@ -19,7 +19,7 @@ choose. Additive changes to these are allowed by ADR 0003; this records the firs
   the focused window) or `required`.
 - **Requests in 1.3:** `version`, `windows`, `outputs`, `focused-window` (`null` if none),
   `actions`, `action`, `subscribe`, `quit`. `spaces`, `reload-config` and `screenshot`
-  from ADR 0003 arrive with their tasks; until then they are `unknown_request`.
+  from ADR 0003 arrive with their tasks (`screenshot`: ADR 0024); until then they are `unknown_request`.
 - **Actions in 1.3:** `quit`, `close-window` (sends `xdg_toplevel.close`; the client
   decides), `focus-window`. Window-management actions join in 1.5.
 - **Topics and events:** one topic, `windows`, with `window_opened` (a `WindowInfo`),

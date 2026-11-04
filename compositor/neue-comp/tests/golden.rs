@@ -107,6 +107,37 @@ fn screencopy_output() {
     check("screencopy-output", to_pixmap(frame.size, &frame.data()));
 }
 
+/// `neuectl screenshot` of the same scene as `screencopy_output`: the PNG on disk matches
+/// the same golden (task 1.16d, ADR 0024).
+#[test]
+fn neuectl_screenshot() {
+    let server = Server::start_rendering();
+    server
+        .with_state(|state| state.headless_set_mode(HEADLESS_OUTPUT_NAME, (320, 240)))
+        .expect("changing the mode");
+    let mut client = server.connect();
+    let mut back = client.create_toplevel("Back", "org.neueos.Test", (120, 80));
+    client.fill(&mut back, 0xffc03020);
+    let mut front = client.create_toplevel("Front", "org.neueos.Test", (90, 60));
+    client.fill(&mut front, 0xff2040c0);
+
+    let dir = tempfile::tempdir().unwrap();
+    let path = dir.path().join("shot.png");
+    let info = server
+        .ipc()
+        .screenshot(neue_ipc::ScreenshotParams {
+            path: path.to_str().unwrap().to_owned(),
+            ..neue_ipc::ScreenshotParams::default()
+        })
+        .expect("taking the screenshot");
+    assert_eq!(
+        (info.output.as_str(), info.width, info.height),
+        (HEADLESS_OUTPUT_NAME, 320, 240)
+    );
+    let png = Pixmap::from_png(Cursor::new(std::fs::read(&path).unwrap())).unwrap();
+    check("screencopy-output", png);
+}
+
 #[test]
 fn screencopy_toplevel() {
     let server = Server::start_rendering();

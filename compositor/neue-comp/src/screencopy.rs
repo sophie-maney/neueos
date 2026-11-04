@@ -18,19 +18,23 @@
 //! clients see the globals (ADR 0017).
 
 use std::fmt;
+use std::time::Duration;
 
-use neue_ipc::WindowId;
+use neue_ipc::{ErrorBody, ErrorCode, WindowId};
 use smithay::backend::allocator::format::FormatSet;
 use smithay::backend::allocator::{Fourcc, Modifier};
 use smithay::backend::drm::DrmNode;
 use smithay::backend::renderer::gles::GlesRenderer;
 use smithay::backend::renderer::{BufferType, buffer_type};
-use smithay::desktop::Window;
+use smithay::desktop::{Space, Window};
+use smithay::input::pointer::CursorImageStatus;
 use smithay::output::{Output, WeakOutput};
 use smithay::reexports::wayland_server::DisplayHandle;
 use smithay::reexports::wayland_server::protocol::wl_buffer::WlBuffer;
 use smithay::reexports::wayland_server::protocol::wl_shm;
-use smithay::utils::{Buffer as BufferCoords, Physical, Rectangle, Size, Transform};
+use smithay::utils::{
+    Buffer as BufferCoords, Logical, Physical, Point, Rectangle, Scale, Size, Transform,
+};
 use smithay::wayland::dmabuf::get_dmabuf;
 use smithay::wayland::foreign_toplevel_list::{ForeignToplevelHandle, ForeignToplevelWeakHandle};
 use smithay::wayland::image_capture_source::{
@@ -45,9 +49,10 @@ use smithay::wayland::image_copy_capture::{
 use smithay::wayland::shm::with_buffer_contents_mut;
 use tracing::{debug, warn};
 
+use crate::decorations::Chrome;
 use crate::render::{CLEAR_COLOR, OffscreenOutput, ScreenElement, window_content_elements};
 use crate::security::is_unrestricted;
-use crate::state::{Backend, State};
+use crate::state::{Backend, DndIcon, State};
 
 /// `wl_shm` formats a capture can be copied into. Both have the same layout in memory,
 /// which is what [`OffscreenOutput::read_back`] returns.
@@ -429,49 +434,32 @@ impl State {
             },
         };
 
-        let mut elements: Vec<ScreenElement> = Vec::new();
-        match (&resolved, output_geo) {
-            (Resolved::Output { output, .. }, Some(output_geo)) => {
-                #[cfg(feature = "tty")]
-                if let Some(cursors) = cursors
-                    && session.session.draw_cursor()
-                {
-                    let pointer = crate::tty::PointerLook {
-                        status: cursor_status,
-                        dnd_icon: dnd_icon.as_ref(),
-                        location: pointer_location,
-                    };
-                    let scale = smithay::utils::Scale::from(scale);
-                    elements.extend(
-                        crate::tty::pointer_elements(
-                            renderer, cursors, &pointer, output_geo, scale, time,
-                        )
-                        .0,
-                    );
-                }
-                #[cfg(not(feature = "tty"))]
-                let _ = (
-                    cursors,
+        let elements: Vec<ScreenElement> = match (&resolved, output_geo) {
+            (Resolved::Output { output, .. }, Some(output_geo)) => output_capture_elements(
+                renderer,
+                cursors,
+                session.session.draw_cursor(),
+                OutputScene {
+                    space,
+                    chrome,
                     cursor_status,
-                    dnd_icon,
+                    dnd_icon: dnd_icon.as_ref(),
                     pointer_location,
                     time,
-                    output_geo,
-                );
-                elements.extend(
-                    crate::render::output_elements(renderer, space, chrome, output)
-                        .into_iter()
-                        .map(ScreenElement::Output),
-                );
-            }
-            (Resolved::Window { window, .. }, _) => elements.extend(
+                },
+                output,
+                output_geo,
+                scale,
+            ),
+            (Resolved::Window { window, .. }, _) => {
                 window_content_elements(renderer, window, scale)
                     .into_iter()
-                    .map(ScreenElement::Output),
-            ),
+                    .map(ScreenElement::Output)
+                    .collect()
+            }
             // Outputs always have a geometry here (checked above).
-            (Resolved::Output { .. }, None) => {}
-        }
+            (Resolved::Output { .. }, None) => Vec::new(),
+        };
 
         let damage = target.render(renderer, &elements);
         let result = damage.and_then(|damage| {
@@ -498,6 +486,139 @@ impl State {
     }
 }
 
+/// What an output capture draws besides the output itself: the pointer and the layout.
+struct OutputScene<'a> {
+    space: &'a Space<Window>,
+    chrome: &'a mut Chrome,
+    cursor_status: &'a CursorImageStatus,
+    dnd_icon: Option<&'a DndIcon>,
+    pointer_location: Point<f64, Logical>,
+    /// Time since start-up, for animated cursors.
+    time: Duration,
+}
+
+/// Everything a capture of `output` (laid out at `output_geo`, drawn at `scale`) shows,
+/// topmost first: the pointer and drag icon if `draw_cursor` and the backend draws them
+/// itself (`cursors` is `Some`), then the output's windows and layers.
+fn output_capture_elements(
+    renderer: &mut GlesRenderer,
+    cursors: Option<&mut Cursors>,
+    draw_cursor: bool,
+    scene: OutputScene<'_>,
+    output: &Output,
+    output_geo: Rectangle<i32, Logical>,
+    scale: f64,
+) -> Vec<ScreenElement> {
+    let mut elements: Vec<ScreenElement> = Vec::new();
+    #[cfg(feature = "tty")]
+    if let Some(cursors) = cursors
+        && draw_cursor
+    {
+        let pointer = crate::tty::PointerLook {
+            status: scene.cursor_status,
+            dnd_icon: scene.dnd_icon,
+            location: scene.pointer_location,
+        };
+        elements.extend(
+            crate::tty::pointer_elements(
+                renderer,
+                cursors,
+                &pointer,
+                output_geo,
+                Scale::from(scale),
+                scene.time,
+            )
+            .0,
+        );
+    }
+    #[cfg(not(feature = "tty"))]
+    let _ = (
+        cursors,
+        draw_cursor,
+        output_geo,
+        scene.cursor_status,
+        scene.dnd_icon,
+        scene.pointer_location,
+        scene.time,
+    );
+    elements.extend(
+        crate::render::output_elements(renderer, scene.space, scene.chrome, output)
+            .into_iter()
+            .map(ScreenElement::Output),
+    );
+    elements
+}
+
+/// A one-off capture of an output: ARGB8888 pixels, rows packed.
+pub(crate) struct OutputShot {
+    pub output: String,
+    pub size: Size<i32, Physical>,
+    pub data: Vec<u8>,
+}
+
+impl State {
+    /// Draw the output called `name` (the first one if `None`) into a fresh buffer and read
+    /// it back, for `neuectl screenshot` (ADR 0024). Blocks like a screencopy frame does.
+    pub(crate) fn capture_output_now(
+        &mut self,
+        name: Option<&str>,
+        cursor: bool,
+    ) -> Result<OutputShot, ErrorBody> {
+        let output = match name {
+            Some(name) => self.outputs().find(|o| o.name() == name),
+            None => self.outputs().next(),
+        }
+        .cloned()
+        .ok_or_else(|| match name {
+            Some(name) => ErrorBody::new(ErrorCode::UnknownOutput, format!("no output {name}")),
+            None => ErrorBody::new(ErrorCode::UnknownOutput, "there is no output"),
+        })?;
+        let failed = |message: String| ErrorBody::new(ErrorCode::CaptureFailed, message);
+        let size = capture_size(&output).ok_or_else(|| failed("the output has no mode".into()))?;
+        let output_geo = self
+            .space
+            .output_geometry(&output)
+            .ok_or_else(|| failed("the output is not part of the layout".into()))?;
+        let scale = output.current_scale().fractional_scale();
+        let time = self.start_time.elapsed();
+        let pointer_location = self.pointer.current_location();
+        let State {
+            backend,
+            space,
+            chrome,
+            cursor_status,
+            dnd_icon,
+            ..
+        } = self;
+        let (renderer, cursors) = capture_renderer(backend)
+            .ok_or_else(|| failed("this backend has no renderer to capture with".into()))?;
+        let mut target = OffscreenOutput::new(renderer, size, scale).map_err(failed)?;
+        let elements = output_capture_elements(
+            renderer,
+            cursors,
+            cursor,
+            OutputScene {
+                space,
+                chrome,
+                cursor_status,
+                dnd_icon: dnd_icon.as_ref(),
+                pointer_location,
+                time,
+            },
+            &output,
+            output_geo,
+            scale,
+        );
+        target.render(renderer, &elements).map_err(failed)?;
+        let data = target.read_back(renderer).map_err(failed)?;
+        Ok(OutputShot {
+            output: output.name(),
+            size,
+            data,
+        })
+    }
+}
+
 /// Copy `target`'s last frame into the client's `buffer`, whose type, format and size
 /// Smithay has checked against the constraints.
 fn copy_into(
@@ -507,10 +628,12 @@ fn copy_into(
 ) -> Result<(), String> {
     match buffer_type(buffer) {
         Some(BufferType::Shm) => {
+            debug!("screencopy frame into a shm buffer");
             let pixels = target.read_back(renderer)?;
             copy_into_shm(&pixels, target.size(), buffer)
         }
         Some(BufferType::Dma) => {
+            debug!("screencopy frame into a dmabuf");
             let mut dmabuf = get_dmabuf(buffer)
                 .map_err(|err| format!("not a dmabuf: {err:?}"))?
                 .clone();
