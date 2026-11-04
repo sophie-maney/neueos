@@ -65,7 +65,7 @@ pub use task::{Sender, Task};
 pub use widgets::{
     Align, BevelButton, Button, CheckState, Checkbox, Label, MaterialTile, ProgressBar, Radio,
     ScrollAxes, ScrollView, Segmented, Slider, Specimen, Spinner, Stack, Stepper, TextField,
-    TextStyle, VirtualList, Zoom,
+    TextStyle, TextView, VirtualList, Zoom,
 };
 
 /// Design tokens (colours, metrics, type scale, motion).

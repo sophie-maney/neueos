@@ -20,8 +20,8 @@
 use std::sync::Arc;
 use std::time::Duration;
 
-use masonry_core::core::keyboard::{Key, KeyState, KeyboardEvent, Modifiers, NamedKey};
-use masonry_core::core::{Ime, NewWidget, TextEvent, WidgetId};
+use masonry_core::core::keyboard::{Key, KeyState, KeyboardEvent, Modifiers};
+use masonry_core::core::{Ime, NewWidget, TextEvent, Widget, WidgetId, WidgetRef};
 use masonry_core::dpi::PhysicalSize;
 use masonry_core::kurbo::{Axis, Point, Vec2};
 use masonry_core::peniko::{Blob, Color};
@@ -131,9 +131,18 @@ impl Fixture {
         self.harness.mouse_wheel(Vec2::new(dx, dy));
     }
 
-    /// Gives the widget keyboard focus, as Tab would.
+    /// Gives the widget keyboard focus, as Tab would: to the widget itself, or if that
+    /// takes no focus (a text view's scroll view), to the first widget inside that does.
     pub fn focus(&mut self) {
-        self.harness.focus_on(Some(self.target));
+        fn first_focusable(widget: WidgetRef<'_, dyn Widget>) -> Option<WidgetId> {
+            if widget.accepts_focus() {
+                return Some(widget.id());
+            }
+            widget.children().into_iter().find_map(first_focusable)
+        }
+        let target =
+            first_focusable(self.harness.get_widget_with_id(self.target)).unwrap_or(self.target);
+        self.harness.focus_on(Some(target));
     }
 
     /// Disables (or re-enables) the widget.
@@ -155,10 +164,14 @@ impl Fixture {
         }
     }
 
-    /// Selects all of a focused text field's text (Home, then Shift-End).
+    /// Selects all of a focused text field's or text view's text (the command key and A).
     pub fn select_text(&mut self) {
-        self.key(Key::Named(NamedKey::Home), Modifiers::empty());
-        self.key(Key::Named(NamedKey::End), Modifiers::SHIFT);
+        let command = if cfg!(target_os = "macos") {
+            Modifiers::META
+        } else {
+            Modifiers::CONTROL
+        };
+        self.key(Key::Character("a".to_owned()), command);
     }
 
     /// An input method's uncommitted text at the caret of the focused widget, with the

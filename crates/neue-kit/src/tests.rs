@@ -19,6 +19,7 @@ use neue_theme::Theme;
 mod controls;
 mod fields;
 mod scroll;
+mod textview;
 mod values;
 
 use crate::app::{Host, Runner};

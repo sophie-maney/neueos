@@ -12,7 +12,7 @@ use std::time::Duration;
 
 use neue_gallery::specimens::{
     self, BEVEL_SIZE, FIELD_SIZE, PROGRESS_SIZE, PUSH_BUTTON_SIZE, SCROLL_SIZE, SEGMENTED_SIZE,
-    SLIDER_SIZE, SPINNER_SIZE, STEPPER_SIZE, TOGGLE_SIZE,
+    SLIDER_SIZE, SPINNER_SIZE, STEPPER_SIZE, TEXT_VIEW_SIZE, TOGGLE_SIZE,
 };
 use neue_kit::testing::{
     self, DISABLED, FOCUSED, Fixture, Goldens, INACTIVE, NORMAL, PRESSED, State,
@@ -119,6 +119,18 @@ const SCROLLED: State = ("scrolled", |f: &mut Fixture| {
     f.type_text("A sentence too long to fit in the field");
 });
 
+/// A focused text view after typing two paragraphs, the second wrapping.
+const TYPED_LINES: State = ("typed", |f: &mut Fixture| {
+    f.focus();
+    f.type_text("First line\nA second line long enough to wrap around the view");
+});
+
+/// A focused text view typed into until the caret scrolled the view down.
+const TYPED_PAST_BOTTOM: State = ("scrolled", |f: &mut Fixture| {
+    f.focus();
+    f.type_text("1\n2\n3\n4\n5\n6\n7\n8\n9\n10");
+});
+
 /// Typed into, in a window that is no longer active: no ring, no caret.
 const TYPED_INACTIVE: State = ("inactive", |f: &mut Fixture| {
     f.focus();
@@ -205,6 +217,10 @@ control_goldens! {
     search_field: "search-field", FIELD_SIZE, &[NORMAL, FOCUSED, TYPED], specimens::search_field();
     search_field_filled: "search-field-filled", FIELD_SIZE, &[NORMAL, DISABLED], specimens::search_field_filled();
     secure_field: "secure-field", FIELD_SIZE, &[NORMAL, TYPED, SELECTED], specimens::secure_field();
+
+    text_view: "text-view", TEXT_VIEW_SIZE, &[NORMAL, FOCUSED, TYPED_LINES, TYPED_PAST_BOTTOM, COMPOSING, TYPED_INACTIVE], specimens::text_view();
+    text_view_filled: "text-view-filled", TEXT_VIEW_SIZE, &[NORMAL, SCROLLED_VIEW, SELECTED, DISABLED], specimens::text_view_filled();
+    text_view_read_only: "text-view-read-only", TEXT_VIEW_SIZE, &[NORMAL, SELECTED], specimens::text_view_read_only();
 
     scroll_view: "scroll-view", SCROLL_SIZE, &[NORMAL, SCROLLED_VIEW, SCROLLER_HOVERED, FOCUSED], specimens::scroll_view(12);
     scroll_view_both: "scroll-view-both", SCROLL_SIZE, &[SCROLLED_BOTH], specimens::scroll_view_both();

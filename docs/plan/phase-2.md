@@ -172,7 +172,19 @@ the paper and leather materials move to Phase 6/7 (Widgets, Write).
       "Scrolling"; 28 goldens, passing on macOS and Linux aarch64 (x86_64 not run). Not
       yet: rubber-band and momentum, "always show scroll bars", variable row heights,
       grid virtualisation (2.20), a row count for AT (2.19).
-- [ ] **2.16 Text view** · Sonnet. Multi-line text in the scroll view.
+- [x] **2.16 Text view** · Sonnet. Multi-line text in the scroll view.
+      *Done:* ADR 0044. `neue_kit::TextView` (`new`, `text`, `editable`, `width`, `height`,
+      `on_change`, `disabled`; `Handle::{set_text, text, set_enabled}`): a framed
+      `ScrollView` (the well from the text field, focus ring for focus inside, not a Tab
+      stop) around a wrapping editor widget that is as tall as its text. Return inserts a
+      line break, Up and Down move between lines, Page Up and Down scroll, Tab moves focus;
+      the caret is kept in view (the scroll view now re-applies a scroll-into-view request
+      after the content grows). Read-only views select and copy. Tokens `TEXT_VIEW_WIDTH`,
+      `TEXT_VIEW_HEIGHT`, `TEXT_VIEW_INSET`. Gallery page "Text View"; 48 goldens, passing
+      on macOS and Linux aarch64 (x86_64 not run). `Fixture::focus` descends to the first
+      focusable widget; `Fixture::select_text` is now Cmd/Ctrl-A. IME in a text view: VM and
+      macOS steps in `docs/checks/phase-2.md` §7, not run. Not yet: undo, context menu (2.17),
+      primary selection (2.28), tab characters, caret moves on Page Up/Down.
 - [ ] **2.17 Menus** · Opus. Menu model, context menus, pop-up and pull-down buttons,
       combo box; keyboard navigation and type-select.
 - [ ] **2.18 DBusMenu export** · Opus. New `neue-dbus` crate (Linux-only): export the 2.17

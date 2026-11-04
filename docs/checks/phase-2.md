@@ -413,3 +413,43 @@ Japanese glyphs show as boxes (bundled fonts only, ADR 0030). Then on the ABC la
 Option-E, E gives `é`; in the Password field the input menu greys out (no IME) and
 typing shows bullets. Also check Cmd-A/C/X/V, Option-Left/Right (words) and
 Cmd-Left/Right (ends) in the Name field, and that Escape clears the search field.
+
+## 7. Checking the text view (task 2.16)
+Not run yet (the agent had no VM). Steps 1 and 2 run in the VM, set up as in
+`docs/dev-setup.md` §1.3; step 3 is on the Mac. The gallery's "Text View" page is page 4.
+
+**1. Build and open the page:**
+```sh
+rsync -az --delete --exclude target --exclude .git ./ neueos-vm:neueos/
+ssh neueos-vm 'cd neueos && cargo build --release -p neue-comp -p neuectl --no-default-features --features tty && cargo build --release -p neue-gallery -p neue-platform --examples --bins'
+ssh neueos-vm 'export XDG_RUNTIME_DIR=/run/user/1000 RUST_LOG=info; unset WAYLAND_DISPLAY
+  setsid nohup ~/neueos/target/release/neue-comp --tty >/tmp/comp.log 2>&1 </dev/null &
+  sleep 3; . ~/neueos/docs/vm-env.sh
+  setsid nohup ~/neueos/target/release/examples/ime_probe neue "neueOS IME" >/tmp/ime.log 2>&1 </dev/null &
+  sleep 0.5; export WGPU_BACKEND=gl RUST_LOG=info NEUE_GALLERY_PAGE=4
+  setsid nohup ~/neueos/target/release/neue-gallery >/tmp/gallery.log 2>&1 </dev/null &
+  sleep 4; neuectl windows; grep -E "WARN|ERROR" /tmp/gallery.log; neuectl screenshot /tmp/t1.png'
+scp 'neueos-vm:/tmp/t*.png' ~/Desktop/neueos-shots/
+```
+Expected: no `WARN` or `ERROR`; `t1.png` shows three text views side by side (editable,
+read-only, disabled), each wrapped, with a thin scroller on the editable one only while the
+pointer is over it.
+
+**2. Typing, IME and scrolling:** click into the editable view (the first), then:
+```sh
+ssh neueos-vm '. ~/neueos/docs/vm-env.sh; export YDOTOOL_SOCKET=/tmp/.ydotool_socket
+  ydotool key 29:1 107:1 107:0 29:0; sleep 0.3
+  ydotool type "typed"; ydotool key 28:1 28:0; ydotool type "more"; sleep 0.5; neuectl screenshot /tmp/t2.png
+  tail -3 /tmp/ime.log'
+```
+(Ctrl-End, type, Return, type.) Expected: `t2.png` shows the view scrolled to its end with the
+caret after "more" on a new line and the status line `Notes: “…typed\nmore”`; `ime.log`
+ends with `activated`. Then click into the read-only view: typing changes nothing, Cmd/
+Ctrl-A selects, and `ime.log` ends with `deactivated`.
+
+**3. macOS (owner):** `cargo xtask gallery`, open "Text View". In the editable view check
+Return, Up/Down across wrapped lines, Option-Left/Right (words), Cmd-Left/Right (line ends),
+Cmd-Up/Down (text ends), Cmd-A/C/X/V, a triple click (paragraph), that Tab leaves the view,
+and the Japanese – Romaji preedit as in §6 step 4 (underlined, candidate window under the
+caret, committed on Return, not before).
+

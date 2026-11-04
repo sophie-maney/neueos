@@ -2,7 +2,8 @@
 
 use neue_kit::{
     BevelButton, Button, CheckState, Checkbox, Label, MaterialTile, ProgressBar, Radio, ScrollAxes,
-    ScrollView, Segmented, Slider, Specimen, Spinner, Stack, Stepper, TextField, VirtualList,
+    ScrollView, Segmented, Slider, Specimen, Spinner, Stack, Stepper, TextField, TextView,
+    VirtualList,
 };
 
 /// Golden window size for one push button (logical pixels): the button with the fixture's
@@ -142,6 +143,31 @@ pub fn search_field_filled<M: 'static>() -> TextField<M> {
 /// An empty secure field with a placeholder.
 pub fn secure_field<M: 'static>() -> TextField<M> {
     TextField::secure().placeholder("Password")
+}
+
+/// Golden window size for a text view (the default 300 × 120 plus the fixture's margin,
+/// room for the focus ring).
+pub const TEXT_VIEW_SIZE: (u32, u32) = (320, 140);
+
+/// A paragraph that wraps and, in a text view of the default size, runs past the bottom.
+const PARAGRAPHS: &str = "Mountain passes were closed from November to April, so the \
+    post came in by sled.\n\nThe second paragraph starts here. It is long enough to wrap \
+    onto a second and third line, and the third paragraph below makes the text taller \
+    than the view.\n\nThird paragraph.\nFourth line.\nFifth line.";
+
+/// An empty, editable text view.
+pub fn text_view<M: 'static>() -> TextView<M> {
+    TextView::new()
+}
+
+/// An editable text view holding more text than it shows.
+pub fn text_view_filled<M: 'static>() -> TextView<M> {
+    TextView::new().text(PARAGRAPHS)
+}
+
+/// A read-only text view: its text can be selected and copied.
+pub fn text_view_read_only<M: 'static>() -> TextView<M> {
+    TextView::new().editable(false).text(PARAGRAPHS)
 }
 
 /// A material over a stand-in for a blurred desktop: opaque, or translucent if

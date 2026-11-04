@@ -46,6 +46,10 @@ pub const PAGES: &[Page] = &[
         build: fields,
     },
     Page {
+        title: "Text View",
+        build: text_view,
+    },
+    Page {
         title: "Scrolling",
         build: scrolling,
     },
@@ -296,6 +300,36 @@ fn fields(_: &mut PageHandles) -> Element<Message> {
             "Narrow (scrolls to keep the caret in view)",
             Stack::column().with(TextField::new().width(90.0).text("Longer than the field")),
         ))
+        .into()
+}
+
+fn text_view(_: &mut PageHandles) -> Element<Message> {
+    Stack::column()
+        .spacing(spacing::L)
+        .with(heading(
+            "Text View",
+            "Return starts a line · Up and Down move between lines · Page Up and Page Down \
+             scroll · the caret stays in view while you type · the status line shows what \
+             the editable view sends",
+        ))
+        .with(
+            Stack::row()
+                .spacing(spacing::L)
+                .with(section(
+                    "Editable",
+                    Stack::column().with(
+                        specimens::text_view_filled().on_change(|t| Message::Field("Notes", t)),
+                    ),
+                ))
+                .with(section(
+                    "Read only (select and copy)",
+                    Stack::column().with(specimens::text_view_read_only()),
+                ))
+                .with(section(
+                    "Disabled",
+                    Stack::column().with(specimens::text_view_filled().disabled(true)),
+                )),
+        )
         .into()
 }
 
