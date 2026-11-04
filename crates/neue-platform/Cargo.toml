@@ -8,30 +8,37 @@ license.workspace = true
 repository.workspace = true
 publish.workspace = true
 
-# Portable crate: the Wayland driver is Linux-only (cfg-gated), the winit driver (task 2.4)
-# builds everywhere.
+# Portable crate: the Wayland driver is Linux-only and the winit driver macOS-only (ADR 0002
+# §4, ADR 0032), both cfg-gated. winit stays off Linux: `ui-events-winit` turns on winit's
+# default features, which include X11.
 [dependencies]
 masonry_core.workspace = true
+masonry_imaging.workspace = true
+pollster.workspace = true
 thiserror.workspace = true
 tracing.workspace = true
+wgpu.workspace = true
+
+[target.'cfg(target_os = "macos")'.dependencies]
+accesskit_winit.workspace = true
+arboard.workspace = true
+ui-events-winit.workspace = true
+winit.workspace = true
 
 [target.'cfg(target_os = "linux")'.dependencies]
-masonry_imaging.workspace = true
 raw-window-handle.workspace = true
 smithay-client-toolkit.workspace = true
 wayland-backend = { workspace = true, features = ["client_system", "dlopen"] }
 wayland-client.workspace = true
 wayland-protocols.workspace = true
-wgpu.workspace = true
-pollster.workspace = true
 
 [dev-dependencies]
 anyhow.workspace = true
+masonry.workspace = true
 neue-paint = { workspace = true, features = ["imaging"] }
 tracing-subscriber.workspace = true
 
 [target.'cfg(target_os = "linux")'.dev-dependencies]
-masonry.workspace = true
 wayland-protocols-misc.workspace = true
 
 [lints]

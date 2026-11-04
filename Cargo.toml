@@ -50,6 +50,13 @@ wayland-protocols-plasma = "0.3"
 smithay-client-toolkit = { version = "0.21.1", default-features = false, features = ["calloop", "xkbcommon", "system"] }
 raw-window-handle = "0.6"
 
+# neue-platform's winit driver (task 2.4, ADR 0032), macOS only: `ui-events-winit` turns on
+# winit's default features (X11 on Linux), and arboard's Linux backend is X11. Versions match
+# the Masonry fork's `masonry_winit`. All MIT OR Apache-2.0.
+accesskit_winit = { version = "0.34.2", default-features = false, features = ["rwh_06"] }
+ui-events-winit = { version = "0.3.0", default-features = false }
+arboard = { version = "3.6", default-features = false }
+
 # IPC (neue-ipc, neuectl)
 serde = { version = "1.0", features = ["derive"] }
 serde_json = "1.0"

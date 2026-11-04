@@ -1,16 +1,19 @@
-//! wgpu device and per-surface render targets. Masonry content is rendered by vello_gpu
-//! (`masonry_imaging`'s hybrid renderer) into an offscreen texture, then blitted to the
-//! surface, as `masonry_winit` does.
+//! wgpu device and per-surface render targets, shared by both drivers. Masonry content is
+//! rendered by vello_gpu (`masonry_imaging`'s hybrid renderer) into an offscreen texture,
+//! then blitted to the surface, as `masonry_winit` does.
 
 use masonry_imaging::PreparedFrame;
 use masonry_imaging::texture_render::{RenderTarget, Renderer};
 use wgpu::util::{TextureBlitter, TextureBlitterBuilder};
 
-use super::Error;
+/// A wgpu failure: no adapter, no device, or no usable surface format.
+#[derive(Debug, thiserror::Error)]
+#[error("{0}")]
+pub(crate) struct GpuError(pub(crate) String);
 
 /// Adapter, device and the Masonry renderer, shared by every surface.
-pub(super) struct Gpu {
-    pub(super) instance: wgpu::Instance,
+pub(crate) struct Gpu {
+    pub(crate) instance: wgpu::Instance,
     adapter: wgpu::Adapter,
     device: wgpu::Device,
     queue: wgpu::Queue,
@@ -28,15 +31,15 @@ impl std::fmt::Debug for Gpu {
 impl Gpu {
     /// Picks an adapter that can present to `surface`. `WGPU_BACKEND=gl` selects the VM's
     /// virgl GLES instead of llvmpipe Vulkan (docs/research/vm-graphics.md).
-    pub(super) fn new(
+    pub(crate) fn new(
         instance: wgpu::Instance,
         surface: &wgpu::Surface<'_>,
-    ) -> Result<Self, Error> {
+    ) -> Result<Self, GpuError> {
         let adapter = pollster::block_on(instance.request_adapter(&wgpu::RequestAdapterOptions {
             compatible_surface: Some(surface),
             ..Default::default()
         }))
-        .map_err(|e| Error::Gpu(e.to_string()))?;
+        .map_err(|e| GpuError(e.to_string()))?;
         let info = adapter.get_info();
         tracing::info!(adapter = %info.name, backend = ?info.backend, "wgpu adapter");
         // Request the adapter's own limits: the defaults exceed GLES 3.0 (ADR 0002 §2).
@@ -45,7 +48,7 @@ impl Gpu {
             required_limits: adapter.limits(),
             ..Default::default()
         }))
-        .map_err(|e| Error::Gpu(e.to_string()))?;
+        .map_err(|e| GpuError(e.to_string()))?;
         Ok(Self {
             instance,
             adapter,
@@ -55,11 +58,34 @@ impl Gpu {
         })
     }
 
-    /// Renders `frame` into `target` and presents it.
-    pub(super) fn render(&mut self, target: &SurfaceTarget, frame: PreparedFrame<'_>) {
+    /// Renders `frame` into `target` and presents it. `pre_present` runs right before the
+    /// present (winit wants `Window::pre_present_notify` there).
+    pub(crate) fn render(
+        &mut self,
+        target: &SurfaceTarget,
+        frame: PreparedFrame<'_>,
+        pre_present: impl FnOnce(),
+    ) {
         let texture = match target.surface.get_current_texture() {
             wgpu::CurrentSurfaceTexture::Success(t)
             | wgpu::CurrentSurfaceTexture::Suboptimal(t) => t,
+            wgpu::CurrentSurfaceTexture::Outdated | wgpu::CurrentSurfaceTexture::Lost => {
+                // The window changed under us (e.g. mid-resize): reconfigure and retry once.
+                target.surface.configure(&self.device, &target.config);
+                match target.surface.get_current_texture() {
+                    wgpu::CurrentSurfaceTexture::Success(t)
+                    | wgpu::CurrentSurfaceTexture::Suboptimal(t) => t,
+                    other => {
+                        tracing::warn!(?other, "no surface texture after reconfigure");
+                        return;
+                    }
+                }
+            }
+            // Hidden or minimised window, or a slow compositor: the next frame will do.
+            wgpu::CurrentSurfaceTexture::Occluded | wgpu::CurrentSurfaceTexture::Timeout => {
+                tracing::debug!("surface occluded or timed out; skipping frame");
+                return;
+            }
             other => {
                 tracing::warn!(?other, "no surface texture; skipping frame");
                 return;
@@ -88,12 +114,13 @@ impl Gpu {
             .blitter
             .copy(&self.device, &mut encoder, &target.view, &view);
         self.queue.submit([encoder.finish()]);
+        pre_present();
         self.queue.present(texture);
     }
 }
 
 /// A configured wgpu surface plus its offscreen target. Recreated on every resize.
-pub(super) struct SurfaceTarget {
+pub(crate) struct SurfaceTarget {
     surface: wgpu::Surface<'static>,
     texture: wgpu::Texture,
     view: wgpu::TextureView,
@@ -112,12 +139,12 @@ impl std::fmt::Debug for SurfaceTarget {
 
 impl SurfaceTarget {
     /// Configures `surface` at `width`×`height` physical pixels.
-    pub(super) fn new(
+    pub(crate) fn new(
         gpu: &Gpu,
         surface: wgpu::Surface<'static>,
         width: u32,
         height: u32,
-    ) -> Result<Self, Error> {
+    ) -> Result<Self, GpuError> {
         let caps = surface.get_capabilities(&gpu.adapter);
         // A non-sRGB format: vello blends in sRGB space already (ADR 0002 §2).
         let format = caps
@@ -130,7 +157,7 @@ impl SurfaceTarget {
                     wgpu::TextureFormat::Rgba8Unorm | wgpu::TextureFormat::Bgra8Unorm
                 )
             })
-            .ok_or_else(|| Error::Gpu("surface offers no non-sRGB 8-bit format".into()))?;
+            .ok_or_else(|| GpuError("surface offers no non-sRGB 8-bit format".into()))?;
         // Same alpha handling as masonry_winit: the target holds premultiplied colour.
         const PREMUL: wgpu::BlendState = wgpu::BlendState {
             alpha: wgpu::BlendComponent::REPLACE,
@@ -188,7 +215,7 @@ impl SurfaceTarget {
     }
 
     /// Reconfigures for a new physical size.
-    pub(super) fn resize(&mut self, gpu: &Gpu, width: u32, height: u32) {
+    pub(crate) fn resize(&mut self, gpu: &Gpu, width: u32, height: u32) {
         if self.config.width == width && self.config.height == height {
             return;
         }

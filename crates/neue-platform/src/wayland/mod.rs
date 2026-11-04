@@ -11,7 +11,6 @@
 //! by Masonry in window coordinates, but its paint goes to the popup's own `wl_surface`, and
 //! pointer input on the popup is translated back into window coordinates.
 
-mod gpu;
 mod handle;
 mod input;
 
@@ -23,14 +22,14 @@ use masonry_core::app::VisualLayerKind;
 use masonry_core::app::{RenderRoot, RenderRootOptions, RenderRootSignal, WindowSizePolicy};
 use masonry_core::core::keyboard::KeyState;
 use masonry_core::core::{
-    DefaultProperties, ErasedAction, Ime, Modifiers, NewWidget, PointerButtonEvent,
-    PointerEvent as MasonryPointer, PointerScrollEvent, PointerState, PointerUpdate, ScrollDelta,
-    TextEvent, Widget, WidgetId, WindowEvent,
+    ErasedAction, Ime, Modifiers, NewWidget, PointerButtonEvent, PointerEvent as MasonryPointer,
+    PointerScrollEvent, PointerState, PointerUpdate, ScrollDelta, TextEvent, Widget, WidgetId,
+    WindowEvent,
 };
 use masonry_core::dpi::{PhysicalPosition, PhysicalSize};
 use masonry_core::imaging::record::Scene;
 use masonry_core::kurbo::{Affine, Point, Rect, Vec2};
-use masonry_core::peniko::{Blob, Color};
+use masonry_core::peniko::Color;
 use masonry_core::ui_events::pointer::PointerButtons;
 use masonry_imaging::{Layer as ImagingLayer, PreparedFrame};
 use smithay_client_toolkit::compositor::{CompositorHandler, CompositorState, FrameCallbackData};
@@ -69,7 +68,7 @@ use wayland_protocols::wp::viewporter::client::{
 };
 use wayland_protocols::xdg::shell::client::xdg_positioner;
 
-use gpu::{Gpu, SurfaceTarget};
+use crate::gpu::{Gpu, GpuError, SurfaceTarget};
 
 /// Driver errors.
 #[derive(Debug, thiserror::Error)]
@@ -88,6 +87,12 @@ pub enum Error {
     Loop(String),
     #[error("no surfaces to show")]
     NoSurfaces,
+}
+
+impl From<GpuError> for Error {
+    fn from(err: GpuError) -> Self {
+        Self::Gpu(err.0)
+    }
 }
 
 /// What kind of surface to create.
@@ -118,13 +123,7 @@ pub struct SurfaceSpec {
     pub background: Color,
 }
 
-/// Options shared by every surface.
-#[derive(Debug)]
-pub struct Options {
-    pub default_properties: Arc<DefaultProperties>,
-    /// Font added to the Latin fallback chain (no system fonts: ADR 0002, ADR 0013).
-    pub font: Option<Blob<u8>>,
-}
+pub use crate::Options;
 
 /// Called for every widget action: (surface index, widget, action).
 pub type ActionHandler = Box<dyn FnMut(usize, WidgetId, ErasedAction)>;
@@ -781,7 +780,7 @@ impl State {
                 .frame(&self.qh, FrameCallbackData(w.surf.wl.clone()));
             w.frame_pending = true;
             let frame = PreparedFrame::new(pw, ph, w.scale, w.background, &empty, &main);
-            self.gpu.render(target, frame);
+            self.gpu.render(target, frame, || {});
         }
         for (p, layers) in w.popups.iter().zip(&per_popup) {
             let (Some(target), true) = (&p.surf.target, p.configured) else {
@@ -789,7 +788,7 @@ impl State {
             };
             let (pw, ph) = p.surf.physical(w.scale);
             let frame = PreparedFrame::new(pw, ph, w.scale, Color::TRANSPARENT, &empty, layers);
-            self.gpu.render(target, frame);
+            self.gpu.render(target, frame, || {});
         }
         w.dirty = false;
     }
