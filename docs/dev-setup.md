@@ -449,3 +449,24 @@ Rebuild and start on the tty as in §4 (`-c foot`, `RUST_LOG=info,neue_comp=debu
 5. **Touchpad config:** set `tap-to-click = false`, save, and tapping stops clicking without a
    restart; the log line `touchpad configured` appears for each touchpad at start-up.
 Record which of these you ran in the PR; 3 and 4 need real hardware.
+
+## 13. Checking presentation and sync in the VM (task 1.14)
+Install once: `sudo pacman -S --needed weston wayland-utils flatpak mesa-utils vulkan-tools`
+(`weston` only for its demo clients). Rebuild and start on the tty as in §4 (`-c foot`,
+`RUST_LOG=info,neue_comp=debug`).
+1. **Globals:** `wayland-info | grep -E 'wp_presentation|tearing_control|security_context|drm_syncobj'`
+   lists the first three. The log says either `explicit sync (linux-drm-syncobj-v1)
+   enabled` (then `wp_linux_drm_syncobj_manager_v1` is listed too) or `GPU lacks
+   syncobj_eventfd`; note which one the VM's virtio GPU gives.
+2. **Presentation feedback:** `weston-presentation-shm -f` runs and prints timings with a
+   refresh near 16.67 ms (60 Hz) and increasing sequence numbers; nothing reports
+   `discarded` in a steady state.
+3. **Sandboxed clients:** `flatpak install flathub org.gnome.Calculator`, then
+   `flatpak run org.gnome.Calculator`. It opens and works; the log shows `security context
+   created` with `engine=Some("org.flatpak")`. From the host, `wayland-info` still lists
+   `zwlr_layer_shell_v1` and `ext_session_lock_manager_v1` (unsandboxed clients keep them).
+4. **Explicit sync (NVIDIA PC, real hardware; see 1.18):** with the proprietary driver
+   (560 or newer) the log says explicit sync is enabled; `vkcube` and Firefox run without
+   flicker or stalls, and `WAYLAND_DEBUG=1 vkcube 2>&1 | grep -m3 set_acquire_point`
+   shows the client using it.
+Record which of these you ran in the PR; 4 needs the NVIDIA PC.

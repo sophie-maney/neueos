@@ -33,6 +33,7 @@ use wayland_protocols::xdg::shell::client::{
 
 mod decoration;
 mod input;
+mod presentation;
 mod selection;
 mod shell;
 
@@ -40,6 +41,7 @@ pub use decoration::{KdeDefaultMode, KdeMode, XdgMode};
 pub use input::{
     Constraint, ConstraintEvents, GestureSeen, InputMethodEvents, RelativeMotion, TextInputEvents,
 };
+pub use presentation::{Feedback, global_names};
 pub use selection::{Drag, read_all};
 pub use shell::{Anchor, ForeignToplevel, KeyboardInteractivity, Layer, LayerHandle, SessionLock};
 
@@ -109,6 +111,8 @@ struct ClientData {
     shell: shell::ShellData,
     /// Input protocol objects and events (see `input.rs`).
     input: input::InputData,
+    /// Presentation feedback and tearing control (see `presentation.rs`).
+    presentation: presentation::PresentationData,
 }
 
 impl TestClient {

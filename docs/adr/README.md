@@ -26,3 +26,4 @@ Don't edit an accepted ADR's decision; supersede it with a new one.
 | [0014](0014-chrome-interaction.md) | Chrome interaction: hit-testing, traffic lights, drag, resize edges | Accepted |
 | [0015](0015-shell-facing-protocols.md) | Shell-facing protocols: layer shell, session lock, idle, toplevel list and friends | Accepted |
 | [0016](0016-input-protocols.md) | Input protocols: pointer constraints, relative pointer, gestures, text input, input method | Accepted |
+| [0017](0017-presentation-and-sync.md) | Presentation and sync: presentation-time, tearing hints, explicit sync, security context | Accepted |

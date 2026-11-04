@@ -8,6 +8,8 @@
 //! - [`Compositor`]: the event loop, the Wayland display and the state, wired together.
 //! - `handlers`: Wayland protocol handlers (compositor, shm, dmabuf, seat, output, xdg-shell).
 //! - `config`: `compositor.toml` loading, applying, hot reload and key bindings (ADR 0009).
+//! - `presentation`, `sync`, `security`: presentation-time and tearing hints, explicit
+//!   and implicit buffer sync, sandboxed clients (ADR 0017).
 //! - `input`: input dispatch, focus on click, compositor key bindings.
 //! - [`placement`]: where new windows go (a cascading stack).
 //! - [`decorations`]: server-side title bars (xdg-decoration, KDE server-decoration).
@@ -38,10 +40,13 @@ mod layer;
 pub mod lock;
 pub mod outputs;
 pub mod placement;
+mod presentation;
 #[cfg(any(feature = "winit", feature = "tty"))]
 mod render;
+mod security;
 mod shell_protocols;
 pub mod state;
+mod sync;
 #[cfg(feature = "tty")]
 mod tty;
 #[cfg(feature = "winit")]

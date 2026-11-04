@@ -19,6 +19,7 @@ use crate::render::OutputElement;
 use smithay::backend::winit::{self, WinitEvent, WinitEventLoop, WinitGraphicsBackend};
 use smithay::input::pointer::{CursorIcon, CursorImageStatus};
 use smithay::output::{Mode, Output, PhysicalProperties, Subpixel};
+use smithay::reexports::wayland_protocols::wp::presentation_time::server::wp_presentation_feedback;
 use smithay::reexports::wayland_server::DisplayHandle;
 use smithay::reexports::winit::cursor::Cursor;
 use smithay::utils::{IsAlive, Scale, Transform};
@@ -213,17 +214,36 @@ fn render(state: &mut State) {
             ));
             damage_tracker
                 .render_output(renderer, &mut framebuffer, age, &elements, CLEAR_COLOR)
-                .map(|result| result.damage.cloned())
+                .map(|result| (result.damage.cloned(), result.states))
                 .map_err(|err| format!("{err:?}"))
         });
 
     match result {
-        Ok(Some(damage)) => {
-            if let Err(err) = data.backend.submit(Some(&damage)) {
-                warn!(?err, "submitting the frame failed");
+        Ok((damage, states)) => {
+            crate::presentation::update_primary_scanout_output(
+                space,
+                output,
+                &state.cursor_status,
+                icon,
+                &states,
+            );
+            if let Some(damage) = damage {
+                match data.backend.submit(Some(&damage)) {
+                    // The host compositor does not tell us when the frame is on screen;
+                    // submission is the closest we know.
+                    Ok(()) => {
+                        let refresh = crate::presentation::refresh_interval(REFRESH_MHZ);
+                        crate::presentation::take_feedback(space, output, &states).presented(
+                            state.clock.now(),
+                            refresh,
+                            0,
+                            wp_presentation_feedback::Kind::Vsync,
+                        );
+                    }
+                    Err(err) => warn!(?err, "submitting the frame failed"),
+                }
             }
         }
-        Ok(None) => {}
         Err(err) => warn!(err, "rendering failed"),
     }
 

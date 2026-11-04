@@ -67,6 +67,10 @@ impl CompositorHandler for State {
         }
     }
 
+    fn new_surface(&mut self, surface: &WlSurface) {
+        crate::sync::add_commit_blockers(surface);
+    }
+
     fn commit(&mut self, surface: &WlSurface) {
         on_commit_buffer_handler::<Self>(surface);
 

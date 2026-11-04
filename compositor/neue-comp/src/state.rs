@@ -18,7 +18,7 @@ use smithay::reexports::calloop::{EventLoop, LoopHandle, LoopSignal};
 use smithay::reexports::wayland_server::backend::{ClientData, ClientId, DisconnectReason};
 use smithay::reexports::wayland_server::protocol::wl_surface::WlSurface;
 use smithay::reexports::wayland_server::{Client, DisplayHandle};
-use smithay::utils::{Logical, Point};
+use smithay::utils::{Clock, Logical, Monotonic, Point};
 use smithay::wayland::compositor::{CompositorClientState, CompositorState};
 use smithay::wayland::cursor_shape::CursorShapeManagerState;
 use smithay::wayland::dmabuf::DmabufState;
@@ -33,7 +33,9 @@ use smithay::wayland::keyboard_shortcuts_inhibit::{
 use smithay::wayland::output::OutputManagerState;
 use smithay::wayland::pointer_constraints::PointerConstraintsState;
 use smithay::wayland::pointer_gestures::PointerGesturesState;
+use smithay::wayland::presentation::PresentationState;
 use smithay::wayland::relative_pointer::RelativePointerManagerState;
+use smithay::wayland::security_context::{SecurityContext, SecurityContextState};
 use smithay::wayland::selection::data_device::DataDeviceState;
 use smithay::wayland::selection::ext_data_control::DataControlState as ExtDataControlState;
 use smithay::wayland::selection::primary_selection::PrimarySelectionState;
@@ -61,6 +63,8 @@ use crate::decorations::Chrome;
 use crate::ipc::IpcServer;
 use crate::lock::SessionLockStatus;
 use crate::outputs::LaidOutOutput;
+use crate::presentation::TearingControlState;
+use crate::security::is_unrestricted;
 
 /// Key repeat delay and rate of the seat's keyboard until the config is loaded. They
 /// match the config defaults, which `State::init_config` applies right after start-up.
@@ -97,6 +101,8 @@ impl Backend {
 #[derive(Debug)]
 pub struct State {
     pub start_time: Instant,
+    /// `CLOCK_MONOTONIC`, the clock of presentation feedback.
+    pub clock: Clock<Monotonic>,
     /// Name of our Wayland socket (e.g. `wayland-1`), relative to `XDG_RUNTIME_DIR`.
     /// `None` when the compositor does not listen (tests connect clients directly).
     pub socket_name: Option<OsString>,
@@ -191,6 +197,13 @@ pub struct State {
     pub text_input_state: TextInputManagerState,
     /// `input-method-v2`: the input method (fcitx5, ibus) that commits text.
     pub input_method_state: InputMethodManagerState,
+    /// `wp_presentation`: when frames reached the screen (see `presentation.rs`).
+    pub presentation_state: PresentationState,
+    /// `wp_tearing_control_v1`: per-surface tearing hints (recorded, not acted on yet).
+    pub tearing_control_state: TearingControlState,
+    /// `wp_security_context_v1`: sandboxes create sockets whose clients see fewer globals
+    /// (see `security.rs`).
+    pub security_context_state: SecurityContextState,
     pub seat_state: SeatState<State>,
     pub seat: Seat<State>,
     pub keyboard: KeyboardHandle<State>,
@@ -250,21 +263,30 @@ impl State {
         // Clipboard. Some clients (foot) refuse to start without it.
         let data_device_state = DataDeviceState::new::<Self>(&dh);
         let primary_selection_state = PrimarySelectionState::new::<Self>(&dh);
-        // Data-control lets any client manage the clipboard without focus (ADR 0011).
-        let ext_data_control_state =
-            ExtDataControlState::new::<Self, _>(&dh, Some(&primary_selection_state), |_| true);
-        let wlr_data_control_state =
-            WlrDataControlState::new::<Self, _>(&dh, Some(&primary_selection_state), |_| true);
+        // Data-control lets any unsandboxed client manage the clipboard without focus
+        // (ADR 0011). Privileged globals are hidden from sandboxed clients (ADR 0017).
+        let ext_data_control_state = ExtDataControlState::new::<Self, _>(
+            &dh,
+            Some(&primary_selection_state),
+            is_unrestricted,
+        );
+        let wlr_data_control_state = WlrDataControlState::new::<Self, _>(
+            &dh,
+            Some(&primary_selection_state),
+            is_unrestricted,
+        );
         let xdg_activation_state = XdgActivationState::new::<Self>(&dh);
         let fractional_scale_state = FractionalScaleManagerState::new::<Self>(&dh);
         let cursor_shape_state = CursorShapeManagerState::new::<Self>(&dh);
         let viewporter_state = ViewporterState::new::<Self>(&dh);
-        let layer_shell_state = WlrLayerShellState::new::<Self>(&dh);
-        // Every client may lock: `swaylock`-style lockers are ordinary clients.
-        let lock_manager_state = SessionLockManagerState::new::<Self, _>(&dh, |_| true);
+        let layer_shell_state =
+            WlrLayerShellState::new_with_filter::<Self, _>(&dh, is_unrestricted);
+        // Every unsandboxed client may lock: `swaylock`-style lockers are ordinary clients.
+        let lock_manager_state = SessionLockManagerState::new::<Self, _>(&dh, is_unrestricted);
         let idle_notifier_state = IdleNotifierState::new(&dh, event_loop.handle());
         let idle_inhibit_state = IdleInhibitManagerState::new::<Self>(&dh);
-        let foreign_toplevel_list_state = ForeignToplevelListState::new::<Self>(&dh);
+        let foreign_toplevel_list_state =
+            ForeignToplevelListState::new_with_filter::<Self>(&dh, is_unrestricted);
         let xdg_foreign_state = XdgForeignState::new::<Self>(&dh);
         let xdg_dialog_state = XdgDialogState::new::<Self>(&dh);
         let mut toplevel_icon_manager = XdgToplevelIconManager::new::<Self>(&dh);
@@ -275,8 +297,14 @@ impl State {
         let relative_pointer_state = RelativePointerManagerState::new::<Self>(&dh);
         let pointer_gestures_state = PointerGesturesState::new::<Self>(&dh);
         let text_input_state = TextInputManagerState::new::<Self>(&dh);
-        // Any client may be the input method: fcitx5 and ibus are ordinary clients.
-        let input_method_state = InputMethodManagerState::new::<Self, _>(&dh, |_| true);
+        // Any unsandboxed client may be the input method: fcitx5 and ibus are ordinary
+        // clients.
+        let input_method_state = InputMethodManagerState::new::<Self, _>(&dh, is_unrestricted);
+        let clock = Clock::<Monotonic>::new();
+        let presentation_state = PresentationState::new::<Self>(&dh, clock.id() as u32);
+        let tearing_control_state = TearingControlState::new(&dh);
+        // A sandboxed client must not create (and so escape into) a context of its own.
+        let security_context_state = SecurityContextState::new::<Self, _>(&dh, is_unrestricted);
 
         let mut seat_state = SeatState::new();
         let mut seat: Seat<Self> = seat_state.new_wl_seat(&dh, "seat0");
@@ -294,6 +322,7 @@ impl State {
         let initial_outputs = backend.outputs();
         let mut state = Self {
             start_time: Instant::now(),
+            clock,
             socket_name,
             display_handle: dh,
             loop_signal: event_loop.get_signal(),
@@ -348,6 +377,9 @@ impl State {
             pointer_gestures_state,
             text_input_state,
             input_method_state,
+            presentation_state,
+            tearing_control_state,
+            security_context_state,
             seat_state,
             seat,
             keyboard,
@@ -487,6 +519,8 @@ fn listen_on_socket(event_loop: &EventLoop<'static, State>) -> Result<OsString, 
 #[derive(Debug, Default)]
 pub struct ClientState {
     pub compositor_state: CompositorClientState,
+    /// The sandbox the client connected through, if any (see `security.rs`).
+    pub security_context: Option<SecurityContext>,
 }
 
 impl ClientData for ClientState {
