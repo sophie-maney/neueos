@@ -32,6 +32,9 @@ pub const SPINNER_PERIOD: Duration = Duration::from_millis(1000);
 pub const CARET_BLINK: Duration = Duration::from_millis(1000);
 /// The caret stops blinking, and stays shown, after this long without typing.
 pub const CARET_BLINK_TIMEOUT: Duration = Duration::from_secs(10);
+/// Overlay scrollers fade out after this long without scrolling, unless the pointer is
+/// over one.
+pub const SCROLLER_HIDE_DELAY: Duration = Duration::from_millis(1000);
 /// Delay before a tooltip appears.
 pub const TOOLTIP_DELAY: Duration = Duration::from_millis(1000);
 

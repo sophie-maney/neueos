@@ -1377,3 +1377,50 @@ pub mod spinner {
         }
     }
 }
+
+/// Overlay scrollers: a thin translucent knob over the content, which widens and gains a
+/// track while the pointer is over it.
+pub mod scroller {
+    use crate::{Appearance, Color, Variant, black, white};
+
+    /// Width of the knob at rest.
+    pub const KNOB_THIN: f64 = 7.0;
+    /// Width of the knob while the pointer is over the scroller.
+    pub const KNOB_WIDE: f64 = 11.0;
+    /// Space between the knob and the scroller's outer edge, and its ends.
+    pub const KNOB_INSET: f64 = 2.0;
+    /// The knob never gets shorter than this, however long the content.
+    pub const KNOB_MIN_LENGTH: f64 = 18.0;
+    /// Width of the hairline on the track's inner edge.
+    pub const TRACK_EDGE: f64 = 1.0;
+
+    /// Colours of a scroller.
+    #[derive(Clone, Copy, Debug, PartialEq)]
+    pub struct Palette {
+        /// The knob.
+        pub knob: Color,
+        /// The track behind a widened knob.
+        pub track: Color,
+        /// The hairline on the track's inner edge.
+        pub track_edge: Color,
+    }
+
+    impl Palette {
+        /// Colours for `variant`: a dark knob on light content, a light one on dark.
+        pub fn new(variant: Variant) -> Self {
+            let contrast = variant.is_increased_contrast();
+            match variant.appearance {
+                Appearance::Light => Self {
+                    knob: black(if contrast { 0.7 } else { 0.5 }),
+                    track: white(0.8),
+                    track_edge: black(if contrast { 0.3 } else { 0.12 }),
+                },
+                Appearance::Dark => Self {
+                    knob: white(if contrast { 0.75 } else { 0.5 }),
+                    track: black(0.5),
+                    track_edge: white(if contrast { 0.3 } else { 0.1 }),
+                },
+            }
+        }
+    }
+}

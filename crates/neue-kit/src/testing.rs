@@ -23,7 +23,7 @@ use std::time::Duration;
 use masonry_core::core::keyboard::{Key, KeyState, KeyboardEvent, Modifiers, NamedKey};
 use masonry_core::core::{Ime, NewWidget, TextEvent, WidgetId};
 use masonry_core::dpi::PhysicalSize;
-use masonry_core::kurbo::Axis;
+use masonry_core::kurbo::{Axis, Point, Vec2};
 use masonry_core::peniko::{Blob, Color};
 use masonry_testing::{TestHarness, TestHarnessParams};
 use neue_paint::Pixmap;
@@ -112,6 +112,23 @@ impl Fixture {
     pub fn press(&mut self) {
         self.hover();
         self.harness.mouse_button_press(None);
+    }
+
+    /// Puts the pointer `(fx, fy)` of the way across the widget (0 is its left or top
+    /// edge, 1 its right or bottom edge).
+    pub fn hover_at(&mut self, fx: f64, fy: f64) {
+        let widget = self.harness.get_widget_with_id(self.target);
+        let ctx = widget.ctx();
+        let size = ctx.border_box().size();
+        let at = ctx.to_window(Point::new(size.width * fx, size.height * fy));
+        self.harness.mouse_move(at);
+    }
+
+    /// Turns the mouse wheel (or swipes) over the widget: `dx` and `dy` logical pixels,
+    /// negative to see further right or down.
+    pub fn scroll(&mut self, dx: f64, dy: f64) {
+        self.hover_at(0.5, 0.5);
+        self.harness.mouse_wheel(Vec2::new(dx, dy));
     }
 
     /// Gives the widget keyboard focus, as Tab would.

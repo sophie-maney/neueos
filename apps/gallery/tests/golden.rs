@@ -11,8 +11,8 @@
 use std::time::Duration;
 
 use neue_gallery::specimens::{
-    self, BEVEL_SIZE, FIELD_SIZE, PROGRESS_SIZE, PUSH_BUTTON_SIZE, SEGMENTED_SIZE, SLIDER_SIZE,
-    SPINNER_SIZE, STEPPER_SIZE, TOGGLE_SIZE,
+    self, BEVEL_SIZE, FIELD_SIZE, PROGRESS_SIZE, PUSH_BUTTON_SIZE, SCROLL_SIZE, SEGMENTED_SIZE,
+    SLIDER_SIZE, SPINNER_SIZE, STEPPER_SIZE, TOGGLE_SIZE,
 };
 use neue_kit::testing::{
     self, DISABLED, FOCUSED, Fixture, Goldens, INACTIVE, NORMAL, PRESSED, State,
@@ -26,6 +26,19 @@ fn goldens() -> Goldens {
         env!("CARGO_TARGET_TMPDIR"),
     )
 }
+
+/// Scrolled 60 px down with the pointer over the content: the thin knob shows.
+const SCROLLED_VIEW: State = ("scrolled", |f: &mut Fixture| f.scroll(0.0, -60.0));
+/// Scrolled right and down: both scrollers, with a gap where they would meet.
+const SCROLLED_BOTH: State = ("scrolled", |f: &mut Fixture| f.scroll(-60.0, -60.0));
+/// Far down a long list: the knob at its minimum length.
+const SCROLLED_FAR: State = ("scrolled", |f: &mut Fixture| f.scroll(0.0, -5000.0));
+/// The pointer on the vertical scroller after scrolling: knob widened on its track.
+const SCROLLER_HOVERED: State = ("scroller-hovered", |f: &mut Fixture| {
+    f.scroll(0.0, -60.0);
+    f.hover_at(0.95, 0.5);
+    f.advance(Duration::from_secs(1));
+});
 
 /// The default button at the brightest point of its pulse.
 const PULSE_PEAK: State = ("pulse", |f: &mut Fixture| {
@@ -192,4 +205,8 @@ control_goldens! {
     search_field: "search-field", FIELD_SIZE, &[NORMAL, FOCUSED, TYPED], specimens::search_field();
     search_field_filled: "search-field-filled", FIELD_SIZE, &[NORMAL, DISABLED], specimens::search_field_filled();
     secure_field: "secure-field", FIELD_SIZE, &[NORMAL, TYPED, SELECTED], specimens::secure_field();
+
+    scroll_view: "scroll-view", SCROLL_SIZE, &[NORMAL, SCROLLED_VIEW, SCROLLER_HOVERED, FOCUSED], specimens::scroll_view(12);
+    scroll_view_both: "scroll-view-both", SCROLL_SIZE, &[SCROLLED_BOTH], specimens::scroll_view_both();
+    virtual_list: "virtual-list", SCROLL_SIZE, &[NORMAL, SCROLLED_FAR], specimens::virtual_list(10_000);
 }

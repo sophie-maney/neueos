@@ -158,8 +158,20 @@ the paper and leather materials move to Phase 6/7 (Widgets, Write).
       run). IME: VM check `docs/checks/phase-2.md` §6 (input-method probe); macOS IME
       step for the owner in the same section. Not yet: undo, primary selection (2.28),
       context menu (2.17).
-- [ ] **2.15 Scroll view** · Opus. Overlay scrollbars and virtual scrolling (the base for
+- [x] **2.15 Scroll view** · Opus. Overlay scrollbars and virtual scrolling (the base for
       tables and collection views).
+      *Done:* ADR 0043. `neue_kit::ScrollView` (`ScrollAxes::{Vertical, Horizontal,
+      Both}`, `.width`/`.height`, `Handle::{scroll_to, offset}`): compose-time
+      translation in a clip; wheel, keys (a Tab stop with a focus ring), AccessKit scroll
+      actions, scroll-into-view. Overlay scrollers show on scroll or pointer entry, fade
+      after `SCROLLER_HIDE_DELAY` (no fade under reduced motion), widen on hover; drag
+      the knob or press the track to page. `neue_kit::VirtualList` (fixed row height)
+      builds only the rows near the view; row handlers reach the runner through the
+      internal `Rewired` action. Paint in `neue_paint::materials::scroller`; tokens
+      `SCROLLER_WIDTH`, `SCROLL_LINE`. `Fixture::{hover_at, scroll}`; gallery page
+      "Scrolling"; 28 goldens, passing on macOS and Linux aarch64 (x86_64 not run). Not
+      yet: rubber-band and momentum, "always show scroll bars", variable row heights,
+      grid virtualisation (2.20), a row count for AT (2.19).
 - [ ] **2.16 Text view** · Sonnet. Multi-line text in the scroll view.
 - [ ] **2.17 Menus** · Opus. Menu model, context menus, pop-up and pull-down buttons,
       combo box; keyboard navigation and type-select.

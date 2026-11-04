@@ -15,7 +15,7 @@ use neue_theme::Theme;
 use crate::element::{Element, Handle, Handler, Wiring};
 use crate::task::{Mailbox, Sender, Task};
 use crate::theme;
-use crate::widgets::{ButtonWidget, Pressed, RootAction, RootWidget};
+use crate::widgets::{ButtonWidget, Pressed, Rewired, RootAction, RootWidget, RowsWidget};
 
 /// An app: its state is the model, [`Application::Message`] is everything that can happen
 /// to it, and [`Application::update`] is the only place the state changes.
@@ -377,6 +377,9 @@ impl<A: Application> Runner<A> {
             Ok(root) => return self.root_action(host, window, *root),
             Err(action) => action,
         };
+        if action.is::<Rewired>() {
+            return self.rewire(host, window, widget);
+        }
         let Some(kit) = &mut self.kit else { return };
         let Some((_, handler)) = kit.handlers.get_mut(&widget) else {
             tracing::trace!(?action, "action without a handler");
@@ -418,6 +421,30 @@ impl<A: Application> Runner<A> {
                     });
                 }
             }
+        }
+    }
+
+    /// A virtual list built or dropped rows: registers the new rows' message handlers and
+    /// forgets the dropped rows' ones.
+    fn rewire(&mut self, host: &mut dyn Host, window: WindowId, rows: WidgetId) {
+        let Some(kit) = &mut self.kit else { return };
+        let Some(root) = host.render_root(window) else {
+            return;
+        };
+        if !root.has_widget(rows) {
+            return;
+        }
+        let (wirings, dropped) =
+            root.edit_widget(rows, |mut w| RowsWidget::take_wiring(&mut w.downcast()));
+        let mut cx = Cx { host, kit };
+        for wiring in wirings {
+            match wiring.downcast::<Wiring<A::Message>>() {
+                Ok(wiring) => cx.register_wiring(window, *wiring),
+                Err(_) => tracing::warn!("a list row's wiring has the wrong message type"),
+            }
+        }
+        if dropped {
+            cx.prune_handlers(window);
         }
     }
 

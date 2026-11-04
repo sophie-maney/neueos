@@ -1,8 +1,8 @@
 //! The widgets the goldens render, shared with the gallery's pages.
 
 use neue_kit::{
-    BevelButton, Button, CheckState, Checkbox, MaterialTile, ProgressBar, Radio, Segmented, Slider,
-    Specimen, Spinner, Stepper, TextField,
+    BevelButton, Button, CheckState, Checkbox, Label, MaterialTile, ProgressBar, Radio, ScrollAxes,
+    ScrollView, Segmented, Slider, Specimen, Spinner, Stack, Stepper, TextField, VirtualList,
 };
 
 /// Golden window size for one push button (logical pixels): the button with the fixture's
@@ -166,4 +166,44 @@ pub fn material_window_size(tile: MaterialTile) -> (u32, u32) {
     )]
     let size = ((width.ceil() as u32) + 16, (height.ceil() as u32) + 16);
     size
+}
+
+/// Golden window size for a scroll view or a virtual list: 160 × 100 with the fixture's
+/// margin, room for the focus ring.
+pub const SCROLL_SIZE: (u32, u32) = (176, 116);
+
+/// A scroll view over a column of `lines` numbered lines.
+pub fn scroll_view<M: 'static>(lines: usize) -> ScrollView<M> {
+    let mut column = Stack::column().padding(neue_kit::tokens::metrics::spacing::XS);
+    for i in 1..=lines {
+        column = column.with(Label::new(format!("Line {i} of the scroll view")));
+    }
+    ScrollView::new(column).width(160.0).height(100.0)
+}
+
+/// A scroll view over a grid wider and taller than itself, scrolling both ways.
+pub fn scroll_view_both<M: 'static>() -> ScrollView<M> {
+    let mut grid = Stack::column().padding(neue_kit::tokens::metrics::spacing::XS);
+    for row in 1..=12 {
+        let mut line = Stack::row().spacing(neue_kit::tokens::metrics::spacing::L);
+        for column in 1..=6 {
+            line = line.with(Label::new(format!("R{row}C{column}")));
+        }
+        grid = grid.with(line);
+    }
+    ScrollView::new(grid)
+        .axes(ScrollAxes::Both)
+        .width(160.0)
+        .height(100.0)
+}
+
+/// A virtual list of `count` numbered rows, 20 px high.
+pub fn virtual_list<M: 'static>(count: usize) -> VirtualList<M> {
+    VirtualList::new(count, 20.0, |i| {
+        Stack::row()
+            .padding(neue_kit::tokens::metrics::spacing::XXS)
+            .with(Label::new(format!("Row {}", i + 1)))
+    })
+    .width(160.0)
+    .height(100.0)
 }
