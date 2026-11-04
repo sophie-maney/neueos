@@ -63,7 +63,7 @@ CJK users need an input method. Smithay implements the protocols; the decisions 
   compositor-side input method; `input-method` keyboard grab is Smithay's and key
   bindings still run before it.
 - Touchpad acceleration, scroll method, tablets and touch screens (later settings tasks).
-- Real hardware: gestures and touchpad config were not tried (`docs/dev-setup.md` §12).
+- Real hardware: gestures and touchpad config were not tried (`docs/checks/phase-1.md` §12).
 
 ## Alternatives considered
 - **Deferring the constraint refresh to an idle callback** (to avoid the lock problem):

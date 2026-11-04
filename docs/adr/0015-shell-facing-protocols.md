@@ -62,7 +62,7 @@ decisions are the policy around them.
 - Several outputs: the exclusive layer surface is global, not per output.
 - Lock surfaces are not re-sent a configure when an output changes mode.
 - Popups of a layer surface are tracked and drawn but not unconstrained.
-- Real-session checks (swaylock, a panel, a launcher) are the owner's: `docs/dev-setup.md` §11.
+- Real-session checks (swaylock, a panel, a launcher) are the owner's: `docs/checks/phase-1.md` §11.
 
 ## Alternatives considered
 - **Wait for a rendered frame before `locked`:** stricter, but needs a hook in both
