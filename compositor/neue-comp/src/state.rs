@@ -144,6 +144,8 @@ pub struct State {
     next_window_id: u64,
     /// The `neuectl` socket and its connections.
     pub ipc: IpcServer,
+    /// The reserved X display and the on-demand `xwayland-satellite` (see `xwayland.rs`).
+    pub(crate) xwayland: Option<crate::xwayland::Xwayland>,
     /// `compositor.toml`: the active config, key bindings and reload machinery.
     pub config: ConfigRuntime,
 
@@ -367,6 +369,7 @@ impl State {
             popups: PopupManager::default(),
             next_window_id: 1,
             ipc: IpcServer::new(event_loop.handle()),
+            xwayland: None,
             config: ConfigRuntime::new(event_loop.handle()),
             compositor_state,
             xdg_shell_state,

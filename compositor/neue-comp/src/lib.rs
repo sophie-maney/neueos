@@ -21,6 +21,7 @@
 //!   `redraw`: when it draws an output (only after a change, ADR 0019).
 //! - `cursor`: the built-in pointer image.
 //! - `winit`: the nested development backend (cargo feature `winit`).
+//! - `xwayland`: X11 apps through `xwayland-satellite`, started on demand (ADR 0026).
 //!
 //! The skeleton follows Smithay's `smallvil` and `anvil` examples (MIT); see the comments in
 //! each module for what was taken from where.
@@ -60,6 +61,7 @@ mod vrr;
 #[cfg(feature = "winit")]
 mod winit;
 pub mod wm;
+mod xwayland;
 
 use std::fmt;
 use std::process::Command;
@@ -77,6 +79,7 @@ pub use headless::{
 pub use ipc::IpcSocket;
 pub use neue_ipc::WindowInfo;
 pub use state::State;
+pub use xwayland::XwaylandOptions;
 
 /// Crate name, used by smoke tests and diagnostics.
 pub const NAME: &str = "neue-comp";
@@ -111,6 +114,9 @@ pub struct Options {
     /// [`State::headless_render`] can read outputs back (ADR 0021). Start-up fails if Mesa
     /// is missing. Ignored by the other backends.
     pub headless_renderer: bool,
+    /// Run X11 apps through `xwayland-satellite`, started on the first X connection
+    /// (ADR 0026). `None`: no X11 support. Ignored when [`Options::listen`] is off.
+    pub xwayland: Option<XwaylandOptions>,
 }
 
 impl Options {
@@ -123,6 +129,7 @@ impl Options {
             ipc_socket: IpcSocket::Auto,
             config: Layers::standard(),
             headless_renderer: false,
+            xwayland: Some(XwaylandOptions::default()),
         }
     }
 }
@@ -213,6 +220,9 @@ impl Compositor {
             state.ipc.listen(&path)?;
         }
         state.init_config(options.config.clone());
+        if let Some(xwayland) = &options.xwayland {
+            state.init_xwayland(xwayland);
+        }
 
         // Wake the loop when clients send requests. They are dispatched in the loop callback
         // of `run`, which owns the `Display`; this keeps the display out of `State` and
@@ -321,9 +331,12 @@ pub fn spawn(command: &str, state: &State) {
     process
         .arg("-c")
         .arg(command)
-        .env("WAYLAND_DISPLAY", socket_name)
-        // Never let children fall back to an X server.
-        .env_remove("DISPLAY");
+        .env("WAYLAND_DISPLAY", socket_name);
+    // Children reach X11 only through our on-demand satellite, never a foreign X server.
+    match state.xwayland_display() {
+        Some(display) => process.env("DISPLAY", display),
+        None => process.env_remove("DISPLAY"),
+    };
     match state.ipc.path() {
         Some(path) => process.env(neue_ipc::SOCKET_ENV, path),
         None => process.env_remove(neue_ipc::SOCKET_ENV),

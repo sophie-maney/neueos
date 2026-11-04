@@ -666,3 +666,41 @@ with `menu` when an app announces its address (run step 2 again to see it).
 
 Record which of these you ran in the PR. Not checkable here: Firefox, Electron and
 libadwaita apps send nothing and get the fallback menu (Phase 3).
+
+## 19. Checking xwayland-satellite on demand in the VM (task 1.18)
+Runs from the Mac over ssh, as §17. Rebuild and restart the compositor first (the rsync and
+`cargo build` lines in §17 step 2). Needs satellite 0.7 or newer (the second command must print `exit=0`; satellite has no
+`--help`) and an X11 app:
+```sh
+ssh -t neueos-vm 'sudo pacman -S --needed xwayland-satellite xorg-xeyes xterm'
+ssh neueos-vm 'pacman -Q xwayland-satellite; xwayland-satellite :9 --test-listenfd-support; echo exit=$?'
+```
+Start the compositor with the log on: `RUST_LOG=info neue-comp --tty -c foot 2>/tmp/comp.log`
+(from the VM console, as §4). Its log should say `X11 apps start xwayland-satellite on
+demand` with a display, normally `:0`.
+
+**1. Nothing runs before the first X client.**
+```sh
+ssh neueos-vm 'pgrep -a -f "xwayland|Xwayland" || echo none; ls -la /tmp/.X11-unix /tmp/.X0-lock'
+```
+Expected: `none`, the socket `X0` and the lock file `.X0-lock`.
+
+**2. An X11 app appears.** `DISPLAY` reaches the compositor's `--command` children; from
+ssh, set it by hand:
+```sh
+ssh neueos-vm '. ~/neueos/docs/vm-env.sh; DISPLAY=:0 setsid xeyes >/dev/null 2>&1 & sleep 3; neuectl windows; pgrep -a -f "xwayland-satellite|Xwayland"'
+```
+Expected: `xeyes` is a window on the VM screen (the eyes follow the pointer), is listed by
+`neuectl windows`, and `xwayland-satellite` and `Xwayland` now run. `/tmp/comp.log` has
+`started xwayland-satellite`.
+
+**3. More apps, and a restart.** Run `DISPLAY=:0 xterm` too: no second satellite starts.
+Then `pkill xwayland-satellite` and run `xeyes` again: it appears again, after at most
+a second (the log says `xwayland-satellite exited`, then `started` again).
+
+**4. Clean exit.** Quit the compositor (Super+Q): `ls /tmp/.X0-lock /tmp/.X11-unix/X0`
+reports no such files and no satellite is left.
+
+Record which of these you ran in the PR. Not covered: the shell and launcher getting
+`DISPLAY` (the session exports it, task 1.19), global menus for X11 apps, scaling of X11
+windows on HiDPI outputs.
