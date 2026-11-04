@@ -759,6 +759,9 @@ Build on the Mac (the OrbStack machines need `base-devel`, `git` and `rustup` fr
 cargo xtask package neue-comp --arch all   # aarch64 first, then x86_64 (Rosetta, slow)
 ls target/package/aarch64 target/package/x86_64
 ```
+The x86_64 build may print `libfakeroot internal error: payload not recognized!` (fakeroot
+under Rosetta). It is harmless if `bsdtar -tvf <pkg> | awk '{print $3, $4}' | sort -u` shows
+only `root root`.
 Install in the VM (aarch64). If §20 was done by hand, remove the hand-installed files first, or
 pass `--overwrite '*'` to pacman:
 ```sh
