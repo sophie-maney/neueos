@@ -685,3 +685,20 @@ else changes. Set the scale to 2x: all of it stays sharp, with no blur at the ed
 on (Cmd-F5), move over the glyphs: each is read as an image with its name ("Folder", ...);
 the vector icons are read as "Done".
 
+## 15. Checking the virtual grid (task 2.20b)
+Not run yet. Runs in the VM, set up as in `docs/dev-setup.md` §1.3; the helpers are those
+of §8. The page is "Scrolling" (the gallery's page for scroll views).
+
+**1. Build and open the page:** as §8 step 1 with the "Scrolling" page's number in
+`NEUE_GALLERY_PAGE`, screenshot `/tmp/g1.png`. Expected: no `WARN` or `ERROR`; a fourth
+section "Virtual grid (1,000,000 items)" with 4 columns of numbers (1 to 4 in the top
+row), 160 px wide.
+
+**2. Scroll far:** wheel over the grid, screenshot `/tmp/g2.png`. Expected: the numbers
+climb in steps of 4 per row; the grid stays responsive; the scroller's knob is at its
+minimum length.
+
+**3. Resize (owner, macOS or VM):** make the gallery window narrower and wider; the grid
+is a fixed 160 px, so check the column count only if a later task makes it fill its width
+(2.20c's collection view does).
+

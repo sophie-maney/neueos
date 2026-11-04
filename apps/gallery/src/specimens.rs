@@ -6,7 +6,7 @@ use neue_kit::{
     Icon, IconImage, IconPaint, Label, MaterialTile, Menu, MenuItem, Outline, PopUpButton,
     ProgressBar, PullDownButton, Radio, ScrollAxes, ScrollView, Segmented, Shortcut, Slider,
     SortOrder, SourceList, Specimen, Spinner, Stack, Stepper, Table, TextField, TextView,
-    VectorIcon, VirtualList,
+    VectorIcon, VirtualGrid, VirtualList,
 };
 
 /// Golden window size for one push button (logical pixels): the button with the fixture's
@@ -232,6 +232,17 @@ pub fn virtual_list<M: 'static>(count: usize) -> VirtualList<M> {
         Stack::row()
             .padding(neue_kit::tokens::metrics::spacing::XXS)
             .with(Label::new(format!("Row {}", i + 1)))
+    })
+    .width(160.0)
+    .height(100.0)
+}
+
+/// A virtual grid of `count` numbered items in 40 × 24 cells: the columns follow the width.
+pub fn virtual_grid<M: 'static>(count: usize) -> VirtualGrid<M> {
+    VirtualGrid::new(count, 40.0, 24.0, |i| {
+        Stack::row()
+            .padding(neue_kit::tokens::metrics::spacing::XXS)
+            .with(Label::new((i + 1).to_string()))
     })
     .width(160.0)
     .height(100.0)

@@ -346,11 +346,23 @@ the paper and leather materials move to Phase 6/7 (Widgets, Write).
         goldens unchanged; 5 paint and 3 end-to-end tests. Steps for the VM and macOS in
         `docs/checks/phase-2.md` §14, not run. Not yet: icon themes and lookup by name,
         raster images, strokes and gradients in vector icons.
-  - [ ] **2.20b Grid virtualisation** · Sonnet. `VirtualGrid`: fixed item size, columns from
+  - [x] **2.20b Grid virtualisation** · Sonnet. `VirtualGrid`: fixed item size, columns from
         the width, only the items near the view are built, scroll to an item, rewiring as in
         ADR 0043.
         *Accept:* tests for the column count on resize and for which items exist; a gallery
         entry; an addendum to ADR 0043.
+        *Done:* addendum to ADR 0043. `neue_kit::VirtualGrid::new(count, cell_width,
+        cell_height, |i| item)` (`width`, `height`, `bind`; `Handle::{set_count, reload,
+        scroll_to_item}`) is `RowsWidget` with a cell width: columns are `floor(width /
+        cell_width)` (at least one), set from the scroll view's window; whole rows of items
+        near the view exist; items are centred in cells of `width / columns`. A list is the
+        one-column case, so its behaviour and the table's are unchanged. 3 unit tests (column
+        count, wanted range, row spans) and 6 end-to-end tests (columns and built items,
+        item positions, resize, scrolling, set-count/reload/scroll-to-item, handlers of
+        dropped items). Gallery "Scrolling" page: "Virtual grid (1,000,000 items)". No
+        goldens (2.20c adds them). Steps for the VM in `docs/checks/phase-2.md` §15, not
+        run. Not yet: AccessKit grid roles, gaps between cells, variable cell sizes,
+        horizontal scrolling.
   - [ ] **2.20c Collection view** · Sonnet (on 2.20a and 2.20b). `Collection<M, Id>` on the
         grid: items as an icon over a label, an icon-size option, single or multiple
         selection (click, Shift-click, Cmd/Ctrl-click), key and non-key colours, 2D arrow

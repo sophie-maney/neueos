@@ -19,6 +19,7 @@ use neue_theme::Theme;
 mod controls;
 mod editmenu;
 mod fields;
+mod grid;
 mod icons;
 #[cfg(target_os = "linux")]
 mod menubar;

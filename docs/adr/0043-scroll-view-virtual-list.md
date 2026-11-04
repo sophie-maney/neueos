@@ -86,3 +86,24 @@ runner.
   would send presses on a scroller to the content underneath.
 - **Depending on the `masonry` crate's `Portal`**: its scrollbars aren't overlay
   scrollers, its theme isn't ours, and app crates must not see Masonry types (ADR 0035).
+
+## Addendum (2026-11-04, task 2.20b): the virtual grid
+- **`VirtualGrid::new(count, cell_width, cell_height, |i| item)`** is the list with
+  several items to a row. It is the same `RowsWidget` with a cell width, so building,
+  dropping, `Rewired` and the handler pruning of §6 and §7 are unchanged. A list is a grid
+  with one column and cells as wide as the view.
+- **Columns come from the width:** `floor(width / cell_width)`, at least one. The scroll
+  view's window carries the viewport width, so `RowsWidget::set_window` sets the column
+  count, and a change requests layout. The vertical measure uses the width it's given, so
+  the content height is right in the first pass. The slack of a row is spread evenly: each
+  item is centred in a cell of `width / columns`, so items carry their own spacing.
+- **Which items exist:** whole rows. The rows near the window (half a window either side)
+  give the item range `first_row * columns .. min(last_row * columns, count)`; the same
+  range arithmetic as the list's.
+- **`Handle<VirtualGrid>::{set_count, reload, scroll_to_item}`** match the list's; scroll
+  to an item reveals its row.
+- **Consequences:** a resize that changes the column count moves items between rows, so
+  items keep no state across it beyond what the app holds (as with scrolling). Item sizes
+  are uniform; AccessKit still sees a plain `List` of the built items (`Grid` and
+  `GridCell` with counts arrive with the collection view, 2.20c). The column count is
+  `pub(crate)` for now; the collection view reads it for 2D arrow keys.
