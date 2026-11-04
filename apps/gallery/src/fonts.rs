@@ -1,6 +1,7 @@
 //! The UI font candidates from PLAN §4 (task 2.10, open question 2), bundled for the
 //! gallery's Fonts page only. All are Regular weight under the SIL Open Font Licence 1.1
-//! (licence texts next to the files in `fonts/`). Fira Sans, the current placeholder, is
+//! (licence texts next to the files in `fonts/`), except DejaVu Sans, which is under the
+//! Bitstream Vera licence plus public-domain changes (`fonts/LICENSE-DejaVuSans.txt`). Fira Sans, the current placeholder, is
 //! already the UI font, so it isn't repeated here.
 
 /// A candidate: its family name and its font file.
@@ -27,6 +28,10 @@ pub const CANDIDATES: &[Candidate] = &[
     Candidate {
         family: "Noto Sans",
         data: Some(include_bytes!("../fonts/NotoSans-Regular.ttf")),
+    },
+    Candidate {
+        family: "DejaVu Sans",
+        data: Some(include_bytes!("../fonts/DejaVuSans.ttf")),
     },
 ];
 
