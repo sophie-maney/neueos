@@ -6,7 +6,6 @@ fn main() -> anyhow::Result<()> {
         .init();
     let settings = neue_kit::Settings {
         app_id: "org.neueos.Gallery".into(),
-        extra_fonts: neue_gallery::fonts::extra_fonts(),
         ..neue_kit::Settings::default()
     };
     // `NEUE_GALLERY_PAGE=<n>` opens page n (0-based), for screenshots.

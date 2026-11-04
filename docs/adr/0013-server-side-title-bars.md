@@ -47,7 +47,7 @@ server-side decorations, with `neue-paint` on `vello_cpu`, cached and cheap on r
    `crates/neue-paint/fonts/` under the SIL Open Font Licence 1.1 (`OFL.txt` next to
    it). The OFL allows bundling and embedding fonts with any software; the font stays
    under the OFL inside our GPL-3.0-or-later binaries (aggregation, as other GPL desktops
-   ship OFL fonts). The final UI font is still open question 2.
+   ship OFL fonts). The final UI font is still open question 2 (answered in ADR 0038: DejaVu Sans replaced Fira Sans).
 7. **Appearance** is light for every bar until an appearance setting exists (Phase 3);
    `Chrome::appearance` is the switch. Focus follows the toplevel's `activated` state.
 

@@ -5,7 +5,6 @@
 //! the gallery shows and what the goldens pin down are the same thing. Every widget task
 //! adds a page here and its specimens' goldens (ADR 0037).
 
-pub mod fonts;
 pub mod pages;
 pub mod specimens;
 
@@ -163,7 +162,7 @@ impl Application for Gallery {
             )
             .with(Zoom::new(ZOOMS[self.zoom], content).bind(&mut self.zoomed));
         let root = Stack::row().with(sidebar).with(main);
-        cx.open_window(Window::new("Widget Gallery", (860, 680), root));
+        cx.open_window(Window::new("Widget Gallery", (860, 480), root));
     }
 
     fn update(&mut self, cx: &mut Cx<'_, Message>, message: Message) {

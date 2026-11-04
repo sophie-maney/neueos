@@ -51,14 +51,6 @@ impl Label {
         self
     }
 
-    /// Draws this label in another family: one registered through
-    /// `Settings::extra_fonts`, or the UI font's family. For comparing typefaces.
-    #[must_use]
-    pub fn family(mut self, family: &'static str) -> Self {
-        self.inner.widget.set_family(family);
-        self
-    }
-
     /// Secondary text colour (captions, status lines).
     #[must_use]
     pub fn secondary(mut self) -> Self {

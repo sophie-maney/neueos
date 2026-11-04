@@ -277,9 +277,9 @@ crashes, the compositor restarts it.
   - Backdrop blur.
   - Spring-based motion tuned to Mountain Lion timings.
   - Reduced-motion and increased-contrast modes.
-- **Typography:** choose an open humanist sans in the spirit of Lucida Grande (candidates:
-  Fira Sans, Source Sans 3, IBM Plex Sans, Noto Sans). Monospace for Terminal: candidates
-  are JetBrains Mono and Fira Code. See Q2.
+- **Typography:** DejaVu Sans, a humanist sans in the spirit of Lucida Grande (chosen over
+  Fira Sans, Source Sans 3, IBM Plex Sans and Noto Sans; ADR 0038). Monospace for
+  Terminal: candidates are JetBrains Mono and Fira Code. See Q2.
 - **Icons:** original, Mountain Lion-style detailed perspective icons in SVG, packaged as a
   freedesktop icon theme. Until coverage is complete, fall back to an existing theme
   (Papirus).
@@ -510,8 +510,8 @@ plugin API, AirDrop-like local sharing, Handoff-like phone integration, and a sc
 1. **⌘ semantics:** should Super act as ⌘ globally, with the compositor remapping Super+C
    to Ctrl+C for third-party apps (except in terminals)? Recommendation: yes, with a
    per-app exceptions list.
-2. **UI font:** choose from the candidates in §4 after a side-by-side rendering in the
-   gallery.
+2. **UI font:** *decided: DejaVu Sans* (ADR 0038). The monospace face for Terminal is
+   still open (JetBrains Mono or Fira Code).
 3. **Final product names** (§2) and the neueOS logo and boot splash.
 4. **Repo hosting:** GitHub Releases or a separate static host or domain.
 5. **Network shares in Files:** GVfs over D-Bus (pragmatic) or a pure-Rust route.
