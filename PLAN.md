@@ -639,8 +639,9 @@ Decisions to follow: ADR 0001 (Smithay), 0003 (IPC), 0004 (config), 0005 (global
       implicit fences; syncobj global only on tty with `syncobj_eventfd`), `security.rs`
       (sandboxed clients lose session lock, layer shell, data control, input method,
       foreign toplevel list and the security-context manager). 9 headless tests in
-      `tests/presentation.rs`. **Owner still to do:** VM check (`docs/dev-setup.md` §13) and
-      explicit sync on the NVIDIA PC. Not done: tearing, explicit sync untested on hardware,
+      `tests/presentation.rs`. Owner checked it by hand in the VM (`docs/dev-setup.md` §13,
+      steps 1–3) and found it fine. **Still to do:** explicit sync on the NVIDIA PC (§13
+      step 4). Not done: tearing, explicit sync untested on hardware,
       per-app sandbox policy.
 - [ ] **1.15 Direct scanout and VRR** · Opus. Direct scanout for full-screen surfaces,
       adaptive sync per output (config), damage review.
