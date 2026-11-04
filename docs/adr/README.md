@@ -30,3 +30,4 @@ Don't edit an accepted ADR's decision; supersede it with a new one.
 | [0018](0018-full-screen-windows.md) | Full-screen windows (stopgap until full-screen Spaces) | Accepted |
 | [0019](0019-draw-only-when-needed.md) | Draw only when needed: per-output redraw state, estimated vblank | Accepted |
 | [0020](0020-direct-scanout-and-vrr.md) | Direct scanout (primary plane) and adaptive sync per output | Accepted |
+| [0021](0021-headless-gles-renderer.md) | Headless GLES renderer on Mesa's software EGL device | Accepted |

@@ -689,10 +689,33 @@ Decisions to follow: ADR 0001 (Smithay), 0003 (IPC), 0004 (config), 0005 (global
         shows `vrr …`. Config parse tests, a headless reload test, neuectl format test.
         Hardware check (`docs/dev-setup.md` §16) still to do by the owner. Not done:
         overlay planes, rotated outputs, tearing, several GPUs.
-- [ ] **1.16 Screencopy** · Sonnet (Opus for the renderer part). ext-image-copy-capture
-      (output and toplevel sources), `neuectl screenshot`. First gives the headless backend
-      an optional GLES renderer on EGL surfaceless/device (ADR 0006); CI then needs Mesa.
-      *Accept:* `neuectl screenshot` PNG matches a headless golden; `grim` works in the VM.
+- [ ] **1.16 Screencopy** · Split into four PRs (a to d, in order). ext-image-copy-capture
+      (output and toplevel sources), `neuectl screenshot`.
+      *Accept (whole task):* `neuectl screenshot` PNG matches a headless golden; `grim`
+      works in the VM.
+  - [x] **1.16a Headless GLES renderer** · Opus. Optional GLES renderer for the headless
+        backend on EGL surfaceless/device (ADR 0006); CI installs Mesa (software GL). Renders
+        a headless output to an offscreen buffer.
+        *Accept:* a test with a scripted client's shm window reads back the expected pixels;
+        passes `cargo xtask check` on both Linux CI jobs.
+        *Done:* `Options::headless_renderer` gives the headless backend a GLES renderer on
+        Mesa's software EGL device only (no surfaceless fallback, no GPU), so pixels match
+        everywhere (ADR 0021). `State::headless_render` draws an output on demand into a
+        per-output renderbuffer with damage tracking and returns ARGB8888 pixels plus
+        damage; no pointer or drag icon yet. `tests/render.rs`.
+  - [ ] **1.16b ext-image-copy-capture, output sources** · Sonnet (Opus if the renderer
+        interface needs changes). `ext-image-capture-source` (output) and
+        `ext-image-copy-capture`: shm and dmabuf buffers, damage tracking. Check that the
+        pinned Smithay rev has the helpers before relying on them; ADR for the decision.
+        *Accept:* a scripted client captures an output and the pixels match a golden.
+  - [ ] **1.16c Toplevel sources** · Sonnet. `ext-foreign-toplevel-list` and the toplevel
+        capture source (offscreen render of one window).
+        *Accept:* a scripted client captures one window and the pixels match a golden.
+  - [ ] **1.16d `neuectl screenshot` + VM check** · Sonnet. IPC request that captures an
+        output and encodes a PNG (ADR 0003 amendment); `grim` steps in
+        `docs/dev-setup.md`, run by the owner.
+        *Accept:* PNG from `neuectl screenshot <path>` matches a headless golden; `grim`
+        works in the VM (owner).
 - [ ] **1.17 Global-menu protocol side** · Sonnet. `org_kde_kwin_appmenu` v2 and `gtk_shell1`
       v5 per ADR 0005 (`gtk_shell1` XML in a new `neue-protocols` crate); menu addresses in
       `neuectl windows`.

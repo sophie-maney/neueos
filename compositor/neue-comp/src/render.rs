@@ -1,4 +1,4 @@
-//! What goes on an output, shared by the winit and tty backends.
+//! What goes on an output, shared by the winit, tty and headless backends.
 //!
 //! Like Smithay's `space_render_elements`, but each window is followed by its server-side
 //! title bar, so a bar stacks with its window instead of floating above every window.
@@ -25,6 +25,9 @@ use smithay::wayland::shell::wlr_layer::Layer;
 
 use crate::decorations::{self, Chrome, frame_geometry};
 use crate::fullscreen::fullscreen_window_on;
+
+/// Background behind all windows until the desktop picture lands (Phase 3).
+pub const CLEAR_COLOR: [f32; 4] = [0.18, 0.2, 0.24, 1.0];
 
 /// What a full-screen window smaller than its output is shown on (xdg-shell asks for a
 /// border fill; black, as everyone does).

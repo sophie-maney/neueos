@@ -50,7 +50,8 @@ here. `neue-comp` links `libxkbcommon`, and with the `tty` feature (task 1.4) `l
 (package `mesa`). EGL, GLES and libwayland are dlopened,
 but the headless tests (task 1.2) need `libwayland-client` at runtime: the dev-only `winit`
 feature switches `wayland-client` to the system library for the whole build, so the
-scripted test clients load it too.
+scripted test clients load it too. The render tests (task 1.16a, ADR 0021) dlopen Mesa's
+EGL and draw on its software device (llvmpipe), also from `mesa`.
 ```sh
 orb run -m neueos-arm64 sudo pacman -S --noconfirm --needed libxkbcommon wayland libinput seatd mesa
 orb run -m neueos-amd64 sudo pacman -S --noconfirm --needed libxkbcommon wayland libinput seatd mesa

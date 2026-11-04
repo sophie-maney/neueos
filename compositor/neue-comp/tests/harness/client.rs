@@ -347,14 +347,38 @@ impl TestClient {
         toplevel.size = (w, h);
     }
 
+    /// Attach a new ARGB8888 shm buffer of the toplevel's size filled with `argb`
+    /// (`0xAARRGGBB`), damage it all and commit.
+    pub fn fill(&mut self, toplevel: &mut Toplevel, argb: u32) {
+        let (w, h) = toplevel.size;
+        let buffer = self.shm_buffer_filled((w, h), argb);
+        toplevel.surface.attach(Some(&buffer), 0, 0);
+        toplevel.surface.damage_buffer(0, 0, w, h);
+        toplevel.surface.commit();
+        if let Some(old) = toplevel.buffer.replace(buffer) {
+            old.destroy();
+        }
+        self.roundtrip();
+    }
+
     /// A transparent ARGB8888 shm buffer of `size`.
-    fn shm_buffer(&mut self, (w, h): (i32, i32)) -> WlBuffer {
+    fn shm_buffer(&mut self, size: (i32, i32)) -> WlBuffer {
+        self.shm_buffer_filled(size, 0)
+    }
+
+    /// An ARGB8888 shm buffer of `size` with every pixel `argb` (`0xAARRGGBB`).
+    fn shm_buffer_filled(&mut self, (w, h): (i32, i32), argb: u32) -> WlBuffer {
         let stride = w * 4;
         let len = stride * h;
         let fd = rustix::fs::memfd_create("neue-comp-test", rustix::fs::MemfdFlags::CLOEXEC)
             .expect("memfd_create");
-        let file = std::fs::File::from(fd);
+        let mut file = std::fs::File::from(fd);
         file.set_len(len as u64).expect("sizing the shm file");
+        if argb != 0 {
+            // wl_shm formats are little-endian.
+            let pixels = argb.to_le_bytes().repeat((w * h) as usize);
+            std::io::Write::write_all(&mut file, &pixels).expect("filling the shm file");
+        }
         let pool = self.shm.create_pool(file.as_fd(), len, &self.qh, ());
         let buffer = pool.create_buffer(0, w, h, stride, wl_shm::Format::Argb8888, &self.qh, ());
         pool.destroy();

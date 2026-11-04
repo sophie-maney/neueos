@@ -15,7 +15,7 @@ use smithay::backend::renderer::element::surface::{
 };
 use smithay::backend::renderer::gles::GlesRenderer;
 
-use crate::render::OutputElement;
+use crate::render::{CLEAR_COLOR, OutputElement};
 use smithay::backend::winit::{self, WinitEvent, WinitEventLoop, WinitGraphicsBackend};
 use smithay::input::pointer::{CursorIcon, CursorImageStatus};
 use smithay::output::{Mode, Output, PhysicalProperties, Subpixel};
@@ -31,8 +31,6 @@ use crate::state::{Backend, State};
 
 /// Refresh rate reported for the nested output, in mHz. The host paces our frames.
 const REFRESH_MHZ: i32 = 60_000;
-/// Background behind all windows until the desktop picture lands (Phase 3).
-const CLEAR_COLOR: [f32; 4] = [0.18, 0.2, 0.24, 1.0];
 
 /// State owned by the winit backend.
 pub struct WinitData {

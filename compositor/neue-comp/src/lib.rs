@@ -16,7 +16,7 @@
 //! - `render`: the render elements of an output (windows, title bars, layers).
 //! - [`outputs`]: output layout, hotplug, per-output scale and frame callbacks.
 //! - `ipc`: the `neuectl` socket (ADR 0003, ADR 0007).
-//! - `headless`: a virtual output without rendering or input; used by tests.
+//! - `headless`: virtual outputs without input, optionally rendered offscreen; used by tests.
 //! - `tty`: DRM/KMS, libinput and libseat on real hardware and the VM (cargo feature `tty`);
 //!   `redraw`: when it draws an output (only after a change, ADR 0019).
 //! - `cursor`: the built-in pointer image.
@@ -45,7 +45,6 @@ pub mod placement;
 mod presentation;
 #[cfg(feature = "tty")]
 mod redraw;
-#[cfg(any(feature = "winit", feature = "tty"))]
 mod render;
 #[cfg(feature = "tty")]
 mod scanout;
@@ -70,7 +69,9 @@ use smithay::reexports::wayland_server::Display;
 use smithay::wayland::dmabuf::DmabufState;
 use tracing::{info, warn};
 
-pub use headless::{OUTPUT_NAME as HEADLESS_OUTPUT_NAME, OUTPUT_SIZE as HEADLESS_OUTPUT_SIZE};
+pub use headless::{
+    OUTPUT_NAME as HEADLESS_OUTPUT_NAME, OUTPUT_SIZE as HEADLESS_OUTPUT_SIZE, OutputPixels,
+};
 pub use ipc::IpcSocket;
 pub use neue_ipc::WindowInfo;
 pub use state::State;
@@ -83,7 +84,8 @@ pub const NAME: &str = "neue-comp";
 pub enum BackendKind {
     /// Nested in a window of another Wayland compositor (development).
     Winit,
-    /// A virtual output, no rendering and no input devices (tests).
+    /// Virtual outputs and no input devices (tests). Renders only on request
+    /// ([`Options::headless_renderer`]).
     Headless,
     /// DRM/KMS and libinput on a seat: real hardware, or the VM console.
     Tty,
@@ -103,6 +105,10 @@ pub struct Options {
     pub ipc_socket: IpcSocket,
     /// Where `compositor.toml` is read from and watched. [`Layers::none`] means defaults only.
     pub config: Layers,
+    /// Give the headless backend a GLES renderer on Mesa's software EGL device, so
+    /// [`State::headless_render`] can read outputs back (ADR 0021). Start-up fails if Mesa
+    /// is missing. Ignored by the other backends.
+    pub headless_renderer: bool,
 }
 
 impl Options {
@@ -114,6 +120,7 @@ impl Options {
             listen: true,
             ipc_socket: IpcSocket::Auto,
             config: Layers::standard(),
+            headless_renderer: false,
         }
     }
 }
@@ -195,7 +202,7 @@ impl Compositor {
             BackendKind::Tty => return Err(Error::BackendUnavailable(BackendKind::Tty)),
             BackendKind::Headless => {
                 headless::start_frame_timer(&event_loop.handle())?;
-                headless::init()
+                headless::init(options.headless_renderer)?
             }
         };
 

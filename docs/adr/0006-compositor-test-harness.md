@@ -1,6 +1,6 @@
 # 0006: Compositor test harness
 
-- **Status:** Accepted
+- **Status:** Accepted; point 5 amended by ADR 0021 (optional headless renderer)
 - **Date:** 2026-11-03
 
 ## Context

@@ -59,6 +59,16 @@ impl Server {
     /// Start a headless compositor whose `compositor.toml` holds `config` (none: no file).
     /// The file lives in a temporary user config directory, never the real one.
     pub fn start_with_config(config: Option<&str>) -> Self {
+        Self::start_with(config, false)
+    }
+
+    /// Start a headless compositor with its GLES renderer, for tests that read pixels back
+    /// (`State::headless_render`). Needs Mesa's software EGL device.
+    pub fn start_rendering() -> Self {
+        Self::start_with(None, true)
+    }
+
+    fn start_with(config: Option<&str>, headless_renderer: bool) -> Self {
         init_tracing();
         let socket_dir = tempfile::tempdir().expect("creating a temporary directory");
         let socket = socket_dir.path().join("comp.sock");
@@ -77,6 +87,7 @@ impl Server {
                     listen: false,
                     ipc_socket,
                     config: layers,
+                    headless_renderer,
                     ..Options::new(BackendKind::Headless)
                 };
                 let compositor = Compositor::new(&options)?;
