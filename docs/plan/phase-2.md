@@ -270,7 +270,7 @@ the paper and leather materials move to Phase 6/7 (Widgets, Write).
       Paint `neue_paint::materials::{table_header, table_border, column_edges,
       sort_arrow_rect}`; tokens `neue_theme::materials::table`. Gallery page "Tables"
       (page 8); 20 goldens, passing on macOS and Linux aarch64 (x86_64 not run); 10
-      end-to-end tests. VM and macOS steps in `docs/checks/phase-2.md` §11, not run. Not
+      end-to-end tests. VM and macOS steps in `docs/checks/phase-2.md` §11, passed. Not
       yet: variable row heights, editable cells, column reordering, row drag and drop,
       autoscroll while drag-selecting, ellipsis truncation, white element cells on a
       selection.

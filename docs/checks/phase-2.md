@@ -578,7 +578,9 @@ toggles; `d2.png` shows the gallery in the dark appearance; the last call starts
 `(uint32 2,` and Dark Appearance has `'toggle-state': <1>`.
 
 ## 11. Checking the table (task 2.19a)
-Not run yet (the agent had no VM). Steps 1–3 run in the VM, set up as in
+Run by the owner on 2026-11-04: steps 1–4 pass (VM and macOS). `t1.png` showed both tables
+as expected; the page's blurb runs past the window's right edge (cosmetic). Steps 1–3 run
+in the VM, set up as in
 `docs/dev-setup.md` §1.3; step 4 is on the Mac. The gallery's "Tables" page is page 8.
 The helpers are those of §8.
 
