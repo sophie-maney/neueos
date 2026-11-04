@@ -69,12 +69,11 @@ use tracing::{debug, error, info, trace, warn};
 use crate::Error;
 use crate::cursor;
 use crate::redraw::Redraw;
+use crate::render::CLEAR_COLOR;
 use crate::scanout::{self, FRAME_FLAGS, OutputFeedback};
 use crate::state::{Backend, State};
 use crate::vrr;
 
-/// Background behind all windows until the desktop picture lands (Phase 3). Same as winit.
-const CLEAR_COLOR: [f32; 4] = [0.18, 0.2, 0.24, 1.0];
 /// Primary plane formats, tried in order. 8-bit only until colour management (PLAN §3.1).
 const COLOR_FORMATS: [Fourcc; 2] = [Fourcc::Argb8888, Fourcc::Abgr8888];
 /// How far (logical pixels) from an output the pointer can be and still have its image
