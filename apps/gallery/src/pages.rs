@@ -5,9 +5,9 @@ use std::cell::RefCell;
 use std::rc::Rc;
 
 use neue_kit::{
-    Align, BevelButton, Button, Cell, Checkbox, Column, ContextMenu, Element, Handle, Label,
-    MaterialTile, PopUpButton, ProgressBar, Radio, Segmented, Slider, SortOrder, Spinner, Stack,
-    Stepper, Table, TextField, TextStyle,
+    Align, BevelButton, Button, Cell, Checkbox, Column, ContextMenu, DividerStyle, Element, Handle,
+    Label, MaterialTile, Pane, PopUpButton, ProgressBar, Radio, Segmented, Slider, SortOrder,
+    Spinner, SplitView, Stack, Stepper, Table, TextField, TextStyle,
 };
 
 use crate::Message;
@@ -103,6 +103,10 @@ pub const PAGES: &[Page] = &[
     Page {
         title: "Icons",
         build: icons,
+    },
+    Page {
+        title: "Panes",
+        build: panes,
     },
     Page {
         title: "Text",
@@ -565,6 +569,58 @@ fn icons(_: &mut PageHandles) -> Element<Message> {
                     ),
                 )),
         )
+        .into()
+}
+
+fn panes(_: &mut PageHandles) -> Element<Message> {
+    let sized = |axis_vertical: bool, style| {
+        specimens::split_view::<Message>(style, axis_vertical)
+            .on_resize(|lengths| Message::SplitResized(lengths.to_vec()))
+    };
+    let three = SplitView::horizontal()
+        .divider(DividerStyle::Thick)
+        .with_pane(
+            Label::new("Sidebar"),
+            Pane::new().size(90.0).min(60.0).holds_size().collapsible(),
+        )
+        .with(Label::new("Content"))
+        .with_pane(
+            Label::new("Inspector"),
+            Pane::new().size(90.0).min(60.0).holds_size().collapsible(),
+        )
+        .on_resize(|lengths| Message::SplitResized(lengths.to_vec()))
+        .width(420.0)
+        .height(120.0);
+    Stack::column()
+        .spacing(spacing::L)
+        .with(heading(
+            "Panes",
+            "Drag a divider to resize the panes next to it · a sidebar stops at its limits, \
+             and collapses when dragged well below its minimum · double-click a divider, or \
+             press Return on it, to collapse or bring back a pane · Tab to a divider: the \
+             arrow keys along the split move it, the ones across pick another divider, Home \
+             and End go to either end",
+        ))
+        .with(
+            Stack::row()
+                .spacing(spacing::L)
+                .with(section(
+                    "Thin divider",
+                    Stack::column().with(sized(false, DividerStyle::Thin)),
+                ))
+                .with(section(
+                    "Thick divider",
+                    Stack::column().with(sized(false, DividerStyle::Thick)),
+                ))
+                .with(section(
+                    "Stacked",
+                    Stack::column().with(sized(true, DividerStyle::Thick)),
+                )),
+        )
+        .with(section(
+            "Three panes, the outer two collapsible",
+            Stack::column().with(three),
+        ))
         .into()
 }
 

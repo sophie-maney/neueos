@@ -18,6 +18,7 @@ mod segmented;
 mod sidebar;
 mod slider;
 mod spinner;
+mod split;
 mod stepper;
 mod table;
 mod text_field;
@@ -47,6 +48,7 @@ pub use sidebar::{
 };
 pub use slider::{Slider, slider, slider_knob, slider_value_at};
 pub use spinner::{Spinner, spinner};
+pub use split::{DividerStyle, split_divider};
 pub use stepper::{Stepper, StepperPart, stepper, stepper_outline, stepper_part_at};
 pub use table::{
     TableHeader, column_edges, disclosure_rect, disclosure_triangle, outline_text_inset,

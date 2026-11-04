@@ -420,6 +420,8 @@ animation, the widget gallery and widget set v1, DBusMenu export and the `docs/d
 specs. Tasks: [`docs/plan/phase-2.md`](docs/plan/phase-2.md). The Masonry gate (2.1, 2.2)
 passed: Masonry stays (ADR 0002 amendment). The icon and collection view (2.20) is split
 into the icon type (2.20a), grid virtualisation (2.20b) and the collection view (2.20c).
+The split and tab views (2.21) are split into the split view (2.21a) and the tab view
+(2.21b).
 - **Exit:** the gallery shows the whole widget set, in light and dark, identically on
   macOS and in the VM.
 

@@ -726,3 +726,29 @@ their cells. Switch to dark and to 2x: all stays sharp.
 **4. macOS (owner):** `cargo xtask gallery`, open "Icons" and repeat steps 2 and 3. With
 VoiceOver on (Cmd-F5), move into the collection: it is read as a grid with its row and
 column counts, and each item as a cell with its label and whether it is selected.
+
+## 17. Checking the split view (task 2.21a)
+Not run yet. Steps 1 to 3 run in the VM, set up as in `docs/dev-setup.md` §1.3; step 4 is
+on the Mac. The page is "Panes" (page 11). The helpers are those of §8.
+
+**1. Build and open the page:** as §8 step 1 with `NEUE_GALLERY_PAGE=11`, screenshot
+`/tmp/s1.png`. Expected: no `WARN` or `ERROR`; three 200 × 80 split views (thin, thick
+and stacked) with a "Sidebar" and a "Content" pane, and below them a 420 × 120 split of
+three panes with thick dividers.
+
+**2. Drag and collapse:** drag a divider right and left, far past both ends; double-click
+it twice; screenshot after each as `/tmp/s2-N.png`. Expected: the sidebar stops at 50
+(thin and thick) and at 120; dragged well below 50 it collapses (its label disappears and
+the divider sits at the edge); a double-click brings it back at its old length; the
+status line reads "Panes: 70 · 129" and so on; the cursor is a resize cursor over a
+divider.
+
+**3. Keys:** Tab to a split view (a blue ring around a divider); press Right and Left,
+Home, End, Return; in the three-pane split press Down and Up to pick the other divider.
+Expected: 10 px steps; Home collapses a collapsible pane; Return restores; the ring
+follows the picked divider. Switch to dark and to 2x: all stays sharp.
+
+**4. macOS (owner):** `cargo xtask gallery`, open "Panes" and repeat steps 2 and 3. With
+VoiceOver on (Cmd-F5), move to a divider: it is read as a splitter with its value, and
+Up and Down (VoiceOver's adjust) move it.
+

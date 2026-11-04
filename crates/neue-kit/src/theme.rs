@@ -8,7 +8,7 @@ use crate::widgets::{
     BevelWidget, ButtonWidget, CellWidget, CollectionItemWidget, ColumnHeaderWidget, FieldWidget,
     HeaderWidget, IconWidget, LabelWidget, MenuRowWidget, MenuWidget, ProgressWidget, RootWidget,
     RowsWidget, ScrollWidget, ScrollerWidget, SegmentedWidget, SliderWidget, SpecimenWidget,
-    SpinnerWidget, StackWidget, StepperWidget, TextViewWidget, ToggleWidget,
+    SpinnerWidget, SplitWidget, StackWidget, StepperWidget, TextViewWidget, ToggleWidget,
 };
 
 /// The app's [`Theme`], as a default property of every neue-kit widget.
@@ -44,6 +44,7 @@ pub(crate) fn default_properties(theme: Theme) -> DefaultProperties {
     props.insert::<FieldWidget, _>(ThemeProp(theme));
     props.insert::<TextViewWidget, _>(ThemeProp(theme));
     props.insert::<SpecimenWidget, _>(ThemeProp(theme));
+    props.insert::<SplitWidget, _>(ThemeProp(theme));
     props.insert::<StackWidget, _>(ThemeProp(theme));
     props.insert::<RootWidget, _>(ThemeProp(theme));
     props.insert::<ScrollWidget, _>(ThemeProp(theme));

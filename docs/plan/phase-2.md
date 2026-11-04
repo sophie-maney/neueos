@@ -386,7 +386,37 @@ the paper and leather materials move to Phase 6/7 (Widgets, Write).
         collections (1,000 items at 32 px, 12 at 64 px) with status messages. Steps for the
         VM in `docs/checks/phase-2.md` §16, not run. Not yet: the items listed under "Not
         in scope", gaps between cells, a borderless style, and the VoiceOver check on macOS.
-- [ ] **2.21 Split view and tab view** · Sonnet.
+- [ ] **2.21 Split view and tab view** · Sonnet. Split into 2.21a and 2.21b.
+  - [x] **2.21a Split view** · Sonnet. `SplitView`: panes side by side or stacked, thin
+        and thick (grip) dividers, per-pane minimum and maximum, a pane that holds its size
+        on resize, collapsing (drag, double-click, Return, handle), keyboard and AccessKit
+        `Splitter`.
+        *Accept:* tests for drag, limits, collapse, resize and keys; goldens (thin and
+        thick × normal, focused, disabled; stacked; collapsed) × light/dark × 1×/2×; a
+        gallery page; an ADR.
+        Not in scope: saved positions, animated collapse, nested-split snapping.
+        *Done:* ADR 0053. `neue_kit::{SplitView, Pane, DividerStyle}` (`SplitView::{
+        horizontal, vertical}`, `with`, `with_pane`, `divider`, `on_resize(&[f64])`,
+        `width`, `height`, `bind`; `Handle::{set_position, set_collapsed}`; `Pane::{size,
+        min, max, holds_size, collapsible, collapsed}`). A divider is a gap in
+        `SplitWidget`'s layout that it draws and hit-tests; `fit` gives a resize to the
+        panes that don't hold their size; `drag_pair` clamps a divider's pair and collapses
+        a collapsible pane below half its minimum. Home and End move the divider to either
+        end (collapsing a collapsible pane there); the plan's "Home/End collapse" became
+        that, as in the WAI-ARIA splitter. Material `neue_theme::materials::split`,
+        `neue_paint::materials::split_divider`. 4 unit tests and 10 end-to-end tests; 36
+        goldens (macOS only, Linux aarch64 and x86_64 not run); gallery page "Panes"
+        (page 11). Steps for the VM in `docs/checks/phase-2.md` §17, not run. Not yet: the
+        items under "Not in scope", a wider grab area for thin dividers, pushing past a
+        pane into the next one.
+  - [ ] **2.21b Tab view** · Sonnet. `TabView`: a strip of tabs over a bordered box (the
+        `NSTabView` look), all tab contents built up front and only the selected one
+        shown, its own strip widget (not `Segmented`). Left/Right move between tabs,
+        Ctrl-Tab and Ctrl-Shift-Tab cycle; AccessKit `TabList`, `Tab`, `TabPanel`;
+        `Handle::{set_selected, set_tab_enabled}`.
+        *Accept:* tests for selection, keys and a disabled tab; goldens (normal, selected,
+        disabled, unfocused × light/dark × 1×/2×); a gallery page; an ADR.
+        Not in scope: closable or reorderable tabs, tabs on other edges.
 - [ ] **2.22 Window chrome and unified toolbar** · Opus. ADR: client-side title bars
       (reusing neue-paint's) vs. extending the server-side ones (ADR 0013).
 - [ ] **2.23 Sheet, popover, HUD panel** · Opus. Sheets map to xdg-dialog; popovers are

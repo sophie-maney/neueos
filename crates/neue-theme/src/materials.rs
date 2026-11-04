@@ -1927,3 +1927,91 @@ pub mod collection {
         }
     }
 }
+
+/// The split view: a divider between panes, thin (a line) or thick (a gradient bar with a
+/// grip of dots), as in `NSSplitView` (task 2.21a).
+pub mod split {
+    use crate::{Appearance, Color, Variant, black, grey, white};
+
+    /// Width of a thin divider.
+    pub const THIN: f64 = 1.0;
+    /// Width of a thick divider.
+    pub const THICK: f64 = 9.0;
+    /// Diameter of one dot of the grip.
+    pub const GRIP_DOT: f64 = 2.0;
+    /// Distance between the centres of two grip dots.
+    pub const GRIP_PITCH: f64 = 4.0;
+    /// Number of dots in the grip.
+    pub const GRIP_DOTS: usize = 3;
+    /// How far the arrow keys move a focused divider.
+    pub const KEY_STEP: f64 = 10.0;
+    /// How far a drag may go beyond a collapsible pane's minimum before it collapses, as
+    /// a fraction of that minimum.
+    pub const COLLAPSE_AT: f64 = 0.5;
+    /// The narrowest a pane gets by dragging, unless it sets its own minimum.
+    pub const MIN_PANE: f64 = 32.0;
+    /// Opacity of the dividers of a disabled split view.
+    pub const DISABLED_OPACITY: f32 = 0.5;
+
+    /// Colours of a divider.
+    #[derive(Clone, Copy, Debug, PartialEq)]
+    pub struct Palette {
+        /// A thin divider's line.
+        pub line: Color,
+        /// A thick divider's gradient across its width (from the first pane to the second).
+        pub bar: [Color; 2],
+        /// The lines along both edges of a thick divider.
+        pub edge: Color,
+        /// The grip's dots.
+        pub grip: Color,
+        /// The highlight under each grip dot.
+        pub grip_highlight: Color,
+    }
+
+    impl Palette {
+        /// Colours for `variant`.
+        pub fn new(variant: Variant) -> Self {
+            let p = match variant.appearance {
+                Appearance::Light => Self {
+                    line: black(0.30),
+                    bar: [grey(0.96), grey(0.82)],
+                    edge: black(0.34),
+                    grip: black(0.55),
+                    grip_highlight: white(0.9),
+                },
+                Appearance::Dark => Self {
+                    line: black(0.70),
+                    bar: [grey(0.30), grey(0.20)],
+                    edge: black(0.75),
+                    grip: black(0.85),
+                    grip_highlight: white(0.16),
+                },
+            };
+            if variant.is_increased_contrast() {
+                Self {
+                    line: black((p.line.components[3] + 0.3).min(1.0)),
+                    edge: black((p.edge.components[3] + 0.3).min(1.0)),
+                    ..p
+                }
+            } else {
+                p
+            }
+        }
+    }
+
+    #[cfg(test)]
+    mod tests {
+        use super::*;
+
+        #[test]
+        fn light_and_dark_differ() {
+            let light = Variant::default();
+            let dark = Variant {
+                appearance: Appearance::Dark,
+                ..light
+            };
+            assert_ne!(Palette::new(light), Palette::new(dark));
+            const { assert!(THICK > THIN) };
+        }
+    }
+}

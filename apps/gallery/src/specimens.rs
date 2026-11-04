@@ -8,6 +8,7 @@ use neue_kit::{
     Slider, SortOrder, SourceList, Specimen, Spinner, Stack, Stepper, Table, TextField, TextView,
     VectorIcon, VirtualGrid, VirtualList,
 };
+use neue_kit::{DividerStyle, Pane, SplitView};
 
 /// Golden window size for one push button (logical pixels): the button with the fixture's
 /// margin, room for its focus ring.
@@ -671,4 +672,50 @@ pub fn collection_many<M: 'static>(count: u32, icon_size: f64) -> Collection<M, 
     Collection::new(1..=count, |&id| collection_item(id))
         .icon_size(icon_size)
         .multiple(true)
+}
+
+/// Golden window size for a 200 × 80 split view with the fixture's margin.
+pub const SPLIT_SIZE: (u32, u32) = (216, 96);
+
+/// A pane's content: a label with some room around it.
+fn pane_label<M: 'static>(text: &str) -> Stack<M> {
+    Stack::column().padding(8.0).with(Label::new(text))
+}
+
+/// A 200 × 80 split view of a sidebar (70 long, between 50 and 120, holding its size,
+/// collapsible) and the content, with `style` dividers. `vertical` stacks the panes.
+pub fn split_view<M: 'static>(style: DividerStyle, vertical: bool) -> SplitView<M> {
+    let view = if vertical {
+        SplitView::vertical()
+    } else {
+        SplitView::horizontal()
+    };
+    let sidebar = Pane::new()
+        .size(if vertical { 36.0 } else { 70.0 })
+        .min(if vertical { 24.0 } else { 50.0 })
+        .max(120.0)
+        .holds_size()
+        .collapsible();
+    view.divider(style)
+        .with_pane(pane_label("Sidebar"), sidebar)
+        .with_pane(pane_label("Content"), Pane::new().min(24.0))
+        .width(200.0)
+        .height(80.0)
+}
+
+/// The same split view with its sidebar collapsed.
+pub fn split_view_collapsed<M: 'static>(style: DividerStyle) -> SplitView<M> {
+    SplitView::horizontal()
+        .divider(style)
+        .with_pane(
+            pane_label("Sidebar"),
+            Pane::new()
+                .size(70.0)
+                .min(50.0)
+                .collapsible()
+                .collapsed(true),
+        )
+        .with_pane(pane_label("Content"), Pane::new().min(24.0))
+        .width(200.0)
+        .height(80.0)
 }
