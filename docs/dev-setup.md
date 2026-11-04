@@ -774,8 +774,8 @@ steps 2 and 5. `sudo pacman -R neue-session neue-comp neuectl` removes them clea
 
 ## 22. Daily-drive pass on a PC (task 1.21)
 Needs Arch Linux x86_64 installed on the PC (`archinstall` with the "minimal" profile is
-enough), a user with sudo, ssh from the Mac (as §2.4, host names `neueos-nvidia` and
-`neueos-amd`), and no other display manager enabled. Record the results in
+enough), a user with sudo, ssh from the Mac (as §2.4, host name `neueos-nvidia`), and no
+other display manager enabled. Record the results in
 `docs/research/phase1-daily-drive.md`, one column per PC.
 
 **1. Drivers.** AMD and Intel need nothing beyond `mesa` (and `vulkan-radeon` or

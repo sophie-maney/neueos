@@ -25,9 +25,10 @@ wgpu = "30.0"
 winit = { version = "0.30.13", default-features = false, features = ["rwh_06", "wayland", "wayland-dlopen"] }
 pollster = "1.0"
 
-# Compositor. Pinned git rev of main per ADR 0001; bump in its own PR. Features are chosen
-# per crate; never enable `xwayland`, `backend_x11` or `x11rb_event_source`.
-smithay = { git = "https://github.com/Smithay/smithay", rev = "c7a26ade404dd7593d92514fb571922dccd1050a", default-features = false }
+# Compositor. Pinned git rev per ADR 0001; bump in its own PR. Features are chosen per crate;
+# never enable `xwayland`, `backend_x11` or `x11rb_event_source`. The rev is upstream main
+# `c7a26ad` plus one popup fix on our fork's `neueos` branch (ADR 0029, bug B5).
+smithay = { git = "https://github.com/sophie-maney/smithay", rev = "32e0137157a5419733bf655436973c1feb6503ec", default-features = false }
 tracing-subscriber = { version = "0.3", features = ["env-filter"] }
 # XCursor theme parser (pure Rust, MIT, task 1.9, ADR 0012). Already in the tree via winit.
 xcursor = "0.3"

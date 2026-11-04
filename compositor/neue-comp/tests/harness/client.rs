@@ -35,6 +35,7 @@ mod appmenu;
 mod capture;
 mod decoration;
 mod input;
+mod popup;
 mod presentation;
 mod selection;
 mod shell;
@@ -44,6 +45,7 @@ pub use decoration::{KdeDefaultMode, KdeMode, XdgMode};
 pub use input::{
     Constraint, ConstraintEvents, GestureSeen, InputMethodEvents, RelativeMotion, TextInputEvents,
 };
+pub use popup::Popup;
 pub use presentation::{Feedback, global_names};
 pub use selection::{Drag, read_all};
 pub use shell::{Anchor, ForeignToplevel, KeyboardInteractivity, Layer, LayerHandle, SessionLock};
