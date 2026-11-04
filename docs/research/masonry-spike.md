@@ -155,7 +155,8 @@ Effort: about one day, inside the ADR 0002 budget.
   (needs `xdg_popup.reposition`, 2.6). `LayerType` (tooltip, selector) can choose the
   positioner per kind.
 - Key repeat, a full keysym/evdev table (`Code` is `Unidentified`), cursor shape, AccessKit,
-  clipboard: not in the spike.
+  clipboard: not in the spike. Key repeat, the key table and cursor shapes landed in 2.5
+  (ADR 0033).
 - Fonts: only Fira Sans is registered, so CJK text has no glyphs and its line collapses (the
   commit still reaches the text, as `Changed("日本")` shows). This is the system-fonts open
   item above.

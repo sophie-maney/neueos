@@ -59,13 +59,14 @@ impl Gpu {
     }
 
     /// Renders `frame` into `target` and presents it. `pre_present` runs right before the
-    /// present (winit wants `Window::pre_present_notify` there).
+    /// present (winit wants `Window::pre_present_notify` there). Returns whether the frame
+    /// was presented (Wayland: whether the surface was committed).
     pub(crate) fn render(
         &mut self,
         target: &SurfaceTarget,
         frame: PreparedFrame<'_>,
         pre_present: impl FnOnce(),
-    ) {
+    ) -> bool {
         let texture = match target.surface.get_current_texture() {
             wgpu::CurrentSurfaceTexture::Success(t)
             | wgpu::CurrentSurfaceTexture::Suboptimal(t) => t,
@@ -77,18 +78,18 @@ impl Gpu {
                     | wgpu::CurrentSurfaceTexture::Suboptimal(t) => t,
                     other => {
                         tracing::warn!(?other, "no surface texture after reconfigure");
-                        return;
+                        return false;
                     }
                 }
             }
             // Hidden or minimised window, or a slow compositor: the next frame will do.
             wgpu::CurrentSurfaceTexture::Occluded | wgpu::CurrentSurfaceTexture::Timeout => {
                 tracing::debug!("surface occluded or timed out; skipping frame");
-                return;
+                return false;
             }
             other => {
                 tracing::warn!(?other, "no surface texture; skipping frame");
-                return;
+                return false;
             }
         };
         let render_target = RenderTarget {
@@ -100,7 +101,7 @@ impl Gpu {
         };
         if let Err(err) = self.renderer.render_to_texture(render_target, frame) {
             tracing::error!(%err, "rendering Masonry content failed");
-            return;
+            return false;
         }
         let mut encoder = self
             .device
@@ -116,6 +117,7 @@ impl Gpu {
         self.queue.submit([encoder.finish()]);
         pre_present();
         self.queue.present(texture);
+        true
     }
 }
 
