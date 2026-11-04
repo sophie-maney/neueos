@@ -30,10 +30,7 @@ use masonry_core::app::{
     RenderRoot, RenderRootOptions, RenderRootSignal, VisualLayerKind, WindowSizePolicy,
 };
 use masonry_core::core::keyboard::{Key, KeyState};
-use masonry_core::core::{
-    ErasedAction, Ime, KeyboardEvent, NewWidget, ResizeDirection, TextEvent, Widget, WidgetId,
-    WindowEvent,
-};
+use masonry_core::core::{Ime, KeyboardEvent, ResizeDirection, TextEvent, WindowEvent};
 use masonry_core::peniko::Color;
 use masonry_imaging::{Layer as ImagingLayer, PreparedFrame};
 use ui_events_winit::{WindowEventReducer, WindowEventTranslation};
@@ -46,8 +43,9 @@ use winit::window::{
     WindowId as WinitId,
 };
 
-use crate::Options;
+use crate::app::{DriverWindow, Registry};
 use crate::gpu::{Gpu, GpuError, SurfaceTarget};
+use crate::{App, Ctx, Options, WindowId, WindowKind, WindowSpec};
 use clipboard::Clipboard;
 
 /// Driver errors.
@@ -69,90 +67,6 @@ impl From<GpuError> for Error {
     }
 }
 
-/// Identifies a window for the lifetime of the driver. Never reused.
-#[derive(Debug, Clone, Copy, PartialEq, Eq, Hash, PartialOrd, Ord)]
-pub struct WindowId(u64);
-
-impl std::fmt::Display for WindowId {
-    fn fmt(&self, f: &mut std::fmt::Formatter<'_>) -> std::fmt::Result {
-        write!(f, "window#{}", self.0)
-    }
-}
-
-/// A window to open.
-#[derive(Debug)]
-pub struct WindowSpec {
-    pub title: String,
-    /// Initial logical size.
-    pub width: u32,
-    pub height: u32,
-    pub root: NewWidget<dyn Widget>,
-    /// Cleared to before the widgets paint. Opaque: windows aren't transparent.
-    pub background: Color,
-}
-
-/// The app side of the driver: opens windows and reacts to widget actions.
-pub trait App {
-    /// Called once, when the platform is ready for windows. Open the first window here.
-    fn on_start(&mut self, cx: &mut Ctx<'_>);
-
-    /// A widget in `window` emitted `action`.
-    fn on_action(
-        &mut self,
-        cx: &mut Ctx<'_>,
-        window: WindowId,
-        widget: WidgetId,
-        action: ErasedAction,
-    );
-
-    /// The user asked to close `window` (the close button). Closes it by default.
-    fn on_close_requested(&mut self, cx: &mut Ctx<'_>, window: WindowId) {
-        cx.close_window(window);
-    }
-}
-
-/// What an [`App`] can do from a callback.
-#[derive(Debug)]
-pub struct Ctx<'a> {
-    shared: &'a mut Shared,
-}
-
-impl Ctx<'_> {
-    /// Queues a window; it opens (hidden until its first frame is drawn) right after the
-    /// callback returns.
-    pub fn open_window(&mut self, spec: WindowSpec) -> WindowId {
-        let id = WindowId(self.shared.next_id);
-        self.shared.next_id += 1;
-        self.shared.opening.push((id, spec));
-        id
-    }
-
-    /// Closes `window`. Unknown or already-closed ids are ignored.
-    pub fn close_window(&mut self, window: WindowId) {
-        self.shared.opening.retain(|(id, _)| *id != window);
-        if let Some(win) = self.shared.windows.remove(&window) {
-            tracing::debug!(%window, "closing window");
-            self.shared.by_winit.remove(&win.handle.id());
-        }
-    }
-
-    /// The widget tree of an open window. `None` while the window is still queued, and
-    /// after it closed.
-    pub fn render_root(&mut self, window: WindowId) -> Option<&mut RenderRoot> {
-        self.shared.windows.get_mut(&window).map(|w| &mut w.root)
-    }
-
-    /// Open windows, in no particular order.
-    pub fn windows(&self) -> impl Iterator<Item = WindowId> + '_ {
-        self.shared.windows.keys().copied()
-    }
-
-    /// Ends the event loop after the current callback.
-    pub fn exit(&mut self) {
-        self.shared.exit = true;
-    }
-}
-
 /// Runs `app` until it exits or its last window closes.
 pub fn run(app: &mut dyn App, options: Options) -> Result<(), Error> {
     let event_loop = EventLoop::<UserEvent>::with_user_event().build()?;
@@ -163,6 +77,7 @@ pub fn run(app: &mut dyn App, options: Options) -> Result<(), Error> {
     ));
     let mut driver = Driver {
         shared: Shared::default(),
+        by_winit: HashMap::new(),
         gpu: None,
         instance,
         proxy: event_loop.create_proxy(),
@@ -190,14 +105,12 @@ impl From<accesskit_winit::Event> for UserEvent {
 }
 
 /// Window state the app can reach through [`Ctx`].
-#[derive(Debug, Default)]
-struct Shared {
-    windows: HashMap<WindowId, Win>,
-    by_winit: HashMap<WinitId, WindowId>,
-    /// Windows queued by [`Ctx::open_window`], created by [`Driver::pump`].
-    opening: Vec<(WindowId, WindowSpec)>,
-    next_id: u64,
-    exit: bool,
+type Shared = Registry<Win>;
+
+impl DriverWindow for Win {
+    fn render_root(&mut self) -> &mut RenderRoot {
+        &mut self.root
+    }
 }
 
 /// One open window.
@@ -226,6 +139,8 @@ impl std::fmt::Debug for Win {
 struct Driver<'a> {
     // Field order is drop order: windows and their surfaces before the device.
     shared: Shared,
+    /// winit's ids of open windows. Entries of closed windows are dropped in `pump`.
+    by_winit: HashMap<WinitId, WindowId>,
     gpu: Option<Gpu>,
     instance: wgpu::Instance,
     proxy: EventLoopProxy<UserEvent>,
@@ -266,7 +181,9 @@ impl Driver<'_> {
                 break;
             }
         }
-        if self.shared.exit || (self.started && self.shared.windows.is_empty()) {
+        let windows = &self.shared.windows;
+        self.by_winit.retain(|_, id| windows.contains_key(id));
+        if self.started && self.shared.done() {
             event_loop.exit();
         }
     }
@@ -277,6 +194,9 @@ impl Driver<'_> {
         id: WindowId,
         spec: WindowSpec,
     ) -> Result<(), Error> {
+        if let WindowKind::Layer(layer) = &spec.kind {
+            tracing::warn!(namespace = %layer.namespace, "no layer shell on macOS; opening a window");
+        }
         let attributes = WindowAttributes::default()
             .with_title(spec.title)
             .with_inner_size(LogicalSize::new(spec.width, spec.height))
@@ -315,7 +235,7 @@ impl Driver<'_> {
             },
         );
         tracing::debug!(%id, winit_id = ?handle.id(), ?size, "opened window");
-        self.shared.by_winit.insert(handle.id(), id);
+        self.by_winit.insert(handle.id(), id);
         self.shared.windows.insert(
             id,
             Win {
@@ -341,14 +261,7 @@ impl Driver<'_> {
         if let RenderRootSignal::Action(action, widget) = signal {
             tracing::trace!(%id, %widget, action = action.type_name(), "action");
             let app = &mut *self.app;
-            app.on_action(
-                &mut Ctx {
-                    shared: &mut self.shared,
-                },
-                id,
-                widget,
-                action,
-            );
+            app.on_action(&mut Ctx::new(&mut self.shared), id, widget, action);
             return;
         }
         let Some(win) = self.shared.windows.get_mut(&id) else {
@@ -458,14 +371,12 @@ impl ApplicationHandler<UserEvent> for Driver<'_> {
         }
         self.started = true;
         let app = &mut *self.app;
-        app.on_start(&mut Ctx {
-            shared: &mut self.shared,
-        });
+        app.on_start(&mut Ctx::new(&mut self.shared));
         self.pump(event_loop);
     }
 
     fn window_event(&mut self, event_loop: &ActiveEventLoop, winit_id: WinitId, event: WinitEvent) {
-        let Some(&id) = self.shared.by_winit.get(&winit_id) else {
+        let Some(&id) = self.by_winit.get(&winit_id) else {
             return;
         };
         let Some(win) = self.shared.windows.get_mut(&id) else {
@@ -517,12 +428,7 @@ impl ApplicationHandler<UserEvent> for Driver<'_> {
             WinitEvent::RedrawRequested => self.redraw(id),
             WinitEvent::CloseRequested => {
                 let app = &mut *self.app;
-                app.on_close_requested(
-                    &mut Ctx {
-                        shared: &mut self.shared,
-                    },
-                    id,
-                );
+                app.on_close_requested(&mut Ctx::new(&mut self.shared), id);
             }
             _ => {}
         }
@@ -531,7 +437,6 @@ impl ApplicationHandler<UserEvent> for Driver<'_> {
 
     fn user_event(&mut self, event_loop: &ActiveEventLoop, UserEvent(event): UserEvent) {
         let window = self
-            .shared
             .by_winit
             .get(&event.window_id)
             .and_then(|id| self.shared.windows.get_mut(id));

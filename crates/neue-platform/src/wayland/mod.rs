@@ -1,59 +1,56 @@
-//! smithay-client-toolkit driver for Masonry's `RenderRoot` (ADR 0002 §4).
+//! smithay-client-toolkit driver for Masonry's `RenderRoot` (ADR 0002 §4, ADR 0033).
 //!
-//! **Spike (task 2.2).** It proves the pieces fit: xdg-toplevel and layer-shell surfaces,
-//! wgpu (vello_gpu), fractional scale with viewporter, text-input-v3 into Masonry's IME
-//! events, and Masonry layers realised as xdg-popups. Task 2.5 hardens it (cursor shape,
-//! key repeat, a full key table, headless tests); task 2.6 adds popup positioning for all
-//! layer kinds, clipboard and AccessKit.
+//! Runs an [`App`] on Wayland, with the same API as the winit driver (ADR 0032):
+//! - xdg-toplevels (server-side title bars) and wlr-layer-shell surfaces, opened and
+//!   closed at run time through [`Ctx`];
+//! - fractional scale with viewporter, or integer buffer scale without them;
+//! - drawing paced by frame callbacks, per surface;
+//! - cursor shapes (`wp_cursor_shape_v1`, else the xcursor theme);
+//! - keyboard with repeat and a full key table, pointer with click counting;
+//! - text-input-v3 into Masonry's IME events;
+//! - Masonry layers (menus, tooltips) as xdg-popups: still laid out and hit-tested by
+//!   Masonry in window coordinates, but painted into the popup's own `wl_surface`, with
+//!   pointer input on the popup translated back into window coordinates.
 //!
-//! One [`RenderRoot`] per surface given to [`run`]. Each Masonry layer it creates (menus,
-//! tooltips) becomes an xdg-popup of that surface: the layer is still laid out and hit-tested
-//! by Masonry in window coordinates, but its paint goes to the popup's own `wl_surface`, and
-//! pointer input on the popup is translated back into window coordinates.
+//! Task 2.6 adds popup positioning for every layer kind (`xdg_popup.reposition`), the
+//! clipboard, xdg-activation and AccessKit.
 
 mod handle;
 mod input;
+mod keymap;
+mod seat;
+mod shell;
 
 use std::sync::Arc;
 use std::sync::mpsc::{self, Receiver};
-use std::time::{Duration, Instant};
+use std::time::Instant;
 
-use masonry_core::app::VisualLayerKind;
-use masonry_core::app::{RenderRoot, RenderRootOptions, RenderRootSignal, WindowSizePolicy};
-use masonry_core::core::keyboard::KeyState;
-use masonry_core::core::{
-    ErasedAction, Ime, Modifiers, NewWidget, PointerButtonEvent, PointerEvent as MasonryPointer,
-    PointerScrollEvent, PointerState, PointerUpdate, ScrollDelta, TextEvent, Widget, WidgetId,
-    WindowEvent,
+use masonry_core::app::{
+    RenderRoot, RenderRootOptions, RenderRootSignal, VisualLayerKind, WindowSizePolicy,
 };
-use masonry_core::dpi::{PhysicalPosition, PhysicalSize};
+use masonry_core::core::{CursorIcon, ErasedAction, Ime, NewWidget, TextEvent, Widget, WidgetId};
+use masonry_core::core::{ResizeDirection, WindowEvent};
+use masonry_core::dpi::PhysicalSize;
 use masonry_core::imaging::record::Scene;
 use masonry_core::kurbo::{Affine, Point, Rect, Vec2};
 use masonry_core::peniko::Color;
-use masonry_core::ui_events::pointer::PointerButtons;
 use masonry_imaging::{Layer as ImagingLayer, PreparedFrame};
-use smithay_client_toolkit::compositor::{CompositorHandler, CompositorState, FrameCallbackData};
+use smithay_client_toolkit::compositor::{CompositorState, FrameCallbackData};
 use smithay_client_toolkit::dispatch2::Dispatch2;
-use smithay_client_toolkit::output::{OutputHandler, OutputState};
-use smithay_client_toolkit::reexports::calloop::EventLoop;
+use smithay_client_toolkit::output::OutputState;
+use smithay_client_toolkit::reexports::calloop::{EventLoop, LoopHandle};
 use smithay_client_toolkit::reexports::calloop_wayland_source::WaylandSource;
 use smithay_client_toolkit::registry::{ProvidesRegistryState, RegistryState};
-use smithay_client_toolkit::seat::keyboard::{KeyEvent, KeyboardHandler, Keysym, RawModifiers};
-use smithay_client_toolkit::seat::pointer::{PointerEvent, PointerEventKind, PointerHandler};
-use smithay_client_toolkit::seat::{Capability, SeatHandler, SeatState};
+use smithay_client_toolkit::seat::SeatState;
 use smithay_client_toolkit::shell::WaylandSurface;
-use smithay_client_toolkit::shell::wlr_layer::{
-    Anchor, KeyboardInteractivity, Layer, LayerShell, LayerShellHandler, LayerSurface,
-    LayerSurfaceConfigure,
-};
-use smithay_client_toolkit::shell::xdg::popup::{Popup, PopupConfigure, PopupHandler};
-use smithay_client_toolkit::shell::xdg::window::{
-    Window, WindowConfigure, WindowDecorations, WindowHandler,
-};
+use smithay_client_toolkit::shell::wlr_layer::{self, LayerShell, LayerSurface};
+use smithay_client_toolkit::shell::xdg::popup::Popup;
+use smithay_client_toolkit::shell::xdg::window::{Window, WindowDecorations};
 use smithay_client_toolkit::shell::xdg::{XdgPositioner, XdgShell, XdgSurface as _};
+use smithay_client_toolkit::shm::Shm;
 use smithay_client_toolkit::{delegate_dispatch2, delegate_registry, registry_handlers};
 use wayland_client::globals::{GlobalList, registry_queue_init};
-use wayland_client::protocol::{wl_keyboard, wl_output, wl_pointer, wl_seat, wl_surface};
+use wayland_client::protocol::wl_surface;
 use wayland_client::{Connection, Proxy, QueueHandle};
 use wayland_protocols::wp::fractional_scale::v1::client::{
     wp_fractional_scale_manager_v1::WpFractionalScaleManagerV1,
@@ -66,9 +63,14 @@ use wayland_protocols::wp::text_input::zv3::client::{
 use wayland_protocols::wp::viewporter::client::{
     wp_viewport::WpViewport, wp_viewporter::WpViewporter,
 };
-use wayland_protocols::xdg::shell::client::xdg_positioner;
+use wayland_protocols::xdg::shell::client::{xdg_positioner, xdg_toplevel};
 
+use crate::app::{DriverWindow, Registry};
 use crate::gpu::{Gpu, GpuError, SurfaceTarget};
+use crate::{
+    Anchor, App, Ctx, LayerKeyboard, LayerSpec, Options, ShellLayer, WindowId, WindowKind,
+    WindowSpec,
+};
 
 /// Driver errors.
 #[derive(Debug, thiserror::Error)]
@@ -85,8 +87,6 @@ pub enum Error {
     Gpu(String),
     #[error("event loop: {0}")]
     Loop(String),
-    #[error("no surfaces to show")]
-    NoSurfaces,
 }
 
 impl From<GpuError> for Error {
@@ -95,50 +95,19 @@ impl From<GpuError> for Error {
     }
 }
 
-/// What kind of surface to create.
-#[derive(Debug, Clone)]
-pub enum SurfaceRole {
-    /// An xdg-toplevel with server-side decorations.
-    Toplevel {
-        title: String,
-        app_id: String,
-        /// Logical size used until the compositor picks one.
-        width: u32,
-        height: u32,
-    },
-    /// A wlr-layer-shell surface on the top layer, anchored to the top edge, centred.
-    Layer {
-        namespace: String,
-        width: u32,
-        height: u32,
-        margin_top: i32,
-    },
+/// Connects to the compositor named by the environment and runs `app` until it exits or
+/// its last window closes.
+pub fn run(app: &mut dyn App, options: Options) -> Result<(), Error> {
+    run_with_connection(Connection::connect_to_env()?, app, options)
 }
 
-/// One surface and its widget tree.
-#[derive(Debug)]
-pub struct SurfaceSpec {
-    pub role: SurfaceRole,
-    pub root: NewWidget<dyn Widget>,
-    pub background: Color,
-}
-
-pub use crate::Options;
-
-/// Called for every widget action: (surface index, widget, action).
-pub type ActionHandler = Box<dyn FnMut(usize, WidgetId, ErasedAction)>;
-
-/// Connects to the compositor, maps every surface and runs until a toplevel is closed or a
-/// widget requests exit.
-pub fn run(
-    surfaces: Vec<SurfaceSpec>,
+/// Like [`run`], on a connection the caller made (headless compositor tests hand the
+/// driver one end of a socket pair).
+pub fn run_with_connection(
+    conn: Connection,
+    app: &mut dyn App,
     options: Options,
-    on_action: ActionHandler,
 ) -> Result<(), Error> {
-    if surfaces.is_empty() {
-        return Err(Error::NoSurfaces);
-    }
-    let conn = Connection::connect_to_env()?;
     let (globals, queue) = registry_queue_init::<State>(&conn)?;
     let qh = queue.handle();
     let mut event_loop: EventLoop<'static, State> =
@@ -147,58 +116,40 @@ pub fn run(
         .insert(event_loop.handle())
         .map_err(|e| Error::Loop(e.to_string()))?;
 
-    let globals_ = Globals::bind(&globals, &qh)?;
     let instance = wgpu::Instance::new(wgpu::InstanceDescriptor::new_with_display_handle_from_env(
         Box::new(handle::Display(conn.clone())),
     ));
-
-    // wl_surfaces and wgpu surfaces first: the adapter must be compatible with one.
-    let mut pending = Vec::new();
-    for spec in surfaces {
-        let wl = globals_.compositor.create_surface(&qh);
-        let wgpu_surface = handle::create_surface(&instance, &conn, &wl)?;
-        pending.push((spec, wl, wgpu_surface));
-    }
-    let gpu = Gpu::new(instance, &pending[0].2)?;
-
     let mut state = State {
+        reg: Registry::default(),
+        events: Vec::new(),
+        gpu: None,
+        instance,
+        g: Globals::bind(&globals, &qh)?,
+        shm: Shm::bind(&globals, &qh)?,
         registry: RegistryState::new(&globals),
         seats: SeatState::new(&globals, &qh),
         outputs: OutputState::new(&globals, &qh),
-        g: globals_,
+        input: seat::Input::default(),
+        loop_handle: event_loop.handle(),
+        qh,
         conn: conn.clone(),
-        qh: qh.clone(),
-        gpu,
-        windows: Vec::new(),
         options,
-        on_action,
-        seat: None,
-        pointer: None,
-        keyboard: None,
-        text_input: None,
-        ti_focus: None,
-        kb_focus: None,
-        kb_pending_leave: None,
-        modifiers: Modifiers::empty(),
-        buttons: PointerButtons::default(),
-        last_serial: None,
-        exit: false,
     };
-    for (spec, wl, wgpu_surface) in pending {
-        state.add_window(spec, wl, wgpu_surface);
-    }
     // sctk binds the seats that exist at start-up without calling `new_seat` for them.
     let seats: Vec<_> = state.seats.seats().collect();
     for seat in seats {
         state.adopt_seat(seat);
     }
 
-    while !state.exit {
+    app.on_start(&mut Ctx::new(&mut state.reg));
+    state.pump(app)?;
+    while !state.reg.done() {
+        // Nothing to do without an event: animation is paced by frame callbacks.
         event_loop
-            .dispatch(Some(Duration::from_millis(500)), &mut state)
+            .dispatch(None, &mut state)
             .map_err(|e| Error::Loop(e.to_string()))?;
         state.flush_focus_leave();
-        state.process_signals();
+        state.pump(app)?;
         state.draw_dirty();
         if let Err(err) = conn.flush() {
             tracing::warn!(%err, "flushing the Wayland connection failed");
@@ -244,18 +195,23 @@ impl Globals {
     }
 }
 
-/// A `wl_surface` with its wgpu target and scale objects.
+/// A `wl_surface` with its wgpu target, scale objects and frame-callback state.
 struct Surf {
-    // Field order is drop order: the wgpu surface goes before the wl_surface's role object.
+    // Field order is drop order: the wgpu surface goes before the wl_surface's role object
+    // (owned by the window or popup holding this).
     target: Option<SurfaceTarget>,
     wgpu_surface: Option<wgpu::Surface<'static>>,
     wl: wl_surface::WlSurface,
     viewport: Option<WpViewport>,
-    _fractional: Option<WpFractionalScaleV1>,
+    fractional: Option<WpFractionalScaleV1>,
     /// Logical size.
     size: (u32, u32),
     /// Integer buffer scale, used without fractional scale.
     int_scale: i32,
+    /// A frame callback was requested and hasn't fired: presenting now could block.
+    frame_pending: bool,
+    /// The surface missed a draw while its frame callback was pending.
+    stale: bool,
 }
 
 impl Surf {
@@ -282,15 +238,21 @@ impl Surf {
             wgpu_surface: Some(wgpu_surface),
             wl,
             viewport,
-            _fractional: fractional,
+            fractional,
             size: (1, 1),
             int_scale: 1,
+            frame_pending: false,
+            stale: false,
         }
     }
 
     fn physical(&self, scale: f64) -> (u32, u32) {
-        let px = |l: u32| ((f64::from(l) * scale).round() as u32).max(1);
-        (px(self.size.0), px(self.size.1))
+        physical(self.size, scale)
+    }
+
+    /// Whether a frame can be presented now.
+    fn ready(&self) -> bool {
+        self.target.is_some() && !self.frame_pending
     }
 
     /// Applies size and scale: viewport destination with fractional scale, otherwise an
@@ -313,6 +275,38 @@ impl Surf {
             }
         }
     }
+
+    /// Presents `frame`, with a frame callback in the same commit. Never blocks: the
+    /// caller checks [`Surf::ready`] first, so the GL or Vulkan swapchain's own wait for
+    /// the previous frame is already over.
+    fn present(&mut self, gpu: &mut Gpu, qh: &QueueHandle<State>, frame: PreparedFrame<'_>) {
+        let Some(target) = &self.target else { return };
+        self.wl.frame(qh, FrameCallbackData(self.wl.clone()));
+        self.frame_pending = true;
+        self.stale = false;
+        if !gpu.render(target, frame, || {}) {
+            // Nothing was committed; commit the callback request on its own, or it would
+            // wait for a commit that never comes.
+            self.wl.commit();
+        }
+    }
+}
+
+impl Drop for Surf {
+    fn drop(&mut self) {
+        if let Some(viewport) = &self.viewport {
+            viewport.destroy();
+        }
+        if let Some(fractional) = &self.fractional {
+            fractional.destroy();
+        }
+    }
+}
+
+/// Physical pixels for a logical size at `scale`, at least 1×1.
+fn physical(size: (u32, u32), scale: f64) -> (u32, u32) {
+    let px = |l: u32| ((f64::from(l) * scale).round() as u32).max(1);
+    (px(size.0), px(size.1))
 }
 
 enum Shell {
@@ -322,8 +316,9 @@ enum Shell {
 
 /// A Masonry layer shown as an xdg-popup.
 struct PopupLayer {
+    // Field order is drop order: the surface's wgpu target before the popup's wl_surface.
     surf: Surf,
-    /// Owns the xdg_popup: dropping it destroys the popup.
+    /// Owns the xdg_popup and its wl_surface: dropping it destroys both.
     _popup: Popup,
     root_id: WidgetId,
     /// Popup top-left in window (logical) coordinates, as configured by the compositor.
@@ -333,109 +328,147 @@ struct PopupLayer {
     configured: bool,
 }
 
+/// One open window.
 struct Win {
-    surf: Surf,
+    // Field order is drop order: popups, then the window's wgpu target, then its role.
     popups: Vec<PopupLayer>,
+    surf: Surf,
     shell: Shell,
     root: RenderRoot,
     signals: Receiver<RenderRootSignal>,
     base_root: WidgetId,
     /// Layers that couldn't become popups; painted into the window.
     inline_layers: Vec<WidgetId>,
+    /// Layers whose popup the compositor dismissed; removed after Masonry had its say.
+    dismissed: Vec<WidgetId>,
     background: Color,
-    default_size: (u32, u32),
+    /// Logical size used when the compositor leaves the size to us: the spec's, then the
+    /// last floating size.
+    free_size: (u32, u32),
+    /// The last configure fixed the size (maximised, tiled, or an interactive resize).
+    server_sized: bool,
+    maximized: bool,
     scale: f64,
     configured: bool,
     dirty: bool,
-    frame_pending: bool,
     last_anim: Option<Instant>,
     ime_allowed: bool,
     ime_area: Rect,
+    cursor: CursorIcon,
+}
+
+impl Drop for Win {
+    fn drop(&mut self) {
+        // Newest popup first: xdg-shell forbids destroying a popup under another one.
+        while self.popups.pop().is_some() {}
+    }
+}
+
+impl DriverWindow for Win {
+    fn render_root(&mut self) -> &mut RenderRoot {
+        &mut self.root
+    }
+}
+
+/// Something for the app to hear about once the event batch is handled.
+enum AppEvent {
+    Action(WindowId, WidgetId, ErasedAction),
+    CloseRequested(WindowId),
 }
 
 struct State {
+    // Field order is drop order: windows (and their wgpu surfaces) before the device.
+    reg: Registry<Win>,
+    events: Vec<AppEvent>,
+    gpu: Option<Gpu>,
+    instance: wgpu::Instance,
+    g: Globals,
+    shm: Shm,
     registry: RegistryState,
     seats: SeatState,
     outputs: OutputState,
-    g: Globals,
-    #[allow(dead_code, reason = "kept alive for the raw display handle wgpu holds")]
-    conn: Connection,
+    input: seat::Input,
+    loop_handle: LoopHandle<'static, State>,
     qh: QueueHandle<State>,
-    gpu: Gpu,
-    windows: Vec<Win>,
+    /// Kept alive for the raw display handle wgpu holds.
+    conn: Connection,
     options: Options,
-    on_action: ActionHandler,
-    seat: Option<wl_seat::WlSeat>,
-    pointer: Option<wl_pointer::WlPointer>,
-    keyboard: Option<wl_keyboard::WlKeyboard>,
-    text_input: Option<TextInput>,
-    /// Window whose surface has text-input focus.
-    ti_focus: Option<usize>,
-    kb_focus: Option<usize>,
-    /// Window whose surface lost keyboard focus; reported to Masonry after the event batch
-    /// unless one of its surfaces gets focus back.
-    kb_pending_leave: Option<usize>,
-    modifiers: Modifiers,
-    buttons: PointerButtons,
-    /// Latest input serial, for popup grabs and window moves.
-    last_serial: Option<u32>,
-    exit: bool,
-}
-
-/// text-input-v3 object plus the state between `done` events.
-struct TextInput {
-    ti: ZwpTextInputV3,
-    enabled: bool,
-    pending_preedit: Option<(String, Option<(usize, usize)>)>,
-    pending_commit: Option<String>,
 }
 
 impl State {
-    fn add_window(
-        &mut self,
-        spec: SurfaceSpec,
-        wl: wl_surface::WlSurface,
-        wgpu_surface: wgpu::Surface<'static>,
-    ) {
+    /// Opens queued windows, handles every pending `RenderRoot` signal and tells the app
+    /// about actions and close requests, until none of these is left (an action can open
+    /// windows, and new windows emit signals).
+    fn pump(&mut self, app: &mut dyn App) -> Result<(), Error> {
+        loop {
+            let mut progress = false;
+            for (id, spec) in std::mem::take(&mut self.reg.opening) {
+                progress = true;
+                self.create_window(id, spec)?;
+            }
+            let ids: Vec<WindowId> = self.reg.windows.keys().copied().collect();
+            for id in ids {
+                while let Some(signal) = self
+                    .reg
+                    .windows
+                    .get(&id)
+                    .and_then(|w| w.signals.try_recv().ok())
+                {
+                    progress = true;
+                    self.handle_signal(id, signal);
+                }
+                self.remove_dismissed(id);
+            }
+            for event in std::mem::take(&mut self.events) {
+                progress = true;
+                let cx = &mut Ctx::new(&mut self.reg);
+                match event {
+                    AppEvent::Action(id, widget, action) => {
+                        tracing::trace!(%id, %widget, action = action.type_name(), "action");
+                        app.on_action(cx, id, widget, action);
+                    }
+                    AppEvent::CloseRequested(id) => app.on_close_requested(cx, id),
+                }
+            }
+            if !progress {
+                return Ok(());
+            }
+        }
+    }
+
+    fn create_window(&mut self, id: WindowId, spec: WindowSpec) -> Result<(), Error> {
         let qh = self.qh.clone();
+        if matches!(spec.kind, WindowKind::Layer(_)) && self.g.layer_shell.is_none() {
+            tracing::error!(%id, "the compositor has no layer shell; not opening the window");
+            return Ok(());
+        }
+        let wl = self.g.compositor.create_surface(&qh);
+        let wgpu_surface = handle::create_surface(self.instance(), &self.conn, &wl)?;
+        if self.gpu.is_none() {
+            // The adapter must be able to present to the first window's surface.
+            self.gpu = Some(Gpu::new(self.instance.clone(), &wgpu_surface)?);
+        }
         let surf = Surf::new(&self.g, &qh, wl.clone(), wgpu_surface, true);
-        let (shell, default_size) = match spec.role {
-            SurfaceRole::Toplevel {
-                title,
-                app_id,
-                width,
-                height,
-            } => {
+        let size = (spec.width, spec.height);
+        let shell = match (spec.kind, &self.g.layer_shell) {
+            (WindowKind::Layer(layer), Some(layer_shell)) => {
+                Shell::Layer(create_layer(layer_shell, &qh, wl, &layer, size))
+            }
+            _ => {
                 let window = self
                     .g
                     .xdg
                     .create_window(wl, WindowDecorations::ServerDefault, &qh);
-                window.set_title(title);
-                window.set_app_id(app_id);
+                window.set_title(spec.title);
+                if !spec.app_id.is_empty() {
+                    window.set_app_id(spec.app_id);
+                }
+                // The initial commit, without a buffer, asks for the first configure.
                 window.commit();
-                (Shell::Toplevel(window), (width, height))
-            }
-            SurfaceRole::Layer {
-                namespace,
-                width,
-                height,
-                margin_top,
-            } => {
-                let Some(layer_shell) = &self.g.layer_shell else {
-                    tracing::error!("no layer-shell; skipping surface {namespace}");
-                    return;
-                };
-                let layer =
-                    layer_shell.create_layer_surface(&qh, wl, Layer::Top, Some(namespace), None);
-                layer.set_anchor(Anchor::TOP);
-                layer.set_size(width, height);
-                layer.set_margin(margin_top, 0, 0, 0);
-                layer.set_keyboard_interactivity(KeyboardInteractivity::OnDemand);
-                layer.commit();
-                (Shell::Layer(layer), (width, height))
+                Shell::Toplevel(window)
             }
         };
-        let (tx, rx) = mpsc::channel();
+        let (tx, signals) = mpsc::channel();
         let root = RenderRoot::new(
             spec.root,
             move |signal| {
@@ -446,50 +479,67 @@ impl State {
                 default_properties: Arc::clone(&self.options.default_properties),
                 use_system_fonts: false,
                 size_policy: WindowSizePolicy::User,
-                size: PhysicalSize::new(default_size.0, default_size.1),
+                // Until the compositor configures the window and tells us its scale.
+                size: PhysicalSize::new(size.0.max(1), size.1.max(1)),
                 scale_factor: 1.0,
                 test_font: self.options.font.clone(),
             },
         );
         let base_root = root.get_layer_root(0).id();
-        self.windows.push(Win {
-            surf,
-            popups: Vec::new(),
-            shell,
-            root,
-            signals: rx,
-            base_root,
-            inline_layers: Vec::new(),
-            background: spec.background,
-            default_size,
-            scale: 1.0,
-            configured: false,
-            dirty: false,
-            frame_pending: false,
-            last_anim: None,
-            ime_allowed: false,
-            ime_area: Rect::ZERO,
-        });
+        tracing::debug!(%id, ?size, "opened window");
+        self.reg.windows.insert(
+            id,
+            Win {
+                popups: Vec::new(),
+                surf,
+                shell,
+                root,
+                signals,
+                base_root,
+                inline_layers: Vec::new(),
+                dismissed: Vec::new(),
+                background: spec.background,
+                free_size: size,
+                server_sized: false,
+                maximized: false,
+                scale: 1.0,
+                configured: false,
+                dirty: false,
+                last_anim: None,
+                ime_allowed: false,
+                ime_area: Rect::ZERO,
+                cursor: CursorIcon::Default,
+            },
+        );
+        Ok(())
+    }
+
+    /// The wgpu instance: the GPU's copy once it exists (the same instance either way).
+    fn instance(&self) -> &wgpu::Instance {
+        gpu_instance(&self.gpu, &self.instance)
     }
 
     /// Finds the window (and popup) that owns `surface`.
-    fn locate(&self, surface: &wl_surface::WlSurface) -> Option<(usize, Option<usize>)> {
-        self.windows.iter().enumerate().find_map(|(wi, w)| {
+    fn locate(&self, surface: &wl_surface::WlSurface) -> Option<(WindowId, Option<usize>)> {
+        self.reg.windows.iter().find_map(|(&id, w)| {
             if &w.surf.wl == surface {
-                return Some((wi, None));
+                return Some((id, None));
             }
             w.popups
                 .iter()
                 .position(|p| &p.surf.wl == surface)
-                .map(|pi| (wi, Some(pi)))
+                .map(|pi| (id, Some(pi)))
         })
     }
 
-    fn configure_window(&mut self, wi: usize, size: (u32, u32)) {
+    /// Applies a configured logical size to a window.
+    fn configure_window(&mut self, id: WindowId, size: (u32, u32)) {
         let fractional = self.g.fractional.is_some();
-        let w = &mut self.windows[wi];
+        let (Some(gpu), Some(w)) = (&self.gpu, self.reg.windows.get_mut(&id)) else {
+            return;
+        };
         w.surf.size = size;
-        w.surf.apply(&self.gpu, w.scale, fractional);
+        w.surf.apply(gpu, w.scale, fractional);
         let (pw, ph) = w.surf.physical(w.scale);
         w.root
             .handle_window_event(WindowEvent::Resize(PhysicalSize::new(pw, ph)));
@@ -497,24 +547,26 @@ impl State {
         w.dirty = true;
     }
 
-    fn set_scale(&mut self, wi: usize, scale: f64) {
+    fn set_scale(&mut self, id: WindowId, scale: f64) {
         let fractional = self.g.fractional.is_some();
-        let w = &mut self.windows[wi];
+        let (Some(gpu), Some(w)) = (&self.gpu, self.reg.windows.get_mut(&id)) else {
+            return;
+        };
         if (w.scale - scale).abs() < f64::EPSILON {
             return;
         }
-        tracing::info!(window = wi, scale, "scale changed");
+        tracing::debug!(%id, scale, "scale changed");
         w.scale = scale;
         w.root.handle_window_event(WindowEvent::Rescale(scale));
         if w.configured {
-            w.surf.apply(&self.gpu, scale, fractional);
+            w.surf.apply(gpu, scale, fractional);
             let (pw, ph) = w.surf.physical(scale);
             w.root
                 .handle_window_event(WindowEvent::Resize(PhysicalSize::new(pw, ph)));
             for p in &mut w.popups {
+                p.surf.int_scale = w.surf.int_scale;
                 if p.configured {
-                    p.surf.int_scale = w.surf.int_scale;
-                    p.surf.apply(&self.gpu, scale, fractional);
+                    p.surf.apply(gpu, scale, fractional);
                 }
             }
         }
@@ -523,83 +575,150 @@ impl State {
 
     // --- Signals -----------------------------------------------------------------------
 
-    fn process_signals(&mut self) {
-        loop {
-            let mut any = false;
-            for wi in 0..self.windows.len() {
-                let signals: Vec<_> = self.windows[wi].signals.try_iter().collect();
-                for signal in signals {
-                    any = true;
-                    self.handle_signal(wi, signal);
-                }
-            }
-            if !any {
-                break;
-            }
+    fn handle_signal(&mut self, id: WindowId, signal: RenderRootSignal) {
+        if let RenderRootSignal::Action(action, widget) = signal {
+            self.events.push(AppEvent::Action(id, widget, action));
+            return;
         }
-    }
-
-    fn handle_signal(&mut self, wi: usize, signal: RenderRootSignal) {
+        let seat = self.input.seat.clone();
+        let serial = self.input.last_serial;
+        let Some(w) = self.reg.windows.get_mut(&id) else {
+            return;
+        };
+        let toplevel = match &w.shell {
+            Shell::Toplevel(window) => Some(window),
+            Shell::Layer(_) => None,
+        };
         match signal {
-            RenderRootSignal::Action(action, id) => (self.on_action)(wi, id, action),
+            RenderRootSignal::Action(..) => {}
             RenderRootSignal::RequestRedraw | RenderRootSignal::RequestAnimFrame => {
-                self.windows[wi].dirty = true;
+                w.dirty = true;
             }
             RenderRootSignal::StartIme => {
-                self.windows[wi].ime_allowed = true;
+                w.ime_allowed = true;
                 self.sync_text_input();
             }
             RenderRootSignal::EndIme => {
-                self.windows[wi].ime_allowed = false;
+                w.ime_allowed = false;
                 self.sync_text_input();
             }
             RenderRootSignal::ImeMoved(pos, size) => {
-                self.windows[wi].ime_area =
-                    Rect::from_origin_size((pos.x, pos.y), (size.width, size.height));
+                w.ime_area = Rect::from_origin_size((pos.x, pos.y), (size.width, size.height));
                 self.sync_text_input();
             }
+            RenderRootSignal::SetCursor(cursor) => {
+                w.cursor = cursor;
+                if self.input.pointer_focus == Some(id) {
+                    self.input.set_cursor(&self.conn, cursor);
+                }
+            }
+            RenderRootSignal::SetSize(size) => {
+                let logical = (
+                    (f64::from(size.width) / w.scale).round() as u32,
+                    (f64::from(size.height) / w.scale).round() as u32,
+                );
+                match &w.shell {
+                    Shell::Toplevel(_) => {
+                        w.free_size = logical;
+                        if w.configured && !w.server_sized {
+                            self.configure_window(id, logical);
+                        }
+                    }
+                    Shell::Layer(layer) => {
+                        layer.set_size(logical.0, logical.1);
+                        layer.commit();
+                    }
+                }
+            }
             RenderRootSignal::SetTitle(title) => {
-                if let Shell::Toplevel(window) = &self.windows[wi].shell {
+                if let Some(window) = toplevel {
                     window.set_title(title);
                 }
             }
             RenderRootSignal::DragWindow => {
-                if let (Shell::Toplevel(window), Some(seat), Some(serial)) =
-                    (&self.windows[wi].shell, &self.seat, self.last_serial)
-                {
+                if let (Some(window), Some(seat), Some(serial)) = (toplevel, &seat, serial) {
                     window.move_(seat, serial);
                 }
             }
-            RenderRootSignal::Exit => self.exit = true,
+            RenderRootSignal::DragResizeWindow(direction) => {
+                if let (Some(window), Some(seat), Some(serial)) = (toplevel, &seat, serial) {
+                    window.resize(seat, serial, resize_edge(direction));
+                }
+            }
+            RenderRootSignal::ToggleMaximized => {
+                if let Some(window) = toplevel {
+                    if w.maximized {
+                        window.unset_maximized();
+                    } else {
+                        window.set_maximized();
+                    }
+                }
+            }
+            RenderRootSignal::Minimize => {
+                if let Some(window) = toplevel {
+                    window.set_minimized();
+                }
+            }
+            RenderRootSignal::ShowWindowMenu(pos) => {
+                if let (Some(window), Some(seat), Some(serial)) = (toplevel, &seat, serial) {
+                    window.show_window_menu(seat, serial, (pos.x as i32, pos.y as i32));
+                }
+            }
+            RenderRootSignal::Exit => self.reg.exit = true,
             RenderRootSignal::NewLayer(kind, widget, pos) => {
                 tracing::debug!(?kind, ?pos, "new Masonry layer");
-                self.open_popup(wi, widget, pos);
+                self.open_popup(id, widget, pos);
             }
-            RenderRootSignal::RemoveLayer(id) => {
-                let w = &mut self.windows[wi];
-                w.root.remove_layer(id);
-                w.popups.retain(|p| p.root_id != id);
-                w.inline_layers.retain(|l| *l != id);
+            RenderRootSignal::RemoveLayer(layer) => {
+                w.root.remove_layer(layer);
+                if let Some(pi) = w.popups.iter().position(|p| p.root_id == layer) {
+                    w.popups.remove(pi);
+                }
+                w.inline_layers.retain(|l| *l != layer);
+                w.dismissed.retain(|l| *l != layer);
                 w.dirty = true;
             }
-            RenderRootSignal::RepositionLayer(id, pos) => {
-                // Spike: Masonry moves the layer; the popup keeps its first placement.
-                // Task 2.6 maps this to xdg_popup.reposition.
-                self.windows[wi].root.reposition_layer(id, pos);
+            RenderRootSignal::RepositionLayer(layer, pos) => {
+                // Masonry moves the layer; the popup keeps its first placement until task
+                // 2.6 maps this to xdg_popup.reposition.
+                w.root.reposition_layer(layer, pos);
             }
-            other => tracing::trace!(?other, "unhandled signal"),
+            // Task 2.6: wl_data_device and xdg-activation.
+            RenderRootSignal::ClipboardStore(_) | RenderRootSignal::TakeFocus => {
+                tracing::trace!(%id, "clipboard and activation arrive with task 2.6");
+            }
+            RenderRootSignal::WidgetSelectedInInspector(widget) => {
+                tracing::info!(%id, %widget, "widget selected in the inspector");
+            }
+        }
+    }
+
+    /// Removes layers whose popup the compositor dismissed and Masonry didn't close.
+    fn remove_dismissed(&mut self, id: WindowId) {
+        let Some(w) = self.reg.windows.get_mut(&id) else {
+            return;
+        };
+        for layer in std::mem::take(&mut w.dismissed) {
+            if w.root.get_widget(layer).is_some() {
+                w.root.remove_layer(layer);
+                w.dirty = true;
+            }
         }
     }
 
     /// Adds `widget` as a Masonry layer and shows it in an xdg-popup at its bounding box.
-    fn open_popup(&mut self, wi: usize, widget: NewWidget<dyn Widget>, pos: Point) {
-        let id = widget.id();
+    fn open_popup(&mut self, id: WindowId, widget: NewWidget<dyn Widget>, pos: Point) {
+        let layer = widget.id();
         let qh = self.qh.clone();
-        let w = &mut self.windows[wi];
+        let (seat, serial) = (self.input.seat.clone(), self.input.last_serial);
+        let Some(w) = self.reg.windows.get_mut(&id) else {
+            return;
+        };
         w.root.add_layer(widget, pos);
+        w.dirty = true;
         let bbox = w
             .root
-            .get_widget(id)
+            .get_widget(layer)
             .map(|r| r.ctx().bounding_box())
             .unwrap_or_else(|| Rect::from_origin_size(pos, (1.0, 1.0)))
             .expand();
@@ -610,7 +729,7 @@ impl State {
             Ok(p) => p,
             Err(err) => {
                 tracing::error!(%err, "no xdg_positioner; painting the layer inline");
-                w.inline_layers.push(id);
+                w.inline_layers.push(layer);
                 return;
             }
         };
@@ -625,11 +744,15 @@ impl State {
         );
 
         let wl = self.g.compositor.create_surface(&qh);
-        let wgpu_surface = match handle::create_surface(&self.gpu.instance, &self.conn, &wl) {
+        let wgpu_surface = match handle::create_surface(
+            gpu_instance(&self.gpu, &self.instance),
+            &self.conn,
+            &wl,
+        ) {
             Ok(s) => s,
             Err(err) => {
                 tracing::error!(%err, "no wgpu surface for the popup; painting the layer inline");
-                w.inline_layers.push(id);
+                w.inline_layers.push(layer);
                 return;
             }
         };
@@ -641,16 +764,16 @@ impl State {
             Ok(p) => p,
             Err(err) => {
                 tracing::error!(%err, "can't create an xdg-popup; painting the layer inline");
-                w.inline_layers.push(id);
+                w.inline_layers.push(layer);
                 return;
             }
         };
-        if let Shell::Layer(layer) = &w.shell {
-            layer.get_popup(popup.xdg_popup());
+        if let Shell::Layer(layer_surface) = &w.shell {
+            layer_surface.get_popup(popup.xdg_popup());
         }
         // Grab before the initial commit, so the compositor dismisses the popup on an
         // outside click (xdg_popup.grab must precede mapping).
-        if let (Some(seat), Some(serial)) = (&self.seat, self.last_serial) {
+        if let (Some(seat), Some(serial)) = (&seat, serial) {
             popup.xdg_popup().grab(seat, serial);
         }
         let mut surf = Surf::new(&self.g, &qh, wl, wgpu_surface, false);
@@ -660,7 +783,7 @@ impl State {
         w.popups.push(PopupLayer {
             surf,
             _popup: popup,
-            root_id: id,
+            root_id: layer,
             origin: bbox.origin(),
             layer_offset: pos - bbox.origin(),
             configured: false,
@@ -671,13 +794,16 @@ impl State {
 
     /// Enables or disables text input for the focused window to match Masonry's IME state.
     fn sync_text_input(&mut self) {
-        let Some(ti) = &mut self.text_input else {
+        let Some(ti) = &mut self.input.text_input else {
             return;
         };
-        let want = self.ti_focus.filter(|&wi| self.windows[wi].ime_allowed);
-        match (want, ti.enabled) {
-            (Some(wi), _) => {
-                let w = &mut self.windows[wi];
+        let focused = self
+            .input
+            .ti_focus
+            .and_then(|id| self.reg.windows.get_mut(&id))
+            .filter(|w| w.ime_allowed);
+        match focused {
+            Some(w) => {
                 if !ti.enabled {
                     ti.ti.enable();
                     ti.ti.set_content_type(
@@ -696,48 +822,64 @@ impl State {
                 );
                 ti.ti.commit();
             }
-            (None, true) => {
+            None if ti.enabled => {
                 ti.ti.disable();
                 ti.ti.commit();
                 ti.enabled = false;
             }
-            (None, false) => {}
+            None => {}
         }
     }
 
     fn text_input_done(&mut self) {
-        let Some(ti) = &mut self.text_input else {
+        let Some(ti) = &mut self.input.text_input else {
             return;
         };
         let commit = ti.pending_commit.take();
         let preedit = ti.pending_preedit.take();
-        let Some(wi) = self.ti_focus else { return };
-        let root = &mut self.windows[wi].root;
+        let Some(w) = self
+            .input
+            .ti_focus
+            .and_then(|id| self.reg.windows.get_mut(&id))
+        else {
+            return;
+        };
         if let Some(text) = commit {
             tracing::debug!(%text, "text-input-v3 commit");
-            root.handle_text_event(TextEvent::Ime(Ime::Preedit(String::new(), None)));
-            root.handle_text_event(TextEvent::Ime(Ime::Commit(text)));
+            w.root
+                .handle_text_event(TextEvent::Ime(Ime::Preedit(String::new(), None)));
+            w.root.handle_text_event(TextEvent::Ime(Ime::Commit(text)));
         }
         let (text, cursor) = preedit.unwrap_or_default();
-        if !text.is_empty() {
-            tracing::debug!(%text, ?cursor, "text-input-v3 preedit");
-        }
-        root.handle_text_event(TextEvent::Ime(Ime::Preedit(text, cursor)));
+        w.root
+            .handle_text_event(TextEvent::Ime(Ime::Preedit(text, cursor)));
     }
 
     // --- Drawing ----------------------------------------------------------------------
 
     fn draw_dirty(&mut self) {
-        for wi in 0..self.windows.len() {
-            let w = &self.windows[wi];
-            if w.dirty && w.configured && !w.frame_pending {
-                self.draw(wi);
-            }
+        let ids: Vec<WindowId> = self
+            .reg
+            .windows
+            .iter()
+            .filter(|(_, w)| {
+                w.dirty
+                    && w.configured
+                    && (w.surf.ready() || w.popups.iter().any(|p| p.configured && p.surf.ready()))
+            })
+            .map(|(&id, _)| id)
+            .collect();
+        for id in ids {
+            self.draw(id);
         }
     }
 
-    fn draw(&mut self, wi: usize) {
-        let w = &mut self.windows[wi];
+    /// Runs an animation frame and paints every surface of the window that can take a
+    /// frame; the others are marked stale and drawn when their frame callback fires.
+    fn draw(&mut self, id: WindowId) {
+        let (Some(gpu), Some(w)) = (self.gpu.as_mut(), self.reg.windows.get_mut(&id)) else {
+            return;
+        };
         let now = Instant::now();
         let elapsed = w.last_anim.map(|t| now - t).unwrap_or_default();
         w.root.handle_window_event(WindowEvent::AnimFrame(elapsed));
@@ -772,490 +914,84 @@ impl State {
         }
 
         let empty = Scene::new();
-        if let Some(target) = &w.surf.target {
+        if w.surf.ready() {
             let (pw, ph) = w.surf.physical(w.scale);
-            // Ask for the next frame before presenting: present commits the surface.
-            w.surf
-                .wl
-                .frame(&self.qh, FrameCallbackData(w.surf.wl.clone()));
-            w.frame_pending = true;
             let frame = PreparedFrame::new(pw, ph, w.scale, w.background, &empty, &main);
-            self.gpu.render(target, frame, || {});
+            w.surf.present(gpu, &self.qh, frame);
+        } else {
+            w.surf.stale = true;
         }
-        for (p, layers) in w.popups.iter().zip(&per_popup) {
-            let (Some(target), true) = (&p.surf.target, p.configured) else {
+        for (p, layers) in w.popups.iter_mut().zip(&per_popup) {
+            if !p.configured {
                 continue;
-            };
-            let (pw, ph) = p.surf.physical(w.scale);
-            let frame = PreparedFrame::new(pw, ph, w.scale, Color::TRANSPARENT, &empty, layers);
-            self.gpu.render(target, frame, || {});
+            }
+            if p.surf.ready() {
+                let (pw, ph) = p.surf.physical(w.scale);
+                let frame = PreparedFrame::new(pw, ph, w.scale, Color::TRANSPARENT, &empty, layers);
+                p.surf.present(gpu, &self.qh, frame);
+            } else {
+                p.surf.stale = true;
+            }
         }
         w.dirty = false;
     }
-
-    // --- Input ------------------------------------------------------------------------
-
-    fn pointer_state(&self, wi: usize, pos: Point, time: u32) -> PointerState {
-        let scale = self.windows[wi].scale;
-        PointerState {
-            time: u64::from(time) * 1_000_000,
-            position: PhysicalPosition::new(pos.x * scale, pos.y * scale),
-            buttons: self.buttons,
-            modifiers: self.modifiers,
-            count: 1,
-            scale_factor: scale,
-            ..PointerState::default()
-        }
-    }
 }
 
-// --- sctk handlers ----------------------------------------------------------------------
-
-impl CompositorHandler for State {
-    fn scale_factor_changed(
-        &mut self,
-        _: &Connection,
-        _: &QueueHandle<Self>,
-        surface: &wl_surface::WlSurface,
-        factor: i32,
-    ) {
-        // Only without fractional scale; otherwise wp_fractional_scale_v1 decides.
-        if self.g.fractional.is_some() {
-            return;
-        }
-        if let Some((wi, None)) = self.locate(surface) {
-            self.windows[wi].surf.int_scale = factor;
-            self.set_scale(wi, f64::from(factor));
-        }
-    }
-
-    fn transform_changed(
-        &mut self,
-        _: &Connection,
-        _: &QueueHandle<Self>,
-        _: &wl_surface::WlSurface,
-        _: wl_output::Transform,
-    ) {
-    }
-
-    fn frame(
-        &mut self,
-        _: &Connection,
-        _: &QueueHandle<Self>,
-        surface: &wl_surface::WlSurface,
-        _: u32,
-    ) {
-        if let Some((wi, None)) = self.locate(surface) {
-            let w = &mut self.windows[wi];
-            w.frame_pending = false;
-            if w.root.needs_anim() {
-                w.dirty = true;
-            }
-        }
-    }
-
-    fn surface_enter(
-        &mut self,
-        _: &Connection,
-        _: &QueueHandle<Self>,
-        _: &wl_surface::WlSurface,
-        _: &wl_output::WlOutput,
-    ) {
-    }
-
-    fn surface_leave(
-        &mut self,
-        _: &Connection,
-        _: &QueueHandle<Self>,
-        _: &wl_surface::WlSurface,
-        _: &wl_output::WlOutput,
-    ) {
-    }
+/// The GPU's wgpu instance once it exists, `fallback` before (the same instance either
+/// way). A free function so callers can hold other fields of `State` mutably.
+fn gpu_instance<'a>(gpu: &'a Option<Gpu>, fallback: &'a wgpu::Instance) -> &'a wgpu::Instance {
+    gpu.as_ref().map_or(fallback, |gpu| &gpu.instance)
 }
 
-impl OutputHandler for State {
-    fn output_state(&mut self) -> &mut OutputState {
-        &mut self.outputs
-    }
-    fn new_output(&mut self, _: &Connection, _: &QueueHandle<Self>, _: wl_output::WlOutput) {}
-    fn update_output(&mut self, _: &Connection, _: &QueueHandle<Self>, _: wl_output::WlOutput) {}
-    fn output_destroyed(&mut self, _: &Connection, _: &QueueHandle<Self>, _: wl_output::WlOutput) {}
+/// Creates a layer surface placed as `spec` says; the initial commit asks for a configure.
+fn create_layer(
+    layer_shell: &LayerShell,
+    qh: &QueueHandle<State>,
+    wl: wl_surface::WlSurface,
+    spec: &LayerSpec,
+    size: (u32, u32),
+) -> LayerSurface {
+    let level = match spec.layer {
+        ShellLayer::Background => wlr_layer::Layer::Background,
+        ShellLayer::Bottom => wlr_layer::Layer::Bottom,
+        ShellLayer::Top => wlr_layer::Layer::Top,
+        ShellLayer::Overlay => wlr_layer::Layer::Overlay,
+    };
+    let layer = layer_shell.create_layer_surface(qh, wl, level, Some(spec.namespace.clone()), None);
+    layer.set_anchor(layer_anchor(spec.anchor));
+    layer.set_size(size.0, size.1);
+    let m = spec.margin;
+    layer.set_margin(m.top, m.right, m.bottom, m.left);
+    layer.set_exclusive_zone(spec.exclusive_zone);
+    layer.set_keyboard_interactivity(match spec.keyboard {
+        LayerKeyboard::None => wlr_layer::KeyboardInteractivity::None,
+        LayerKeyboard::Exclusive => wlr_layer::KeyboardInteractivity::Exclusive,
+        LayerKeyboard::OnDemand => wlr_layer::KeyboardInteractivity::OnDemand,
+    });
+    layer.commit();
+    layer
 }
 
-impl WindowHandler for State {
-    fn request_close(&mut self, _: &Connection, _: &QueueHandle<Self>, _: &Window) {
-        self.exit = true;
-    }
-
-    fn configure(
-        &mut self,
-        _: &Connection,
-        _: &QueueHandle<Self>,
-        window: &Window,
-        configure: WindowConfigure,
-        _: u32,
-    ) {
-        let Some((wi, None)) = self.locate(window.wl_surface()) else {
-            return;
-        };
-        let (dw, dh) = self.windows[wi].default_size;
-        let size = (
-            configure.new_size.0.map_or(dw, |v| v.get()),
-            configure.new_size.1.map_or(dh, |v| v.get()),
-        );
-        self.configure_window(wi, size);
-    }
+fn layer_anchor(anchor: Anchor) -> wlr_layer::Anchor {
+    let mut out = wlr_layer::Anchor::empty();
+    out.set(wlr_layer::Anchor::TOP, anchor.top);
+    out.set(wlr_layer::Anchor::BOTTOM, anchor.bottom);
+    out.set(wlr_layer::Anchor::LEFT, anchor.left);
+    out.set(wlr_layer::Anchor::RIGHT, anchor.right);
+    out
 }
 
-impl LayerShellHandler for State {
-    fn closed(&mut self, _: &Connection, _: &QueueHandle<Self>, layer: &LayerSurface) {
-        tracing::info!("layer surface closed by the compositor");
-        if let Some((wi, None)) = self.locate(layer.wl_surface()) {
-            self.windows[wi].configured = false;
-        }
-    }
-
-    fn configure(
-        &mut self,
-        _: &Connection,
-        _: &QueueHandle<Self>,
-        layer: &LayerSurface,
-        configure: LayerSurfaceConfigure,
-        _: u32,
-    ) {
-        let Some((wi, None)) = self.locate(layer.wl_surface()) else {
-            return;
-        };
-        let (dw, dh) = self.windows[wi].default_size;
-        let pick = |v: u32, d: u32| if v == 0 { d } else { v };
-        let size = (
-            pick(configure.new_size.0, dw),
-            pick(configure.new_size.1, dh),
-        );
-        self.configure_window(wi, size);
-    }
-}
-
-impl PopupHandler for State {
-    fn configure(
-        &mut self,
-        _: &Connection,
-        _: &QueueHandle<Self>,
-        popup: &Popup,
-        config: PopupConfigure,
-    ) {
-        let Some((wi, Some(pi))) = self.locate(popup.wl_surface()) else {
-            return;
-        };
-        let fractional = self.g.fractional.is_some();
-        let w = &mut self.windows[wi];
-        let p = &mut w.popups[pi];
-        let origin = Point::new(f64::from(config.position.0), f64::from(config.position.1));
-        tracing::debug!(
-            ?origin,
-            width = config.width,
-            height = config.height,
-            "popup configured"
-        );
-        if origin != p.origin {
-            // The compositor flipped or slid the popup: move the Masonry layer to match.
-            p.origin = origin;
-            w.root.reposition_layer(p.root_id, origin + p.layer_offset);
-        }
-        let p = &mut w.popups[pi];
-        p.surf.size = (config.width.max(1) as u32, config.height.max(1) as u32);
-        p.surf.apply(&self.gpu, w.scale, fractional);
-        p.configured = true;
-        w.dirty = true;
-        // A popup's first frame must not wait for the parent's frame callback.
-        w.frame_pending = false;
-    }
-
-    fn done(&mut self, _: &Connection, _: &QueueHandle<Self>, popup: &Popup) {
-        let Some((wi, Some(pi))) = self.locate(popup.wl_surface()) else {
-            return;
-        };
-        let id = self.windows[wi].popups[pi].root_id;
-        tracing::debug!("popup dismissed by the compositor");
-        // Masonry's menu layers close themselves on a pointer cancel.
-        self.windows[wi]
-            .root
-            .handle_pointer_event(MasonryPointer::Cancel(input::MOUSE));
-        self.process_signals();
-        let w = &mut self.windows[wi];
-        if w.popups.iter().any(|p| p.root_id == id) {
-            w.root.remove_layer(id);
-            w.popups.retain(|p| p.root_id != id);
-            w.dirty = true;
-        }
-    }
-}
-
-impl SeatHandler for State {
-    fn seat_state(&mut self) -> &mut SeatState {
-        &mut self.seats
-    }
-
-    fn new_seat(&mut self, _: &Connection, _: &QueueHandle<Self>, seat: wl_seat::WlSeat) {
-        self.adopt_seat(seat);
-    }
-
-    fn new_capability(
-        &mut self,
-        _: &Connection,
-        qh: &QueueHandle<Self>,
-        seat: wl_seat::WlSeat,
-        capability: Capability,
-    ) {
-        match capability {
-            Capability::Keyboard if self.keyboard.is_none() => {
-                match self.seats.get_keyboard(qh, &seat, None) {
-                    Ok(k) => self.keyboard = Some(k),
-                    Err(err) => tracing::error!(%err, "no keyboard"),
-                }
-            }
-            Capability::Pointer if self.pointer.is_none() => {
-                match self.seats.get_pointer(qh, &seat) {
-                    Ok(p) => self.pointer = Some(p),
-                    Err(err) => tracing::error!(%err, "no pointer"),
-                }
-            }
-            _ => {}
-        }
-    }
-
-    fn remove_capability(
-        &mut self,
-        _: &Connection,
-        _: &QueueHandle<Self>,
-        _: wl_seat::WlSeat,
-        capability: Capability,
-    ) {
-        match capability {
-            Capability::Keyboard => {
-                if let Some(k) = self.keyboard.take() {
-                    k.release();
-                }
-            }
-            Capability::Pointer => {
-                if let Some(p) = self.pointer.take() {
-                    p.release();
-                }
-            }
-            _ => {}
-        }
-    }
-
-    fn remove_seat(&mut self, _: &Connection, _: &QueueHandle<Self>, _: wl_seat::WlSeat) {}
-}
-
-impl KeyboardHandler for State {
-    fn enter(
-        &mut self,
-        _: &Connection,
-        _: &QueueHandle<Self>,
-        _: &wl_keyboard::WlKeyboard,
-        surface: &wl_surface::WlSurface,
-        serial: u32,
-        _: &[u32],
-        _: &[Keysym],
-    ) {
-        self.last_serial = Some(serial);
-        let Some((wi, _)) = self.locate(surface) else {
-            return;
-        };
-        self.kb_focus = Some(wi);
-        // Focus moving between a window and its own popups isn't a window focus change:
-        // Masonry's menus close when their window loses focus.
-        if self.kb_pending_leave.take() != Some(wi) {
-            self.flush_focus_leave();
-            self.windows[wi]
-                .root
-                .handle_text_event(TextEvent::WindowFocusChange(true));
-        }
-    }
-
-    fn leave(
-        &mut self,
-        _: &Connection,
-        _: &QueueHandle<Self>,
-        _: &wl_keyboard::WlKeyboard,
-        surface: &wl_surface::WlSurface,
-        _: u32,
-    ) {
-        // Deferred: a matching `enter` on the same window may follow in this batch.
-        if let Some((wi, _)) = self.locate(surface) {
-            self.flush_focus_leave();
-            self.kb_pending_leave = Some(wi);
-            if self.kb_focus == Some(wi) {
-                self.kb_focus = None;
-            }
-        }
-    }
-
-    fn press_key(
-        &mut self,
-        _: &Connection,
-        _: &QueueHandle<Self>,
-        _: &wl_keyboard::WlKeyboard,
-        serial: u32,
-        event: KeyEvent,
-    ) {
-        self.last_serial = Some(serial);
-        self.key(&event, KeyState::Down);
-    }
-
-    fn repeat_key(
-        &mut self,
-        _: &Connection,
-        _: &QueueHandle<Self>,
-        _: &wl_keyboard::WlKeyboard,
-        _: u32,
-        event: KeyEvent,
-    ) {
-        self.key(&event, KeyState::Down);
-    }
-
-    fn release_key(
-        &mut self,
-        _: &Connection,
-        _: &QueueHandle<Self>,
-        _: &wl_keyboard::WlKeyboard,
-        _: u32,
-        event: KeyEvent,
-    ) {
-        self.key(&event, KeyState::Up);
-    }
-
-    fn update_modifiers(
-        &mut self,
-        _: &Connection,
-        _: &QueueHandle<Self>,
-        _: &wl_keyboard::WlKeyboard,
-        _: u32,
-        modifiers: smithay_client_toolkit::seat::keyboard::Modifiers,
-        _: RawModifiers,
-        _: u32,
-    ) {
-        self.modifiers = input::modifiers(&modifiers);
-    }
-}
-
-impl State {
-    /// Reports a deferred keyboard leave to Masonry.
-    fn flush_focus_leave(&mut self) {
-        if let Some(wi) = self.kb_pending_leave.take() {
-            self.windows[wi]
-                .root
-                .handle_text_event(TextEvent::WindowFocusChange(false));
-        }
-    }
-
-    /// Uses the first seat: creates its text-input object. Pointer and keyboard come from
-    /// `new_capability`.
-    fn adopt_seat(&mut self, seat: wl_seat::WlSeat) {
-        if self.seat.is_some() {
-            return;
-        }
-        if let Some(mgr) = &self.g.text_input {
-            self.text_input = Some(TextInput {
-                ti: mgr.get_text_input(&seat, &self.qh, TextInputData),
-                enabled: false,
-                pending_preedit: None,
-                pending_commit: None,
-            });
-        }
-        self.seat = Some(seat);
-    }
-
-    fn key(&mut self, event: &KeyEvent, state: KeyState) {
-        let Some(wi) = self.kb_focus else { return };
-        let ev = input::key_event(event, state, self.modifiers);
-        self.windows[wi]
-            .root
-            .handle_text_event(TextEvent::Keyboard(ev));
-    }
-}
-
-impl PointerHandler for State {
-    fn pointer_frame(
-        &mut self,
-        _: &Connection,
-        _: &QueueHandle<Self>,
-        _: &wl_pointer::WlPointer,
-        events: &[PointerEvent],
-    ) {
-        for event in events {
-            let Some((wi, popup)) = self.locate(&event.surface) else {
-                continue;
-            };
-            let offset = popup.map_or(Vec2::ZERO, |pi| {
-                self.windows[wi].popups[pi].origin.to_vec2()
-            });
-            let pos = Point::new(event.position.0, event.position.1) + offset;
-            let masonry = match event.kind {
-                PointerEventKind::Enter { serial } => {
-                    self.last_serial = Some(serial);
-                    MasonryPointer::Enter(input::MOUSE)
-                }
-                PointerEventKind::Leave { .. } => MasonryPointer::Leave(input::MOUSE),
-                PointerEventKind::Motion { time } => MasonryPointer::Move(PointerUpdate {
-                    pointer: input::MOUSE,
-                    current: self.pointer_state(wi, pos, time),
-                    coalesced: Vec::new(),
-                    predicted: Vec::new(),
-                }),
-                PointerEventKind::Press {
-                    time,
-                    button,
-                    serial,
-                } => {
-                    self.last_serial = Some(serial);
-                    let button = input::button(button);
-                    if let Some(b) = button {
-                        self.buttons.insert(b);
-                    }
-                    MasonryPointer::Down(PointerButtonEvent {
-                        button,
-                        pointer: input::MOUSE,
-                        state: self.pointer_state(wi, pos, time),
-                    })
-                }
-                PointerEventKind::Release {
-                    time,
-                    button,
-                    serial,
-                } => {
-                    self.last_serial = Some(serial);
-                    let button = input::button(button);
-                    if let Some(b) = button {
-                        self.buttons.remove(b);
-                    }
-                    MasonryPointer::Up(PointerButtonEvent {
-                        button,
-                        pointer: input::MOUSE,
-                        state: self.pointer_state(wi, pos, time),
-                    })
-                }
-                PointerEventKind::Axis {
-                    time,
-                    horizontal,
-                    vertical,
-                    ..
-                } => {
-                    let scale = self.windows[wi].scale;
-                    MasonryPointer::Scroll(PointerScrollEvent {
-                        pointer: input::MOUSE,
-                        delta: ScrollDelta::PixelDelta(PhysicalPosition::new(
-                            -horizontal.absolute * scale,
-                            -vertical.absolute * scale,
-                        )),
-                        state: self.pointer_state(wi, pos, time),
-                    })
-                }
-            };
-            self.windows[wi].root.handle_pointer_event(masonry);
-        }
+fn resize_edge(direction: ResizeDirection) -> xdg_toplevel::ResizeEdge {
+    use xdg_toplevel::ResizeEdge;
+    match direction {
+        ResizeDirection::North => ResizeEdge::Top,
+        ResizeDirection::NorthEast => ResizeEdge::TopRight,
+        ResizeDirection::East => ResizeEdge::Right,
+        ResizeDirection::SouthEast => ResizeEdge::BottomRight,
+        ResizeDirection::South => ResizeEdge::Bottom,
+        ResizeDirection::SouthWest => ResizeEdge::BottomLeft,
+        ResizeDirection::West => ResizeEdge::Left,
+        ResizeDirection::NorthWest => ResizeEdge::TopLeft,
     }
 }
 
@@ -1292,10 +1028,10 @@ impl Dispatch2<WpFractionalScaleV1, State> for FractionalData {
         _: &QueueHandle<State>,
     ) {
         if let wp_fractional_scale_v1::Event::PreferredScale { scale } = event
-            && let Some((wi, None)) = state.locate(&self.0)
+            && let Some((id, None)) = state.locate(&self.0)
         {
             // The protocol sends the scale in 120ths.
-            state.set_scale(wi, f64::from(scale) / 120.0);
+            state.set_scale(id, f64::from(scale) / 120.0);
         }
     }
 }
@@ -1315,34 +1051,37 @@ impl Dispatch2<ZwpTextInputV3, State> for TextInputData {
         use zwp_text_input_v3::Event;
         match event {
             Event::Enter { surface } => {
-                state.ti_focus = state.locate(&surface).map(|(wi, _)| wi);
-                tracing::debug!(window = ?state.ti_focus, "text-input-v3 enter");
+                state.input.ti_focus = state.locate(&surface).map(|(id, _)| id);
+                tracing::debug!(window = ?state.input.ti_focus, "text-input-v3 enter");
                 state.sync_text_input();
             }
             Event::Leave { .. } => {
                 tracing::debug!("text-input-v3 leave");
-                if let Some(ti) = &mut state.text_input
+                let focus = state.input.ti_focus.take();
+                if let Some(ti) = &mut state.input.text_input
                     && ti.enabled
                 {
                     ti.ti.disable();
                     ti.ti.commit();
                     ti.enabled = false;
+                    if let Some(w) = focus.and_then(|id| state.reg.windows.get_mut(&id)) {
+                        w.root.handle_text_event(TextEvent::Ime(Ime::Disabled));
+                    }
                 }
-                state.ti_focus = None;
             }
             Event::PreeditString {
                 text,
                 cursor_begin,
                 cursor_end,
             } => {
-                if let Some(ti) = &mut state.text_input {
+                if let Some(ti) = &mut state.input.text_input {
                     let cursor = (cursor_begin >= 0 && cursor_end >= 0)
                         .then_some((cursor_begin as usize, cursor_end as usize));
                     ti.pending_preedit = Some((text.unwrap_or_default(), cursor));
                 }
             }
             Event::CommitString { text } => {
-                if let Some(ti) = &mut state.text_input {
+                if let Some(ti) = &mut state.input.text_input {
                     ti.pending_commit = text;
                 }
             }
@@ -1351,5 +1090,46 @@ impl Dispatch2<ZwpTextInputV3, State> for TextInputData {
             Event::Done { .. } => state.text_input_done(),
             _ => {}
         }
+    }
+}
+
+#[cfg(test)]
+mod tests {
+    use super::*;
+
+    #[test]
+    fn physical_size_rounds_and_is_never_empty() {
+        assert_eq!(physical((440, 360), 1.5), (660, 540));
+        assert_eq!(physical((101, 1), 1.25), (126, 1));
+        assert_eq!(physical((0, 0), 2.0), (1, 1));
+    }
+
+    #[test]
+    fn layer_anchor_maps_every_edge() {
+        let all = Anchor {
+            top: true,
+            bottom: true,
+            left: true,
+            right: true,
+        };
+        assert_eq!(layer_anchor(all), wlr_layer::Anchor::all());
+        assert_eq!(layer_anchor(Anchor::TOP), wlr_layer::Anchor::TOP);
+        assert_eq!(
+            layer_anchor(Anchor::TOP_EDGE),
+            wlr_layer::Anchor::TOP | wlr_layer::Anchor::LEFT | wlr_layer::Anchor::RIGHT
+        );
+        assert_eq!(layer_anchor(Anchor::default()), wlr_layer::Anchor::empty());
+    }
+
+    #[test]
+    fn resize_edges_match_directions() {
+        assert_eq!(
+            resize_edge(ResizeDirection::NorthWest),
+            xdg_toplevel::ResizeEdge::TopLeft
+        );
+        assert_eq!(
+            resize_edge(ResizeDirection::South),
+            xdg_toplevel::ResizeEdge::Bottom
+        );
     }
 }

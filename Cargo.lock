@@ -2435,9 +2435,11 @@ name = "neue-comp"
 version = "0.0.0"
 dependencies = [
  "anyhow",
+ "masonry",
  "neue-config",
  "neue-ipc",
  "neue-paint",
+ "neue-platform",
  "neue-protocols",
  "rustix 1.1.6",
  "serde",

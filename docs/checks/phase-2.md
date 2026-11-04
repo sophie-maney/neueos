@@ -4,6 +4,7 @@ The owner's manual check steps for Phase 2 tasks (`docs/plan/phase-2.md`). They 
 `docs/dev-setup.md` §2: everything runs from the Mac over ssh, from the repo root.
 
 ## 1. Checking the sctk driver spike (task 2.2)
+Historical: task 2.5 replaced `sctk_spike` with `demo` (§3); these steps no longer build.
 Runs inside a neue-comp session in the VM: the installed greetd session (log in at the
 console), or a dev build started as in `docs/dev-setup.md` §1.3. The output must be at
 scale 1 for steps 3–6, because `click_in_window` relies on the ydotool quirk in §1.7. The
@@ -98,9 +99,9 @@ Runs natively on the Mac, from the repo root. No VM needed.
 
 **1. Start the demo:**
 ```sh
-RUST_LOG=info,neue_platform=debug cargo run -p neue-platform --example winit_demo
+RUST_LOG=info,neue_platform=debug cargo run -p neue-platform --example demo
 ```
-Expected: one window, "neue-platform: winit demo 1", with a label, the Aqua button tile, a
+Expected: one window, "neue-platform: demo 1", with a label, the Aqua button tile, a
 text field, an echo label, a selector and two buttons. Text is sharp (Retina, scale 2). The
 log shows `wgpu adapter ... backend=Metal` and `opened window id=window#0`, and no `WARN`.
 
@@ -127,3 +128,78 @@ unchanged. "Close" in window 2 closes only it. Closing the last window (red butt
 "Close") quits the demo.
 
 Report: which steps passed, and the log lines of any step that didn't.
+
+## 3. Checking the Wayland driver (task 2.5)
+The same demo as §2, under neue-comp in the VM, set up as in §1 (session running, ydotoold
+started, output at scale 1). The agent ran steps 1–4 on 2026-11-04 against the installed
+session; the owner ran steps 5 and 6 (cursor shapes, scale 1.5) the same day. All passed.
+
+**1. Sync, build, start the input-method probe and the demo** (the probe first, as in §1
+step 3):
+```sh
+rsync -az --delete --exclude target --exclude .git ./ neueos-vm:neueos/
+ssh neueos-vm 'cd neueos && cargo build --release -p neue-platform --examples'
+ssh neueos-vm '. ~/neueos/docs/vm-env.sh; pkill -x demo; pkill -x ime_probe; sleep 0.5
+  setsid nohup ~/neueos/target/release/examples/ime_probe neue "neueOS IME" >/tmp/ime.log 2>&1 </dev/null &
+  export WGPU_BACKEND=gl RUST_LOG=info,neue_platform=debug
+  setsid nohup ~/neueos/target/release/examples/demo >/tmp/demo.log 2>&1 </dev/null &
+  sleep 3; neuectl windows; grep -E "wgpu adapter|WARN|ERROR" /tmp/demo.log | cut -c1-200; neuectl screenshot /tmp/d1.png'
+mkdir -p ~/Desktop/neueos-shots && scp 'neueos-vm:/tmp/d*.png' ~/Desktop/neueos-shots/ && open ~/Desktop/neueos-shots
+```
+Expected: `neuectl windows` lists `org.neueos.PlatformDemo` "neue-platform: demo 1" at
+440x360; the log names the `virgl` adapter with `backend=Gl` and has no `WARN` or `ERROR`.
+`d1.png` shows the dark-blue layer-shell strip near the top edge and the window: label,
+Aqua button, text field, echo label, "Linen" selector, "New window" and "Close".
+
+**2. IME, typing with key repeat, Return:**
+```sh
+ssh neueos-vm '. ~/neueos/docs/vm-env.sh; export YDOTOOL_SOCKET=/tmp/.ydotool_socket
+  click_in_window 208 91; sleep 2.5
+  ydotool key 30:1; sleep 1.2; ydotool key 30:0; sleep 0.3; ydotool key 28:1 28:0; sleep 0.8
+  neuectl screenshot /tmp/d2.png; cat /tmp/ime.log; grep Entered /tmp/demo.log | cut -c1-200'
+scp 'neueos-vm:/tmp/d*.png' ~/Desktop/neueos-shots/
+```
+Expected: `ime.log` ends with `preedit neue` and `commit neueOS IME`; holding A for 1.2 s
+types a row of `a`s (repeat); Return logs `Entered("neueOS IMEaaaa…")`, and `d2.png` shows
+"You typed: neueOS IMEaaaa…".
+
+**3. The selector's menu (xdg-popup):**
+```sh
+ssh neueos-vm '. ~/neueos/docs/vm-env.sh; click_in_window 219 164; sleep 1; neuectl screenshot /tmp/d3.png
+  click_in_window 186 228; sleep 1; grep -E "popup configured|SelectionChanged" /tmp/demo.log | cut -c1-200'
+scp 'neueos-vm:/tmp/d*.png' ~/Desktop/neueos-shots/
+```
+Expected: `d3.png` shows "Linen", "Aqua", "Graphite" under the selector; the log has
+`popup configured origin=(153.0, 184.0) width=90 height=90` and
+`SelectionChanged { selected_content: "Aqua", index: 1 }`.
+
+**4. Several windows and closing.** Restart the demo first if step 3 ran (after a popup is
+destroyed, neue-comp leaves no window focused, so `click_in_window` may miss):
+```sh
+ssh neueos-vm '. ~/neueos/docs/vm-env.sh; click_in_window 59 209; sleep 1.5; neuectl windows
+  W2=$(neuectl --json windows | jq -r ".[] | select(.title==\"neue-platform: demo 2\") | .id")
+  neuectl action close-window --window $W2; sleep 1; neuectl windows
+  click_in_window 164 209; sleep 1.5; neuectl windows; pgrep -x demo || echo "demo exited"'
+```
+Expected: "New window" opens "neue-platform: demo 2"; the close action closes only it;
+"Close" in window 1 closes it, the strip goes with it, and the demo exits.
+
+**5. Cursor shapes** (owner, with the mouse in the VM window): start the demo as in step
+1. Over the text field the pointer is an I-beam, elsewhere an arrow; over the title bar it
+is whatever neue-comp draws. `grep "can't set the cursor" /tmp/demo.log` prints nothing.
+
+**6. Fractional scale 1.5** (as §1 step 7, with the demo running):
+```sh
+ssh neueos-vm '. ~/neueos/docs/vm-env.sh; cp ~/.config/neueos/compositor.toml /tmp/compositor.toml.bak
+  printf "\n[outputs.Virtual-1]\nscale = 1.5\n" >> ~/.config/neueos/compositor.toml; sleep 2
+  neuectl outputs; grep "scale changed" /tmp/demo.log | cut -c1-120; neuectl screenshot /tmp/d6.png
+  cp /tmp/compositor.toml.bak ~/.config/neueos/compositor.toml'
+scp 'neueos-vm:/tmp/d*.png' ~/Desktop/neueos-shots/
+```
+Expected: `scale 1.5` and one `scale changed ... scale=1.5` line for the window. In
+`d6.png` the window is 1.5× larger with sharp text. The strip is blurry until task 2.27.
+
+**7. Clean up:**
+```sh
+ssh neueos-vm 'pkill -x demo; pkill -x ime_probe; true'
+```

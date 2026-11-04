@@ -27,7 +27,7 @@ the paper and leather materials move to Phase 6/7 (Widgets, Write).
       *Accept:* works under neue-comp in the VM (checked with `neuectl screenshot`);
       go/no-go recorded as an ADR 0002 amendment.
       *Done:* **go**. New crate `neue-platform` with `wayland` (Linux-only module) and the
-      `sctk_spike` and `ime_probe` examples, checked in the VM (`docs/checks/phase-2.md` §1).
+      `sctk_spike` (replaced by `demo` in 2.5) and `ime_probe` examples, checked in the VM (`docs/checks/phase-2.md` §1).
       Findings for 2.5/2.6 and Phase 3 are in `docs/research/masonry-spike.md`: neue-comp
       sends no scale to layer surfaces, and it has no virtual-keyboard, so fcitx5 can't bind.
 - [x] **2.3 `neue-theme` crate** · Opus. New portable crate: semantic colours, metrics,
@@ -48,14 +48,21 @@ the paper and leather materials move to Phase 6/7 (Widgets, Write).
       (demo, typing/clipboard/layers, several windows) passed; 3 (IME) and 4 (VoiceOver)
       pending. `neue_platform::winit` (ADR 0032) is **macOS only**:
       on Linux, `ui-events-winit` would pull in X11 crates. Shared `neue_platform::gpu`
-      renderer and `Options`; `App`/`Ctx` API with run-time windows; `winit_demo` example.
-- [ ] **2.5 `neue-platform` Wayland driver: core** · Opus. Harden the 2.2 driver:
+      renderer and `Options`; `App`/`Ctx` API with run-time windows; `winit_demo` example (renamed `demo` in 2.5).
+- [x] **2.5 `neue-platform` Wayland driver: core** · Opus. Harden the 2.2 driver:
       xdg-toplevel, layer-shell, fractional scale + viewporter, frame callbacks,
       cursor-shape, text-input-v3, keyboard repeat.
       Align the driver with the winit driver's `App`/`Ctx` API (ADR 0032), so the 2.4 demo
       runs on both.
       *Accept:* the 2.4 demo runs under neue-comp in the VM; a headless neue-comp test maps
       a window from it.
+      *Done:* ADR 0033. `App`/`Ctx`/`WindowSpec` (with `WindowKind::Layer`) at the crate
+      root, `neue_platform::run` per host; `wayland::run_with_connection`; per-surface
+      frame-callback pacing; cursor shapes with xcursor fallback; key repeat and winit's
+      key tables; click counting. `examples/demo.rs` replaces `winit_demo` and
+      `sctk_spike`; `neue-comp/tests/platform.rs` maps and draws a driver window. VM check
+      `docs/checks/phase-2.md` §3 passed: steps 1–4 run by the agent, 5–6 (cursor shapes,
+      scale 1.5) by the owner.
 - [ ] **2.6 Wayland driver: popups, clipboard, a11y** · Opus. xdg-popup positioning for
       all Masonry layers, clipboard and primary selection, xdg-activation, xdg-dialog,
       AccessKit on Linux (`accesskit_unix`).
@@ -119,7 +126,7 @@ the paper and leather materials move to Phase 6/7 (Widgets, Write).
       (`tests/harness/client.rs`, now toplevel-only).
       *Accept:* a headless test in `tests/outputs.rs` or `tests/shell_protocols.rs`: a
       layer surface on a 1.5 output gets `preferred_scale` 180, and 240 after a config
-      reload to 2; in the VM, `docs/checks/phase-2.md` §1 step 7 shows the layer-shell strip
-      sharp. Order: any time, but before 2.5's VM check.
+      reload to 2; in the VM, `docs/checks/phase-2.md` §3 step 6 shows the demo's
+      layer-shell strip sharp. Order: any time, but before 2.5's VM check.
 - **Exit:** the gallery shows the whole widget set, in light and dark, identically on
   macOS and in the VM.

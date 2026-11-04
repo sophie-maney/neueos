@@ -152,6 +152,12 @@ impl Server {
 
     /// Connect a new scripted client.
     pub fn connect(&self) -> TestClient {
+        TestClient::new(self.connect_raw())
+    }
+
+    /// The client end of a new connection, for a client the harness doesn't script
+    /// (`wayland_client::Connection::from_socket`).
+    pub fn connect_raw(&self) -> UnixStream {
         let (ours, theirs) = UnixStream::pair().expect("creating a socket pair");
         self.with_state(move |state| {
             state
@@ -160,7 +166,7 @@ impl Server {
                 .map_err(|err| err.to_string())
         })
         .expect("inserting the client");
-        TestClient::new(ours)
+        ours
     }
 }
 

@@ -1,16 +1,15 @@
-//! neue-platform's winit driver (task 2.4): a text field, IME, the clipboard, a Masonry
-//! layer (the selector's menu), AccessKit and several windows.
-//!
-//! macOS only, like the driver (ADR 0032):
+//! neue-platform's demo (tasks 2.4 and 2.5): a text field, IME, a Masonry layer (the
+//! selector's menu), several windows, and on Linux a layer-shell strip. The same app runs
+//! on the winit driver (macOS) and the Wayland driver (Linux):
 //!
 //! ```sh
-//! RUST_LOG=info,neue_platform=debug cargo run -p neue-platform --example winit_demo
+//! RUST_LOG=info,neue_platform=debug cargo run -p neue-platform --example demo
 //! ```
 //!
-//! Manual checks (IME, VoiceOver) are in docs/checks/phase-2.md §2. Uses Masonry's stock
-//! widgets (`masonry` crate), which is allowed in examples only (ADR 0002 §4).
+//! Under neue-comp in the VM, add `WGPU_BACKEND=gl` (virgl GLES). Manual checks are in
+//! docs/checks/phase-2.md §2 (macOS) and §3 (VM). Uses Masonry's stock widgets (`masonry`
+//! crate), which is allowed in examples only (ADR 0002 §4).
 
-#[cfg(target_os = "macos")]
 #[path = "../../neue-paint/tests/common/aqua_widget.rs"]
 #[allow(
     dead_code,
@@ -18,12 +17,11 @@
 )]
 mod aqua_widget;
 
-#[cfg(target_os = "macos")]
 mod demo {
     use masonry::core::{ErasedAction, NewWidget, Widget as _, WidgetId, WidgetTag};
     use masonry::peniko::Color;
     use masonry::widgets::{Button, ButtonPress, Flex, Label, Selector, TextAction, TextInput};
-    use neue_platform::winit::{App, Ctx, WindowId, WindowSpec};
+    use neue_platform::{App, Ctx, LayerSpec, Margin, WindowId, WindowKind, WindowSpec};
 
     use super::aqua_widget::AquaButtonTile;
 
@@ -34,6 +32,7 @@ mod demo {
     #[derive(Debug, Default)]
     pub(super) struct Demo {
         opened: u32,
+        strip: Option<WindowId>,
     }
 
     impl Demo {
@@ -44,7 +43,7 @@ mod demo {
                 .with_fixed(NewWidget::new(Button::with_text("New window")).with_tag(NEW_WINDOW))
                 .with_fixed(NewWidget::new(Button::with_text("Close")).with_tag(CLOSE));
             let root = Flex::column()
-                .with_fixed(Label::new(format!("neue-platform winit driver, window {n}")).prepare())
+                .with_fixed(Label::new(format!("neue-platform demo, window {n}")).prepare())
                 .with_fixed(AquaButtonTile::new(neue_paint::Appearance::Light).prepare())
                 .with_fixed(
                     TextInput::new("")
@@ -59,11 +58,36 @@ mod demo {
                 )
                 .with_fixed(buttons.prepare());
             WindowSpec {
-                title: format!("neue-platform: winit demo {n}"),
+                title: format!("neue-platform: demo {n}"),
+                app_id: "org.neueos.PlatformDemo".into(),
                 width: 440,
                 height: 360,
                 root: NewWidget::new(root).erased(),
                 background: Color::from_rgb8(0x4a, 0x50, 0x5a),
+                kind: WindowKind::Toplevel,
+            }
+        }
+
+        /// Closes `window`, and the strip with the last ordinary window.
+        fn close(&mut self, cx: &mut Ctx<'_>, window: WindowId) {
+            cx.close_window(window);
+            if cx.windows().all(|w| Some(w) == self.strip) {
+                cx.exit();
+            }
+        }
+
+        /// A strip under the top edge of the screen: a layer-shell surface (Linux only).
+        fn strip() -> WindowSpec {
+            let bar = Flex::row().with_fixed(Label::new("neueOS layer-shell surface").prepare());
+            let mut layer = LayerSpec::new("neue-platform-demo", neue_platform::Anchor::TOP);
+            layer.margin = Margin {
+                top: 40,
+                ..Margin::default()
+            };
+            WindowSpec {
+                background: Color::from_rgb8(0x2e, 0x4a, 0x6e),
+                kind: WindowKind::Layer(layer),
+                ..WindowSpec::new("strip", (320, 32), NewWidget::new(bar).erased())
             }
         }
     }
@@ -72,6 +96,13 @@ mod demo {
         fn on_start(&mut self, cx: &mut Ctx<'_>) {
             let spec = self.window();
             cx.open_window(spec);
+            if cfg!(target_os = "linux") {
+                self.strip = Some(cx.open_window(Self::strip()));
+            }
+        }
+
+        fn on_close_requested(&mut self, cx: &mut Ctx<'_>, window: WindowId) {
+            self.close(cx, window);
         }
 
         fn on_action(
@@ -96,14 +127,13 @@ mod demo {
                     let spec = self.window();
                     cx.open_window(spec);
                 } else if close == Some(widget) {
-                    cx.close_window(window);
+                    self.close(cx, window);
                 }
             }
         }
     }
 }
 
-#[cfg(target_os = "macos")]
 fn main() -> anyhow::Result<()> {
     use std::sync::Arc;
 
@@ -119,11 +149,6 @@ fn main() -> anyhow::Result<()> {
         default_properties: Arc::new(masonry::theme::default_property_set()),
         font: Some(Blob::new(Arc::new(FONT))),
     };
-    neue_platform::winit::run(&mut demo::Demo::default(), options)?;
+    neue_platform::run(&mut demo::Demo::default(), options)?;
     Ok(())
-}
-
-#[cfg(not(target_os = "macos"))]
-fn main() {
-    eprintln!("winit_demo runs on macOS only; on Linux, see the sctk_spike example");
 }

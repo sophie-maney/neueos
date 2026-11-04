@@ -54,6 +54,9 @@ smithay = { workspace = true, features = [
 ] }
 
 [target.'cfg(target_os = "linux")'.dev-dependencies]
+# tests/platform.rs: neue-platform's Wayland driver against the headless compositor.
+masonry.workspace = true
+neue-platform.workspace = true
 neue-protocols = { workspace = true, features = ["client"] }
 tempfile.workspace = true
 wayland-client.workspace = true

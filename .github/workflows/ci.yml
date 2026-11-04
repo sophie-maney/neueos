@@ -46,12 +46,13 @@ jobs:
       # C libraries neue-comp links (xkbcommon; libinput, libudev, libseat and libgbm for
       # the tty backend), plus what the headless tests dlopen: libwayland-client for the
       # scripted clients, and Mesa's EGL with its software device (llvmpipe) for the render
-      # tests (docs/dev-setup.md §1.2, ADR 0021).
+      # tests (docs/dev-setup.md §1.2, ADR 0021), with libwayland-egl for neue-platform's
+      # driver test (wgpu's GL backend on Wayland, ADR 0033).
       - name: Install Linux build dependencies
         if: runner.os == 'Linux'
         run: >-
           sudo apt-get update && sudo apt-get install -y --no-install-recommends
-          libxkbcommon-dev libwayland-client0
+          libxkbcommon-dev libwayland-client0 libwayland-egl1
           libinput-dev libudev-dev libseat-dev libgbm-dev
           libegl1 libegl-mesa0 libgl1-mesa-dri
 
