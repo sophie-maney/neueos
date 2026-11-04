@@ -87,7 +87,7 @@ the paper and leather materials move to Phase 6/7 (Widgets, Write).
       and `App::on_wake`. Examples `counter` and `async_tasks` checked on macOS; headless
       app-model tests on a fake host. `cargo xtask check` fails if a crate under `apps/`
       or `shell/` depends on `masonry*`. No goldens yet: 2.9 builds the golden helper.
-- [ ] **2.8 Springs and animation** · Opus. Spring animation on `on_anim_frame` with the
+- [x] **2.8 Springs and animation** · Opus. Spring animation on `on_anim_frame` with the
       `neue-theme` presets, honouring reduced motion.
       *Accept:* unit tests step deterministically; reduced motion snaps to the end value.
 - [ ] **2.9 Gallery, golden harness, push button (the pattern)** · Opus. `apps/gallery`

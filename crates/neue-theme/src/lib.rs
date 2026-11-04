@@ -25,7 +25,7 @@ pub mod radii;
 pub mod typography;
 
 pub use colors::SemanticColors;
-pub use motion::{Motion, Spring};
+pub use motion::{Motion, Spring, SpringValue};
 
 /// An sRGB colour with straight (unpremultiplied) alpha; the same type as `peniko::Color`.
 pub type Color = color::AlphaColor<color::Srgb>;

@@ -46,6 +46,13 @@
 //! this API, and app crates must not depend on it (ADR 0002 §4, checked by
 //! `cargo xtask check`).
 
+// The first widgets to move on springs land with tasks 2.12 and 2.13 (checkbox,
+// segmented control, slider); until then only the tests use this module.
+#[cfg_attr(
+    not(test),
+    expect(dead_code, reason = "first users land with tasks 2.12–2.13")
+)]
+mod anim;
 mod app;
 mod element;
 mod task;
