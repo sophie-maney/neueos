@@ -9,6 +9,7 @@ mod focus_ring;
 mod groove;
 pub mod hud;
 mod linen;
+mod menu;
 pub mod menu_bar;
 mod progress;
 mod scroller;
@@ -27,6 +28,9 @@ pub use bevel_button::{
 };
 pub use focus_ring::focus_ring;
 pub use linen::{Linen, fill_linen};
+pub use menu::{
+    MenuMark, menu_highlight, menu_mark, menu_outline, menu_panel, menu_separator, submenu_arrow,
+};
 pub use progress::{Progress, progress_bar};
 pub use scroller::{Scroller, scroller, scroller_knob, scroller_travel};
 pub use segmented::{Segmented, segment_edges, segmented, segmented_outline};

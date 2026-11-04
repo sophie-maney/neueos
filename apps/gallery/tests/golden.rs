@@ -11,11 +11,12 @@
 use std::time::Duration;
 
 use neue_gallery::specimens::{
-    self, BEVEL_SIZE, FIELD_SIZE, PROGRESS_SIZE, PUSH_BUTTON_SIZE, SCROLL_SIZE, SEGMENTED_SIZE,
-    SLIDER_SIZE, SPINNER_SIZE, STEPPER_SIZE, TEXT_VIEW_SIZE, TOGGLE_SIZE,
+    self, BEVEL_SIZE, FIELD_SIZE, MENU_SIZE, PROGRESS_SIZE, PUSH_BUTTON_SIZE, SCROLL_SIZE,
+    SEGMENTED_SIZE, SLIDER_SIZE, SPINNER_SIZE, STEPPER_SIZE, SUBMENU_SIZE, TEXT_VIEW_SIZE,
+    TOGGLE_SIZE,
 };
 use neue_kit::testing::{
-    self, DISABLED, FOCUSED, Fixture, Goldens, INACTIVE, NORMAL, PRESSED, State,
+    self, DISABLED, FOCUSED, Fixture, Goldens, INACTIVE, NORMAL, NavKey, PRESSED, State,
 };
 use neue_kit::tokens::motion::DEFAULT_BUTTON_PULSE;
 use neue_kit::{Accent, Element, MaterialTile, Theme, Variant};
@@ -166,6 +167,21 @@ fn material_specimens() {
     }
 }
 
+/// A secondary click on the area: the menu opens at the pointer, nothing highlighted.
+const MENU_OPEN: State = ("open", Fixture::context_click);
+/// Opened, then Down twice: Copy highlighted, its shortcut in white.
+const MENU_HIGHLIGHTED: State = ("highlighted", |f: &mut Fixture| {
+    f.context_click();
+    f.press_key(NavKey::Down);
+    f.press_key(NavKey::Down);
+});
+/// Opened, "t" typed (Text Size) and Right pressed: the submenu, its first item highlighted.
+const MENU_SUBMENU: State = ("submenu", |f: &mut Fixture| {
+    f.context_click();
+    f.type_text("t");
+    f.press_key(NavKey::Right);
+});
+
 /// One golden set: `make` in `states`, in a `size` window, under the default theme.
 macro_rules! control_goldens {
     ($($test:ident: $name:literal, $size:expr, $states:expr, $make:expr;)+) => {$(
@@ -225,4 +241,7 @@ control_goldens! {
     scroll_view: "scroll-view", SCROLL_SIZE, &[NORMAL, SCROLLED_VIEW, SCROLLER_HOVERED, FOCUSED], specimens::scroll_view(12);
     scroll_view_both: "scroll-view-both", SCROLL_SIZE, &[SCROLLED_BOTH], specimens::scroll_view_both();
     virtual_list: "virtual-list", SCROLL_SIZE, &[NORMAL, SCROLLED_FAR], specimens::virtual_list(10_000);
+
+    context_menu: "context-menu", MENU_SIZE, &[MENU_OPEN, MENU_HIGHLIGHTED], specimens::context_menu(|_| (), specimens::ctrl);
+    context_submenu: "context-menu", SUBMENU_SIZE, &[MENU_SUBMENU], specimens::context_menu(|_| (), specimens::ctrl);
 }

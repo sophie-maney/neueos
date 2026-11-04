@@ -2,8 +2,8 @@
 
 use neue_kit::tokens::metrics::spacing;
 use neue_kit::{
-    BevelButton, Button, Checkbox, Element, Handle, Label, MaterialTile, ProgressBar, Radio,
-    Segmented, Slider, Spinner, Stack, Stepper, TextField, TextStyle,
+    BevelButton, Button, Checkbox, ContextMenu, Element, Handle, Label, MaterialTile, ProgressBar,
+    Radio, Segmented, Slider, Spinner, Stack, Stepper, TextField, TextStyle,
 };
 
 use crate::Message;
@@ -52,6 +52,10 @@ pub const PAGES: &[Page] = &[
     Page {
         title: "Scrolling",
         build: scrolling,
+    },
+    Page {
+        title: "Menus",
+        build: menus,
     },
     Page {
         title: "Text",
@@ -356,6 +360,36 @@ fn scrolling(_: &mut PageHandles) -> Element<Message> {
                 .with(section(
                     "Virtual list (1,000,000 rows)",
                     Stack::column().with(specimens::virtual_list(1_000_000)),
+                )),
+        )
+        .into()
+}
+
+fn menus(_: &mut PageHandles) -> Element<Message> {
+    Stack::column()
+        .spacing(spacing::L)
+        .with(heading(
+            "Menus",
+            "Right-click an area, or Tab to the field and press the Menu key or Shift-F10 · \
+             Up and Down move · Right opens a submenu, Left closes it · Return chooses · \
+             Escape closes · type to jump to an item · the status line shows what you chose",
+        ))
+        .with(
+            Stack::row()
+                .spacing(spacing::L)
+                .with(section(
+                    "Context menu",
+                    Stack::column().with(specimens::context_menu(
+                        Message::Pressed,
+                        specimens::command,
+                    )),
+                ))
+                .with(section(
+                    "On a text field",
+                    Stack::column().with(ContextMenu::new(
+                        TextField::new().placeholder("Right-click or Shift-F10"),
+                        specimens::sample_menu(Message::Pressed, specimens::command),
+                    )),
                 )),
         )
         .into()

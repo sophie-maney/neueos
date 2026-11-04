@@ -20,8 +20,8 @@
 use std::sync::Arc;
 use std::time::Duration;
 
-use masonry_core::core::keyboard::{Key, KeyState, KeyboardEvent, Modifiers};
-use masonry_core::core::{Ime, NewWidget, TextEvent, Widget, WidgetId, WidgetRef};
+use masonry_core::core::keyboard::{Key, KeyState, KeyboardEvent, Modifiers, NamedKey};
+use masonry_core::core::{Ime, NewWidget, PointerButton, TextEvent, Widget, WidgetId, WidgetRef};
 use masonry_core::dpi::PhysicalSize;
 use masonry_core::kurbo::{Axis, Point, Vec2};
 use masonry_core::peniko::{Blob, Color};
@@ -112,6 +112,33 @@ impl Fixture {
     pub fn press(&mut self) {
         self.hover();
         self.harness.mouse_button_press(None);
+    }
+
+    /// Clicks the secondary button over the widget's middle (opens a context menu), and
+    /// leaves the pointer there.
+    pub fn context_click(&mut self) {
+        // Not `hover`: the widget under the pointer is the area's child.
+        self.hover_at(0.5, 0.5);
+        self.harness
+            .mouse_button_press(Some(PointerButton::Secondary));
+        self.harness
+            .mouse_button_release(Some(PointerButton::Secondary));
+    }
+
+    /// Presses and releases `key` on the focused widget.
+    pub fn press_key(&mut self, key: NavKey) {
+        let named = match key {
+            NavKey::Up => NamedKey::ArrowUp,
+            NavKey::Down => NamedKey::ArrowDown,
+            NavKey::Left => NamedKey::ArrowLeft,
+            NavKey::Right => NamedKey::ArrowRight,
+            NavKey::Home => NamedKey::Home,
+            NavKey::End => NamedKey::End,
+            NavKey::Return => NamedKey::Enter,
+            NavKey::Escape => NamedKey::Escape,
+            NavKey::Menu => NamedKey::ContextMenu,
+        };
+        self.key(Key::Named(named), Modifiers::empty());
     }
 
     /// Puts the pointer `(fx, fy)` of the way across the widget (0 is its left or top
@@ -214,6 +241,21 @@ impl Fixture {
         neue_paint::golden::pixmap_from_unpremultiplied(w, h, image.into_raw())
             .ok_or_else(too_large)
     }
+}
+
+/// Keys [`Fixture::press_key`] presses.
+#[derive(Clone, Copy, Debug, PartialEq, Eq)]
+pub enum NavKey {
+    Up,
+    Down,
+    Left,
+    Right,
+    Home,
+    End,
+    Return,
+    Escape,
+    /// The Menu (context menu) key.
+    Menu,
 }
 
 /// A state to render a widget in: its name in golden file names, and what puts the
