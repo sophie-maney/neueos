@@ -229,10 +229,23 @@ the paper and leather materials move to Phase 6/7 (Widgets, Write).
       for a widget to request the clipboard; needs a Masonry signal and both drivers).
       Not yet: changing a pop-up's items from the app, separators and disabled items in a
       pop-up, keeping the field's selection visible while its menu is up.
-- [ ] **2.18 DBusMenu export** · Opus. New `neue-dbus` crate (Linux-only): export the 2.17a
+- [x] **2.18 DBusMenu export** · Opus. New `neue-dbus` crate (Linux-only): export the 2.17a
       model as `com.canonical.dbusmenu` and set the KDE appmenu address (ADR 0005).
       *Accept:* a zbus test client reads the layout and fires an action; `gdbus
       introspect` works in the VM.
+      *Done:* ADR 0047. `neue_dbus::{MenuExport, MenuNode, Layout, connect_session,
+      testing::pair}` on zbus (`async-io` executor, blocking API; no tokio), with an
+      ObjectManager at `/org/neueos/MenuBar` that also starts zbus's object server before
+      any export (a lazily started one dropped early calls). neue-kit:
+      `Window::menu_bar`, `Cx::set_menu_bar` (`menubar.rs`; ids = model ids + 1; chosen
+      items reach `update` through a channel and the waker). neue-platform:
+      `MenuAddress`, `Ctx::set_menu_address`; the Wayland driver binds
+      `org_kde_kwin_appmenu_manager` and sets the window's address. The gallery has a menu
+      bar. 6 client tests (peer to peer) and 3 neue-kit tests, passing on Linux aarch64
+      (x86_64 not run); `gdbus introspect`, `GetLayout` and `Event` checked on a real
+      session bus in OrbStack (`menu_demo` example), not in the VM: `docs/checks/phase-2.md`
+      §10, not run. Not yet: menu bars on macOS hosts, key equivalents, icons,
+      `ItemsPropertiesUpdated`.
 - [ ] **2.19 Table, outline view, source-list sidebar** · Opus.
 - [ ] **2.20 Icon and collection view** · Sonnet.
 - [ ] **2.21 Split view and tab view** · Sonnet.

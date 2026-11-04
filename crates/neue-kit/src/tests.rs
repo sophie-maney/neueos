@@ -13,12 +13,14 @@ use masonry_core::core::keyboard::{Key, KeyState, KeyboardEvent, NamedKey};
 use masonry_core::core::{NewWidget, TextEvent, WidgetId};
 use masonry_core::kurbo::Axis;
 use masonry_testing::{TestHarness, TestHarnessParams};
-use neue_platform::{WindowId, WindowSpec};
+use neue_platform::{MenuAddress, WindowId, WindowSpec};
 use neue_theme::Theme;
 
 mod controls;
 mod editmenu;
 mod fields;
+#[cfg(target_os = "linux")]
+mod menubar;
 mod menus;
 mod popups;
 mod scroll;
@@ -38,6 +40,8 @@ struct FakeHost {
     exited: bool,
     /// The theme windows open with.
     theme: Theme,
+    /// Each window's menu-bar address, as last set.
+    menu_addresses: BTreeMap<WindowId, MenuAddress>,
 }
 
 impl Host for FakeHost {
@@ -66,6 +70,12 @@ impl Host for FakeHost {
     }
     fn exit(&mut self) {
         self.exited = true;
+    }
+    fn set_menu_address(&mut self, window: WindowId, address: Option<MenuAddress>) {
+        match address {
+            Some(address) => self.menu_addresses.insert(window, address),
+            None => self.menu_addresses.remove(&window),
+        };
     }
 }
 

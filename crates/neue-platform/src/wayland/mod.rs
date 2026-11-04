@@ -16,7 +16,8 @@
 //! - the text clipboard and pasting the primary selection;
 //! - xdg-activation (Masonry's `TakeFocus`, `XDG_ACTIVATION_TOKEN` at start-up),
 //!   parent windows and modal dialogs (xdg-dialog);
-//! - AccessKit through `accesskit_unix` (AT-SPI).
+//! - AccessKit through `accesskit_unix` (AT-SPI);
+//! - the menu-bar address for the global menu (`org_kde_kwin_appmenu`, ADR 0047).
 
 mod access;
 mod clipboard;
@@ -78,12 +79,15 @@ use wayland_protocols::xdg::dialog::v1::client::{
     xdg_dialog_v1::XdgDialogV1, xdg_wm_dialog_v1::XdgWmDialogV1,
 };
 use wayland_protocols::xdg::shell::client::xdg_toplevel;
+use wayland_protocols_plasma::appmenu::client::{
+    org_kde_kwin_appmenu::OrgKdeKwinAppmenu, org_kde_kwin_appmenu_manager::OrgKdeKwinAppmenuManager,
+};
 
 use crate::app::{DriverWindow, Registry};
 use crate::gpu::{Gpu, GpuError, SurfaceTarget};
 use crate::{
-    Anchor, App, Ctx, LayerKeyboard, LayerSpec, Options, ShellLayer, Waker, WindowId, WindowKind,
-    WindowSpec,
+    Anchor, App, Ctx, LayerKeyboard, LayerSpec, MenuAddress, Options, ShellLayer, Waker, WindowId,
+    WindowKind, WindowSpec,
 };
 use access::{Access, AccessEvent};
 use clipboard::Clipboard;
@@ -215,6 +219,7 @@ struct Globals {
     text_input: Option<ZwpTextInputManagerV3>,
     activation: Option<ActivationState>,
     dialog: Option<XdgWmDialogV1>,
+    appmenu: Option<OrgKdeKwinAppmenuManager>,
 }
 
 impl Globals {
@@ -230,12 +235,14 @@ impl Globals {
         let text_input = globals.bind(qh, 1..=1, NoEvents).ok();
         let activation = ActivationState::bind(globals, qh).ok();
         let dialog = globals.bind(qh, 1..=1, NoEvents).ok();
+        let appmenu = globals.bind(qh, 1..=2, NoEvents).ok();
         optional("zwlr_layer_shell_v1", layer_shell.is_some());
         optional("wp_fractional_scale_manager_v1", fractional.is_some());
         optional("wp_viewporter", viewporter.is_some());
         optional("zwp_text_input_manager_v3", text_input.is_some());
         optional("xdg_activation_v1", activation.is_some());
         optional("xdg_wm_dialog_v1", dialog.is_some());
+        optional("org_kde_kwin_appmenu_manager", appmenu.is_some());
         Ok(Self {
             compositor: CompositorState::bind(globals, qh)?,
             xdg: XdgShell::bind(globals, qh)?,
@@ -246,6 +253,7 @@ impl Globals {
             text_input,
             activation,
             dialog,
+            appmenu,
         })
     }
 }
@@ -418,6 +426,8 @@ struct Win {
     accesskit: Access,
     /// The xdg-dialog object of a modal toplevel.
     dialog: Option<XdgDialogV1>,
+    /// Where the menu bar is exported, once the app has set an address.
+    appmenu: Option<OrgKdeKwinAppmenu>,
 }
 
 impl Win {
@@ -454,6 +464,17 @@ impl Drop for Win {
         if let Some(dialog) = self.dialog.take() {
             dialog.destroy();
         }
+        if let Some(appmenu) = self.appmenu.take() {
+            release_appmenu(appmenu);
+        }
+    }
+}
+
+/// Destroys an appmenu object, which clears the address. Version 1 has no destructor; the
+/// object then lives until its surface does.
+fn release_appmenu(appmenu: OrgKdeKwinAppmenu) {
+    if appmenu.version() >= 2 {
+        appmenu.release();
     }
 }
 
@@ -504,6 +525,9 @@ impl State {
             for (id, spec) in std::mem::take(&mut self.reg.opening) {
                 progress = true;
                 self.create_window(id, spec)?;
+            }
+            for (id, address) in std::mem::take(&mut self.reg.menu_addresses) {
+                self.set_menu_address(id, address);
             }
             let ids: Vec<WindowId> = self.reg.windows.keys().copied().collect();
             for id in ids {
@@ -642,9 +666,38 @@ impl State {
                 cursor: CursorIcon::Default,
                 accesskit: Access::new(id, self.access_tx.clone()),
                 dialog,
+                appmenu: None,
             },
         );
         Ok(())
+    }
+
+    /// Points the compositor at `id`'s exported menu bar, or clears it. Toplevels only.
+    fn set_menu_address(&mut self, id: WindowId, address: Option<MenuAddress>) {
+        let Some(w) = self.reg.windows.get_mut(&id) else {
+            return;
+        };
+        let Shell::Toplevel(window) = &w.shell else {
+            tracing::debug!(%id, "only toplevels have a menu bar address");
+            return;
+        };
+        match address {
+            Some(MenuAddress { service, path }) => {
+                let Some(manager) = &self.g.appmenu else {
+                    tracing::debug!(%id, "no org_kde_kwin_appmenu_manager: no global menu");
+                    return;
+                };
+                let qh = &self.qh;
+                w.appmenu
+                    .get_or_insert_with(|| manager.create(window.wl_surface(), qh, NoEvents))
+                    .set_address(service, path);
+            }
+            None => {
+                if let Some(appmenu) = w.appmenu.take() {
+                    release_appmenu(appmenu);
+                }
+            }
+        }
     }
 
     /// The wgpu instance: the GPU's copy once it exists (the same instance either way).

@@ -12,7 +12,7 @@ use anyhow::{Context, Result, bail};
 
 /// Workspace crates that only build on Linux. They are excluded from `check` on other
 /// hosts. Keep this list in sync with the platform matrix in `AGENTS.md`.
-const LINUX_ONLY_CRATES: &[&str] = &["neue-comp"];
+const LINUX_ONLY_CRATES: &[&str] = &["neue-comp", "neue-dbus"];
 
 /// OrbStack machine names. Override with `NEUE_ORB_ARM64` / `NEUE_ORB_AMD64`.
 /// The real names are fixed in task 0.4 (`docs/dev-setup.md`).

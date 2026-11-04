@@ -32,6 +32,8 @@ smithay-client-toolkit.workspace = true
 wayland-backend = { workspace = true, features = ["client_system", "dlopen"] }
 wayland-client.workspace = true
 wayland-protocols.workspace = true
+# `org_kde_kwin_appmenu` for the global menu (task 2.18, ADR 0005, ADR 0047). MIT.
+wayland-protocols-plasma = { workspace = true, features = ["client"] }
 
 [dev-dependencies]
 anyhow.workspace = true

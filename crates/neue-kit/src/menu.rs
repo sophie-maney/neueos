@@ -389,6 +389,25 @@ impl Shortcut {
         s
     }
 
+    /// The keys as DBusMenu names them: `Control`, `Alt`, `Shift`, `Super`, then the key.
+    #[cfg(target_os = "linux")]
+    pub(crate) fn key_names(&self) -> Vec<String> {
+        let mut keys: Vec<String> = self
+            .modifiers()
+            .into_iter()
+            .map(|(_, name)| {
+                match name {
+                    "Ctrl" => "Control",
+                    "Cmd" => "Super",
+                    other => other,
+                }
+                .to_owned()
+            })
+            .collect();
+        keys.push(self.key_shown());
+        keys
+    }
+
     /// What assistive technologies read: names joined by `+` (`Ctrl+Shift+S`).
     pub fn spoken(&self) -> String {
         let mut parts: Vec<String> = self

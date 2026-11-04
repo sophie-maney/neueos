@@ -50,6 +50,7 @@ mod anim;
 mod app;
 mod element;
 mod menu;
+mod menubar;
 mod task;
 #[cfg(feature = "testing")]
 pub mod testing;

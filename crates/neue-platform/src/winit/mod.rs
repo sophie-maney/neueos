@@ -191,6 +191,8 @@ impl Driver<'_> {
                 break;
             }
         }
+        // No global menu outside Wayland.
+        self.shared.menu_addresses.clear();
         let windows = &self.shared.windows;
         self.by_winit.retain(|_, id| windows.contains_key(id));
         if self.started && self.shared.done() {

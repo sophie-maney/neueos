@@ -10,8 +10,8 @@ pub mod specimens;
 
 use neue_kit::tokens::metrics::spacing;
 use neue_kit::{
-    Accent, Align, Appearance, Application, Button, Contrast, Cx, Handle, Label, Stack, TextStyle,
-    Theme, Window, Zoom,
+    Accent, Align, Appearance, Application, Button, Contrast, Cx, Handle, Label, Menu, MenuItem,
+    Shortcut, Stack, TextStyle, Theme, Window, WindowId, Zoom,
 };
 
 /// Zoom factors the scale switch cycles through.
@@ -20,6 +20,7 @@ const ZOOMS: [f64; 3] = [1.0, 1.5, 2.0];
 /// The gallery's model.
 #[derive(Debug, Default)]
 pub struct Gallery {
+    window: Option<WindowId>,
     page: usize,
     zoom: usize,
     page_buttons: Vec<Handle<Button<Message>>>,
@@ -103,6 +104,51 @@ fn page_label(title: &str, current: bool) -> String {
 }
 
 impl Gallery {
+    /// The menu bar (task 2.18): the switches as check items and the pages as radio items,
+    /// sending the same messages as the buttons.
+    fn menu_bar(&self, theme: Theme) -> Menu<Message> {
+        let view = Menu::new()
+            .with(
+                MenuItem::new("Dark Appearance")
+                    .checked(theme.variant.appearance == Appearance::Dark)
+                    .on_choose(Message::ToggleAppearance),
+            )
+            .with(
+                MenuItem::new("Graphite Accent")
+                    .checked(theme.variant.accent == Accent::Graphite)
+                    .on_choose(Message::ToggleAccent),
+            )
+            .with(
+                MenuItem::new("Increase Contrast")
+                    .checked(theme.variant.contrast == Contrast::Increased)
+                    .on_choose(Message::ToggleContrast),
+            )
+            .with(
+                MenuItem::new("Reduce Motion")
+                    .checked(theme.reduced_motion)
+                    .on_choose(Message::ToggleMotion),
+            )
+            .separator()
+            .with(
+                MenuItem::new(format!("Next Zoom ({}×)", ZOOMS[self.zoom]))
+                    .shortcut(Shortcut::command("="))
+                    .on_choose(Message::CycleZoom),
+            );
+        let mut pages = Menu::new();
+        for (n, page) in pages::PAGES.iter().enumerate() {
+            let mut item = MenuItem::new(page.title)
+                .radio(n == self.page)
+                .on_choose(Message::Page(n));
+            if n < 9 {
+                item = item.shortcut(Shortcut::command((n + 1).to_string()));
+            }
+            pages = pages.with(item);
+        }
+        Menu::new()
+            .with(MenuItem::submenu("View", view))
+            .with(MenuItem::submenu("Pages", pages))
+    }
+
     /// A gallery that opens on page `n` (clamped), for screenshots.
     pub fn on_page(n: usize) -> Self {
         Self {
@@ -172,11 +218,21 @@ impl Application for Gallery {
             )
             .with(Zoom::new(ZOOMS[self.zoom], content).bind(&mut self.zoomed));
         let root = Stack::row().with(sidebar).with(main);
-        cx.open_window(Window::new("Widget Gallery", (860, 560), root));
+        let window = Window::new("Widget Gallery", (860, 560), root).menu_bar(self.menu_bar(theme));
+        self.window = Some(cx.open_window(window));
     }
 
     fn update(&mut self, cx: &mut Cx<'_, Message>, message: Message) {
         let mut theme = cx.theme();
+        let menu_changes = matches!(
+            message,
+            Message::Page(_)
+                | Message::ToggleAppearance
+                | Message::ToggleAccent
+                | Message::ToggleContrast
+                | Message::ToggleMotion
+                | Message::CycleZoom
+        );
         match message {
             Message::Page(n) if n != self.page && n < pages::PAGES.len() => {
                 for (i, handle) in self.page_buttons.iter().enumerate() {
@@ -251,5 +307,8 @@ impl Application for Gallery {
             }
         }
         cx.set_theme(theme);
+        if menu_changes && let Some(window) = self.window {
+            cx.set_menu_bar(window, self.menu_bar(theme));
+        }
     }
 }
