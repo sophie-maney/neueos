@@ -65,19 +65,19 @@ pub(crate) enum FieldAction {
 /// The caret's blink: shown for the first half of each [`CARET_BLINK`], solid again
 /// [`CARET_BLINK_TIMEOUT`] after the last keystroke.
 #[derive(Debug, Default)]
-struct Blink {
+pub(super) struct Blink {
     since: Duration,
     running: bool,
 }
 
 impl Blink {
-    fn visible(&self) -> bool {
+    pub(super) fn visible(&self) -> bool {
         self.since >= CARET_BLINK_TIMEOUT
             || self.since.as_nanos() % CARET_BLINK.as_nanos() < CARET_BLINK.as_nanos() / 2
     }
 
     /// Shows the caret and starts blinking again, if `wanted`.
-    fn restart(&mut self, ctx: &mut impl AnimCtx, wanted: bool) {
+    pub(super) fn restart(&mut self, ctx: &mut impl AnimCtx, wanted: bool) {
         self.since = Duration::ZERO;
         ctx.request_paint_only();
         if wanted && !self.running {
@@ -86,7 +86,7 @@ impl Blink {
         }
     }
 
-    fn frame(&mut self, ctx: &mut UpdateCtx<'_>, wanted: bool, interval: u64) {
+    pub(super) fn frame(&mut self, ctx: &mut UpdateCtx<'_>, wanted: bool, interval: u64) {
         let was = self.visible();
         if wanted && self.since < CARET_BLINK_TIMEOUT {
             self.since += Duration::from_nanos(interval);

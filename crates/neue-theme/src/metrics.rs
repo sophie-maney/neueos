@@ -62,6 +62,12 @@ pub mod control {
     /// Space between a search field's rounded ends and its text (room for the magnifier
     /// on the left and the cancel button on the right).
     pub const SEARCH_FIELD_INSET: f64 = 22.0;
+    /// Default width of a text view.
+    pub const TEXT_VIEW_WIDTH: f64 = 300.0;
+    /// Default height of a text view.
+    pub const TEXT_VIEW_HEIGHT: f64 = 120.0;
+    /// Space between a text view's edge and its text, on every side.
+    pub const TEXT_VIEW_INSET: f64 = 4.0;
     /// Width of an overlay scroller across its axis: the strip along a scroll view's edge
     /// that takes the pointer while the scroller shows.
     pub const SCROLLER_WIDTH: f64 = 15.0;

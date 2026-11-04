@@ -24,7 +24,10 @@ use masonry_core::kurbo::{Axis, Insets, Point, Rect, RoundedRect, Size, Vec2};
 use masonry_core::layout::{LayoutSize, LenDef, LenReq, Length, SizeDef};
 use neue_paint::Scene;
 use neue_paint::imaging::ImagingReplayer;
-use neue_paint::materials::{Scroller, focus_ring, scroller, scroller_knob, scroller_travel};
+use neue_paint::materials::{
+    FieldShape, Scroller, TextField as WellSpec, focus_ring, scroller, scroller_knob,
+    scroller_travel, text_field, text_field_inside,
+};
 use neue_theme::Spring;
 use neue_theme::metrics::control::{FOCUS_RING, SCROLL_LINE, SCROLLER_WIDTH};
 use neue_theme::motion::SCROLLER_HIDE_DELAY;
@@ -266,6 +269,12 @@ pub(crate) struct ScrollWidget {
     rows: bool,
     /// The window last told to the rows.
     told: Option<(f64, f64)>,
+    /// Drawn in a text field's well, with the focus ring for focus inside it (a text
+    /// view, ADR 0044): the view itself is no Tab stop.
+    pub(super) framed: bool,
+    /// A scroll-into-view request the content's size at the time couldn't satisfy yet
+    /// (the content grew in the same event): tried again after the next layout.
+    pending: Option<Rect>,
     /// The scrollers are on screen (perhaps fading out).
     shown: bool,
     opacity: Animated,
@@ -290,6 +299,8 @@ impl ScrollWidget {
             viewport: Size::ZERO,
             rows,
             told: None,
+            framed: false,
+            pending: None,
             shown: false,
             opacity: Animated::new(0.0, Spring::STANDARD),
             idle: None,
@@ -401,6 +412,11 @@ impl ScrollWidget {
 
     /// Scrolls so `target` (content coordinates) shows. Returns whether it moved.
     fn reveal(&mut self, target: Rect) -> bool {
+        self.pending = Some(target);
+        self.reveal_now(target)
+    }
+
+    fn reveal_now(&mut self, target: Rect) -> bool {
         let x = reveal(self.offset.x, self.viewport.width, (target.x0, target.x1));
         let y = reveal(self.offset.y, self.viewport.height, (target.y0, target.y1));
         self.move_to(Vec2::new(x, y))
@@ -588,6 +604,7 @@ impl Widget for ScrollWidget {
                 }
             }
             Update::FocusChanged(_) | Update::DisabledChanged(_) => ctx.request_post_paint(),
+            Update::ChildFocusChanged(_) => ctx.request_post_paint(),
             // The pointer coming in flashes the scrollers, to show there's more to see.
             Update::ChildHoveredChanged(true) => {
                 if self.start_showing() {
@@ -656,7 +673,17 @@ impl Widget for ScrollWidget {
         self.content_size = content;
         self.viewport = size;
         let _ = self.move_to(self.offset);
-        ctx.set_clip_path(size.to_rect());
+        // Compose follows layout, and takes the new offset.
+        if let Some(target) = self.pending.take() {
+            self.reveal_now(target);
+        }
+        // A framed view keeps its content inside the well's border.
+        let clip = if self.framed {
+            text_field_inside(size.to_rect(), FieldShape::Square).rect()
+        } else {
+            size.to_rect()
+        };
+        ctx.set_clip_path(clip);
         ctx.set_paint_insets(Insets::uniform(FOCUS_RING));
 
         let range = self.range();
@@ -688,6 +715,8 @@ impl Widget for ScrollWidget {
     }
 
     fn compose(&mut self, ctx: &mut ComposeCtx<'_>) {
+        // Layout comes first in a frame, so a request not settled by now never will be.
+        self.pending = None;
         ctx.set_child_scroll_translation(&mut self.content, -self.offset);
         let range = self.range();
         #[expect(clippy::cast_possible_truncation, reason = "a 0..1 opacity")]
@@ -724,7 +753,26 @@ impl Widget for ScrollWidget {
         }
     }
 
-    fn paint(&mut self, _ctx: &mut PaintCtx<'_>, _props: &PropertiesRef<'_>, _: &mut Painter<'_>) {}
+    fn paint(
+        &mut self,
+        ctx: &mut PaintCtx<'_>,
+        props: &PropertiesRef<'_>,
+        painter: &mut Painter<'_>,
+    ) {
+        if !self.framed {
+            return;
+        }
+        let ThemeProp(theme) = *props.get::<ThemeProp>(ctx.property_cache());
+        let size = ctx.content_box().size();
+        let mut scene = Scene::new(size.width, size.height);
+        let spec = WellSpec {
+            shape: FieldShape::Square,
+            focused: false,
+            disabled: ctx.is_disabled(),
+        };
+        text_field(&mut scene, size.to_rect(), spec, theme.variant);
+        self.replayer.replay(&scene, ctx.scale_factor(), painter);
+    }
 
     fn post_paint(
         &mut self,
@@ -732,7 +780,12 @@ impl Widget for ScrollWidget {
         props: &PropertiesRef<'_>,
         painter: &mut Painter<'_>,
     ) {
-        if !(ctx.is_focus_target() && ctx.is_window_focused()) || ctx.is_disabled() {
+        let focused = if self.framed {
+            ctx.has_focus_target()
+        } else {
+            ctx.is_focus_target()
+        };
+        if !(focused && ctx.is_window_focused()) || ctx.is_disabled() {
             return;
         }
         let ThemeProp(theme) = *props.get::<ThemeProp>(ctx.property_cache());
@@ -788,7 +841,7 @@ impl Widget for ScrollWidget {
     }
 
     fn accepts_focus(&self) -> bool {
-        true
+        !self.framed
     }
 
     fn get_debug_text(&self) -> Option<String> {
@@ -831,6 +884,13 @@ impl<M> ScrollView<M> {
             inner: NewWidget::new(ScrollWidget::new(widget, ScrollAxes::Vertical, false)),
             wiring,
         }
+    }
+
+    /// Draws the view in a text field's well (a text view's frame).
+    #[must_use]
+    pub(super) fn framed(mut self) -> Self {
+        self.inner.widget.framed = true;
+        self
     }
 
     /// The directions it scrolls in.
