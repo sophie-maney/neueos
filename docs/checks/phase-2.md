@@ -462,6 +462,7 @@ Not run yet (the agent had no VM). Steps 1–3 run in the VM, set up as in
 ```sh
 rsync -az --delete --exclude target --exclude .git ./ neueos-vm:neueos/
 ssh neueos-vm 'cd neueos && cargo build --release -p neue-comp -p neuectl --no-default-features --features tty && cargo build --release -p neue-gallery'
+ssh -t neueos-vm 'pgrep -x ydotoold || sudo sh -c "setsid nohup ydotoold --socket-path=/tmp/.ydotool_socket --socket-own=1000:1000 >/dev/null 2>&1 </dev/null &"'
 ssh neueos-vm 'export XDG_RUNTIME_DIR=/run/user/1000 RUST_LOG=info; unset WAYLAND_DISPLAY
   setsid nohup ~/neueos/target/release/neue-comp --tty >/tmp/comp.log 2>&1 </dev/null &
   sleep 3; . ~/neueos/docs/vm-env.sh; export WGPU_BACKEND=gl RUST_LOG=info NEUE_GALLERY_PAGE=6
@@ -471,8 +472,14 @@ scp 'neueos-vm:/tmp/m*.png' ~/Desktop/neueos-shots/
 ```
 Expected: no `WARN` or `ERROR`; `m1.png` shows "Right-click here" and a text field.
 
-**2. Keyboard:** click into the text field (its position is in `m1.png`; `click_at` as in
-§4, with screenshot pixels), then:
+**2. Keyboard:** click into the text field (its position is in `m1.png`, in screenshot
+pixels):
+```sh
+ssh neueos-vm '. ~/neueos/docs/vm-env.sh; export YDOTOOL_SOCKET=/tmp/.ydotool_socket
+  click_at() { ydotool mousemove --absolute -x $(($1 / 2)) -y $(($2 / 2)); sleep 0.2; ydotool mousemove -x 1 -y 0; ydotool click 0xC0; }
+  click_at X Y'
+```
+Then:
 ```sh
 ssh neueos-vm '. ~/neueos/docs/vm-env.sh; export YDOTOOL_SOCKET=/tmp/.ydotool_socket
   ydotool key 42:1 68:1 68:0 42:0; sleep 0.5; neuectl screenshot /tmp/m2.png
