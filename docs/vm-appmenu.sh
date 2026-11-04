@@ -1,4 +1,4 @@
-# Run on the VM by docs/dev-setup.md §18 (task 1.17). Starts a throwaway session bus with
+# Run on the VM by docs/checks/phase-1.md §18 (task 1.17). Starts a throwaway session bus with
 # a bare `com.canonical.AppMenu.Registrar` (it only owns the name, which is all Qt checks
 # for; the real registrar is the shell's, Phase 3), then Kate and GNOME Text Editor on it,
 # and prints the window list with their menu addresses.

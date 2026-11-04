@@ -2,7 +2,7 @@
 
 The Phase 1 exit criterion: *daily-drivable with third-party apps (foot/Alacritty, Firefox,
 Flatpaks) on the PC and the VM.* This file records each machine's results. The steps for
-the PCs are in `docs/dev-setup.md` §22.
+the PCs are in `docs/checks/phase-1.md` §22.
 
 **Status:** the VM and the NVIDIA PC pass. There is no AMD or Intel PC to test on, so that
 column was dropped.

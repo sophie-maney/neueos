@@ -36,7 +36,7 @@ backend renders, what it renders into, and whether every test pays for it.
 
 ## Consequences
 - Linux CI installs `libegl1 libegl-mesa0 libgl1-mesa-dri`; OrbStack machines already have
-  `mesa` (dev-setup §1.2). No new crates: Smithay's `backend_egl` and `renderer_gl` were
+  `mesa` (dev-setup §3.1). No new crates: Smithay's `backend_egl` and `renderer_gl` were
   already enabled, and EGL/GLES are dlopened.
 - The `render` module is no longer gated on the `winit`/`tty` features.
 - Two more `unsafe` constructor calls, with the same SAFETY reasoning as the tty backend.

@@ -44,7 +44,7 @@ happens when it exits, and how `DISPLAY` is exported.
 - X11 clients are plain xdg toplevels to us. Selection bridging is satellite's job (ADR
   0011). Whether global menus work for X11 apps is open (ADR 0005); not part of this task.
 - Real X11 behaviour (xeyes, a GTK3 app, cursors, scaling) is checked in the VM
-  (`docs/dev-setup.md` §19). The headless tests use a shell script as a stand-in.
+  (`docs/checks/phase-1.md` §19). The headless tests use a shell script as a stand-in.
 - Multi-seat or multiple compositors on one machine pick different display numbers
   through the lock files, as with Xorg.
 

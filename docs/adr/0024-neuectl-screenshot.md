@@ -48,7 +48,7 @@ the handler that parsed the request.
   ordering.
 - The deferred-reply mechanism is reusable for other slow requests.
 - The `cursor` path on the tty backend, and dmabuf captures, are only checked by the
-  owner in the VM (`docs/dev-setup.md` §17).
+  owner in the VM (`docs/checks/phase-1.md` §17).
 
 ## Alternatives considered
 - **Encode on the event loop.** Simple, but a 4K PNG takes tens of milliseconds and

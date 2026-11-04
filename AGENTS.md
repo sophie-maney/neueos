@@ -2,7 +2,7 @@
 
 Instructions for coding agents working in this repository. Read `PLAN.md` first, but only
 the sections relevant to your task. It holds the architecture, the decisions already made,
-and the roadmap. Do not create `CLAUDE.md`; this file is the single source of agent
+and a roadmap summary; each phase's task list lives in `docs/plan/phase-N.md`. Do not create `CLAUDE.md`; this file is the single source of agent
 instructions. **Before any work, run the checks in "How to work" below.**
 
 ## Project in one paragraph
@@ -44,8 +44,9 @@ State the result of these checks in one or two lines, then continue or ask.
 - **Scope:** one thread is one task, and one task is one PR (about a day of work, a few
   files, one crate or a closely related pair). If the request is a whole phase, several
   tasks, or vaguely bounded ("continue Phase 1"), **do not start coding.** Propose a split
-  into PR-sized tasks with acceptance criteria. Add the split to `PLAN.md` once the owner
-  agrees, then work on the first task only.
+  into PR-sized tasks with acceptance criteria. Once the owner agrees, write the split
+  to `docs/plan/phase-N.md` (with a short summary in `PLAN.md` §8), then work on the first
+  task only.
 - **Model:** check that the model fits the task (table below). If it doesn't, say so and
   ask whether to continue or switch. Don't ask for trivial tasks (under about 10 minutes of
   work).
@@ -68,15 +69,18 @@ Rule of thumb: Opus sets a pattern, and Sonnet repeats it.
 - you've made **two failed attempts** at the same bug or build error: summarise the
   hypotheses and evidence, and ask before trying more;
 - the next step needs **manual or hardware work**: installing a VM, BIOS, partitioning,
-  testing on real PCs, anything that needs clicking through a GUI. Write exact steps
-  (into `docs/dev-setup.md` if they're reusable) and let the owner run them. Don't
+  testing on real PCs, anything that needs clicking through a GUI. Write exact steps as
+  ssh commands run from the Mac, following `docs/dev-setup.md` §2, into
+  `docs/checks/phase-N.md` (reusable commands go into `docs/dev-setup.md` §1), and let
+  the owner run them. Don't
   burn tokens on trial and error;
 - the context is getting long and the task isn't close to done: suggest `/compact` with a
   focus (for example "keep failing test, hypothesis, files touched"), or wrap up with a
   handoff (step 4) so a fresh thread can continue.
 
 ### 3. Save tokens while working
-- Read only what you need: the relevant `PLAN.md` section and the files involved. Don't
+- Read only what you need: the relevant `PLAN.md` section, the task in
+  `docs/plan/phase-N.md`, and the files involved. Don't
   re-read whole crates.
 - Keep tool output short: `cargo check --message-format short`, `| tail -n 50`, and single
   tests (`cargo test -p <crate> <name>`). Never dump full build logs into context.
@@ -94,7 +98,8 @@ Rule of thumb: Opus sets a pattern, and Sonnet repeats it.
 
 ### 4. Hand off at the end of every task
 The repo is the memory between threads, not chat history. Before finishing:
-- tick the boxes in `PLAN.md` (and update the plan if the implementation diverged);
+- tick the boxes in `docs/plan/phase-N.md` (and update the plan if the implementation
+  diverged);
 - write an ADR for any decision you made;
 - commit on a branch, open or update the PR, and fill in the testing notes (macOS, VM, real
   hardware: which of these were done and which were not);
@@ -189,7 +194,7 @@ Use these to verify visual and behavioural changes in the VM instead of guessing
 - Commit messages: imperative and scoped, e.g. `comp: add xdg-dialog sheet animation`.
 - Record architecture decisions as ADRs in `docs/adr/NNNN-title.md`. Use them for new
   dependencies, protocols, IPC changes and cross-crate interfaces.
-- Update `PLAN.md` checkboxes when you finish roadmap items. If an implementation diverges
+- Update the checkboxes in `docs/plan/phase-N.md` when you finish roadmap items. If an implementation diverges
   from the plan, update the plan in the same PR.
 - Private Wayland protocols live in `crates/neue-protocols/` as XML, with documentation in
   `docs/protocols/`.
