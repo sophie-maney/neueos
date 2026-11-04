@@ -488,3 +488,22 @@ Install once: `sudo pacman -S --needed mpv waybar`. Rebuild and start on the tty
 4. **Mode change:** with mpv full screen, resize the Parallels window: mpv follows the new
    size.
 Record which of these you ran in the PR.
+
+## 15. Checking draw-only-when-needed in the VM (task 1.15b)
+Rebuild and start on the tty as in §4, with
+`RUST_LOG=info,neue_comp::tty=trace neue-comp --tty -c foot 2>/tmp/comp.log`.
+1. **Idle renders nothing:** with `foot` open and the pointer still, wait 10 s, then from
+   another VT (or over ssh) run `grep -c rendered /tmp/comp.log` twice, 10 s apart, with
+   your hands off the VM: the count does not change.
+2. **Redraws on demand:** move the pointer, type in `foot`, drag and resize a window, hover
+   and click the title-bar buttons, `neuectl action minimize-window` and restore it: each
+   shows at once, nothing lags behind by a frame or stays stale.
+3. **Animations keep running:** `mpv av://lavfi:testsrc` plays smoothly; `vkcube` (or
+   `glxgears` via `xwayland-satellite` later) spins at the refresh rate.
+4. **Layers, lock, config:** start `waybar`, then kill it: the bar disappears. Lock with
+   `swaylock` and unlock. Edit `~/.config/neueos/compositor.toml` (change a key binding)
+   and save: no stale frames.
+5. **Animated cursor:** with a theme that animates the busy cursor (Adwaita's `wait` and
+   `progress`), point at an app showing it (Firefox while a page loads): it animates and
+   the log keeps counting renders; once the cursor is back to the arrow, it stops.
+Record which of these you ran in the PR.

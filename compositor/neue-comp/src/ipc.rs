@@ -293,6 +293,8 @@ impl State {
             return false;
         };
         let alive = self.ipc_read(&mut conn) && conn.flush();
+        // An action may have moved, closed or restacked windows.
+        self.queue_redraw_all();
         if alive {
             self.ipc.connections.insert(id, conn);
         } else {

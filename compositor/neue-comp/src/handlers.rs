@@ -93,6 +93,8 @@ impl CompositorHandler for State {
         self.commit_unmapped(surface);
         self.commit_popup(surface);
         self.commit_dnd_icon(surface);
+        // Commits held back by a buffer fence (`sync.rs`) land outside client dispatch.
+        self.queue_redraw_all();
     }
 }
 

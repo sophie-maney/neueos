@@ -246,6 +246,15 @@ impl State {
         self.cursor_status = image;
     }
 
+    /// Draw every output again: something they may show changed. Only the tty backend
+    /// draws on demand (ADR 0019); winit redraws continuously and headless does not draw.
+    pub fn queue_redraw_all(&mut self) {
+        #[cfg(feature = "tty")]
+        if let Backend::Tty(data) = &mut self.backend {
+            data.queue_redraw_all();
+        }
+    }
+
     /// Create the protocol globals and, if `listen` is set, the listening socket.
     pub fn new(
         event_loop: &EventLoop<'static, State>,

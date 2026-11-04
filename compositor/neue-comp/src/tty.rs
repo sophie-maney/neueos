@@ -8,9 +8,14 @@
 //! with its own render and vblank cycle (task 1.7). udev change events on the GPU rescan
 //! the connectors: new ones become outputs, disconnected ones are removed, and a changed
 //! preferred mode (a monitor switch, or a resized VM window) is applied with a modeset.
-//! Direct scanout and VRR are task 1.15c; several GPUs a later task. The pointer (XCursor theme, task 1.9) is
-//! drawn on the cursor plane where the hardware has one (the DRM compositor falls back to
-//! compositing it otherwise).
+//! Direct scanout and VRR are task 1.15c; several GPUs a later task. The pointer (XCursor
+//! theme, task 1.9) is drawn on the cursor plane where the hardware has one (the DRM
+//! compositor falls back to compositing it otherwise).
+//!
+//! Outputs are drawn only when something changed (task 1.15b, ADR 0019): each has a
+//! [`Redraw`] that [`State::queue_redraw_all`] and the animated-cursor timer mark, and an
+//! empty frame's callbacks go out at an estimated vblank. `RUST_LOG=neue_comp::tty=trace`
+//! logs every render with the output's running counts.
 //!
 //! `NEUE_DRM_DEVICE=/dev/dri/cardN` overrides the GPU choice.
 //!
@@ -58,10 +63,11 @@ use smithay::wayland::compositor::with_states;
 use smithay::wayland::dmabuf::{DmabufFeedbackBuilder, DmabufGlobal, DmabufState};
 use smithay::wayland::drm_syncobj::{DrmSyncobjState, supports_syncobj_eventfd};
 use smithay::wayland::presentation::Refresh;
-use tracing::{debug, error, info, warn};
+use tracing::{debug, error, info, trace, warn};
 
 use crate::Error;
 use crate::cursor;
+use crate::redraw::Redraw;
 use crate::state::{Backend, State};
 
 /// Background behind all windows until the desktop picture lands (Phase 3). Same as winit.
@@ -97,10 +103,24 @@ struct OutputSurface {
     output: Output,
     connector: connector::Handle,
     drm_output: TtyOutput,
-    /// A frame was queued and its vblank has not arrived yet.
-    frame_pending: bool,
-    /// A render is already scheduled (idle callback or timer).
-    render_scheduled: bool,
+    /// When the output is drawn next.
+    redraw: Redraw,
+    /// The estimated-vblank timer of an empty frame, while it is armed.
+    estimated_vblank: Option<RegistrationToken>,
+    /// The timer for an animated cursor's next image, while it is armed.
+    cursor_timer: Option<RegistrationToken>,
+}
+
+impl OutputSurface {
+    /// Disarm the timers (the surface goes away, or its waits are reset).
+    fn cancel_timers(&mut self, handle: &LoopHandle<'static, State>) {
+        for token in [self.estimated_vblank.take(), self.cursor_timer.take()]
+            .into_iter()
+            .flatten()
+        {
+            handle.remove(token);
+        }
+    }
 }
 
 /// What a connector rescan changed, for the state to apply.
@@ -193,10 +213,12 @@ impl TtyData {
 
         // Unplugged: drop their DRM output (which turns the CRTC off).
         let before = self.surfaces.len();
-        self.surfaces.retain(|surface| {
+        let handle = &self.loop_handle;
+        self.surfaces.retain_mut(|surface| {
             let keep = connected.iter().any(|c| c.handle() == surface.connector);
             if !keep {
                 info!(output = surface.output.name(), "connector unplugged");
+                surface.cancel_timers(handle);
                 changes.removed.push(surface.output.clone());
             }
             keep
@@ -289,8 +311,9 @@ impl TtyData {
             output,
             connector: info.handle(),
             drm_output,
-            frame_pending: false,
-            render_scheduled: false,
+            redraw: Redraw::new(),
+            estimated_vblank: None,
+            cursor_timer: None,
         })
     }
 }
@@ -349,6 +372,14 @@ fn on_device_added(state: &mut State, device: &input::Device) {
 }
 
 impl TtyData {
+    /// Draw every output again soon: something that may show on any of them changed.
+    pub fn queue_redraw_all(&mut self) {
+        let crtcs: Vec<crtc::Handle> = self.surfaces.iter().map(|s| s.drm_output.crtc()).collect();
+        for crtc in crtcs {
+            queue_redraw(self, crtc);
+        }
+    }
+
     /// Apply a changed `[touchpad]` section to the touchpads that are plugged in.
     pub fn configure_touchpads(&mut self, config: &TouchpadConfig) {
         for device in &mut self.touchpads {
@@ -464,6 +495,10 @@ pub fn init(
                     _ => {}
                 }
                 state.process_input_event(event);
+                // The pointer moved, a title-bar button lit up, a window was dragged…
+                if let Some(tty) = tty(state) {
+                    tty.queue_redraw_all();
+                }
             },
         )
         .map_err(|e| e.error)
@@ -512,7 +547,7 @@ pub fn init(
     // First frames once the state exists.
     handle.insert_idle(|state| {
         if let Some(tty) = tty(state) {
-            schedule_all(tty);
+            tty.queue_redraw_all();
         }
     });
     info!(outputs = ?data.outputs().iter().map(Output::name).collect::<Vec<_>>(), "tty backend ready");
@@ -660,10 +695,17 @@ fn on_session_event(event: SessionEvent, state: &mut State) {
             if let Err(err) = tty.output_manager.lock().activate(false) {
                 error!(%err, "reactivating DRM failed");
             }
+            let mut crtcs = Vec::new();
             for surface in &mut tty.surfaces {
                 // The vblank for a frame queued before the switch never arrives.
-                surface.frame_pending = false;
+                surface.cancel_timers(&tty.loop_handle);
                 surface.drm_output.reset_buffers();
+                if surface.redraw.reset() {
+                    crtcs.push(surface.drm_output.crtc());
+                }
+            }
+            for crtc in crtcs {
+                schedule_render(tty, crtc);
             }
             // Displays may have been plugged or unplugged while we were away.
             rescan(state);
@@ -700,7 +742,7 @@ fn rescan(state: &mut State) {
         state.add_output(output);
     }
     if let Some(data) = tty(state) {
-        schedule_all(data);
+        data.queue_redraw_all();
     }
 }
 
@@ -720,7 +762,7 @@ fn on_vblank(state: &mut State, crtc: crtc::Handle, metadata: Option<DrmEventMet
     let Some(surface) = tty.surface_mut(crtc) else {
         return; // unplugged since the frame was queued
     };
-    surface.frame_pending = false;
+    let again = surface.redraw.vblank(time.into());
     let refresh = surface
         .output
         .current_mode()
@@ -732,42 +774,97 @@ fn on_vblank(state: &mut State, crtc: crtc::Handle, metadata: Option<DrmEventMet
         Ok(None) => {}
         Err(err) => warn!(?err, "frame_submitted failed"),
     }
-    schedule_render(tty, crtc, Duration::ZERO);
-}
-
-/// Render every output soon (after hotplug or a session switch: the layout may have moved).
-fn schedule_all(tty: &mut TtyData) {
-    let crtcs: Vec<crtc::Handle> = tty.surfaces.iter().map(|s| s.drm_output.crtc()).collect();
-    for crtc in crtcs {
-        schedule_render(tty, crtc, Duration::ZERO);
+    if again {
+        schedule_render(tty, crtc);
     }
 }
 
-/// Run [`render`] for `crtc` after `delay`, unless a render is already scheduled.
-fn schedule_render(tty: &mut TtyData, crtc: crtc::Handle, delay: Duration) {
-    let handle = tty.loop_handle.clone();
+/// Mark `crtc`'s output as changed and schedule a render if it was idle.
+fn queue_redraw(tty: &mut TtyData, crtc: crtc::Handle) {
+    if tty
+        .surface_mut(crtc)
+        .is_some_and(|surface| surface.redraw.queue())
+    {
+        schedule_render(tty, crtc);
+    }
+}
+
+/// Run [`render`] for `crtc` in the next loop iteration, after the clients' requests of
+/// this one are dispatched (an idle callback would run before them).
+fn schedule_render(tty: &mut TtyData, crtc: crtc::Handle) {
+    let result = tty
+        .loop_handle
+        .insert_source(Timer::immediate(), move |_, _, state| {
+            render(state, crtc);
+            TimeoutAction::Drop
+        });
+    if let Err(err) = result {
+        error!(err = %err.error, "scheduling a render failed");
+        if let Some(surface) = tty.surface_mut(crtc) {
+            surface.redraw.skip_render();
+        }
+    }
+}
+
+/// The output's refresh interval (60 Hz when the mode does not say).
+fn refresh_interval(output: &Output) -> Duration {
+    let refresh_mhz = output
+        .current_mode()
+        .map_or(60_000, |mode| mode.refresh)
+        .max(1);
+    Duration::from_nanos(1_000_000_000_000 / u64::from(refresh_mhz.unsigned_abs()))
+}
+
+/// The estimated vblank after an empty frame: send that frame's callbacks, then render
+/// again if something changed meanwhile.
+fn on_estimated_vblank(state: &mut State, crtc: crtc::Handle) {
+    let Some(tty) = tty(state) else { return };
     let Some(surface) = tty.surface_mut(crtc) else {
         return;
     };
-    if surface.render_scheduled {
+    surface.estimated_vblank = None;
+    let again = surface.redraw.estimated_vblank_passed();
+    let output = surface.output.clone();
+    send_frame_callbacks(state, &output);
+    if again && let Some(tty) = self::tty(state) {
+        schedule_render(tty, crtc);
+    }
+}
+
+/// Frame callbacks for everything shown on `output`, so clients draw their next frame.
+fn send_frame_callbacks(state: &State, output: &Output) {
+    let time = state.start_time.elapsed();
+    crate::outputs::send_frames(&state.space, output, time);
+    let Some(output_geo) = state.space.output_geometry(output) else {
+        return;
+    };
+    if !output_geo
+        .to_f64()
+        .contains(state.pointer.current_location())
+    {
         return;
     }
-    surface.render_scheduled = true;
-    let result = handle.insert_source(Timer::from_duration(delay), move |_, _, state| {
-        render(state, crtc);
-        TimeoutAction::Drop
-    });
-    if let Err(err) = result {
-        surface.render_scheduled = false;
-        error!(err = %err.error, "scheduling a render failed");
+    let cursor = match &state.cursor_status {
+        CursorImageStatus::Surface(surface) => Some(surface),
+        _ => None,
+    };
+    let icon = state
+        .dnd_icon
+        .as_ref()
+        .map(|icon| &icon.surface)
+        .filter(|surface| surface.alive());
+    for surface in cursor.into_iter().chain(icon) {
+        send_frames_surface_tree(surface, output, time, Some(Duration::ZERO), |_, _| {
+            Some(output.clone())
+        });
     }
 }
 
 /// Compose a frame for `crtc` and queue it for its next vblank. Without damage nothing is
-/// queued and the next attempt is one refresh interval later (as in anvil; render-on-commit
-/// and a damage review come with task 1.15b).
+/// queued and the frame callbacks wait for the estimated vblank.
 fn render(state: &mut State, crtc: crtc::Handle) {
     let time = state.start_time.elapsed();
+    let now: Duration = state.clock.now().into();
     let pointer_location = state.pointer.current_location();
     let State {
         backend,
@@ -788,16 +885,16 @@ fn render(state: &mut State, crtc: crtc::Handle) {
     let Some(surface) = surfaces.iter_mut().find(|s| s.drm_output.crtc() == crtc) else {
         return;
     };
-    surface.render_scheduled = false;
-    if !active || surface.frame_pending {
+    let output = surface.output.clone();
+    let Some(output_geo) = space.output_geometry(&output).filter(|_| active) else {
+        // Inactive (ActivateSession resets) or not in the layout yet (add_output queues).
+        surface.redraw.skip_render();
+        return;
+    };
+    if !surface.redraw.start_render() {
         return;
     }
-
-    let output = surface.output.clone();
     let scale = Scale::from(output.current_scale().fractional_scale());
-    let Some(output_geo) = space.output_geometry(&output) else {
-        return; // not in the layout yet
-    };
 
     // Topmost first: the cursor (if it is on this output), then the windows.
     let mut elements: Vec<TtyElement> = Vec::new();
@@ -812,6 +909,8 @@ fn render(state: &mut State, crtc: crtc::Handle) {
         (2 * CURSOR_REACH, 2 * CURSOR_REACH).into(),
     ));
     let cursor_pos = pointer_location - output_geo.loc.to_f64();
+    // When an animated cursor shows its next image.
+    let mut cursor_change = None;
     match &*cursor_status {
         CursorImageStatus::Hidden => {}
         _ if !cursor_near => {}
@@ -831,6 +930,7 @@ fn render(state: &mut State, crtc: crtc::Handle) {
                 Ok(element) => elements.push(TtyElement::Cursor(element)),
                 Err(err) => warn!(?err, "uploading the cursor failed"),
             }
+            cursor_change = cursors.until_next_frame(*icon, scale.x, time);
         }
         CursorImageStatus::Surface(surface) => {
             let hotspot = with_states(surface, |states| {
@@ -898,39 +998,65 @@ fn render(state: &mut State, crtc: crtc::Handle) {
                 None
             }
         };
-    if let Some(feedback) = rendered {
-        match surface.drm_output.queue_frame(feedback) {
-            Ok(()) => surface.frame_pending = true,
-            Err(err) => warn!(?err, "queueing the frame failed"),
+    let queued = rendered.is_some_and(|feedback| match surface.drm_output.queue_frame(feedback) {
+        Ok(()) => true,
+        Err(err) => {
+            warn!(?err, "queueing the frame failed");
+            false
+        }
+    });
+    surface.redraw.rendered(queued);
+    trace!(
+        output = output.name(),
+        queued,
+        renders = surface.redraw.renders(),
+        frames = surface.redraw.frames(),
+        "rendered"
+    );
+    let estimate = (!queued).then(|| {
+        surface
+            .redraw
+            .until_estimated_vblank(now, refresh_interval(&output))
+    });
+
+    // A real frame: callbacks now, so clients draw the next one while this one scans out.
+    if queued {
+        send_frame_callbacks(state, &output);
+    }
+    let Some(tty) = self::tty(state) else { return };
+    let handle = tty.loop_handle.clone();
+    let Some(surface) = tty.surface_mut(crtc) else {
+        return;
+    };
+    if let Some(delay) = estimate {
+        let result = handle.insert_source(Timer::from_duration(delay), move |_, _, state| {
+            on_estimated_vblank(state, crtc);
+            TimeoutAction::Drop
+        });
+        match result {
+            Ok(token) => surface.estimated_vblank = Some(token),
+            Err(err) => {
+                // Without the timer the output would wait forever: go idle instead.
+                error!(err = %err.error, "arming the estimated vblank failed");
+                surface.redraw.estimated_vblank_passed();
+            }
         }
     }
-    let frame_pending = surface.frame_pending;
-
-    // Frame callbacks, so clients draw their next frame.
-    crate::outputs::send_frames(space, &output, time);
-    if let CursorImageStatus::Surface(surface) = &*cursor_status
-        && output_geo.to_f64().contains(pointer_location)
+    if let Some(delay) = cursor_change
+        && surface.cursor_timer.is_none()
     {
-        send_frames_surface_tree(surface, &output, time, Some(Duration::ZERO), |_, _| {
-            Some(output.clone())
+        let result = handle.insert_source(Timer::from_duration(delay), move |_, _, state| {
+            if let Some(tty) = self::tty(state) {
+                if let Some(surface) = tty.surface_mut(crtc) {
+                    surface.cursor_timer = None;
+                }
+                queue_redraw(tty, crtc);
+            }
+            TimeoutAction::Drop
         });
-    }
-
-    if let Some(icon) = dnd_icon.as_ref().filter(|i| i.surface.alive())
-        && output_geo.to_f64().contains(pointer_location)
-    {
-        send_frames_surface_tree(
-            &icon.surface,
-            &output,
-            time,
-            Some(Duration::ZERO),
-            |_, _| Some(output.clone()),
-        );
-    }
-
-    if !frame_pending {
-        let refresh_mhz = output.current_mode().map_or(60_000, |mode| mode.refresh);
-        let interval = Duration::from_micros(1_000_000_000 / u64::from(refresh_mhz.max(1) as u32));
-        schedule_render(tty, crtc, interval);
+        match result {
+            Ok(token) => surface.cursor_timer = Some(token),
+            Err(err) => warn!(err = %err.error, "arming the cursor animation timer failed"),
+        }
     }
 }

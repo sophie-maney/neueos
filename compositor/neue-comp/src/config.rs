@@ -246,6 +246,7 @@ impl State {
         if outputs_changed {
             self.apply_output_config();
         }
+        self.queue_redraw_all();
         Ok(())
     }
 

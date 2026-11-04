@@ -17,7 +17,8 @@
 //! - [`outputs`]: output layout, hotplug, per-output scale and frame callbacks.
 //! - `ipc`: the `neuectl` socket (ADR 0003, ADR 0007).
 //! - `headless`: a virtual output without rendering or input; used by tests.
-//! - `tty`: DRM/KMS, libinput and libseat on real hardware and the VM (cargo feature `tty`).
+//! - `tty`: DRM/KMS, libinput and libseat on real hardware and the VM (cargo feature `tty`);
+//!   `redraw`: when it draws an output (only after a change, ADR 0019).
 //! - `cursor`: the built-in pointer image.
 //! - `winit`: the nested development backend (cargo feature `winit`).
 //!
@@ -42,6 +43,8 @@ pub mod lock;
 pub mod outputs;
 pub mod placement;
 mod presentation;
+#[cfg(feature = "tty")]
+mod redraw;
 #[cfg(any(feature = "winit", feature = "tty"))]
 mod render;
 mod security;
@@ -211,7 +214,13 @@ impl Compositor {
             .handle()
             .insert_source(
                 Generic::new(poll_fd, Interest::READ, Mode::Level),
-                |_, _, _| Ok(PostAction::Continue),
+                // Client traffic can change what any output shows (a commit, a destroyed
+                // window, a new title, a hang-up), so it redraws them all (ADR 0019). The
+                // render runs after this iteration has dispatched the requests.
+                |_, _, state| {
+                    state.queue_redraw_all();
+                    Ok(PostAction::Continue)
+                },
             )
             .map_err(|e| e.error)
             .map_err(Error::init("adding the Wayland display source"))?;
