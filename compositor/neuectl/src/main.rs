@@ -9,7 +9,7 @@ use std::path::PathBuf;
 use anyhow::{Context, Result};
 use clap::{Parser, Subcommand};
 use neue_ipc::{
-    ActionInfo, ActionParams, AdaptiveSyncInfo, AdaptiveSyncMode, Client, OutputInfo,
+    ActionInfo, ActionParams, AdaptiveSyncInfo, AdaptiveSyncMode, Client, MenuAddress, OutputInfo,
     ScreenshotInfo, ScreenshotParams, Topic, VersionInfo, WindowArg, WindowId, WindowInfo,
 };
 
@@ -227,7 +227,37 @@ fn window_flags(w: &WindowInfo) -> String {
     if let Some(parent) = w.parent {
         flags.push_str(&format!("  [child of {parent}]"));
     }
+    if let Some(menu) = &w.menu {
+        flags.push_str(&format!("  [menu {}]", format_menu(menu)));
+    }
     flags
+}
+
+/// A menu address on one line: `dbusmenu SERVICE PATH` or `gmenu BUS menubar=… …`.
+fn format_menu(menu: &MenuAddress) -> String {
+    match menu {
+        MenuAddress::DbusMenu { service, path } => format!("dbusmenu {service} {path}"),
+        MenuAddress::Gmenu {
+            bus_name,
+            menubar_path,
+            app_menu_path,
+            application_path,
+            window_path,
+        } => {
+            let mut text = format!("gmenu {bus_name}");
+            for (name, path) in [
+                ("menubar", menubar_path),
+                ("app-menu", app_menu_path),
+                ("app", application_path),
+                ("win", window_path),
+            ] {
+                if let Some(path) = path {
+                    text.push_str(&format!(" {name}={path}"));
+                }
+            }
+            text
+        }
+    }
 }
 
 fn format_outputs(outputs: &[OutputInfo]) -> String {
@@ -335,6 +365,7 @@ mod tests {
             fullscreen: false,
             demands_attention: false,
             parent: None,
+            menu: None,
         };
         let text = format_windows(&[window(1, false), window(2, true)]);
         let lines: Vec<&str> = text.lines().collect();
@@ -342,6 +373,38 @@ mod tests {
         assert!(lines[1].starts_with('*'));
         assert!(lines[0].contains("[minimized]"));
         assert!(lines[1].contains("30x40+1+2  foot  Term"));
+    }
+
+    #[test]
+    fn windows_table_shows_menu_addresses() {
+        let mut info = WindowInfo {
+            id: WindowId(1),
+            title: None,
+            app_id: None,
+            x: 0,
+            y: 0,
+            width: 1,
+            height: 1,
+            focused: false,
+            minimized: false,
+            zoomed: false,
+            fullscreen: false,
+            demands_attention: false,
+            parent: None,
+            menu: Some(MenuAddress::DbusMenu {
+                service: ":1.5".into(),
+                path: "/MenuBar".into(),
+            }),
+        };
+        assert!(format_windows(&[info.clone()]).contains("[menu dbusmenu :1.5 /MenuBar]"));
+        info.menu = Some(MenuAddress::Gmenu {
+            bus_name: ":1.9".into(),
+            menubar_path: Some("/m".into()),
+            app_menu_path: None,
+            application_path: Some("/a".into()),
+            window_path: Some("/w".into()),
+        });
+        assert!(format_windows(&[info]).contains("[menu gmenu :1.9 menubar=/m app=/a win=/w]"));
     }
 
     #[test]

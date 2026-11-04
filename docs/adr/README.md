@@ -34,3 +34,4 @@ Don't edit an accepted ADR's decision; supersede it with a new one.
 | [0022](0022-screencopy-output-capture.md) | Screencopy of outputs with ext-image-copy-capture | Accepted |
 | [0023](0023-screencopy-toplevel-capture.md) | Screencopy of toplevels with ext-image-copy-capture | Accepted |
 | [0024](0024-neuectl-screenshot.md) | `neuectl screenshot`: capture to PNG, deferred replies | Accepted |
+| [0025](0025-global-menu-protocol-side.md) | Global-menu protocol side: appmenu v2, `gtk_shell1` v5, menu addresses in `neuectl windows` | Accepted |

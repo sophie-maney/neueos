@@ -23,6 +23,7 @@ fn window(id: u64) -> WindowInfo {
         fullscreen: false,
         demands_attention: false,
         parent: None,
+        menu: None,
     }
 }
 

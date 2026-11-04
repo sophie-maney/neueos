@@ -26,6 +26,7 @@
 //! each module for what was taken from where.
 #![cfg(target_os = "linux")]
 
+mod appmenu;
 pub mod config;
 #[cfg(feature = "tty")]
 mod cursor;

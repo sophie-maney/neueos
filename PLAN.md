@@ -739,11 +739,20 @@ Decisions to follow: ADR 0001 (Smithay), 0003 (IPC), 0004 (config), 0005 (global
         `tests/golden.rs` (`neuectl_screenshot`, same golden as 1.16b) and `tests/ipc.rs`.
         **Owner:** run `docs/dev-setup.md` §17 in the VM (grim, `grim -c`, dmabuf with
         `wl-mirror`); not done by the agent.
-- [ ] **1.17 Global-menu protocol side** · Sonnet. `org_kde_kwin_appmenu` v2 and `gtk_shell1`
+- [x] **1.17 Global-menu protocol side** · Sonnet. `org_kde_kwin_appmenu` v2 and `gtk_shell1`
       v5 per ADR 0005 (`gtk_shell1` XML in a new `neue-protocols` crate); menu addresses in
       `neuectl windows`.
       *Accept:* Kate (with a test registrar) and gnome-text-editor show addresses in
       `neuectl windows` in the VM.
+      *Done:* ADR 0025. New `neue-protocols` crate (GTK's `gtk-shell.xml` vendored, `server`
+      and `client` features); `appmenu.rs` in `neue-comp` serves both globals, validates bus
+      names and object paths, and keeps one address per toplevel. `WindowInfo.menu`
+      (`dbus_menu` or `gmenu`, amends ADR 0003), `window_changed` on change, `neuectl
+      windows` prints it. `gtk_shell1.capabilities` is 0 until the Phase 3 menu bar shows
+      the menus (GTK would otherwise hide its own). `tests/appmenu.rs`.
+      **Owner:** ran `docs/dev-setup.md` §18 in the VM: Kate `[menu dbusmenu :1.11
+      /MenuBar/2]`, GNOME Text Editor `[menu gmenu :1.1 app=/org/gnome/TextEditor
+      win=/org/gnome/TextEditor/window/1]` (no `menubar=`: it only has a primary menu).
 - [ ] **1.18 xwayland-satellite on demand** · Sonnet. Reserve X display sockets, spawn
       `xwayland-satellite` on first connection, export `DISPLAY` (ADR 0001).
       *Accept:* `xeyes` (or another X11 app) appears in the VM; nothing X-related runs before.
@@ -771,7 +780,8 @@ Decisions to follow: ADR 0001 (Smithay), 0003 (IPC), 0004 (config), 0005 (global
   macOS and in the VM.
 
 ### Phase 3: Shell MVP and session (L)
-- [ ] Menu bar: global menu pipeline, fallback menu, menu extras (clock, volume via
+- [ ] Menu bar: global menu pipeline (and flip `gtk_shell1` capabilities in
+      `appmenu.rs`, ADR 0025), fallback menu, menu extras (clock, volume via
       pipewire-rs, network, Bluetooth, battery), SNI tray.
 - [ ] Dock: shelf, magnification, indicators, minimise targets, Trash.
 - [ ] Notifications server and banners. OSDs.

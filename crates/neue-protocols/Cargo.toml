@@ -1,0 +1,25 @@
+[package]
+name = "neue-protocols"
+description = "neueOS Wayland protocol bindings generated from vendored XML (gtk_shell1)"
+version.workspace = true
+edition.workspace = true
+rust-version.workspace = true
+license.workspace = true
+repository.workspace = true
+publish.workspace = true
+
+[features]
+default = []
+# Server-side bindings, for the compositor.
+server = ["dep:wayland-server"]
+# Client-side bindings, for tests.
+client = ["dep:wayland-client"]
+
+[dependencies]
+wayland-backend.workspace = true
+wayland-scanner.workspace = true
+wayland-server = { workspace = true, optional = true }
+wayland-client = { workspace = true, optional = true }
+
+[lints]
+workspace = true

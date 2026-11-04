@@ -301,6 +301,42 @@ pub struct WindowInfo {
     /// The window this one is a child of (`xdg_toplevel.set_parent`), e.g. a dialog.
     #[serde(default, skip_serializing_if = "Option::is_none")]
     pub parent: Option<WindowId>,
+    /// Where the app exports its menus, as announced over `org_kde_kwin_appmenu` or
+    /// `gtk_shell1` (task 1.17, ADR 0025). Absent if it announced none.
+    #[serde(default, skip_serializing_if = "Option::is_none")]
+    pub menu: Option<MenuAddress>,
+}
+
+/// Where a window's app exports its menus on the session bus. The shell connects to it
+/// (ADR 0005); the compositor only passes the strings on, after checking they are valid
+/// D-Bus names and object paths.
+#[derive(Debug, Clone, PartialEq, Eq, Serialize, Deserialize)]
+#[serde(tag = "kind", rename_all = "snake_case")]
+pub enum MenuAddress {
+    /// `com.canonical.dbusmenu` (Qt, Chromium, LibreOffice, neue-kit), from
+    /// `org_kde_kwin_appmenu.set_address`.
+    DbusMenu {
+        /// Bus name of the exporting app.
+        service: String,
+        /// Object path of the `com.canonical.dbusmenu` object.
+        path: String,
+    },
+    /// `org.gtk.Menus` / `org.gtk.Actions` (GTK `GtkApplication` apps), from
+    /// `gtk_surface1.set_dbus_properties`. Paths the app did not set are absent.
+    Gmenu {
+        /// Unique bus name of the exporting app.
+        bus_name: String,
+        #[serde(default, skip_serializing_if = "Option::is_none")]
+        menubar_path: Option<String>,
+        #[serde(default, skip_serializing_if = "Option::is_none")]
+        app_menu_path: Option<String>,
+        /// `org.gtk.Actions` of the application (`app.` actions).
+        #[serde(default, skip_serializing_if = "Option::is_none")]
+        application_path: Option<String>,
+        /// `org.gtk.Actions` of the window (`win.` actions).
+        #[serde(default, skip_serializing_if = "Option::is_none")]
+        window_path: Option<String>,
+    },
 }
 
 /// An output (monitor).
@@ -522,6 +558,45 @@ mod tests {
                 ..
             })
         ));
+    }
+
+    #[test]
+    fn menu_address_wire_shape() {
+        let dbus = MenuAddress::DbusMenu {
+            service: ":1.42".into(),
+            path: "/MenuBar".into(),
+        };
+        assert_eq!(
+            serde_json::to_value(&dbus).unwrap(),
+            json!({"kind": "dbus_menu", "service": ":1.42", "path": "/MenuBar"})
+        );
+        let gmenu = MenuAddress::Gmenu {
+            bus_name: ":1.7".into(),
+            menubar_path: Some("/org/gnome/Edit/menus/menubar".into()),
+            app_menu_path: None,
+            application_path: Some("/org/gnome/Edit".into()),
+            window_path: None,
+        };
+        let value = serde_json::to_value(&gmenu).unwrap();
+        assert_eq!(
+            value,
+            json!({"kind": "gmenu", "bus_name": ":1.7",
+                "menubar_path": "/org/gnome/Edit/menus/menubar",
+                "application_path": "/org/gnome/Edit"})
+        );
+        assert_eq!(serde_json::from_value::<MenuAddress>(value).unwrap(), gmenu);
+    }
+
+    #[test]
+    fn window_without_menu_parses_and_omits_it() {
+        // An older compositor's reply has no `menu`.
+        let window: WindowInfo = serde_json::from_value(json!({
+            "id": 1, "title": null, "app_id": null, "x": 0, "y": 0, "width": 1, "height": 1,
+            "focused": false
+        }))
+        .unwrap();
+        assert_eq!(window.menu, None);
+        assert!(serde_json::to_value(&window).unwrap().get("menu").is_none());
     }
 
     #[test]
