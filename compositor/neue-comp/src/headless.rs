@@ -9,14 +9,16 @@
 //! an EGL surfaceless/device display. Until then no linux-dmabuf global is advertised, so
 //! clients always fall back to shm.
 //!
-//! A repeating timer stands in for vblank and sends frame callbacks, so real clients that
-//! wait for `wl_surface.frame` keep drawing.
+//! A repeating timer stands in for vblank: it sends frame callbacks, so real clients that
+//! wait for `wl_surface.frame` keep drawing, and presentation feedback (no flags: nothing
+//! is really shown).
 
 use std::time::Duration;
 
 use smithay::output::{Mode, Output, PhysicalProperties, Subpixel};
 use smithay::reexports::calloop::LoopHandle;
 use smithay::reexports::calloop::timer::{TimeoutAction, Timer};
+use smithay::reexports::wayland_protocols::wp::presentation_time::server::wp_presentation_feedback;
 use tracing::info;
 
 use crate::Error;
@@ -33,6 +35,8 @@ const REFRESH_MHZ: i32 = 60_000;
 #[derive(Debug)]
 pub struct HeadlessData {
     outputs: Vec<Output>,
+    /// Ticks of the frame timer: the "vblank" sequence number of presentation feedback.
+    sequence: u64,
 }
 
 impl HeadlessData {
@@ -67,6 +71,7 @@ pub fn init() -> Backend {
     info!(size = ?OUTPUT_SIZE, "headless backend ready");
     Backend::Headless(HeadlessData {
         outputs: vec![virtual_output(OUTPUT_NAME, OUTPUT_SIZE)],
+        sequence: 0,
     })
 }
 
@@ -140,7 +145,23 @@ pub fn start_frame_timer(handle: &LoopHandle<'static, State>) -> Result<(), Erro
 
 fn send_frames(state: &mut State) {
     let time = state.start_time.elapsed();
+    let sequence = match &mut state.backend {
+        Backend::Headless(data) => {
+            data.sequence += 1;
+            data.sequence
+        }
+        #[allow(unreachable_patterns)] // only headless when winit and tty are off
+        _ => return,
+    };
+    let now = state.clock.now();
+    let refresh = crate::presentation::refresh_interval(REFRESH_MHZ);
     for output in state.outputs() {
+        crate::presentation::take_feedback_unrendered(&state.space, output).presented(
+            now,
+            refresh,
+            sequence,
+            wp_presentation_feedback::Kind::empty(),
+        );
         crate::outputs::send_frames(&state.space, output, time);
     }
 }

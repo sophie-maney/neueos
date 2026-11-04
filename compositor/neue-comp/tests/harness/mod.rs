@@ -30,9 +30,10 @@ use smithay::reexports::calloop::channel::{self, Event, Sender};
 
 #[allow(unused_imports)] // Not every test binary names both types.
 pub use client::{
-    Anchor, Constraint, ConstraintEvents, Drag, ForeignToplevel, GestureSeen, InputMethodEvents,
-    KdeDefaultMode, KdeMode, KeyboardInteractivity, Layer, LayerHandle, RelativeMotion,
-    SessionLock, TestClient, TextInputEvents, Toplevel, XdgMode, read_all,
+    Anchor, Constraint, ConstraintEvents, Drag, Feedback, ForeignToplevel, GestureSeen,
+    InputMethodEvents, KdeDefaultMode, KdeMode, KeyboardInteractivity, Layer, LayerHandle,
+    RelativeMotion, SessionLock, TestClient, TextInputEvents, Toplevel, XdgMode, global_names,
+    read_all,
 };
 
 /// How long [`Server::with_state`] waits for the compositor before failing the test.

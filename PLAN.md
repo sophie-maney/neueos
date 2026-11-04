@@ -629,9 +629,20 @@ Decisions to follow: ADR 0001 (Smithay), 0003 (IPC), 0004 (config), 0005 (global
       Owner checked it by hand in the VM (`docs/dev-setup.md` §12) and found it fine.
       Not done: gestures, touchpad config and pointer lock on real hardware, escape hatch
       from a lock, popup constraining.
-- [ ] **1.14 Presentation and sync** · Opus. linux-drm-syncobj-v1 (explicit sync),
+- [x] **1.14 Presentation and sync** · Opus. linux-drm-syncobj-v1 (explicit sync),
       presentation-time, tearing-control, security-context-v1 filtering of privileged globals.
       *Accept:* headless tests; explicit sync exercised on the NVIDIA PC (owner, see 1.18).
+      *Done:* rules in ADR 0017. `presentation.rs` (feedback carried with the DRM frame and
+      presented at vblank with the kernel timestamp; winit on submit; headless on its timer;
+      tearing-control implemented by us, hints recorded but not acted on: Smithay has no
+      async flips yet), `sync.rs` (commits wait on the syncobj acquire point or the dmabuf's
+      implicit fences; syncobj global only on tty with `syncobj_eventfd`), `security.rs`
+      (sandboxed clients lose session lock, layer shell, data control, input method,
+      foreign toplevel list and the security-context manager). 9 headless tests in
+      `tests/presentation.rs`. Owner checked it by hand in the VM (`docs/dev-setup.md` §13,
+      steps 1–3) and found it fine. **Still to do:** explicit sync on the NVIDIA PC (§13
+      step 4). Not done: tearing, explicit sync untested on hardware,
+      per-app sandbox policy.
 - [ ] **1.15 Direct scanout and VRR** · Opus. Direct scanout for full-screen surfaces,
       adaptive sync per output (config), damage review.
       *Accept:* scanout and VRR confirmed on real x86_64 hardware (owner); flagged in the PR.

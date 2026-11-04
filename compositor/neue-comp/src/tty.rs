@@ -27,7 +27,9 @@ use smithay::backend::allocator::gbm::{GbmAllocator, GbmBufferFlags, GbmDevice};
 use smithay::backend::drm::compositor::FrameFlags;
 use smithay::backend::drm::exporter::gbm::GbmFramebufferExporter;
 use smithay::backend::drm::output::{DrmOutput, DrmOutputManager, DrmOutputRenderElements};
-use smithay::backend::drm::{DrmDevice, DrmDeviceFd, DrmEvent, DrmNode, NodeType};
+use smithay::backend::drm::{
+    DrmDevice, DrmDeviceFd, DrmEvent, DrmEventMetadata, DrmEventTime, DrmNode, NodeType,
+};
 use smithay::backend::egl::{EGLContext, EGLDevice, EGLDisplay};
 use smithay::backend::input::InputEvent;
 use smithay::backend::libinput::{LibinputInputBackend, LibinputSessionInterface};
@@ -41,7 +43,7 @@ use smithay::backend::renderer::gles::GlesRenderer;
 use smithay::backend::session::libseat::LibSeatSession;
 use smithay::backend::session::{Event as SessionEvent, Session};
 use smithay::backend::udev::{self, UdevBackend, UdevEvent};
-use smithay::desktop::utils::send_frames_surface_tree;
+use smithay::desktop::utils::{OutputPresentationFeedback, send_frames_surface_tree};
 use smithay::input::pointer::{CursorImageStatus, CursorImageSurfaceData};
 use smithay::output::{Mode, Output, PhysicalProperties};
 use smithay::reexports::calloop::timer::{TimeoutAction, Timer};
@@ -49,10 +51,13 @@ use smithay::reexports::calloop::{LoopHandle, RegistrationToken};
 use smithay::reexports::drm::control::{Device as _, ModeTypeFlags, connector, crtc};
 use smithay::reexports::input::{self, Libinput};
 use smithay::reexports::rustix::fs::OFlags;
+use smithay::reexports::wayland_protocols::wp::presentation_time::server::wp_presentation_feedback;
 use smithay::reexports::wayland_server::DisplayHandle;
 use smithay::utils::{DeviceFd, IsAlive, Physical, Point, Rectangle, Scale};
 use smithay::wayland::compositor::with_states;
 use smithay::wayland::dmabuf::{DmabufFeedbackBuilder, DmabufGlobal, DmabufState};
+use smithay::wayland::drm_syncobj::{DrmSyncobjState, supports_syncobj_eventfd};
+use smithay::wayland::presentation::Refresh;
 use tracing::{debug, error, info, warn};
 
 use crate::Error;
@@ -72,8 +77,9 @@ const CURSOR_REACH: i32 = 128;
 
 type Allocator = GbmAllocator<DrmDeviceFd>;
 type Exporter = GbmFramebufferExporter<DrmDeviceFd>;
-/// Per-frame user data handed back on vblank. Presentation feedback is task 1.14.
-type FrameData = ();
+/// Per-frame user data handed back on vblank: the presentation feedback of the surfaces
+/// in the frame (task 1.14).
+type FrameData = OutputPresentationFeedback;
 type OutputManager = DrmOutputManager<Allocator, Exporter, FrameData, DrmDeviceFd>;
 type TtyOutput = DrmOutput<Allocator, Exporter, FrameData, DrmDeviceFd>;
 
@@ -122,6 +128,8 @@ pub struct TtyData {
     /// The GPU, to match udev events.
     node: DrmNode,
     _dmabuf_global: DmabufGlobal,
+    /// `linux-drm-syncobj-v1` (explicit sync), when the GPU supports `syncobj_eventfd`.
+    pub(crate) syncobj_state: Option<DrmSyncobjState>,
     /// XCursor theme and the built-in arrow fallback (task 1.9).
     cursors: cursor::Themes,
     /// The session is active (our VT is in front). False while switched away.
@@ -425,6 +433,15 @@ pub fn init(
         render_formats,
     );
     let dmabuf_global = create_dmabuf_global(dh, dmabuf_state, &renderer, render_node);
+    // Explicit sync needs to poll timeline points, which takes `syncobj_eventfd` (Linux
+    // 6.6). Without it the global stays away and clients use implicit sync.
+    let syncobj_state = if supports_syncobj_eventfd(&fd) {
+        info!("explicit sync (linux-drm-syncobj-v1) enabled");
+        Some(DrmSyncobjState::new::<State>(dh, fd.clone()))
+    } else {
+        info!("GPU lacks syncobj_eventfd; explicit sync disabled");
+        None
+    };
 
     // Input: libinput on the same seat, opening devices through the session.
     let mut libinput =
@@ -458,8 +475,8 @@ pub fn init(
         .map_err(|e| e.error)
         .map_err(Error::init("adding the session source"))?;
     let drm_source = handle
-        .insert_source(drm_notifier, |event, _, state| match event {
-            DrmEvent::VBlank(crtc) => on_vblank(state, crtc),
+        .insert_source(drm_notifier, |event, metadata, state| match event {
+            DrmEvent::VBlank(crtc) => on_vblank(state, crtc, metadata.take()),
             DrmEvent::Error(err) => error!(?err, "DRM error"),
         })
         .map_err(|e| e.error)
@@ -482,6 +499,7 @@ pub fn init(
         output_manager,
         surfaces: Vec::new(),
         _dmabuf_global: dmabuf_global,
+        syncobj_state,
         cursors: cursor::Themes::from_env(),
         active: true,
         touchpads: Vec::new(),
@@ -686,14 +704,33 @@ fn rescan(state: &mut State) {
     }
 }
 
-fn on_vblank(state: &mut State, crtc: crtc::Handle) {
+fn on_vblank(state: &mut State, crtc: crtc::Handle, metadata: Option<DrmEventMetadata>) {
+    // The kernel's flip timestamp when it gives a monotonic one, else now.
+    let (time, flags) = match metadata.map(|m| (m.time, m.sequence)) {
+        Some((DrmEventTime::Monotonic(time), _)) if !time.is_zero() => (
+            time.into(),
+            wp_presentation_feedback::Kind::Vsync
+                | wp_presentation_feedback::Kind::HwClock
+                | wp_presentation_feedback::Kind::HwCompletion,
+        ),
+        _ => (state.clock.now(), wp_presentation_feedback::Kind::Vsync),
+    };
+    let sequence = metadata.map_or(0, |m| u64::from(m.sequence));
     let Some(tty) = tty(state) else { return };
     let Some(surface) = tty.surface_mut(crtc) else {
         return; // unplugged since the frame was queued
     };
     surface.frame_pending = false;
-    if let Err(err) = surface.drm_output.frame_submitted() {
-        warn!(?err, "frame_submitted failed");
+    let refresh = surface
+        .output
+        .current_mode()
+        .map_or(Refresh::Unknown, |mode| {
+            crate::presentation::refresh_interval(mode.refresh)
+        });
+    match surface.drm_output.frame_submitted() {
+        Ok(Some(mut feedback)) => feedback.presented(time, refresh, sequence, flags),
+        Ok(None) => {}
+        Err(err) => warn!(?err, "frame_submitted failed"),
     }
     schedule_render(tty, crtc, Duration::ZERO);
 }
@@ -843,14 +880,26 @@ fn render(state: &mut State, crtc: crtc::Handle) {
             .drm_output
             .render_frame(renderer, &elements, CLEAR_COLOR, FRAME_FLAGS)
         {
-            Ok(result) => !result.is_empty,
+            Ok(result) => {
+                crate::presentation::update_primary_scanout_output(
+                    space,
+                    &output,
+                    cursor_status,
+                    dnd_icon.as_ref(),
+                    &result.states,
+                );
+                // Feedback goes with the frame only if there is one: without damage the
+                // callbacks wait for a later frame (or are discarded by the next commit).
+                (!result.is_empty)
+                    .then(|| crate::presentation::take_feedback(space, &output, &result.states))
+            }
             Err(err) => {
                 warn!(?err, "rendering failed");
-                false
+                None
             }
         };
-    if rendered {
-        match surface.drm_output.queue_frame(()) {
+    if let Some(feedback) = rendered {
+        match surface.drm_output.queue_frame(feedback) {
             Ok(()) => surface.frame_pending = true,
             Err(err) => warn!(?err, "queueing the frame failed"),
         }
