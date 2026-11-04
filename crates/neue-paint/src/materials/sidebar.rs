@@ -1,5 +1,5 @@
 //! Source-list sidebars: the tinted background, the gradient of the selected row (in the
-//! accent with focus, grey without), count badges and a few original icon glyphs. Rows are
+//! accent with focus, grey without), count badges and icons (see [`crate::icon`]). Rows are
 //! laid out by the caller from the geometry functions here, so painting and hit-testing
 //! agree; the text is the caller's.
 //!
@@ -9,7 +9,7 @@ use neue_theme::materials::sidebar::{
     ACTION_WIDTH, BADGE_HEIGHT, BADGE_INSET, BADGE_PADDING, DISCLOSURE_WIDTH, EDGE, GROUP_INSET,
     ICON_GAP, ICON_SIZE, INDENT, ITEM_INSET, Palette,
 };
-use vello_common::kurbo::{BezPath, Circle, Line, Point, Rect, RoundedRect, Stroke};
+use vello_common::kurbo::{Point, Rect, RoundedRect};
 use vello_common::peniko::{Color, Gradient};
 
 use crate::Variant;
@@ -134,129 +134,6 @@ pub fn source_badge(
         SourceState::Selected | SourceState::SelectedUnfocused => p.selected_badge,
     };
     scene.fill(&RoundedRect::from_rect(rect, rect.height() / 2.0), fill);
-}
-
-/// The icons a source list can show (task 2.19c). Original, flat glyphs drawn in one colour,
-/// so they follow the row's text.
-#[derive(Clone, Copy, Debug, PartialEq, Eq, Hash)]
-#[non_exhaustive]
-pub enum SourceIcon {
-    /// A folder.
-    Folder,
-    /// A page with a folded corner.
-    Document,
-    /// A framed picture of a hill and the sun.
-    Picture,
-    /// A musical note.
-    Music,
-    /// A five-pointed star.
-    Star,
-    /// A clock face.
-    Clock,
-}
-
-/// Draw `icon` in `rect` ([`neue_theme::materials::sidebar::ICON_SIZE`] square) in `color`.
-pub fn source_icon(scene: &mut Scene, rect: Rect, icon: SourceIcon, color: Color) {
-    // Glyphs are drawn on a 16-unit grid and scaled to the rectangle.
-    let k = rect.width().min(rect.height()) / 16.0;
-    let at = |x: f64, y: f64| Point::new(rect.x0 + x * k, rect.y0 + y * k);
-    let mut path = BezPath::new();
-    match icon {
-        SourceIcon::Folder => {
-            path.move_to(at(1.0, 3.5));
-            path.line_to(at(6.0, 3.5));
-            path.line_to(at(8.0, 5.5));
-            path.line_to(at(15.0, 5.5));
-            path.line_to(at(15.0, 13.5));
-            path.line_to(at(1.0, 13.5));
-            path.close_path();
-            scene.fill(&path, color);
-        }
-        SourceIcon::Document => {
-            path.move_to(at(3.0, 1.0));
-            path.line_to(at(9.5, 1.0));
-            path.line_to(at(9.5, 4.5));
-            path.line_to(at(13.0, 4.5));
-            path.line_to(at(13.0, 15.0));
-            path.line_to(at(3.0, 15.0));
-            path.close_path();
-            scene.fill(&path, color);
-            // The turned-down corner, fainter than the page.
-            let mut fold = BezPath::new();
-            fold.move_to(at(9.5, 1.0));
-            fold.line_to(at(9.5, 4.5));
-            fold.line_to(at(13.0, 4.5));
-            fold.close_path();
-            scene.fill(&fold, color.with_alpha(0.5));
-        }
-        SourceIcon::Picture => {
-            let frame = Rect::new(
-                rect.x0 + k,
-                rect.y0 + 2.5 * k,
-                rect.x1 - k,
-                rect.y1 - 2.5 * k,
-            );
-            scene.stroke(&frame.inset(-k * 0.5), &Stroke::new(k), color);
-            scene.fill(&Circle::new(at(10.5, 6.5), 1.4 * k), color);
-            path.move_to(at(2.0, 12.5));
-            path.line_to(at(6.0, 7.5));
-            path.line_to(at(9.0, 11.0));
-            path.line_to(at(11.0, 9.5));
-            path.line_to(at(14.0, 12.5));
-            path.close_path();
-            scene.fill(&path, color);
-        }
-        SourceIcon::Music => {
-            scene.fill(&Circle::new(at(5.0, 12.5), 2.4 * k), color);
-            scene.fill(
-                &Rect::new(
-                    rect.x0 + 6.8 * k,
-                    rect.y0 + 2.0 * k,
-                    rect.x0 + 8.2 * k,
-                    rect.y0 + 12.5 * k,
-                ),
-                color,
-            );
-            path.move_to(at(8.2, 2.0));
-            path.line_to(at(12.5, 4.0));
-            path.line_to(at(12.5, 7.0));
-            path.line_to(at(8.2, 5.2));
-            path.close_path();
-            scene.fill(&path, color);
-        }
-        SourceIcon::Star => {
-            let (c, outer, inner) = (at(8.0, 8.6), 7.0 * k, 3.0 * k);
-            for i in 0..10 {
-                let angle = (f64::from(i) * 36.0 - 90.0).to_radians();
-                let r = if i % 2 == 0 { outer } else { inner };
-                let p = Point::new(c.x + r * angle.cos(), c.y + r * angle.sin());
-                if i == 0 {
-                    path.move_to(p);
-                } else {
-                    path.line_to(p);
-                }
-            }
-            path.close_path();
-            scene.fill(&path, color);
-        }
-        SourceIcon::Clock => {
-            scene.stroke(
-                &Circle::new(at(8.0, 8.0), 6.4 * k),
-                &Stroke::new(1.4 * k),
-                color,
-            );
-            scene.stroke(
-                &Line::new(at(8.0, 8.0), at(8.0, 4.0)),
-                &Stroke::new(1.4 * k),
-                color,
-            );
-            scene.stroke(
-                &Line::new(at(8.0, 8.0), at(11.0, 9.5)),
-                &Stroke::new(1.4 * k),
-                color,
-            );
-        }
-    }
 }
 
 #[cfg(test)]

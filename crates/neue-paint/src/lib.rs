@@ -18,6 +18,7 @@ pub mod demo;
 pub mod golden;
 #[cfg(feature = "gpu")]
 pub mod gpu;
+pub mod icon;
 #[cfg(feature = "imaging")]
 pub mod imaging;
 pub mod materials;

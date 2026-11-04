@@ -8,6 +8,7 @@ mod button;
 mod context;
 mod edit_menu;
 mod field;
+mod icon;
 mod label;
 mod menu;
 mod outline;
@@ -33,6 +34,7 @@ use masonry_core::core::NewWidget;
 use masonry_core::kurbo::Axis;
 use neue_paint::Backdrop;
 pub use neue_paint::demo::MaterialTile;
+use neue_paint::icon::Icon;
 use neue_theme::metrics::spacing;
 
 pub use bevel::BevelButton;
@@ -41,6 +43,7 @@ pub(crate) use button::{ButtonWidget, Pressed};
 pub use context::ContextMenu;
 pub(crate) use field::FieldWidget;
 pub use field::{ComboBox, TextField};
+pub(crate) use icon::IconWidget;
 pub(crate) use label::LabelWidget;
 pub(crate) use menu::{MenuRowWidget, MenuWidget};
 pub use outline::Outline;
@@ -133,6 +136,64 @@ impl Handle<Label> {
     /// The label's text, if it's in an open window.
     pub fn text<M>(&self, cx: &mut Cx<'_, M>) -> Option<String> {
         cx.edit::<LabelWidget, _>(self, |label| label.widget.text().to_owned())
+    }
+}
+
+/// An icon drawn at a size, in the text colour (disabled: the disabled colour). It is an
+/// image for assistive technology: a glyph is announced by its name, anything else by the
+/// label given, or not at all if there is none (a decorative icon).
+///
+/// ```no_run
+/// # use neue_kit::{Glyph, IconImage};
+/// let folder = IconImage::new(Glyph::Folder).size(32.0).label("Projects folder");
+/// ```
+#[derive(Debug)]
+pub struct IconImage {
+    inner: NewWidget<IconWidget>,
+}
+
+impl IconImage {
+    /// An icon (a [`crate::Glyph`], a [`crate::VectorIcon`] or an [`Icon`]), 16 logical
+    /// pixels square.
+    pub fn new(icon: impl Into<Icon>) -> Self {
+        Self {
+            inner: NewWidget::new(IconWidget::new(icon.into(), 16.0)),
+        }
+    }
+
+    /// The side of the square it is drawn in, in logical pixels. 16 by default.
+    #[must_use]
+    pub fn size(mut self, size: f64) -> Self {
+        self.inner.widget.set_size(size.max(1.0));
+        self
+    }
+
+    /// What assistive technology announces.
+    #[must_use]
+    pub fn label(mut self, label: impl Into<String>) -> Self {
+        self.inner.widget.set_label(label.into());
+        self
+    }
+
+    /// Points `handle` at this icon.
+    #[must_use]
+    pub fn bind(self, handle: &mut Handle<Self>) -> Self {
+        *handle = Handle::new(self.inner.id());
+        self
+    }
+}
+
+impl<M> From<IconImage> for Element<M> {
+    fn from(icon: IconImage) -> Self {
+        Element::new(icon.inner.erased())
+    }
+}
+
+impl Handle<IconImage> {
+    /// Replaces the icon.
+    pub fn set_icon<M>(&self, cx: &mut Cx<'_, M>, icon: impl Into<Icon>) {
+        let icon = icon.into();
+        cx.edit::<IconWidget, _>(self, |mut image| IconWidget::edit_icon(&mut image, icon));
     }
 }
 

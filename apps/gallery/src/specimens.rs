@@ -1,10 +1,12 @@
 //! The widgets the goldens render, shared with the gallery's pages.
 
+use neue_kit::tokens::Color;
 use neue_kit::{
-    Align, BevelButton, Button, CheckState, Checkbox, Column, ComboBox, ContextMenu, Entry, Label,
-    MaterialTile, Menu, MenuItem, Outline, PopUpButton, ProgressBar, PullDownButton, Radio,
-    ScrollAxes, ScrollView, Segmented, Shortcut, Slider, SortOrder, SourceIcon, SourceList,
-    Specimen, Spinner, Stack, Stepper, Table, TextField, TextView, VirtualList,
+    Align, BevelButton, Button, CheckState, Checkbox, Column, ComboBox, ContextMenu, Entry, Glyph,
+    Icon, IconImage, IconPaint, Label, MaterialTile, Menu, MenuItem, Outline, PopUpButton,
+    ProgressBar, PullDownButton, Radio, ScrollAxes, ScrollView, Segmented, Shortcut, Slider,
+    SortOrder, SourceList, Specimen, Spinner, Stack, Stepper, Table, TextField, TextView,
+    VectorIcon, VirtualList,
 };
 
 /// Golden window size for one push button (logical pixels): the button with the fixture's
@@ -388,26 +390,20 @@ pub fn outline_selected<M: 'static>() -> Outline<M, u32> {
 pub const SIDEBAR_SIZE: (u32, u32) = (192, 240);
 
 /// A node of the sample sidebar: id, parent (0 for a group), label, icon, badge.
-pub type SampleItem = (
-    u32,
-    u32,
-    &'static str,
-    Option<SourceIcon>,
-    Option<&'static str>,
-);
+pub type SampleItem = (u32, u32, &'static str, Option<Glyph>, Option<&'static str>);
 
 /// The sidebars' sample groups (Favorites, Devices) and items.
 pub const ITEMS: [SampleItem; 10] = [
     (1, 0, "Favorites", None, None),
-    (11, 1, "Documents", Some(SourceIcon::Document), None),
-    (12, 1, "Pictures", Some(SourceIcon::Picture), None),
-    (13, 1, "Music", Some(SourceIcon::Music), None),
+    (11, 1, "Documents", Some(Glyph::Document), None),
+    (12, 1, "Pictures", Some(Glyph::Picture), None),
+    (13, 1, "Music", Some(Glyph::Music), None),
     (131, 13, "Albums", None, None),
     (132, 13, "Artists", None, None),
-    (14, 1, "Starred", Some(SourceIcon::Star), Some("12")),
+    (14, 1, "Starred", Some(Glyph::Star), Some("12")),
     (2, 0, "Devices", None, None),
-    (21, 2, "Disk", Some(SourceIcon::Folder), None),
-    (22, 2, "Recent", Some(SourceIcon::Clock), Some("3")),
+    (21, 2, "Disk", Some(Glyph::Folder), None),
+    (22, 2, "Recent", Some(Glyph::Clock), Some("3")),
 ];
 
 /// The ids of the sidebar nodes inside `parent` (`None`: the groups), in order.
@@ -561,4 +557,51 @@ pub fn combo_box_filled<M: 'static>() -> ComboBox<M> {
 /// A text field with a few words to cut, copy and select, for the edit menu.
 pub fn edit_menu_field<M: 'static>() -> TextField<M> {
     TextField::new().text("Edit me")
+}
+
+/// Golden window size for a row of icons.
+pub const ICONS_SIZE: (u32, u32) = (260, 64);
+
+/// Every named glyph, 32 logical pixels square, in a row.
+pub fn icon_glyphs<M: 'static>() -> Stack<M> {
+    [
+        Glyph::Folder,
+        Glyph::Document,
+        Glyph::Picture,
+        Glyph::Music,
+        Glyph::Star,
+        Glyph::Clock,
+    ]
+    .into_iter()
+    .fold(Stack::row().spacing(8.0), |row, glyph| {
+        row.with(IconImage::new(glyph).size(32.0))
+    })
+}
+
+/// The sample vector icon: a disc with its own colours for light and dark, and a tick in
+/// the text colour. Built from SVG path data, as an app's own icon would be.
+pub fn sample_icon() -> Icon {
+    let disc = IconPaint::Fixed {
+        light: Color::from_rgb8(0x4a, 0x90, 0xd9),
+        dark: Color::from_rgb8(0x6c, 0xaa, 0xe8),
+    };
+    VectorIcon::new(16.0, 16.0)
+        .and_then(|icon| icon.shape("M8 1a7 7 0 1 0 0 14A7 7 0 0 0 8 1z", disc))
+        .and_then(|icon| {
+            icon.shape(
+                "M4.6 8.1l1.2-1.2 1.7 1.7 3.2-3.4 1.2 1.2-4.4 4.6z",
+                IconPaint::Current { alpha: 0.9 },
+            )
+        })
+        .map(Icon::from)
+        .unwrap_or_else(|_| Icon::from(Glyph::Star))
+}
+
+/// The sample vector icon at 16, 32 and 48 logical pixels.
+pub fn icon_vector<M: 'static>() -> Stack<M> {
+    [16.0, 32.0, 48.0]
+        .into_iter()
+        .fold(Stack::row().spacing(8.0), |row, size| {
+            row.with(IconImage::new(sample_icon()).size(size).label("Done"))
+        })
 }
