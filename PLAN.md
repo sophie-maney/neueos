@@ -778,9 +778,14 @@ Decisions to follow: ADR 0001 (Smithay), 0003 (IPC), 0004 (config), 0005 (global
       `docs/dev-setup.md` §20 steps 1 to 5 in the VM from greetd: all pass (login, environment,
       second start refused, clean logout).
       Not done: a SIGTERM handler (needs `nix`, so `ExecStop=neuectl quit` instead).
-- [ ] **1.20 First PKGBUILD + `cargo xtask package`** · Sonnet. PKGBUILD for `neue-comp`,
+- [x] **1.20 First PKGBUILD + `cargo xtask package`** · Sonnet. PKGBUILD for `neue-comp`,
       `neuectl` and `neue-session` with vendored git deps; `xtask package <crate>`.
       *Accept:* package builds in the OrbStack amd64 and arm64 machines and installs in the VM.
+      *Done:* ADR 0028. Split PKGBUILD `distro/pkgbuilds/neue-comp` (three packages, release
+      build without winit); `cargo xtask package <crate> [--arch aarch64|x86_64|all]` packages
+      the working tree and runs `makepkg` in the OrbStack machines. Both architectures build.
+      **Diverged:** git deps are fetched by `cargo fetch --locked`, not vendored (ADR 0028).
+      **Owner, still to do:** install in the VM (`docs/dev-setup.md` §21).
 - [ ] **1.21 Daily-drive pass** · Opus with the owner. foot/Alacritty, Firefox, a Qt app, a
       Flatpak, an X11 app on the NVIDIA PC, an AMD/Intel PC and the VM; fix or file bugs.
       *Accept:* the Phase 1 exit criterion below, with a results table in

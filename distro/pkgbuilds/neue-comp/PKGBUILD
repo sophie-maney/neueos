@@ -1,0 +1,72 @@
+# Maintainer: sophie-maney
+#
+# Split package for the Phase 1 session stack: the compositor, its control tool and the
+# session launcher with its systemd units (tasks 1.19 and 1.20, ADR 0028).
+#
+# Build with `cargo xtask package neue-comp [--arch aarch64|x86_64|all]`, which makes the
+# source tarball from the working tree and runs makepkg in the OrbStack Arch machines.
+# Plain `makepkg` also works if `neueos-src.tar.gz` (the repo's files, no prefix) sits next to
+# this file.
+
+pkgbase=neue-comp
+pkgname=(neue-comp neuectl neue-session)
+pkgver=0.0.0
+pkgrel=1
+arch=(x86_64 aarch64)
+url="https://github.com/sophie-maney/neueos"
+license=(GPL-3.0-or-later)
+# `cargo` is provided by `rust` and by `rustup`; rust-toolchain.toml in the tree picks the
+# exact toolchain when rustup is used.
+makedepends=(cargo)
+# debug: no -debug packages. lto: Smithay and friends are built with Cargo's own settings.
+options=(!debug !lto)
+source=(neueos-src.tar.gz)
+sha256sums=(SKIP)
+
+# Where Cargo builds. `cargo xtask package` points it outside $srcdir so rebuilds are
+# incremental; plain makepkg builds in $srcdir/target.
+_target() { echo "${CARGO_TARGET_DIR:-$srcdir/target}"; }
+
+prepare() {
+  cd "$srcdir"
+  export CARGO_TARGET_DIR="$(_target)"
+  # Fetches the locked dependencies, including the pinned Smithay git rev (ADR 0001).
+  cargo fetch --locked --target "$(rustc -vV | sed -n 's/^host: //p')"
+}
+
+build() {
+  cd "$srcdir"
+  export CARGO_TARGET_DIR="$(_target)"
+  # `--no-default-features`: no winit backend, so no X11 crates in the shipped binary (ADR 0001).
+  cargo build --frozen --release \
+    -p neue-comp -p neuectl -p neue-session \
+    --no-default-features --features neue-comp/tty
+}
+
+package_neue-comp() {
+  pkgdesc="neueOS Wayland compositor"
+  depends=(libdrm libinput libxkbcommon mesa seatd systemd-libs wayland)
+  optdepends=('xwayland-satellite: run X11 apps (ADR 0026)')
+  install -Dm755 "$(_target)/release/neue-comp" -t "$pkgdir/usr/bin"
+  install -Dm644 "$srcdir/LICENSE" -t "$pkgdir/usr/share/licenses/$pkgname"
+}
+
+package_neuectl() {
+  pkgdesc="Command-line control for the neueOS compositor"
+  depends=(gcc-libs)
+  install -Dm755 "$(_target)/release/neuectl" -t "$pkgdir/usr/bin"
+  install -Dm644 "$srcdir/LICENSE" -t "$pkgdir/usr/share/licenses/$pkgname"
+}
+
+package_neue-session() {
+  pkgdesc="neueOS session launcher, systemd user units and greetd/Wayland session entry"
+  depends=(neue-comp neuectl systemd)
+  optdepends=('greetd: log in to the session (see /usr/share/neueos/greetd/config.toml)')
+  install -Dm755 "$(_target)/release/neue-session" -t "$pkgdir/usr/bin"
+  install -Dm644 "$srcdir"/session/systemd/user/* -t "$pkgdir/usr/lib/systemd/user"
+  install -Dm644 "$srcdir/session/wayland-sessions/neueos.desktop" \
+    -t "$pkgdir/usr/share/wayland-sessions"
+  # Example only: the graphical greeter replaces it in Phase 3, so it is not put in /etc.
+  install -Dm644 "$srcdir/session/greetd/config.toml" -t "$pkgdir/usr/share/neueos/greetd"
+  install -Dm644 "$srcdir/LICENSE" -t "$pkgdir/usr/share/licenses/$pkgname"
+}

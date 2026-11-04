@@ -37,3 +37,4 @@ Don't edit an accepted ADR's decision; supersede it with a new one.
 | [0025](0025-global-menu-protocol-side.md) | Global-menu protocol side: appmenu v2, `gtk_shell1` v5, menu addresses in `neuectl windows` | Accepted |
 | [0026](0026-xwayland-satellite-on-demand.md) | xwayland-satellite on demand | Accepted |
 | [0027](0027-session-and-systemd-units.md) | `neue-session` and the systemd user units | Accepted |
+| [0028](0028-first-pkgbuild-and-xtask-package.md) | The first PKGBUILD and `cargo xtask package` | Accepted |
