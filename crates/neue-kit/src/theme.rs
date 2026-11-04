@@ -5,10 +5,10 @@ use masonry_core::core::{DefaultProperties, Property};
 use neue_theme::{Appearance, Theme, Variant};
 
 use crate::widgets::{
-    BevelWidget, ButtonWidget, CellWidget, ColumnHeaderWidget, FieldWidget, HeaderWidget,
-    IconWidget, LabelWidget, MenuRowWidget, MenuWidget, ProgressWidget, RootWidget, RowsWidget,
-    ScrollWidget, ScrollerWidget, SegmentedWidget, SliderWidget, SpecimenWidget, SpinnerWidget,
-    StackWidget, StepperWidget, TextViewWidget, ToggleWidget,
+    BevelWidget, ButtonWidget, CellWidget, CollectionItemWidget, ColumnHeaderWidget, FieldWidget,
+    HeaderWidget, IconWidget, LabelWidget, MenuRowWidget, MenuWidget, ProgressWidget, RootWidget,
+    RowsWidget, ScrollWidget, ScrollerWidget, SegmentedWidget, SliderWidget, SpecimenWidget,
+    SpinnerWidget, StackWidget, StepperWidget, TextViewWidget, ToggleWidget,
 };
 
 /// The app's [`Theme`], as a default property of every neue-kit widget.
@@ -52,5 +52,6 @@ pub(crate) fn default_properties(theme: Theme) -> DefaultProperties {
     props.insert::<HeaderWidget, _>(ThemeProp(theme));
     props.insert::<ColumnHeaderWidget, _>(ThemeProp(theme));
     props.insert::<CellWidget, _>(ThemeProp(theme));
+    props.insert::<CollectionItemWidget, _>(ThemeProp(theme));
     props
 }

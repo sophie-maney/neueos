@@ -19,6 +19,7 @@ use masonry_core::imaging::Painter;
 use masonry_core::kurbo::{Axis, Point, Rect, Size};
 use masonry_core::layout::{LenReq, Length};
 
+use super::collection::CollectionBody;
 use super::scroll::{ScrollAxes, ScrollWidget};
 use super::table::TableBody;
 use crate::Cx;
@@ -49,6 +50,8 @@ pub(crate) struct RowsWidget {
     pub(super) window: Rect,
     /// A table's body: selection, keys and row backgrounds.
     pub(crate) table: Option<Box<TableBody>>,
+    /// A collection's body: selection, keys and the background.
+    pub(crate) collection: Option<Box<CollectionBody>>,
     /// Wiring of rows built since the app last took it.
     pending: Vec<Box<dyn Any>>,
     /// Rows were dropped since the app last took the wiring.
@@ -82,6 +85,7 @@ impl RowsWidget {
             rows: BTreeMap::new(),
             window: Rect::ZERO,
             table: None,
+            collection: None,
             pending: Vec::new(),
             dropped: false,
         }
@@ -110,6 +114,24 @@ impl RowsWidget {
         )]
         let columns = (width / cell).floor() as usize;
         columns.max(1)
+    }
+
+    /// The body of a collection.
+    pub(super) fn with_collection(mut self, collection: CollectionBody) -> Self {
+        self.collection = Some(Box::new(collection));
+        self
+    }
+
+    /// Changes the cell size of a grid (a collection's icon size changed), with the columns
+    /// that follow. The items need building again.
+    pub(super) fn set_cell(this: &mut WidgetMut<'_, Self>, width: f64, height: f64) {
+        let valid = |v: f64| if v.is_finite() && v > 0.0 { v } else { 1.0 };
+        this.widget.cell_width = Some(valid(width));
+        this.widget.row_height = valid(height);
+        this.widget.columns = this.widget.columns_for(this.widget.window.width());
+        this.ctx.request_layout();
+        this.ctx.request_accessibility_update();
+        Self::collection_columns_changed(this);
     }
 
     /// The body of a table.
@@ -152,6 +174,7 @@ impl RowsWidget {
             this.widget.columns = columns;
             this.ctx.request_layout();
             this.ctx.request_accessibility_update();
+            Self::collection_columns_changed(this);
         }
         Self::sync(this);
     }
@@ -199,6 +222,11 @@ impl RowsWidget {
         this.widget.count = count;
         if let Some(table) = &this.widget.table {
             table.forget_past(count);
+            this.ctx.request_paint_only();
+            this.ctx.request_accessibility_update();
+        }
+        if let Some(collection) = &this.widget.collection {
+            collection.forget_past(count);
             this.ctx.request_paint_only();
             this.ctx.request_accessibility_update();
         }
@@ -267,6 +295,8 @@ impl Widget for RowsWidget {
     ) {
         if self.table.is_some() {
             self.table_pointer(ctx, event);
+        } else if self.collection.is_some() {
+            self.collection_pointer(ctx, event);
         }
     }
 
@@ -278,6 +308,8 @@ impl Widget for RowsWidget {
     ) {
         if self.table.is_some() {
             self.table_text(ctx, event);
+        } else if self.collection.is_some() {
+            self.collection_text(ctx, event);
         }
     }
 
@@ -289,6 +321,8 @@ impl Widget for RowsWidget {
     ) {
         if self.table.is_some() {
             self.table_access(ctx, event);
+        } else if self.collection.is_some() {
+            self.collection_access(ctx, event);
         }
     }
 
@@ -305,6 +339,18 @@ impl Widget for RowsWidget {
             && matches!(event, Update::FocusChanged(_) | Update::DisabledChanged(_))
         {
             Self::restyle_later(ctx);
+        }
+        if let Some(collection) = &self.collection {
+            // The icon size may have been set after the cells were sized.
+            if matches!(event, Update::WidgetAdded) {
+                let (width, height) = collection.cell();
+                self.cell_width = Some(width);
+                self.row_height = height;
+                ctx.request_layout();
+            }
+            if matches!(event, Update::FocusChanged(_) | Update::DisabledChanged(_)) {
+                Self::collection_restyle_later(ctx);
+            }
         }
         // The pointer left the body: a source list's group header isn't hovered any more.
         if self.table.is_some()
@@ -324,7 +370,7 @@ impl Widget for RowsWidget {
     }
 
     fn accepts_focus(&self) -> bool {
-        self.table.is_some()
+        self.table.is_some() || self.collection.is_some()
     }
 
     fn register_children(&mut self, ctx: &mut RegisterCtx<'_>) {
@@ -388,6 +434,8 @@ impl Widget for RowsWidget {
     ) {
         if self.table.is_some() {
             self.table_paint(ctx, props, painter);
+        } else if self.collection.is_some() {
+            self.collection_paint(ctx, props, painter);
         }
     }
 
@@ -395,6 +443,8 @@ impl Widget for RowsWidget {
         if self.table.is_some() {
             // `accessibility_role` takes `&self`; a table's role is read through its state.
             self.table.as_ref().map_or(Role::List, |t| t.role())
+        } else if self.collection.is_some() {
+            Role::Grid
         } else {
             Role::List
         }
@@ -408,6 +458,8 @@ impl Widget for RowsWidget {
     ) {
         if self.table.is_some() {
             self.table_accessibility(node);
+        } else if self.collection.is_some() {
+            self.collection_accessibility(node);
         }
     }
 

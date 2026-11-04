@@ -220,20 +220,20 @@ pub(crate) struct Sorted(pub(crate) usize, pub(crate) SortOrder);
 #[derive(Debug, Default, Clone, PartialEq, Eq)]
 pub(crate) struct Selection {
     pub(crate) rows: BTreeSet<usize>,
-    anchor: Option<usize>,
-    cursor: Option<usize>,
+    pub(super) anchor: Option<usize>,
+    pub(super) cursor: Option<usize>,
 }
 
 impl Selection {
     /// Selects only `row`.
-    fn only(&mut self, row: usize) {
+    pub(super) fn only(&mut self, row: usize) {
         self.rows = BTreeSet::from([row]);
         self.anchor = Some(row);
         self.cursor = Some(row);
     }
 
     /// Adds `row`, or takes it out.
-    fn toggle(&mut self, row: usize) {
+    pub(super) fn toggle(&mut self, row: usize) {
         if !self.rows.remove(&row) {
             self.rows.insert(row);
         }
@@ -242,13 +242,13 @@ impl Selection {
     }
 
     /// Selects the rows from the anchor to `row`.
-    fn extend_to(&mut self, row: usize) {
+    pub(super) fn extend_to(&mut self, row: usize) {
         let anchor = *self.anchor.get_or_insert(row);
         self.rows = (anchor.min(row)..=anchor.max(row)).collect();
         self.cursor = Some(row);
     }
 
-    fn clear(&mut self) {
+    pub(super) fn clear(&mut self) {
         *self = Self::default();
     }
 
@@ -290,7 +290,7 @@ impl Selection {
     }
 
     /// Forgets rows at or past `count`.
-    fn forget_past(&mut self, count: usize) {
+    pub(super) fn forget_past(&mut self, count: usize) {
         self.rows.retain(|&r| r < count);
         self.anchor = self.anchor.filter(|&r| r < count);
         self.cursor = self.cursor.filter(|&r| r < count);
@@ -371,7 +371,7 @@ fn aligned(align: Align, (x0, x1): (f64, f64), width: f64, inset: f64) -> f64 {
 }
 
 /// The command key: Cmd on macOS, Ctrl elsewhere.
-fn command(mods: Modifiers) -> bool {
+pub(super) fn command(mods: Modifiers) -> bool {
     if cfg!(target_os = "macos") {
         mods.meta()
     } else {
