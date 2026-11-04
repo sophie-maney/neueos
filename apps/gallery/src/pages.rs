@@ -7,7 +7,7 @@ use std::rc::Rc;
 use neue_kit::{
     Align, BevelButton, Button, Cell, Checkbox, Column, ContextMenu, DividerStyle, Element, Handle,
     Label, MaterialTile, Pane, PopUpButton, ProgressBar, Radio, Segmented, Slider, SortOrder,
-    Spinner, SplitView, Stack, Stepper, Table, TextField, TextStyle,
+    Spinner, SplitView, Stack, Stepper, TabView, Table, TextField, TextStyle,
 };
 
 use crate::Message;
@@ -620,6 +620,31 @@ fn panes(_: &mut PageHandles) -> Element<Message> {
         .with(section(
             "Three panes, the outer two collapsible",
             Stack::column().with(three),
+        ))
+        .with(section(
+            "Tab view · Left and Right on the strip, Ctrl-Tab from anywhere inside",
+            Stack::row()
+                .spacing(spacing::L)
+                .with(
+                    specimens::tab_view::<Message>(0)
+                        .on_select(Message::TabSelected)
+                        .width(260.0)
+                        .height(110.0),
+                )
+                .with(
+                    TabView::new()
+                        .with_tab(
+                            "Fields",
+                            Stack::column()
+                                .spacing(spacing::S)
+                                .with(TextField::new().placeholder("Name"))
+                                .with(Checkbox::new("Remember me")),
+                        )
+                        .with_tab("About", Label::new("A tab holds any content"))
+                        .on_select(Message::TabSelected)
+                        .width(260.0)
+                        .height(110.0),
+                ),
         ))
         .into()
 }

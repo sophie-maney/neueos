@@ -14,7 +14,7 @@ use neue_gallery::specimens::{
     self, BEVEL_SIZE, COLLECTION_SIZE, COMBO_SIZE, FIELD_SIZE, ICONS_SIZE, MENU_SIZE, OUTLINE_SIZE,
     POPUP_SIZE, PROGRESS_SIZE, PULL_DOWN_SIZE, PUSH_BUTTON_SIZE, SCROLL_SIZE, SEGMENTED_SIZE,
     SIDEBAR_SIZE, SLIDER_SIZE, SPINNER_SIZE, SPLIT_SIZE, STEPPER_SIZE, SUBMENU_SIZE, TABLE_SIZE,
-    TEXT_VIEW_SIZE, TOGGLE_SIZE,
+    TABS_SIZE, TEXT_VIEW_SIZE, TOGGLE_SIZE,
 };
 use neue_kit::testing::{
     self, DISABLED, FOCUSED, Fixture, Goldens, INACTIVE, NORMAL, NavKey, PRESSED, State,
@@ -303,6 +303,12 @@ control_goldens! {
     split_thick: "split-thick", SPLIT_SIZE, &[NORMAL, FOCUSED, DISABLED], specimens::split_view(DividerStyle::Thick, false);
     split_stacked: "split-stacked", SPLIT_SIZE, &[NORMAL, FOCUSED], specimens::split_view(DividerStyle::Thick, true);
     split_collapsed: "split-collapsed", SPLIT_SIZE, &[NORMAL], specimens::split_view_collapsed(DividerStyle::Thick);
+
+    // A strip of tabs over a bordered box: the first or the second tab selected, a
+    // disabled tab, the strip focused, the whole view disabled, the window inactive (the
+    // selected tab neutral).
+    tabs: "tabs", TABS_SIZE, &[NORMAL, FOCUSED, DISABLED, INACTIVE], specimens::tab_view(0);
+    tabs_second: "tabs-second", TABS_SIZE, &[NORMAL], specimens::tab_view(1);
 
     pop_up_button: "pop-up-button", POPUP_SIZE, &[NORMAL, POPUP_PRESSED, OPEN_BY_KEY, FOCUSED, DISABLED], specimens::pop_up_button();
     pull_down_button: "pull-down-button", PULL_DOWN_SIZE, &[NORMAL, PRESSED, OPEN_BY_KEY, FOCUSED, DISABLED], specimens::pull_down_button(|_| ());

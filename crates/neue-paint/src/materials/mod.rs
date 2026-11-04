@@ -21,6 +21,7 @@ mod spinner;
 mod split;
 mod stepper;
 mod table;
+mod tabs;
 mod text_field;
 pub mod title_bar;
 mod toggle;
@@ -54,6 +55,7 @@ pub use table::{
     TableHeader, column_edges, disclosure_rect, disclosure_triangle, outline_text_inset,
     sort_arrow_rect, table_border, table_header,
 };
+pub use tabs::{TabStrip, tab_box, tab_strip, tab_strip_outline};
 pub use text_field::{
     FieldShape, TextField, cancel_button, cancel_button_rect, magnifier, text_field,
     text_field_inside, text_field_outline,

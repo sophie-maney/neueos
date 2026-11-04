@@ -31,6 +31,7 @@ mod scroll;
 mod source_list;
 mod split;
 mod table;
+mod tabs;
 mod textview;
 mod values;
 
