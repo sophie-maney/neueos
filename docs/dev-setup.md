@@ -707,7 +707,7 @@ windows on HiDPI outputs.
 
 ## 20. Checking the session from greetd in the VM (task 1.19)
 Needs a build of `neue-comp` and `neue-session` in `/usr/bin`: no package yet (task 1.20), so
-install by hand from the Mac. The VM console is the greetd VT, so steps 3 to 5 are typed
+install by hand from the Mac (sync first: `rsync -az --delete --exclude target --exclude .git ./ neueos-vm:neueos/`, the VM copy is not a git checkout). The VM console is the greetd VT, so steps 3 to 5 are typed
 there; the rest runs over ssh.
 ```sh
 ssh neueos-vm 'cd ~/neueos && cargo build --release -p neue-comp -p neue-session -p neuectl'
