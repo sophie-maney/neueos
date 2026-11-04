@@ -669,10 +669,11 @@ libadwaita apps send nothing and get the fallback menu (Phase 3).
 
 ## 19. Checking xwayland-satellite on demand in the VM (task 1.18)
 Runs from the Mac over ssh, as §17. Rebuild and restart the compositor first (the rsync and
-`cargo build` lines in §17 step 2). Needs satellite 0.7 or newer and an X11 app:
+`cargo build` lines in §17 step 2). Needs satellite 0.7 or newer (the second command must print `exit=0`; satellite has no
+`--help`) and an X11 app:
 ```sh
 ssh -t neueos-vm 'sudo pacman -S --needed xwayland-satellite xorg-xeyes xterm'
-ssh neueos-vm 'xwayland-satellite --help 2>&1 | head -3; pacman -Q xwayland-satellite'
+ssh neueos-vm 'pacman -Q xwayland-satellite; xwayland-satellite :9 --test-listenfd-support; echo exit=$?'
 ```
 Start the compositor with the log on: `RUST_LOG=info neue-comp --tty -c foot 2>/tmp/comp.log`
 (from the VM console, as §4). Its log should say `X11 apps start xwayland-satellite on
