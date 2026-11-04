@@ -57,3 +57,4 @@ Don't edit an accepted ADR's decision; supersede it with a new one.
 | [0045](0045-menus.md) | Menus: the menu model, menu layers and context menus | Accepted |
 | [0046](0046-popup-buttons-combo-box-edit-menu.md) | Pop-up button, pull-down button, combo box and the edit menu | Accepted |
 | [0047](0047-dbusmenu-export.md) | DBusMenu export: the neue-dbus crate and window menu bars | Accepted |
+| [0048](0048-table-view.md) | Table view: header slot, table body on the virtual rows, shared state | Accepted |

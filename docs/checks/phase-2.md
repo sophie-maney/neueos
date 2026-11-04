@@ -576,3 +576,32 @@ Expected: the introspection shows `com.canonical.dbusmenu` with `GetLayout`; the
 layout starts `(uint32 1, (0, …` with `'View'` and `'Pages'` and the page items' `radio`
 toggles; `d2.png` shows the gallery in the dark appearance; the last call starts
 `(uint32 2,` and Dark Appearance has `'toggle-state': <1>`.
+
+## 11. Checking the table (task 2.19a)
+Not run yet (the agent had no VM). Steps 1–3 run in the VM, set up as in
+`docs/dev-setup.md` §1.3; step 4 is on the Mac. The gallery's "Tables" page is page 8.
+The helpers are those of §8.
+
+**1. Build and open the page:** as §8 step 1 with `NEUE_GALLERY_PAGE=8`, screenshot
+`/tmp/t1.png`. Expected: no `WARN` or `ERROR`; `t1.png` shows two bordered tables: files
+(Name, Size, Kind; striped; a triangle in the Name title) and tasks (#, Task, Done with
+checkboxes).
+
+**2. Selection and keys:** click "Field Notes.txt" (`click_at X Y`, positions from
+`t1.png`), then Shift-click "Mixtape.flac" (`ydotool key 42:1`, click, `ydotool key 42:0`)
+and take `t2.png`. Expected: the rows between them blue with white text, a focus ring
+round the table, the status line `5 rows selected`. Press Down: one row. Type "re": "Recipes.md".
+Press Return: `Opened “Recipes.md”`. Double-click a row: the same for that row. Click the
+other table: the first one's selection turns grey.
+
+**3. Sort and resize:** click the "Size" title: the triangle moves to it and the rows go
+smallest first; click it again: largest first. Drag the divider right of "Name" to the
+right (`ydotool mousemove`, press, move, release; the pointer is a column-resize cursor over
+it): the column widens, the table scrolls sideways and the titles follow. Wheel the tasks
+table to the bottom (10,000 rows): no lag.
+
+**4. macOS (owner):** `cargo xtask gallery`, open "Tables" and repeat steps 2 and 3 with
+Cmd-click (adds or removes a row) and Cmd-A. With VoiceOver on (Cmd-F5), Tab to the files
+table: it is announced as a table of 10 rows and 3 columns; moving with Down reads the row;
+the titles read as column headers, the sorted one with its order.
+

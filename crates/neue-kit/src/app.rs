@@ -544,6 +544,10 @@ impl<A: Application> Runner<A> {
         &self.app
     }
 
+    pub(crate) fn app_mut(&mut self) -> &mut A {
+        &mut self.app
+    }
+
     pub(crate) fn handler_count(&self) -> usize {
         self.kit.as_ref().map_or(0, |kit| kit.handlers.len())
     }

@@ -1578,3 +1578,91 @@ pub mod menu {
         }
     }
 }
+
+/// Tables (task 2.19a): a header bar of column titles over rows of one height, in a scroll
+/// view with a hairline border. Row stripes and the selection use the semantic colours
+/// ([`crate::colors::SemanticColors::alternate_row`], `selection`, `unfocused_selection`).
+pub mod table {
+    use crate::{Appearance, Color, Variant, black, grey, white};
+
+    /// Height of a row.
+    pub const ROW_HEIGHT: f64 = 19.0;
+    /// Height of the header bar, its bottom border included.
+    pub const HEADER_HEIGHT: f64 = 17.0;
+    /// Space between a cell's edges and its text.
+    pub const CELL_INSET: f64 = 4.0;
+    /// Space between a column title and the column's edges.
+    pub const TITLE_INSET: f64 = 5.0;
+    /// Width of a column that doesn't set one.
+    pub const COLUMN_WIDTH: f64 = 100.0;
+    /// Narrowest a column gets by resizing, unless it sets its own minimum.
+    pub const MIN_COLUMN_WIDTH: f64 = 24.0;
+    /// How far either side of a divider a press grabs it to resize the column.
+    pub const DIVIDER_GRAB: f64 = 3.0;
+    /// Width of a column divider in the header.
+    pub const DIVIDER: f64 = 1.0;
+    /// Height of the header's bottom border.
+    pub const HEADER_BORDER: f64 = 1.0;
+    /// Width of the scroll view's border.
+    pub const BORDER: f64 = 1.0;
+    /// Width of the sort indicator (a triangle; up when ascending).
+    pub const SORT_ARROW_WIDTH: f64 = 7.0;
+    /// Height of the sort indicator.
+    pub const SORT_ARROW_HEIGHT: f64 = 5.0;
+    /// Space between the sort indicator and the column's right edge.
+    pub const SORT_ARROW_INSET: f64 = 6.0;
+
+    /// Colours of a table's header and frame.
+    #[derive(Clone, Copy, Debug, PartialEq)]
+    pub struct Palette {
+        /// The header bar, top and bottom.
+        pub header: [Color; 2],
+        /// A pressed column title, top and bottom.
+        pub header_pressed: [Color; 2],
+        /// The line under the header.
+        pub header_border: Color,
+        /// The lines between column titles.
+        pub divider: Color,
+        /// A highlight one pixel right of each divider.
+        pub divider_highlight: Color,
+        /// Column titles.
+        pub title: Color,
+        /// Titles of a disabled table.
+        pub disabled_title: Color,
+        /// The sort indicator.
+        pub sort_arrow: Color,
+        /// The scroll view's border.
+        pub border: Color,
+    }
+
+    impl Palette {
+        /// Colours for `variant`; increased contrast firms up the lines.
+        pub fn new(variant: Variant) -> Self {
+            let contrast = variant.is_increased_contrast();
+            match variant.appearance {
+                Appearance::Light => Self {
+                    header: [grey(1.0), grey(0.91)],
+                    header_pressed: [grey(0.86), grey(0.79)],
+                    header_border: if contrast { black(0.6) } else { grey(0.70) },
+                    divider: if contrast { black(0.5) } else { grey(0.78) },
+                    divider_highlight: white(0.8),
+                    title: black(0.85),
+                    disabled_title: black(0.30),
+                    sort_arrow: black(if contrast { 0.75 } else { 0.50 }),
+                    border: if contrast { black(0.6) } else { grey(0.66) },
+                },
+                Appearance::Dark => Self {
+                    header: [grey(0.27), grey(0.22)],
+                    header_pressed: [grey(0.20), grey(0.16)],
+                    header_border: if contrast { white(0.5) } else { black(0.55) },
+                    divider: if contrast { white(0.45) } else { white(0.12) },
+                    divider_highlight: black(0.25),
+                    title: white(0.88),
+                    disabled_title: white(0.32),
+                    sort_arrow: white(if contrast { 0.85 } else { 0.60 }),
+                    border: if contrast { white(0.5) } else { black(0.6) },
+                },
+            }
+        }
+    }
+}

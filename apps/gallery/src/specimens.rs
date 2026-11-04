@@ -1,9 +1,10 @@
 //! The widgets the goldens render, shared with the gallery's pages.
 
 use neue_kit::{
-    BevelButton, Button, CheckState, Checkbox, ComboBox, ContextMenu, Label, MaterialTile, Menu,
-    MenuItem, PopUpButton, ProgressBar, PullDownButton, Radio, ScrollAxes, ScrollView, Segmented,
-    Shortcut, Slider, Specimen, Spinner, Stack, Stepper, TextField, TextView, VirtualList,
+    Align, BevelButton, Button, CheckState, Checkbox, Column, ComboBox, ContextMenu, Label,
+    MaterialTile, Menu, MenuItem, PopUpButton, ProgressBar, PullDownButton, Radio, ScrollAxes,
+    ScrollView, Segmented, Shortcut, Slider, SortOrder, Specimen, Spinner, Stack, Stepper, Table,
+    TextField, TextView, VirtualList,
 };
 
 /// Golden window size for one push button (logical pixels): the button with the fixture's
@@ -232,6 +233,77 @@ pub fn virtual_list<M: 'static>(count: usize) -> VirtualList<M> {
     })
     .width(160.0)
     .height(100.0)
+}
+
+/// Golden window size for a table: 240 × 120 with the fixture's margin, room for the
+/// focus ring.
+pub const TABLE_SIZE: (u32, u32) = (256, 136);
+
+/// A file in the tables' sample data: name, size in kilobytes, kind.
+pub type SampleFile = (&'static str, u32, &'static str);
+
+/// The tables' sample files, by name.
+pub const FILES: [SampleFile; 10] = [
+    ("Annual Report.pdf", 2_340, "PDF document"),
+    ("Beach Photo.jpg", 1_820, "JPEG image"),
+    ("Budget 2026.ods", 48, "Spreadsheet"),
+    ("Field Notes.txt", 4, "Plain text"),
+    ("Holiday Video.mp4", 812_000, "MPEG-4 video"),
+    ("Invoice 0412.pdf", 96, "PDF document"),
+    ("Letter to Sam.odt", 22, "Text document"),
+    ("Mixtape.flac", 41_200, "FLAC audio"),
+    ("Recipes.md", 9, "Markdown"),
+    ("Screenshot.png", 640, "PNG image"),
+];
+
+/// The columns of a table of [`SampleFile`]s: name, size (right-aligned), kind; all
+/// sortable.
+pub fn file_columns() -> Vec<Column> {
+    vec![
+        Column::new("Name")
+            .width(100.0)
+            .min_width(60.0)
+            .sortable(true),
+        Column::new("Size")
+            .width(70.0)
+            .min_width(40.0)
+            .align(Align::End)
+            .sortable(true),
+        Column::new("Kind").width(60.0).sortable(true),
+    ]
+}
+
+/// A file size for people: kilobytes, megabytes or gigabytes.
+pub fn file_size(kb: u32) -> String {
+    let kb = f64::from(kb);
+    if kb < 1_000.0 {
+        format!("{kb} KB")
+    } else if kb < 1_000_000.0 {
+        format!("{:.1} MB", kb / 1_000.0)
+    } else {
+        format!("{:.1} GB", kb / 1_000_000.0)
+    }
+}
+
+/// The text of `file`'s cell in `column` of [`file_columns`].
+pub fn file_cell(file: &SampleFile, column: usize) -> String {
+    match column {
+        0 => file.0.to_owned(),
+        1 => file_size(file.1),
+        _ => file.2.to_owned(),
+    }
+}
+
+/// A table of the sample files: striped, sorted by name, the second row selected.
+pub fn table<M: 'static>() -> Table<M> {
+    Table::new(file_columns(), FILES.len(), |row, column| {
+        file_cell(&FILES[row], column)
+    })
+    .alternating_rows(true)
+    .sorted(0, SortOrder::Ascending)
+    .selected([1])
+    .width(240.0)
+    .height(120.0)
 }
 
 /// Golden window size for an open context menu (logical pixels).

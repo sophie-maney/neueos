@@ -246,7 +246,7 @@ the paper and leather materials move to Phase 6/7 (Widgets, Write).
       session bus in OrbStack (`menu_demo` example), not in the VM: `docs/checks/phase-2.md`
       §10, not run. Not yet: menu bars on macOS hosts, key equivalents, icons,
       `ItemsPropertiesUpdated`.
-- [ ] **2.19a Table view** · Opus. Split from 2.19 (table, outline view, source-list
+- [x] **2.19a Table view** · Opus. Split from 2.19 (table, outline view, source-list
       sidebar); sets the pattern for 2.19b and 2.19c. A `Table` on `VirtualList`/
       `RowsWidget` (fixed row height): app-given columns (title, width, min/max,
       alignment, sortable) and a cell closure `|row, col| Element`; data through shared
@@ -259,6 +259,21 @@ the paper and leather materials move to Phase 6/7 (Widgets, Write).
       (the 2.15 gap), selected state, sort direction; gallery page "Tables"; goldens
       (normal, selected, selected unfocused, header pressed/sorted, disabled ×
       light/dark × 1×/2×); end-to-end tests for selection, keys, sort and resize; ADR.
+      *Done:* ADR 0048. `neue_kit::{Table, Column, Cell, SortOrder}` (`multiple`,
+      `alternating_rows`, `selected`, `sorted`, `on_select`, `on_activate`, `on_sort`;
+      `Handle::{set_count, reload, set_selection, set_sorted, scroll_to_row, set_enabled}`).
+      `widgets/table.rs`: the body is `RowsWidget` with a `TableBody` (focus, selection,
+      type-select, stripes and selection bands, AccessKit `Table`), `TableRowWidget`,
+      `CellWidget` (text or element), `HeaderWidget` (sort, divider resize, `ColResize`
+      cursor) and `ColumnHeaderWidget`; state shared through `TableState`. The scroll view
+      got a header slot, `Frame::{Well, Border}`, and tells rows the visible rectangle.
+      Paint `neue_paint::materials::{table_header, table_border, column_edges,
+      sort_arrow_rect}`; tokens `neue_theme::materials::table`. Gallery page "Tables"
+      (page 8); 20 goldens, passing on macOS and Linux aarch64 (x86_64 not run); 10
+      end-to-end tests. VM and macOS steps in `docs/checks/phase-2.md` §11, not run. Not
+      yet: variable row heights, editable cells, column reordering, row drag and drop,
+      autoscroll while drag-selecting, ellipsis truncation, white element cells on a
+      selection.
 - [ ] **2.19b Outline view** · Sonnet (the 2.19a pattern). A table whose first column is
       a tree: an app tree source (children of a node, expandable), disclosure triangles,
       expand and collapse by click, Left/Right and Option/Alt-click (recursive), indent

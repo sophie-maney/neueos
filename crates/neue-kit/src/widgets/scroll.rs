@@ -5,7 +5,8 @@
 //! never re-lays-out the content. The scrollers are child widgets above the content, so
 //! they take the pointer where they're drawn; they're stashed (no paint, no pointer)
 //! while hidden. A [`RowsWidget`] content is told which rows are on screen
-//! (virtual scrolling).
+//! (virtual scrolling). A table's header sits above the viewport and follows the content
+//! sideways (ADR 0048).
 
 use std::any::TypeId;
 use std::time::Duration;
@@ -26,9 +27,10 @@ use neue_paint::Scene;
 use neue_paint::imaging::ImagingReplayer;
 use neue_paint::materials::{
     FieldShape, Scroller, TextField as WellSpec, focus_ring, scroller, scroller_knob,
-    scroller_travel, text_field, text_field_inside,
+    scroller_travel, table_border, text_field, text_field_inside,
 };
 use neue_theme::Spring;
+use neue_theme::materials::table::BORDER;
 use neue_theme::metrics::control::{FOCUS_RING, SCROLL_LINE, SCROLLER_WIDTH};
 use neue_theme::motion::SCROLLER_HIDE_DELAY;
 
@@ -252,9 +254,25 @@ impl Widget for ScrollerWidget {
 }
 
 /// The Masonry widget behind [`crate::ScrollView`] and [`crate::VirtualList`].
+/// What a scroll view draws around its viewport.
+#[derive(Clone, Copy, Debug, Default, PartialEq, Eq)]
+pub(crate) enum Frame {
+    /// Nothing: the view is a Tab stop with its own focus ring.
+    #[default]
+    None,
+    /// A text field's well (a text view, ADR 0044), with the focus ring for focus inside
+    /// it; the view itself is no Tab stop.
+    Well,
+    /// A hairline border (a table, ADR 0048), with the focus ring for focus inside it.
+    Border,
+}
+
 #[derive(Debug)]
 pub(crate) struct ScrollWidget {
     content: WidgetPod<dyn Widget>,
+    /// A table's header: above the viewport, scrolled sideways with the content.
+    header: Option<WidgetPod<dyn Widget>>,
+    header_height: f64,
     /// Vertical, then horizontal; last in z-order, so above the content.
     scrollers: [WidgetPod<ScrollerWidget>; 2],
     pub(super) axes: ScrollAxes,
@@ -267,11 +285,11 @@ pub(crate) struct ScrollWidget {
     viewport: Size,
     /// The content is a [`RowsWidget`], told which part of it is on screen.
     rows: bool,
-    /// The window last told to the rows.
-    told: Option<(f64, f64)>,
-    /// Drawn in a text field's well, with the focus ring for focus inside it (a text
-    /// view, ADR 0044): the view itself is no Tab stop.
-    pub(super) framed: bool,
+    /// The part of the content last told to the rows.
+    told: Option<Rect>,
+    /// Where the viewport's top left is: inside the border, below the header.
+    origin: Point,
+    pub(super) frame: Frame,
     /// A scroll-into-view request the content's size at the time couldn't satisfy yet
     /// (the content grew in the same event): tried again after the next layout.
     pending: Option<Rect>,
@@ -287,6 +305,8 @@ impl ScrollWidget {
     pub(super) fn new(content: NewWidget<dyn Widget>, axes: ScrollAxes, rows: bool) -> Self {
         Self {
             content: content.to_pod(),
+            header: None,
+            header_height: 0.0,
             scrollers: [
                 NewWidget::new(ScrollerWidget::new(true)).to_pod(),
                 NewWidget::new(ScrollerWidget::new(false)).to_pod(),
@@ -299,13 +319,44 @@ impl ScrollWidget {
             viewport: Size::ZERO,
             rows,
             told: None,
-            framed: false,
+            origin: Point::ORIGIN,
+            frame: Frame::None,
             pending: None,
             shown: false,
             opacity: Animated::new(0.0, Spring::STANDARD),
             idle: None,
             replayer: ImagingReplayer::new(),
         }
+    }
+
+    /// Width of the border around the viewport.
+    fn border(&self) -> f64 {
+        if self.frame == Frame::Border {
+            BORDER
+        } else {
+            0.0
+        }
+    }
+
+    /// Puts `header`, `height` tall, above the viewport (a table's column titles).
+    pub(super) fn set_header(&mut self, header: NewWidget<dyn Widget>, height: f64) {
+        self.header = Some(header.to_pod());
+        self.header_height = height;
+    }
+
+    /// The header's widget, if there is one.
+    #[cfg(test)]
+    pub(crate) fn header_id(&self) -> Option<masonry_core::core::WidgetId> {
+        self.header.as_ref().map(WidgetPod::id)
+    }
+
+    /// Runs `f` on the header (nothing without one).
+    pub(super) fn with_header<R>(
+        this: &mut WidgetMut<'_, Self>,
+        f: impl FnOnce(WidgetMut<'_, dyn Widget>) -> R,
+    ) -> Option<R> {
+        let header = this.widget.header.as_mut()?;
+        Some(f(this.ctx.get_mut(header)))
     }
 
     /// How far the content can scroll along each axis.
@@ -590,6 +641,9 @@ impl Widget for ScrollWidget {
 
     fn register_children(&mut self, ctx: &mut RegisterCtx<'_>) {
         ctx.register_child(&mut self.content);
+        if let Some(header) = &mut self.header {
+            ctx.register_child(header);
+        }
         for scroller in &mut self.scrollers {
             ctx.register_child(scroller);
         }
@@ -598,7 +652,8 @@ impl Widget for ScrollWidget {
     fn update(&mut self, ctx: &mut UpdateCtx<'_>, _props: &mut PropertiesMut<'_>, event: &Update) {
         match event {
             Update::RequestPanToChild(target) => {
-                if self.reveal(*target) {
+                // In this view's coordinates: the content sits at the viewport's origin.
+                if self.reveal(*target - self.origin.to_vec2()) {
                     ctx.request_compose();
                     ctx.request_accessibility_update();
                 }
@@ -639,6 +694,11 @@ impl Widget for ScrollWidget {
         if let Some(length) = preferred {
             return Length::px(length);
         }
+        let border = 2.0 * self.border();
+        let header = match axis {
+            Axis::Vertical => self.header_height,
+            Axis::Horizontal => 0.0,
+        };
         if self.axes.scrolls(axis) {
             match len_req {
                 LenReq::MinContent => return Length::ZERO,
@@ -649,10 +709,16 @@ impl Widget for ScrollWidget {
         // The content's length; across a scrolling axis it isn't limited.
         let cross = cross_length.filter(|_| !self.axes.scrolls(axis.cross()));
         let context = LayoutSize::maybe(axis.cross(), cross);
-        ctx.compute_length(&mut self.content, len_req.into(), context, axis, cross)
+        let content = ctx.compute_length(&mut self.content, len_req.into(), context, axis, cross);
+        Length::px(content.get() + border + header)
     }
 
-    fn layout(&mut self, ctx: &mut LayoutCtx<'_>, _props: &PropertiesRef<'_>, size: Size) {
+    fn layout(&mut self, ctx: &mut LayoutCtx<'_>, _props: &PropertiesRef<'_>, outer: Size) {
+        let border = self.border();
+        let header_height = self.header_height;
+        let inner = outer.to_rect().inset(-border);
+        self.origin = Point::new(inner.x0, inner.y0 + header_height);
+        let size = Size::new(inner.width(), inner.height() - header_height).max(Size::ZERO);
         let along = |axis: Axis, length: f64| {
             if self.axes.scrolls(axis) {
                 LenDef::MaxContent
@@ -669,7 +735,11 @@ impl Widget for ScrollWidget {
             .compute_size(&mut self.content, auto, size.into())
             .max(size);
         ctx.run_layout(&mut self.content, content);
-        ctx.place_child(&mut self.content, Point::ORIGIN);
+        ctx.place_child(&mut self.content, self.origin);
+        if let Some(header) = &mut self.header {
+            ctx.run_layout(header, Size::new(content.width, header_height));
+            ctx.place_child(header, inner.origin());
+        }
         self.content_size = content;
         self.viewport = size;
         let _ = self.move_to(self.offset);
@@ -677,11 +747,10 @@ impl Widget for ScrollWidget {
         if let Some(target) = self.pending.take() {
             self.reveal_now(target);
         }
-        // A framed view keeps its content inside the well's border.
-        let clip = if self.framed {
-            text_field_inside(size.to_rect(), FieldShape::Square).rect()
-        } else {
-            size.to_rect()
+        // A framed view keeps its content inside the well's or the table's border.
+        let clip = match self.frame {
+            Frame::Well => text_field_inside(outer.to_rect(), FieldShape::Square).rect(),
+            Frame::Border | Frame::None => inner,
         };
         ctx.set_clip_path(clip);
         ctx.set_paint_insets(Insets::uniform(FOCUS_RING));
@@ -689,19 +758,10 @@ impl Widget for ScrollWidget {
         let range = self.range();
         let both = range.x > 0.0 && range.y > 0.0;
         let corner = if both { SCROLLER_WIDTH } else { 0.0 };
+        let view = Rect::from_origin_size(self.origin, size);
         let rects = [
-            Rect::new(
-                size.width - SCROLLER_WIDTH,
-                0.0,
-                size.width,
-                size.height - corner,
-            ),
-            Rect::new(
-                0.0,
-                size.height - SCROLLER_WIDTH,
-                size.width - corner,
-                size.height,
-            ),
+            Rect::new(view.x1 - SCROLLER_WIDTH, view.y0, view.x1, view.y1 - corner),
+            Rect::new(view.x0, view.y1 - SCROLLER_WIDTH, view.x1 - corner, view.y1),
         ];
         for (i, axis) in [(0, Axis::Vertical), (1, Axis::Horizontal)] {
             let pod = &mut self.scrollers[i];
@@ -718,6 +778,9 @@ impl Widget for ScrollWidget {
         // Layout comes first in a frame, so a request not settled by now never will be.
         self.pending = None;
         ctx.set_child_scroll_translation(&mut self.content, -self.offset);
+        if let Some(header) = &mut self.header {
+            ctx.set_child_scroll_translation(header, Vec2::new(-self.offset.x, 0.0));
+        }
         let range = self.range();
         #[expect(clippy::cast_possible_truncation, reason = "a 0..1 opacity")]
         let opacity = self.opacity.value() as f32;
@@ -743,7 +806,7 @@ impl Widget for ScrollWidget {
             }
         }
         if self.rows {
-            let window = (self.offset.y, self.offset.y + self.viewport.height);
+            let window = Rect::from_origin_size(self.offset.to_point(), self.viewport);
             if self.told != Some(window) {
                 self.told = Some(window);
                 ctx.mutate_child_later(&mut self.content, move |mut content| {
@@ -759,7 +822,7 @@ impl Widget for ScrollWidget {
         props: &PropertiesRef<'_>,
         painter: &mut Painter<'_>,
     ) {
-        if !self.framed {
+        if self.frame != Frame::Well {
             return;
         }
         let ThemeProp(theme) = *props.get::<ThemeProp>(ctx.property_cache());
@@ -780,17 +843,27 @@ impl Widget for ScrollWidget {
         props: &PropertiesRef<'_>,
         painter: &mut Painter<'_>,
     ) {
-        let focused = if self.framed {
+        let focused = if self.frame != Frame::None {
             ctx.has_focus_target()
         } else {
             ctx.is_focus_target()
         };
-        if !(focused && ctx.is_window_focused()) || ctx.is_disabled() {
+        let ring = focused && ctx.is_window_focused() && !ctx.is_disabled();
+        let border = self.frame == Frame::Border;
+        if !ring && !border {
             return;
         }
         let ThemeProp(theme) = *props.get::<ThemeProp>(ctx.property_cache());
         let size = ctx.content_box().size();
         let mut scene = Scene::new(size.width, size.height);
+        // The border goes here, not in `paint`: the clip (inside the border) applies there.
+        if border {
+            table_border(&mut scene, size.to_rect(), theme.variant);
+        }
+        if !ring {
+            self.replayer.replay(&scene, ctx.scale_factor(), painter);
+            return;
+        }
         focus_ring(
             &mut scene,
             RoundedRect::from_rect(size.to_rect(), 0.0),
@@ -834,6 +907,9 @@ impl Widget for ScrollWidget {
     fn children_ids(&self) -> ChildrenIds {
         let mut ids = ChildrenIds::new();
         ids.push(self.content.id());
+        if let Some(header) = &self.header {
+            ids.push(header.id());
+        }
         for scroller in &self.scrollers {
             ids.push(scroller.id());
         }
@@ -841,7 +917,7 @@ impl Widget for ScrollWidget {
     }
 
     fn accepts_focus(&self) -> bool {
-        !self.framed
+        self.frame == Frame::None
     }
 
     fn get_debug_text(&self) -> Option<String> {
@@ -889,7 +965,7 @@ impl<M> ScrollView<M> {
     /// Draws the view in a text field's well (a text view's frame).
     #[must_use]
     pub(super) fn framed(mut self) -> Self {
-        self.inner.widget.framed = true;
+        self.inner.widget.frame = Frame::Well;
         self
     }
 

@@ -1,6 +1,7 @@
 //! Virtual rows: the content of a [`crate::VirtualList`]. Only the rows on screen, and
 //! half a screen either side, exist as widgets; the scroll view tells the rows which part
-//! of them shows, and they build and drop rows to match (ADR 0043).
+//! of them shows, and they build and drop rows to match (ADR 0043). A table's body is the
+//! same widget with a [`TableBody`]: selection, keys and row backgrounds (ADR 0048).
 
 use std::any::Any;
 use std::collections::BTreeMap;
@@ -9,16 +10,19 @@ use std::ops::Range;
 
 use masonry_core::accesskit::{Node, Role};
 use masonry_core::core::{
-    AccessCtx, ChildrenIds, LayoutCtx, MeasureCtx, NewWidget, PaintCtx, PropertiesRef, RegisterCtx,
-    Widget, WidgetMut, WidgetPod,
+    AccessCtx, AccessEvent, ChildrenIds, EventCtx, LayoutCtx, MeasureCtx, NewWidget, PaintCtx,
+    PointerEvent, PropertiesMut, PropertiesRef, RegisterCtx, TextEvent, Update, UpdateCtx,
+    UsesProperty, Widget, WidgetMut, WidgetPod,
 };
 use masonry_core::imaging::Painter;
 use masonry_core::kurbo::{Axis, Point, Rect, Size};
 use masonry_core::layout::{LenReq, Length};
 
 use super::scroll::{ScrollAxes, ScrollWidget};
+use super::table::TableBody;
 use crate::Cx;
 use crate::element::{Element, Handle};
+use crate::theme::ThemeProp;
 
 /// The rows built a row widget or dropped one: the app takes the new rows' message
 /// handlers ([`RowsWidget::take_wiring`]) and forgets the dropped rows' ones.
@@ -31,12 +35,14 @@ pub(crate) type MakeRow = Box<dyn FnMut(usize) -> (NewWidget<dyn Widget>, Box<dy
 
 /// The Masonry widget holding a virtual list's rows.
 pub(crate) struct RowsWidget {
-    count: usize,
-    row_height: f64,
+    pub(super) count: usize,
+    pub(super) row_height: f64,
     make: MakeRow,
-    rows: BTreeMap<usize, WidgetPod<dyn Widget>>,
-    /// The part on screen, from the top, in logical pixels.
-    window: (f64, f64),
+    pub(super) rows: BTreeMap<usize, WidgetPod<dyn Widget>>,
+    /// The part on screen, in logical pixels.
+    pub(super) window: Rect,
+    /// A table's body: selection, keys and row backgrounds.
+    pub(crate) table: Option<Box<TableBody>>,
     /// Wiring of rows built since the app last took it.
     pending: Vec<Box<dyn Any>>,
     /// Rows were dropped since the app last took the wiring.
@@ -65,15 +71,22 @@ impl RowsWidget {
             },
             make,
             rows: BTreeMap::new(),
-            window: (0.0, 0.0),
+            window: Rect::ZERO,
+            table: None,
             pending: Vec::new(),
             dropped: false,
         }
     }
 
+    /// The body of a table.
+    pub(super) fn with_table(mut self, table: TableBody) -> Self {
+        self.table = Some(Box::new(table));
+        self
+    }
+
     /// The rows to have built: those in the window, and half a window either side.
     fn wanted(&self) -> Range<usize> {
-        let (top, bottom) = self.window;
+        let (top, bottom) = (self.window.y0, self.window.y1);
         let overscan = (bottom - top) / 2.0;
         if bottom <= top {
             return 0..0;
@@ -95,7 +108,7 @@ impl RowsWidget {
     }
 
     /// The scroll view moved or resized: build and drop rows to match.
-    pub(crate) fn set_window(this: &mut WidgetMut<'_, Self>, window: (f64, f64)) {
+    pub(crate) fn set_window(this: &mut WidgetMut<'_, Self>, window: Rect) {
         this.widget.window = window;
         Self::sync(this);
     }
@@ -135,6 +148,11 @@ impl RowsWidget {
     /// Changes the number of rows; rows past the end go.
     pub(crate) fn edit_count(this: &mut WidgetMut<'_, Self>, count: usize) {
         this.widget.count = count;
+        if let Some(table) = &this.widget.table {
+            table.forget_past(count);
+            this.ctx.request_paint_only();
+            this.ctx.request_accessibility_update();
+        }
         this.ctx.request_layout();
         Self::sync(this);
     }
@@ -175,8 +193,62 @@ impl RowsWidget {
     }
 }
 
+impl UsesProperty<ThemeProp> for RowsWidget {}
+
 impl Widget for RowsWidget {
+    /// A table's body also sends [`super::table::TableAction`]s, untyped.
     type Action = Rewired;
+
+    fn on_pointer_event(
+        &mut self,
+        ctx: &mut EventCtx<'_>,
+        _props: &mut PropertiesMut<'_>,
+        event: &PointerEvent,
+    ) {
+        if self.table.is_some() {
+            self.table_pointer(ctx, event);
+        }
+    }
+
+    fn on_text_event(
+        &mut self,
+        ctx: &mut EventCtx<'_>,
+        _props: &mut PropertiesMut<'_>,
+        event: &TextEvent,
+    ) {
+        if self.table.is_some() {
+            self.table_text(ctx, event);
+        }
+    }
+
+    fn on_access_event(
+        &mut self,
+        ctx: &mut EventCtx<'_>,
+        _props: &mut PropertiesMut<'_>,
+        event: &AccessEvent,
+    ) {
+        if self.table.is_some() {
+            self.table_access(ctx, event);
+        }
+    }
+
+    fn update(&mut self, ctx: &mut UpdateCtx<'_>, _props: &mut PropertiesMut<'_>, event: &Update) {
+        if self.table.is_some()
+            && matches!(event, Update::FocusChanged(_) | Update::DisabledChanged(_))
+        {
+            Self::restyle_later(ctx);
+        }
+    }
+
+    fn property_changed(&mut self, ctx: &mut UpdateCtx<'_>, property_type: std::any::TypeId) {
+        if property_type == std::any::TypeId::of::<ThemeProp>() {
+            ctx.request_paint_only();
+        }
+    }
+
+    fn accepts_focus(&self) -> bool {
+        self.table.is_some()
+    }
 
     fn register_children(&mut self, ctx: &mut RegisterCtx<'_>) {
         for row in self.rows.values_mut() {
@@ -192,12 +264,14 @@ impl Widget for RowsWidget {
         len_req: LenReq,
         _cross_length: Option<Length>,
     ) -> Length {
+        // A table is at least as wide as its columns.
+        let columns = self.table.as_ref().map_or(0.0, |t| t.columns_width());
         match axis {
             Axis::Vertical => Length::px(self.row_span(self.count).0),
             // As wide as the view: rows are laid out to its width.
             Axis::Horizontal => match len_req {
-                LenReq::FitContent(space) => space,
-                LenReq::MinContent | LenReq::MaxContent => Length::ZERO,
+                LenReq::FitContent(space) => Length::px(space.get().max(columns)),
+                LenReq::MinContent | LenReq::MaxContent => Length::px(columns),
             },
         }
     }
@@ -213,18 +287,34 @@ impl Widget for RowsWidget {
         ctx.clear_baselines();
     }
 
-    fn paint(&mut self, _ctx: &mut PaintCtx<'_>, _props: &PropertiesRef<'_>, _: &mut Painter<'_>) {}
+    fn paint(
+        &mut self,
+        ctx: &mut PaintCtx<'_>,
+        props: &PropertiesRef<'_>,
+        painter: &mut Painter<'_>,
+    ) {
+        if self.table.is_some() {
+            self.table_paint(ctx, props, painter);
+        }
+    }
 
     fn accessibility_role(&self) -> Role {
-        Role::List
+        if self.table.is_some() {
+            Role::Table
+        } else {
+            Role::List
+        }
     }
 
     fn accessibility(
         &mut self,
         _ctx: &mut AccessCtx<'_>,
         _props: &PropertiesRef<'_>,
-        _node: &mut Node,
+        node: &mut Node,
     ) {
+        if self.table.is_some() {
+            self.table_accessibility(node);
+        }
     }
 
     fn children_ids(&self) -> ChildrenIds {
@@ -341,7 +431,7 @@ mod tests {
             )
         });
         let mut rows = RowsWidget::new(count, 20.0, make);
-        rows.window = window;
+        rows.window = Rect::new(0.0, window.0, 100.0, window.1);
         rows
     }
 

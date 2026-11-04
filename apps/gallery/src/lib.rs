@@ -56,6 +56,11 @@ pub enum Message {
     /// The Fields page: a field's text changed, or Return submitted it.
     Field(&'static str, String),
     Submitted(String),
+    /// The Tables page: so many rows are selected; a file was opened (its row); the files
+    /// table is to be sorted by a column.
+    TableSelection(usize),
+    OpenFile(usize),
+    SortFiles(usize, neue_kit::SortOrder),
 }
 
 fn appearance_label(theme: Theme) -> String {
@@ -296,6 +301,16 @@ impl Application for Gallery {
             Message::Submitted(text) => {
                 self.status.set_text(cx, format!("Submitted “{text}”"));
             }
+            Message::TableSelection(n) => {
+                let rows = if n == 1 { "row" } else { "rows" };
+                self.status.set_text(cx, format!("{n} {rows} selected"));
+            }
+            Message::OpenFile(row) => {
+                if let Some(name) = self.handles.file_name(row) {
+                    self.status.set_text(cx, format!("Opened “{name}”"));
+                }
+            }
+            Message::SortFiles(column, order) => self.handles.sort_files(cx, column, order),
             Message::Radio(n) => {
                 // The app owns the choice: the others turn off.
                 for (i, radio) in self.handles.radios.iter().enumerate() {

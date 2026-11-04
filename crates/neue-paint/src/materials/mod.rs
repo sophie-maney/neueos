@@ -18,6 +18,7 @@ mod segmented;
 mod slider;
 mod spinner;
 mod stepper;
+mod table;
 mod text_field;
 pub mod title_bar;
 mod toggle;
@@ -42,6 +43,7 @@ pub use segmented::{Segmented, segment_edges, segmented, segmented_outline};
 pub use slider::{Slider, slider, slider_knob, slider_value_at};
 pub use spinner::{Spinner, spinner};
 pub use stepper::{Stepper, StepperPart, stepper, stepper_outline, stepper_part_at};
+pub use table::{TableHeader, column_edges, sort_arrow_rect, table_border, table_header};
 pub use text_field::{
     FieldShape, TextField, cancel_button, cancel_button_rect, magnifier, text_field,
     text_field_inside, text_field_outline,

@@ -13,7 +13,7 @@ use std::time::Duration;
 use neue_gallery::specimens::{
     self, BEVEL_SIZE, COMBO_SIZE, FIELD_SIZE, MENU_SIZE, POPUP_SIZE, PROGRESS_SIZE, PULL_DOWN_SIZE,
     PUSH_BUTTON_SIZE, SCROLL_SIZE, SEGMENTED_SIZE, SLIDER_SIZE, SPINNER_SIZE, STEPPER_SIZE,
-    SUBMENU_SIZE, TEXT_VIEW_SIZE, TOGGLE_SIZE,
+    SUBMENU_SIZE, TABLE_SIZE, TEXT_VIEW_SIZE, TOGGLE_SIZE,
 };
 use neue_kit::testing::{
     self, DISABLED, FOCUSED, Fixture, Goldens, INACTIVE, NORMAL, NavKey, PRESSED, State,
@@ -202,6 +202,11 @@ const EDIT_MENU: State = ("edit-menu", |f: &mut Fixture| {
     f.advance(Duration::from_millis(16));
 });
 
+/// The pointer held down on the fourth row: it's selected, and the table has focus.
+const ROW_PRESSED: State = ("row-pressed", |f: &mut Fixture| f.press_at(0.3, 0.7));
+/// The pointer held down on the Kind column's title.
+const HEADER_PRESSED: State = ("header-pressed", |f: &mut Fixture| f.press_at(0.85, 0.07));
+
 /// One golden set: `make` in `states`, in a `size` window, under the default theme.
 macro_rules! control_goldens {
     ($($test:ident: $name:literal, $size:expr, $states:expr, $make:expr;)+) => {$(
@@ -261,6 +266,8 @@ control_goldens! {
     scroll_view: "scroll-view", SCROLL_SIZE, &[NORMAL, SCROLLED_VIEW, SCROLLER_HOVERED, FOCUSED], specimens::scroll_view(12);
     scroll_view_both: "scroll-view-both", SCROLL_SIZE, &[SCROLLED_BOTH], specimens::scroll_view_both();
     virtual_list: "virtual-list", SCROLL_SIZE, &[NORMAL, SCROLLED_FAR], specimens::virtual_list(10_000);
+    // The second row is selected: grey at rest, the accent with focus.
+    table: "table", TABLE_SIZE, &[NORMAL, FOCUSED, ROW_PRESSED, HEADER_PRESSED, DISABLED], specimens::table();
 
     pop_up_button: "pop-up-button", POPUP_SIZE, &[NORMAL, POPUP_PRESSED, OPEN_BY_KEY, FOCUSED, DISABLED], specimens::pop_up_button();
     pull_down_button: "pull-down-button", PULL_DOWN_SIZE, &[NORMAL, PRESSED, OPEN_BY_KEY, FOCUSED, DISABLED], specimens::pull_down_button(|_| ());
