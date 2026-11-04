@@ -626,8 +626,9 @@ Decisions to follow: ADR 0001 (Smithay), 0003 (IPC), 0004 (config), 0005 (global
       lock/confine in `move_pointer_by` and `move_pointer_towards`, relative motion,
       gestures via `State::gesture`, input method popups), `[touchpad]` in `compositor.toml`
       applied through libinput in `tty.rs`. 15 headless tests in `tests/input_protocols.rs`.
-      Not done: owner's VM check (`docs/dev-setup.md` §12; fcitx5 into GTK), gestures and
-      touchpad config on real hardware, escape hatch from a lock, popup constraining.
+      Owner checked it by hand in the VM (`docs/dev-setup.md` §12) and found it fine.
+      Not done: gestures, touchpad config and pointer lock on real hardware, escape hatch
+      from a lock, popup constraining.
 - [ ] **1.14 Presentation and sync** · Opus. linux-drm-syncobj-v1 (explicit sync),
       presentation-time, tearing-control, security-context-v1 filtering of privileged globals.
       *Accept:* headless tests; explicit sync exercised on the NVIDIA PC (owner, see 1.18).
