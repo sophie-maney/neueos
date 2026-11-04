@@ -1788,6 +1788,16 @@ dependencies = [
 ]
 
 [[package]]
+name = "neue-session"
+version = "0.0.0"
+dependencies = [
+ "anyhow",
+ "thiserror 2.0.21",
+ "tracing",
+ "tracing-subscriber",
+]
+
+[[package]]
 name = "neuectl"
 version = "0.0.0"
 dependencies = [

@@ -766,10 +766,17 @@ Decisions to follow: ADR 0001 (Smithay), 0003 (IPC), 0004 (config), 0005 (global
       satellite 0.8.3: nothing X-related before the first client, then `xeyes` appears.
       **Still to do:** §19 steps 3 (restart) and 4 (clean exit); the compositor does not set its own `DISPLAY`, so task 1.19 must import it into
       the session. Not done: a `compositor.toml` switch.
-- [ ] **1.19 `neue-session` and systemd units** · Sonnet. New `session/neue-session` crate:
+- [x] **1.19 `neue-session` and systemd units** · Sonnet. New `session/neue-session` crate:
       environment import, `graphical-session.target`, units for `neue-comp`, and a greetd /
       wayland-sessions entry.
       *Accept:* the session starts from greetd in the VM and logs out cleanly.
+      *Done:* ADR 0027. `neue-session` (std only) sets the session environment in the user
+      manager and runs `systemctl --user start --wait neue-session.target`; units
+      `neue-session.target` and `neue-comp.service` (`Type=notify`); `neue-comp --notify`
+      imports `WAYLAND_DISPLAY`/`DISPLAY` and sends `READY=1`; `wayland-sessions` entry and a
+      VM `greetd` config in `session/`. Unit tests with a fake `systemctl`. **Not run yet:**
+      `docs/dev-setup.md` §20 in the VM (the *Accept* line is only met once the owner has).
+      Not done: a SIGTERM handler (needs `nix`, so `ExecStop=neuectl quit` instead).
 - [ ] **1.20 First PKGBUILD + `cargo xtask package`** · Sonnet. PKGBUILD for `neue-comp`,
       `neuectl` and `neue-session` with vendored git deps; `xtask package <crate>`.
       *Accept:* package builds in the OrbStack amd64 and arm64 machines and installs in the VM.

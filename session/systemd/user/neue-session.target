@@ -1,0 +1,8 @@
+[Unit]
+Description=neueOS session
+Documentation=man:systemd.special(7)
+# Pulls in graphical-session.target (which refuses manual starts) and stops with the
+# compositor. `neue-session` starts this target and waits for it to stop.
+BindsTo=neue-comp.service graphical-session.target
+Wants=graphical-session-pre.target
+After=graphical-session-pre.target neue-comp.service
