@@ -774,8 +774,9 @@ Decisions to follow: ADR 0001 (Smithay), 0003 (IPC), 0004 (config), 0005 (global
       manager and runs `systemctl --user start --wait neue-session.target`; units
       `neue-session.target` and `neue-comp.service` (`Type=notify`); `neue-comp --notify`
       imports `WAYLAND_DISPLAY`/`DISPLAY` and sends `READY=1`; `wayland-sessions` entry and a
-      VM `greetd` config in `session/`. Unit tests with a fake `systemctl`. **Not run yet:**
-      `docs/dev-setup.md` §20 in the VM (the *Accept* line is only met once the owner has).
+      VM `greetd` config in `session/`. Unit tests with a fake `systemctl`. **Owner:** ran
+      `docs/dev-setup.md` §20 steps 1 to 5 in the VM from greetd: all pass (login, environment,
+      second start refused, clean logout).
       Not done: a SIGTERM handler (needs `nix`, so `ExecStop=neuectl quit` instead).
 - [ ] **1.20 First PKGBUILD + `cargo xtask package`** · Sonnet. PKGBUILD for `neue-comp`,
       `neuectl` and `neue-session` with vendored git deps; `xtask package <crate>`.
