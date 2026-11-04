@@ -1,9 +1,9 @@
 //! Single-line text: parley layout over bundled fonts, drawn with [`Scene::draw_text`].
 //!
 //! Only bundled fonts are used (no system font discovery), so text renders the same on
-//! every host and golden tests stay deterministic. The UI font is a placeholder until the
-//! typography decision (PLAN §4, open question 2): Fira Sans Regular, under the SIL Open
-//! Font Licence 1.1 (`fonts/OFL.txt`, ADR 0013).
+//! every host and golden tests stay deterministic. The UI font is DejaVu Sans Book (PLAN §4,
+//! open question 2), under the Bitstream Vera licence (`fonts/LICENSE-DejaVuSans.txt`,
+//! ADR 0038).
 //!
 //! [`Scene::draw_text`]: crate::Scene::draw_text
 
@@ -19,8 +19,8 @@ use vello_common::peniko::FontData;
 
 /// Family name of the bundled UI font.
 pub const UI_FAMILY: &str = neue_theme::typography::UI_FAMILY;
-/// The bundled UI font (Fira Sans Regular, OFL-1.1).
-static UI_FONT: &[u8] = include_bytes!("../fonts/FiraSans-Regular.ttf");
+/// The bundled UI font (DejaVu Sans Book, Bitstream Vera licence; ADR 0038).
+static UI_FONT: &[u8] = include_bytes!("../fonts/DejaVuSans.ttf");
 /// The bundled UI font's data, for text stacks other than [`TextEngine`] (neue-kit's
 /// widgets, through Masonry's font collection).
 pub fn ui_font_data() -> &'static [u8] {

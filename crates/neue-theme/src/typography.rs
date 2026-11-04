@@ -1,7 +1,7 @@
 //! Typeface and type scale. Sizes are in points, which equal logical pixels.
 
 /// Family name of the UI font (bundled by neue-paint; ADR 0013).
-pub const UI_FAMILY: &str = "Fira Sans";
+pub const UI_FAMILY: &str = "DejaVu Sans";
 
 /// Body text, control labels, menu items and window titles.
 pub const BODY: f32 = 13.0;

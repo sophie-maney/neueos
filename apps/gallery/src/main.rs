@@ -8,6 +8,11 @@ fn main() -> anyhow::Result<()> {
         app_id: "org.neueos.Gallery".into(),
         ..neue_kit::Settings::default()
     };
-    neue_kit::run(neue_gallery::Gallery::default(), settings)?;
+    // `NEUE_GALLERY_PAGE=<n>` opens page n (0-based), for screenshots.
+    let page = std::env::var("NEUE_GALLERY_PAGE")
+        .ok()
+        .and_then(|n| n.parse().ok())
+        .unwrap_or(0);
+    neue_kit::run(neue_gallery::Gallery::on_page(page), settings)?;
     Ok(())
 }

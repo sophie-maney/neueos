@@ -2,7 +2,7 @@
 //!
 //! On every activation it sets a preedit, waits 1.5 s, then commits a string:
 //! `ime_probe [PREEDIT] [COMMIT]`, by default "にほん" and "日本". Pass Latin text to check
-//! rendering: the spike only has Fira Sans, which has no CJK glyphs.
+//! rendering: the spike only has DejaVu Sans, which has no CJK glyphs.
 //! fcitx5 can't be used under neue-comp yet: it needs `zwp_virtual_keyboard_manager_v1`,
 //! which neue-comp doesn't offer (ADR 0016).
 //!

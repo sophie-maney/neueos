@@ -175,7 +175,7 @@ fn main() -> anyhow::Result<()> {
         .with_env_filter(tracing_subscriber::EnvFilter::from_default_env())
         .init();
 
-    static FONT: &[u8] = include_bytes!("../../neue-paint/fonts/FiraSans-Regular.ttf");
+    static FONT: &[u8] = include_bytes!("../../neue-paint/fonts/DejaVuSans.ttf");
     let options = Options {
         default_properties: Arc::new(masonry::theme::default_property_set()),
         font: Some(Blob::new(Arc::new(FONT))),

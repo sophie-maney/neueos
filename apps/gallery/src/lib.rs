@@ -92,6 +92,16 @@ fn page_label(title: &str, current: bool) -> String {
     }
 }
 
+impl Gallery {
+    /// A gallery that opens on page `n` (clamped), for screenshots.
+    pub fn on_page(n: usize) -> Self {
+        Self {
+            page: n.min(pages::PAGES.len() - 1),
+            ..Self::default()
+        }
+    }
+}
+
 impl Application for Gallery {
     type Message = Message;
 

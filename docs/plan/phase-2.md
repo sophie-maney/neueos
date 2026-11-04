@@ -106,9 +106,16 @@ the paper and leather materials move to Phase 6/7 (Widgets, Write).
       via a window root that is the focus fallback (new `WindowSpec::focus_fallback`).
       Also `Cx::set_theme` and `Zoom`. Goldens pass on macOS, Linux aarch64 and x86_64;
       VM check `docs/checks/phase-2.md` §5 run by the agent.
-- [ ] **2.10 UI font decision (Q2)** · Sonnet. Gallery page comparing the PLAN.md §4 candidates
+- [x] **2.10 UI font decision (Q2)** · Sonnet. Gallery page comparing the PLAN.md §4 candidates
       side by side; **the owner picks**; bundle the font (OFL) and write an ADR.
       *Accept:* the theme's type scale uses it; goldens re-blessed after diff review.
+      *Done:* ADR 0038. The owner compared the four §4 candidates plus DejaVu Sans on a
+      temporary Fonts page and picked **DejaVu Sans** (Bitstream Vera licence, not OFL).
+      `UI_FAMILY` and the bundled font in `neue-paint` changed; the 88 text-bearing goldens
+      (gallery buttons, title bars, button materials) were re-blessed after spot-checking.
+      The comparison page and its multi-font plumbing were removed again (commits
+      b57c90c, edf9bc5 in the branch history); `NEUE_GALLERY_PAGE=<n>` stays for screenshots.
+      Regular weight only, so no bold yet.
 - [ ] **2.11 Materials for Phases 2–3** · Sonnet. Dark HUD, translucent menu bar, glass
       dock shelf, in light and dark, plus a Materials gallery page.
       *Accept:* goldens per material; CPU and GPU renders match within tolerance.

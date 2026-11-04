@@ -39,7 +39,7 @@ impl App for TestApp {
 }
 
 fn options() -> Options {
-    static FONT: &[u8] = include_bytes!("../../../crates/neue-paint/fonts/FiraSans-Regular.ttf");
+    static FONT: &[u8] = include_bytes!("../../../crates/neue-paint/fonts/DejaVuSans.ttf");
     Options {
         default_properties: Arc::new(masonry::theme::default_property_set()),
         font: Some(Blob::new(Arc::new(FONT))),
