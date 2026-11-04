@@ -12,13 +12,15 @@ re-planned around our own tree. Deferred: the backdrop-blur protocol moves to Ph
 (the menu bar is its first user; Phase 2 materials draw an opaque tinted fallback), and
 the paper and leather materials move to Phase 6/7 (Widgets, Write).
 
-- [ ] **2.1 Masonry spike A: versions and paint** · Opus. Pin `masonry_core` and
+- [x] **2.1 Masonry spike A: versions and paint** · Opus. Pin `masonry_core` and
       `masonry_testing`; reconcile `imaging` with our `vello_cpu`/`vello_gpu` 0.3 and
       parley 0.12 pins; add an `imaging::Painter` replay target to neue-paint; a Masonry
       widget paints the Aqua button on macOS (via `masonry_winit`, allowed here only).
       *Accept:* builds on macOS and Linux; the `masonry_testing` golden of the button
       matches the neue-paint golden; patch and fork cost in
       `docs/research/masonry-spike.md`.
+      *Done:* fork `sophie-maney/xilem` (ADR 0030), `neue_paint::imaging`, the button goldens
+      match on macOS, Linux aarch64 and Linux x86_64.
 - [ ] **2.2 Masonry spike B: sctk driver** · Opus. Minimal sctk driver for `RenderRoot`:
       one xdg-toplevel and one layer-shell surface, a wgpu surface, fractional scale,
       text-input-v3 into a `TextInput`, and one Masonry layer realised as an xdg-popup.
