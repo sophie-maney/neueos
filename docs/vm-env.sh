@@ -8,3 +8,8 @@ export PATH="$HOME/neueos/target/release:$PATH"
 window_geometry() {
     neuectl --json windows | jq -r '.[0] | "\(.x),\(.y) \(.width)x\(.height)"'
 }
+
+# Name of the first output, as `neuectl outputs` lists it.
+output_name() {
+    neuectl --json outputs | jq -r '.[0].name'
+}

@@ -555,8 +555,8 @@ they work from fish, zsh or bash. Over ssh the Wayland tools need `XDG_RUNTIME_D
 older ones only know wlr-screencopy and say the compositor "doesn't support the screen
 capture protocol"):
 ```sh
-ssh -t neueos-vm 'sudo pacman -S --needed grim wf-recorder jq ydotool'
-ssh neueos-vm 'grim -h 2>&1 | head -3; wf-recorder --version'
+ssh -t neueos-vm 'sudo pacman -S --needed grim wl-mirror jq ydotool'
+ssh neueos-vm 'grim -h 2>&1 | head -3; wl-mirror --version'
 ```
 
 **2. Build, start, and wait until it listens.** Stop weston and any old compositor first.
@@ -600,30 +600,32 @@ ssh neueos-vm '. ~/neueos/docs/vm-env.sh; grim /tmp/grim.png; grim -c /tmp/grim-
 ssh neueos-vm '. ~/neueos/docs/vm-env.sh; grim -g "$(window_geometry)" /tmp/grim-win.png'
 ```
 
-**6. dmabuf.** The compositor logs which kind of buffer each frame went into. Run a capture
-and read the log:
+**6. dmabuf.** `wf-recorder` is no use here: it only speaks `wlr-screencopy`, which
+`neue-comp` does not offer (ADR 0022). `wl-mirror` speaks `ext-image-copy-capture` and asks for
+dmabufs when the GPU allows. It mirrors an output into a window; mirroring the output it
+sits on gives a picture-in-picture tunnel, which is fine for this. The compositor logs which
+kind of buffer each frame went into. Count the log lines before and after, and take a
+screenshot while it runs:
 ```sh
-ssh neueos-vm '. ~/neueos/docs/vm-env.sh; rm -f /tmp/rec.mp4; timeout -s INT 5 wf-recorder -f /tmp/rec.mp4; true'
+ssh neueos-vm 'grep -c "into a shm buffer" /tmp/comp.log; grep -c "into a dmabuf" /tmp/comp.log'
+ssh neueos-vm '. ~/neueos/docs/vm-env.sh; (timeout -s INT 10 wl-mirror "$(output_name)" >/tmp/mirror.log 2>&1 &); sleep 4; neuectl windows; neuectl screenshot /tmp/mirror.png; sleep 7; cat /tmp/mirror.log'
 ssh neueos-vm 'grep -c "into a shm buffer" /tmp/comp.log; grep -c "into a dmabuf" /tmp/comp.log'
 ```
-`wf-recorder` only uses dmabufs together with a GPU encoder, so for a dmabuf run also try:
-```sh
-ssh neueos-vm '. ~/neueos/docs/vm-env.sh; rm -f /tmp/rec2.mp4; timeout -s INT 5 wf-recorder -c h264_vaapi -d /dev/dri/renderD128 -f /tmp/rec2.mp4; true'
-```
-and look at the same two counts. On the Parallels virtio GPU there is probably no VA-API:
-then the command fails with an encoder error, and the dmabuf path stays unverified (say so
-in the PR; the x86_64 PC with a real GPU is the place for it). If the recorder says it
-cannot find a capture protocol, its version predates the ext protocol: skip this step.
+`neuectl windows` while it runs lists a second window (`wl-mirror`), and `mirror.png`
+shows the screen inside itself. If the `dmabuf` count goes up, the dmabuf path works on
+this GPU; if only the `shm` count goes up, `wl-mirror` chose shm (the VM's virtio GPU may
+not offer one it likes: then dmabuf stays unverified, and the x86_64 PC with a real GPU is
+the place for it). If `/tmp/mirror.log` shows a protocol or EGL error instead, paste it
+into the PR.
 
 **7. Look at the results on the Mac.**
 ```sh
-mkdir -p ~/Desktop/neueos-shots && scp 'neueos-vm:/tmp/*.png' 'neueos-vm:/tmp/rec*.mp4' ~/Desktop/neueos-shots/
+mkdir -p ~/Desktop/neueos-shots && scp 'neueos-vm:/tmp/*.png' ~/Desktop/neueos-shots/
 open ~/Desktop/neueos-shots
 ```
 Check: `a.png` is the whole screen with the `foot` window and title bar; `cursor.png` and
 `grim-cursor.png` show a pointer near the top-left and `a.png` and `grim.png` do not;
-`grim-win.png` is only the window; `rec.mp4` plays smoothly, and moving a window
-meanwhile (not scripted) shows up in it.
+`grim-win.png` is only the window; `mirror.png` shows the screen inside itself, repeating.
 
 **8. Clean up.**
 ```sh

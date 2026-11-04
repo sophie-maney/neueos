@@ -738,7 +738,7 @@ Decisions to follow: ADR 0001 (Smithay), 0003 (IPC), 0004 (config), 0005 (global
         `unknown_output`, `capture_failed`. `neuectl screenshot PATH [--output] [--cursor]`.
         `tests/golden.rs` (`neuectl_screenshot`, same golden as 1.16b) and `tests/ipc.rs`.
         **Owner:** run `docs/dev-setup.md` §17 in the VM (grim, `grim -c`, dmabuf with
-        `wf-recorder`); not done by the agent.
+        `wl-mirror`); not done by the agent.
 - [ ] **1.17 Global-menu protocol side** · Sonnet. `org_kde_kwin_appmenu` v2 and `gtk_shell1`
       v5 per ADR 0005 (`gtk_shell1` XML in a new `neue-protocols` crate); menu addresses in
       `neuectl windows`.
