@@ -667,3 +667,21 @@ anywhere.
 VoiceOver on (Cmd-F5), Tab to the list: it is announced as an outline with its items; items
 read their label (and the badge as a description) with their level, groups read as
 collapsed or expanded, and VO-Right/Left or VO-Shift-Down opens and closes them.
+
+## 14. Checking the icons (task 2.20a)
+Not run yet. Steps 1 and 2 run in the VM, set up as in `docs/dev-setup.md` §1.3; step 3 is
+on the Mac. The page is "Icons" (page 10). The helpers are those of §8.
+
+**1. Build and open the page:** as §8 step 1 with `NEUE_GALLERY_PAGE=10`, screenshot
+`/tmp/i1.png`. Expected: no `WARN` or `ERROR`; a row of six dark-grey glyphs (folder,
+page, picture, note, star, clock) and, under it, a blue disc with a light tick at three
+sizes (16, 32, 48 px).
+
+**2. Appearance and scale:** switch to dark (the gallery's appearance switch), screenshot
+`/tmp/i2.png`. Expected: the glyphs and ticks turn light, the disc a lighter blue; nothing
+else changes. Set the scale to 2x: all of it stays sharp, with no blur at the edges.
+
+**3. macOS (owner):** `cargo xtask gallery`, open "Icons" and repeat step 2. With VoiceOver
+on (Cmd-F5), move over the glyphs: each is read as an image with its name ("Folder", ...);
+the vector icons are read as "Done".
+

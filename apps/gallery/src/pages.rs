@@ -101,6 +101,10 @@ pub const PAGES: &[Page] = &[
         build: sidebar,
     },
     Page {
+        title: "Icons",
+        build: icons,
+    },
+    Page {
         title: "Text",
         build: text,
     },
@@ -510,6 +514,26 @@ fn sidebar(_: &mut PageHandles) -> Element<Message> {
                     Stack::column().with(nested),
                 )),
         )
+        .into()
+}
+
+fn icons(_: &mut PageHandles) -> Element<Message> {
+    Stack::column()
+        .spacing(spacing::L)
+        .with(heading(
+            "Icons",
+            "Glyphs are drawn in the text colour at any size · a vector icon comes from SVG \
+             path data, with colours that follow the text or have their own for light and dark \
+             · switch the appearance and the scale to see them stay sharp",
+        ))
+        .with(section(
+            "Glyphs, 32 px",
+            Stack::column().with(specimens::icon_glyphs()),
+        ))
+        .with(section(
+            "A vector icon at 16, 32 and 48 px",
+            Stack::column().with(specimens::icon_vector()),
+        ))
         .into()
 }
 

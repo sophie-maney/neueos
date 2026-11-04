@@ -323,7 +323,43 @@ the paper and leather materials move to Phase 6/7 (Widgets, Write).
       Deferred from 2.19: variable row heights, editable cells, column reordering, row drag
       and drop, auto-size on divider double-click, row context menus (beyond wrapping a
       cell in `ContextMenu`).
-- [ ] **2.20 Icon and collection view** · Sonnet.
+- [ ] **2.20 Icon and collection view** · Sonnet. Split into 2.20a to 2.20c; the first task
+      to land is 2.20a.
+  - [x] **2.20a Icon type** · Sonnet. A general `Icon` in `neue-paint` and `neue-kit`: the
+        named glyph set (today's `SourceIcon`, renamed `Glyph`) plus a vector case, SVG path
+        data parsed once into vello paths (no new dependency), with paints that follow the
+        text colour or have fixed light and dark values. `SourceList`'s `Entry::icon` takes
+        an `Icon`. A kit `Icon` widget draws one at a size.
+        *Accept:* the source-list goldens don't change; goldens for the glyphs and a vector
+        icon (light/dark × 1×/2×, disabled); an AccessKit `Image` role with the icon's label;
+        a gallery page "Icons"; an ADR that supersedes 0050 §6.
+        *Done:* ADR 0051. `neue_paint::icon::{Icon, Glyph, VectorIcon, IconPaint, IconError,
+        icon}` (re-exported from `neue_kit`): `Glyph` is the old `SourceIcon`; a vector icon
+        is filled shapes from SVG path data (`BezPath::from_svg`, no new dependency) with
+        `IconPaint::Current { alpha }` or `Fixed { light, dark }`; `icon(scene, rect, &Icon,
+        color, variant)` fits it in a rectangle. `neue_kit::IconImage` (`new`, `size`,
+        `label`; `Handle::set_icon`) is an AccessKit `Image` named by its label or a glyph's
+        name; a disabled vector icon is drawn at half opacity. `Entry::icon` takes
+        `impl Into<Icon>`; `SourceIcon` and `source_icon` are gone. Gallery page "Icons"
+        (page 10); 16 new goldens (glyphs and the vector icon × normal, disabled ×
+        light/dark × 1×/2×; macOS only, Linux aarch64 and x86_64 not run), the source-list
+        goldens unchanged; 5 paint and 3 end-to-end tests. Steps for the VM and macOS in
+        `docs/checks/phase-2.md` §14, not run. Not yet: icon themes and lookup by name,
+        raster images, strokes and gradients in vector icons.
+  - [ ] **2.20b Grid virtualisation** · Sonnet. `VirtualGrid`: fixed item size, columns from
+        the width, only the items near the view are built, scroll to an item, rewiring as in
+        ADR 0043.
+        *Accept:* tests for the column count on resize and for which items exist; a gallery
+        entry; an addendum to ADR 0043.
+  - [ ] **2.20c Collection view** · Sonnet (on 2.20a and 2.20b). `Collection<M, Id>` on the
+        grid: items as an icon over a label, an icon-size option, single or multiple
+        selection (click, Shift-click, Cmd/Ctrl-click), key and non-key colours, 2D arrow
+        keys, Home/End, type-select, Return or double-click activates. AccessKit
+        `Grid`/`GridCell` with row and column counts.
+        *Accept:* gallery entries on "Icons"; goldens (normal, selected, selected unfocused,
+        disabled × light/dark × 1×/2×); end-to-end tests for selection and keys; ADR.
+        Not in scope: drag and drop, rename, variable item sizes, rubber-band selection,
+        sections.
 - [ ] **2.21 Split view and tab view** · Sonnet.
 - [ ] **2.22 Window chrome and unified toolbar** · Opus. ADR: client-side title bars
       (reusing neue-paint's) vs. extending the server-side ones (ADR 0013).

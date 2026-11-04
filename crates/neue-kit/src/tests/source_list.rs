@@ -14,7 +14,7 @@ use neue_theme::materials::sidebar::{ACTION_WIDTH, DISCLOSURE_WIDTH, ITEM_INSET,
 
 use super::table::{body, body_id, click_with, in_body, key, key_with, selected};
 use super::*;
-use crate::{Entry, SourceIcon, SourceList};
+use crate::{Entry, Glyph, SourceList};
 
 #[derive(Debug, Clone, PartialEq)]
 enum Msg {
@@ -70,8 +70,8 @@ impl Application for Sidebar {
             |&id| {
                 let entry = Entry::new(label(id));
                 match id {
-                    11 => entry.icon(SourceIcon::Document),
-                    21 => entry.icon(SourceIcon::Folder).badge(3),
+                    11 => entry.icon(Glyph::Document),
+                    21 => entry.icon(Glyph::Folder).badge(3),
                     _ => entry,
                 }
             },

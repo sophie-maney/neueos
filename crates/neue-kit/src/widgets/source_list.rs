@@ -13,10 +13,10 @@ use masonry_core::core::PaintCtx;
 use masonry_core::imaging::Painter;
 use masonry_core::kurbo::{Affine, Vec2};
 use neue_paint::Scene;
+use neue_paint::icon::Icon;
 use neue_paint::imaging::ImagingReplayer;
 use neue_paint::materials::{
-    SourceIcon, SourceState, disclosure_triangle, source_badge, source_badge_rect, source_group_x,
-    source_icon, source_item,
+    SourceState, disclosure_triangle, source_badge, source_badge_rect, source_group_x, source_item,
 };
 use neue_theme::Theme;
 use neue_theme::materials::sidebar::{ACTION_INSET, Palette};
@@ -33,7 +33,7 @@ use crate::element::{Element, Handle};
 #[derive(Clone, Debug, PartialEq, Eq)]
 pub struct Entry {
     label: String,
-    icon: Option<SourceIcon>,
+    icon: Option<Icon>,
     badge: Option<String>,
 }
 
@@ -47,10 +47,10 @@ impl Entry {
         }
     }
 
-    /// Shows `icon` before the label (items only).
+    /// Shows `icon` (a [`crate::Glyph`], say) before the label (items only).
     #[must_use]
-    pub fn icon(mut self, icon: SourceIcon) -> Self {
-        self.icon = Some(icon);
+    pub fn icon(mut self, icon: impl Into<Icon>) -> Self {
+        self.icon = Some(icon.into());
         self
     }
 
@@ -88,7 +88,7 @@ pub(crate) struct SourceContent {
     badge: Option<TextLine>,
     /// A group header's Show or Hide.
     action: TextLine,
-    icon: Option<SourceIcon>,
+    icon: Option<Icon>,
     group: bool,
 }
 
@@ -202,8 +202,15 @@ impl SourceContent {
                 triangle,
             );
         }
-        if let Some(icon) = self.icon {
-            source_icon(&mut scene, rects.icon, icon, icon_color);
+        if let Some(icon) = &self.icon {
+            super::icon::draw(
+                &mut scene,
+                rects.icon,
+                icon,
+                icon_color,
+                theme.variant,
+                disabled,
+            );
         }
         let mut badge = None;
         if let Some(line) = &mut self.badge {

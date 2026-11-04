@@ -53,6 +53,7 @@ doesn't have (a header, a border, columns, several selected rows).
    `Star`, `Clock`; `non_exhaustive`) are original flat glyphs in neue-paint, drawn in one
    colour so they follow the row's text. A general icon type (themes, SVG, colour) belongs
    to the icon and collection view (2.20); this enum becomes a case of it then.
+   *Superseded by ADR 0051: `SourceIcon` is now `neue_paint::icon::Glyph`.*
 
 ## Consequences
 - One selection only: `multiple` isn't offered. Groups can't be selected, so a keyboard
