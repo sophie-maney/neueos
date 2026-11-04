@@ -417,7 +417,8 @@ addresses, xwayland-satellite, the session and packages. Tasks:
 ### Phase 2: Toolkit and design system v1 (XL)
 The Masonry gate, `neue-theme`, the `neue-platform` drivers, the `neue-kit` app model and
 animation, the widget gallery and widget set v1, DBusMenu export and the `docs/design/`
-specs. Tasks: [`docs/plan/phase-2.md`](docs/plan/phase-2.md).
+specs. Tasks: [`docs/plan/phase-2.md`](docs/plan/phase-2.md). The Masonry gate (2.1, 2.2)
+passed: Masonry stays (ADR 0002 amendment).
 - **Exit:** the gallery shows the whole widget set, in light and dark, identically on
   macOS and in the VM.
 

@@ -21,11 +21,15 @@ the paper and leather materials move to Phase 6/7 (Widgets, Write).
       `docs/research/masonry-spike.md`.
       *Done:* fork `sophie-maney/xilem` (ADR 0030), `neue_paint::imaging`, the button goldens
       match on macOS, Linux aarch64 and Linux x86_64.
-- [ ] **2.2 Masonry spike B: sctk driver** · Opus. Minimal sctk driver for `RenderRoot`:
+- [x] **2.2 Masonry spike B: sctk driver** · Opus. Minimal sctk driver for `RenderRoot`:
       one xdg-toplevel and one layer-shell surface, a wgpu surface, fractional scale,
       text-input-v3 into a `TextInput`, and one Masonry layer realised as an xdg-popup.
       *Accept:* works under neue-comp in the VM (checked with `neuectl screenshot`);
       go/no-go recorded as an ADR 0002 amendment.
+      *Done:* **go**. New crate `neue-platform` with `wayland` (Linux-only module) and the
+      `sctk_spike` and `ime_probe` examples, checked in the VM (`docs/checks/phase-2.md` §1).
+      Findings for 2.5/2.6 and Phase 3 are in `docs/research/masonry-spike.md`: neue-comp
+      sends no scale to layer surfaces, and it has no virtual-keyboard, so fcitx5 can't bind.
 - [ ] **2.3 `neue-theme` crate** · Opus. New portable crate: semantic colours, metrics,
       radii, type scale and durations; light and dark; accent colour (blue, graphite);
       increased contrast; spring presets and the reduced-motion flag. neue-paint materials
@@ -93,5 +97,18 @@ the paper and leather materials move to Phase 6/7 (Widgets, Write).
 - [ ] **2.26 Exit check** · Sonnet, plus owner VM steps. Screenshot every gallery page
       with `neuectl` in the VM, compare with macOS and the goldens, fix drift, tick
       Phase 2.
+- [ ] **2.27 neue-comp: scale for layer surfaces** · Sonnet. Found in 2.2:
+      `State::refresh_surface_scales` (`compositor/neue-comp/src/outputs.rs`) sends
+      `wp_fractional_scale_v1.preferred_scale` and `wl_surface.preferred_buffer_scale`
+      to windows only, so layer surfaces stay at scale 1 and are upscaled (blurry) on a
+      1.5× output. Also walk every output's `layer_map_for_output(output).layers()` and
+      call `send_scale`'s body for each `LayerSurface` (with `with_surfaces`, so its
+      popups and subsurfaces get it too) using that output's scale. Keep "only changes are
+      sent". Add a layer-surface variant of the test client's preferred-scale tracking
+      (`tests/harness/client.rs`, now toplevel-only).
+      *Accept:* a headless test in `tests/outputs.rs` or `tests/shell_protocols.rs`: a
+      layer surface on a 1.5 output gets `preferred_scale` 180, and 240 after a config
+      reload to 2; in the VM, `docs/checks/phase-2.md` §1 step 7 shows the layer-shell strip
+      sharp. Order: any time, but before 2.5's VM check.
 - **Exit:** the gallery shows the whole widget set, in light and dark, identically on
   macOS and in the VM.

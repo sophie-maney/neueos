@@ -44,6 +44,12 @@ wayland-backend = "0.3"
 wayland-scanner = "0.31"
 wayland-protocols-plasma = "0.3"
 
+# Wayland client toolkit for neue-platform's driver (task 2.2). `system` uses libwayland-client
+# (dlopen'd, as winit already does) because wgpu needs a `wl_display*`; `xkbcommon` is the
+# libxkbcommon ADR 0001 already accepts.
+smithay-client-toolkit = { version = "0.21.1", default-features = false, features = ["calloop", "xkbcommon", "system"] }
+raw-window-handle = "0.6"
+
 # IPC (neue-ipc, neuectl)
 serde = { version = "1.0", features = ["derive"] }
 serde_json = "1.0"
@@ -67,6 +73,12 @@ masonry_testing = { git = "https://github.com/sophie-maney/xilem", rev = "499f42
 # Spike only (ADR 0002 §4): replaced by neue-platform's own driver in task 2.4. Uses
 # vello_gpu through imaging_vello_hybrid, never vello's compute renderer.
 masonry_winit = { git = "https://github.com/sophie-maney/xilem", rev = "499f423522bc7fe8ed36816683b2cc6d14a86d97", default-features = false, features = ["imaging_vello_hybrid"] }
+# Renders Masonry's paint output with vello_gpu (`imaging_vello_hybrid`) into a wgpu texture.
+# neue-platform's drivers use it (task 2.2, ADR 0002 amendment).
+masonry_imaging = { git = "https://github.com/sophie-maney/xilem", rev = "499f423522bc7fe8ed36816683b2cc6d14a86d97", default-features = false, features = ["imaging_vello_hybrid"] }
+# Masonry's stock widgets. Spike examples only (task 2.2: `TextInput`, `Selector`); never a
+# dependency of library or app crates (ADR 0002 §4).
+masonry = { git = "https://github.com/sophie-maney/xilem", rev = "499f423522bc7fe8ed36816683b2cc6d14a86d97", default-features = false }
 imaging = { git = "https://github.com/forest-rs/imaging", rev = "f3f932a8a0e233f5ab52863041b8a3d6cff9255b", default-features = false, features = ["std"] }
 
 # Internal crates
@@ -74,6 +86,7 @@ neue-paint = { path = "crates/neue-paint" }
 neue-ipc = { path = "crates/neue-ipc" }
 neue-config = { path = "crates/neue-config" }
 neue-protocols = { path = "crates/neue-protocols" }
+neue-platform = { path = "crates/neue-platform" }
 
 [workspace.lints.rust]
 unsafe_code = "deny"

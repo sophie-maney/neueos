@@ -1,6 +1,6 @@
 # 0002: Toolkit stack: neue-paint on vello_cpu/vello_gpu, Masonry for the widget tree
 
-- **Status:** Accepted. The Masonry part is gated by the Phase 2 spike (see Decision 4).
+- **Status:** Accepted. The Masonry gate (Decision 4) passed on 2026-11-04: see the amendment.
 - **Date:** 2026-11-03
 
 ## Context
@@ -63,6 +63,34 @@ PLAN.md §3.2 assumed vello's compute renderer for the GPU, taffy for layout, an
 7. **Backdrop blur** (menus, sheets, HUDs, the menu bar) is the compositor's job, not the
    toolkit's: clients mark regions, `neue-comp` blurs behind them. The protocol
    (`ext-background-effect-v1` or a private one) is decided in Phase 3 (amended 2026-11-04: deferred from Phase 2; the menu bar is the first user).
+
+## Amendment 2026-11-04: gate result (tasks 2.1 and 2.2): **go**
+Both halves of the Decision 4 gate pass, so Masonry stays and 2.4 onward proceed as planned.
+- **Versions and paint (2.1):** reconciled through our fork (ADR 0030); the neue-paint
+  button paints inside a Masonry widget and matches its golden.
+- **sctk driver (2.2):** `neue_platform::wayland` drives `RenderRoot` on
+  smithay-client-toolkit 0.21. Checked under neue-comp in the VM with `neuectl screenshot`
+  (`docs/checks/phase-2.md` §1): an xdg-toplevel and a layer-shell surface render with
+  vello_gpu on wgpu (virgl GL); fractional scale 1.5 with viewporter re-renders sharp;
+  text-input-v3 preedit and commit reach a Masonry `TextInput`; the `Selector` menu, a
+  Masonry layer, is an xdg-popup with a grab, its items take clicks, and an outside click
+  dismisses it.
+- **How layers map to popups:** Masonry keeps laying out and hit-testing every layer in
+  window coordinates. The driver splits `RenderRoot::redraw`'s `VisualLayerPlan` at layer
+  roots, paints each layer's run into its popup's surface (translated by the popup's
+  configured origin), and adds that origin back to pointer input on the popup. A compositor
+  flip or slide is fed back with `reposition_layer`. Nothing in Masonry had to change.
+- **Dependencies this adds** (all MIT/Apache-2.0): `smithay-client-toolkit` with its
+  `system` feature (libwayland-client, dlopen'd as winit already does, because wgpu needs a
+  `wl_display*`) and `xkbcommon` (the libxkbcommon ADR 0001 accepts, now on the client side
+  as well), `raw-window-handle`, and the fork's `masonry_imaging` (vello_gpu renderer). The
+  fork's `masonry` crate (stock widgets) is allowed in spike examples only, like
+  `masonry_winit` in 2.1.
+- **Found on the way** (for 2.5/2.6 and Phase 3, details in `docs/research/masonry-spike.md`):
+  neue-comp sends no preferred scale to layer surfaces; neue-comp has no
+  `virtual-keyboard`, so fcitx5 5.1 can't bind as an input method (the spike uses a scripted
+  input-method-v2 probe); Masonry's menus close on window focus loss, so focus moving into
+  a window's own popup must not be reported as one.
 
 ## Consequences
 - Every renderer bump touches one crate (`neue-paint`) plus the goldens.
