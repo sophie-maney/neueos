@@ -41,3 +41,4 @@ Don't edit an accepted ADR's decision; supersede it with a new one.
 | [0029](0029-smithay-fork-pin.md) | Pin Smithay to a fork commit for the popup commit fix (B5) | Accepted |
 | [0030](0030-masonry-fork-pin.md) | Pin Masonry to a fork and `imaging` to a git rev | Accepted |
 | [0031](0031-neue-theme-tokens.md) | `neue-theme`: design tokens selected by a `Variant` | Accepted |
+| [0032](0032-winit-driver.md) | neue-platform's winit driver: macOS only, one shared renderer | Accepted |

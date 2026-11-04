@@ -44,9 +44,16 @@ the paper and leather materials move to Phase 6/7 (Widgets, Write).
       `masonry_winit`: wgpu surface, scale, pointer and keyboard, IME, cursor, clipboard,
       animation frames, multiple windows, AccessKit (`accesskit_winit`).
       *Accept:* a text-field demo runs on macOS, IME works, VoiceOver reads the tree.
+      *Status:* implemented. Owner checks (`docs/checks/phase-2.md` §2): steps 1, 2 and 5
+      (demo, typing/clipboard/layers, several windows) passed; 3 (IME) and 4 (VoiceOver)
+      pending. `neue_platform::winit` (ADR 0032) is **macOS only**:
+      on Linux, `ui-events-winit` would pull in X11 crates. Shared `neue_platform::gpu`
+      renderer and `Options`; `App`/`Ctx` API with run-time windows; `winit_demo` example.
 - [ ] **2.5 `neue-platform` Wayland driver: core** · Opus. Harden the 2.2 driver:
       xdg-toplevel, layer-shell, fractional scale + viewporter, frame callbacks,
       cursor-shape, text-input-v3, keyboard repeat.
+      Align the driver with the winit driver's `App`/`Ctx` API (ADR 0032), so the 2.4 demo
+      runs on both.
       *Accept:* the 2.4 demo runs under neue-comp in the VM; a headless neue-comp test maps
       a window from it.
 - [ ] **2.6 Wayland driver: popups, clipboard, a11y** · Opus. xdg-popup positioning for

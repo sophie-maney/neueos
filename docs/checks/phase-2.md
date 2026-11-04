@@ -92,3 +92,38 @@ to layer surfaces yet (task 2.27). Once 2.27 lands, the strip is sharp too.
 ```sh
 ssh neueos-vm 'pkill -x sctk_spike; pkill -x ime_probe; true'
 ```
+
+## 2. Checking the winit driver (task 2.4)
+Runs natively on the Mac, from the repo root. No VM needed.
+
+**1. Start the demo:**
+```sh
+RUST_LOG=info,neue_platform=debug cargo run -p neue-platform --example winit_demo
+```
+Expected: one window, "neue-platform: winit demo 1", with a label, the Aqua button tile, a
+text field, an echo label, a selector and two buttons. Text is sharp (Retina, scale 2). The
+log shows `wgpu adapter ... backend=Metal` and `opened window id=window#0`, and no `WARN`.
+
+**2. Typing, clipboard, layers:** click the text field and type `hello`, then press
+Return: the label below reads "You typed: hello". Select the text (Shift-Left ×5), Cmd-C,
+click into TextEdit and Cmd-V: `hello` appears. Copy something in TextEdit, Cmd-V in the
+demo: it is pasted. Click the selector: its menu opens over the window; pick "Aqua". The
+I-beam cursor shows over the text field.
+
+**3. IME:** add an input method in System Settings → Keyboard → Text Input (for example
+Japanese – Romaji). Switch to it, click the text field and type `nihon`: the preedit is
+underlined and the candidate window sits under the caret, not at a screen corner. Press
+Space, then Return to commit. With no system fonts (ADR 0030) Japanese glyphs show as boxes;
+that is expected, what matters is that preedit and commit arrive (the log shows the text
+via the `Return` echo). Also try a dead key on the ABC layout: Option-E then E gives `é`.
+
+**4. VoiceOver:** turn it on with Cmd-F5. Move into the demo window (VO-Right): VoiceOver
+reads the labels, "New window, button", "Close, button" and the text field with its
+placeholder. Press VO-Space on "New window": a second window opens. Turn VoiceOver off
+with Cmd-F5.
+
+**5. Several windows:** in window 2, type into its text field; window 1's field is
+unchanged. "Close" in window 2 closes only it. Closing the last window (red button or
+"Close") quits the demo.
+
+Report: which steps passed, and the log lines of any step that didn't.
