@@ -203,7 +203,7 @@ the paper and leather materials move to Phase 6/7 (Widgets, Write).
       `docs/checks/phase-2.md` §8, not run. Not yet: Wayland submenu flip to the left,
       keeping overlays inside the window, focus return after a compositor dismissal,
       submenu delay, tall-menu scrolling, Ctrl-click, animation.
-- [ ] **2.17b Pop-up button, pull-down button, combo box** · Sonnet (the 2.17a pattern).
+- [x] **2.17b Pop-up button, pull-down button, combo box** · Sonnet (the 2.17a pattern).
       Built on the 2.17a model and `widgets::menu::open`.
       *Accept:* a pop-up button shows its selected item and opens its menu with that item
       over the button (Wayland: anchored so the selected row lines up; overlay: same),
@@ -213,6 +213,22 @@ the paper and leather materials move to Phase 6/7 (Widgets, Write).
       keyboard; AccessKit roles (`ComboBox`, `has_popup`, expanded); gallery entries and
       goldens (normal, pressed/open, focused, disabled × light/dark × 1×/2×). Also the edit
       context menu (Cut, Copy, Paste, Select All) on text fields and text views.
+      *Done:* ADR 0046. `neue_kit::{PopUpButton, PullDownButton, ComboBox}`: one widget for
+      the first two (`widgets/popup.rs`; the pop-up's menu opens with the chosen item over
+      the button, checked and highlighted; the pull-down's below it), the combo box as a
+      mode of the text field (arrow button inside the well, Down opens, menu as wide as the
+      field). The menu layer got `Anchor` (min width, initial highlight, `on_closed`
+      callback, refocus) and opens from deferred mutations too. Default edit menu (Cut,
+      Copy, Select All) on text fields and text views: secondary press, Menu key,
+      Shift-F10, AccessKit; an app's `ContextMenu` around the widget wins (`menu::opened`
+      counter). Paint `neue_paint::materials::{popup_button, combo_arrow}`, tokens
+      `materials::popup`, `control::{POPUP_*, COMBO_ARROW_WIDTH}`. `Fixture::press_at`;
+      `Fixture::new` makes shortcuts read Ctrl. Gallery page "Pop-ups"; 68 goldens, passing
+      on macOS and Linux aarch64 (x86_64 not run); 20 end-to-end tests. VM steps in
+      `docs/checks/phase-2.md` §9, not run. **Not done: Paste in the edit menu** (no way yet
+      for a widget to request the clipboard; needs a Masonry signal and both drivers).
+      Not yet: changing a pop-up's items from the app, separators and disabled items in a
+      pop-up, keeping the field's selection visible while its menu is up.
 - [ ] **2.18 DBusMenu export** · Opus. New `neue-dbus` crate (Linux-only): export the 2.17a
       model as `com.canonical.dbusmenu` and set the KDE appmenu address (ADR 0005).
       *Accept:* a zbus test client reads the layout and fires an action; `gdbus

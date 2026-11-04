@@ -13,7 +13,7 @@ use masonry_core::imaging::Painter;
 use masonry_core::kurbo::{Axis, Point, Size};
 use masonry_core::layout::{LayoutSize, LenDef, LenReq, Length};
 
-use super::menu::{self, Chosen};
+use super::menu::{self, Anchor, Chosen};
 use crate::Cx;
 use crate::element::{Element, Handle, Handler, Wiring};
 use crate::menu::{ItemHandler, Menu, MenuSpec};
@@ -36,7 +36,13 @@ impl ContextMenuWidget {
     }
 
     fn open(&mut self, ctx: &mut EventCtx<'_>, at: Point, keyboard: bool) {
-        menu::open(ctx, self.spec.clone(), at, keyboard, &mut self.return_focus);
+        menu::open(
+            ctx,
+            self.spec.clone(),
+            Anchor::at(at),
+            keyboard,
+            &mut self.return_focus,
+        );
     }
 
     /// Opened without a pointer: at the middle of the area.
@@ -150,7 +156,7 @@ impl Widget for ContextMenuWidget {
 }
 
 /// Turns the chosen item's id into its message.
-fn handler<M: 'static>(mut items: Vec<Option<ItemHandler<M>>>) -> Handler<M> {
+pub(super) fn handler<M: 'static>(mut items: Vec<Option<ItemHandler<M>>>) -> Handler<M> {
     Box::new(move |action| {
         let Chosen(id) = *action.downcast_ref::<Chosen>()?;
         items.get_mut(id)?.as_mut().map(|make| make())

@@ -11,9 +11,9 @@
 use std::time::Duration;
 
 use neue_gallery::specimens::{
-    self, BEVEL_SIZE, FIELD_SIZE, MENU_SIZE, PROGRESS_SIZE, PUSH_BUTTON_SIZE, SCROLL_SIZE,
-    SEGMENTED_SIZE, SLIDER_SIZE, SPINNER_SIZE, STEPPER_SIZE, SUBMENU_SIZE, TEXT_VIEW_SIZE,
-    TOGGLE_SIZE,
+    self, BEVEL_SIZE, COMBO_SIZE, FIELD_SIZE, MENU_SIZE, POPUP_SIZE, PROGRESS_SIZE, PULL_DOWN_SIZE,
+    PUSH_BUTTON_SIZE, SCROLL_SIZE, SEGMENTED_SIZE, SLIDER_SIZE, SPINNER_SIZE, STEPPER_SIZE,
+    SUBMENU_SIZE, TEXT_VIEW_SIZE, TOGGLE_SIZE,
 };
 use neue_kit::testing::{
     self, DISABLED, FOCUSED, Fixture, Goldens, INACTIVE, NORMAL, NavKey, PRESSED, State,
@@ -182,6 +182,26 @@ const MENU_SUBMENU: State = ("submenu", |f: &mut Fixture| {
     f.press_key(NavKey::Right);
 });
 
+/// A pop-up or pull-down button opened from the keyboard: its first (or chosen) item
+/// highlighted.
+const OPEN_BY_KEY: State = ("open-by-key", |f: &mut Fixture| {
+    f.focus();
+    f.press_key(NavKey::Down);
+});
+/// The pointer goes down on a pop-up button (padded, so not `PRESSED`, which wants the
+/// padding's child on top): the menu opens over it.
+const POPUP_PRESSED: State = ("pressed", |f: &mut Fixture| f.press_at(0.5, 0.5));
+/// The pointer goes down on a combo box's arrow button: its menu opens below the field.
+const COMBO_OPEN: State = ("open", |f: &mut Fixture| f.press_at(0.95, 0.5));
+/// A field with its text selected, right-clicked: the edit menu (opened after the event, so
+/// a frame is needed to put its rows in the tree).
+const EDIT_MENU: State = ("edit-menu", |f: &mut Fixture| {
+    f.focus();
+    f.select_text();
+    f.context_click();
+    f.advance(Duration::from_millis(16));
+});
+
 /// One golden set: `make` in `states`, in a `size` window, under the default theme.
 macro_rules! control_goldens {
     ($($test:ident: $name:literal, $size:expr, $states:expr, $make:expr;)+) => {$(
@@ -241,6 +261,12 @@ control_goldens! {
     scroll_view: "scroll-view", SCROLL_SIZE, &[NORMAL, SCROLLED_VIEW, SCROLLER_HOVERED, FOCUSED], specimens::scroll_view(12);
     scroll_view_both: "scroll-view-both", SCROLL_SIZE, &[SCROLLED_BOTH], specimens::scroll_view_both();
     virtual_list: "virtual-list", SCROLL_SIZE, &[NORMAL, SCROLLED_FAR], specimens::virtual_list(10_000);
+
+    pop_up_button: "pop-up-button", POPUP_SIZE, &[NORMAL, POPUP_PRESSED, OPEN_BY_KEY, FOCUSED, DISABLED], specimens::pop_up_button();
+    pull_down_button: "pull-down-button", PULL_DOWN_SIZE, &[NORMAL, PRESSED, OPEN_BY_KEY, FOCUSED, DISABLED], specimens::pull_down_button(|_| ());
+    combo_box: "combo-box", COMBO_SIZE, &[NORMAL, FOCUSED, COMBO_OPEN, TYPED], specimens::combo_box();
+    combo_box_filled: "combo-box-filled", COMBO_SIZE, &[NORMAL, DISABLED], specimens::combo_box_filled();
+    edit_menu: "edit-menu", MENU_SIZE, &[EDIT_MENU], specimens::edit_menu_field();
 
     context_menu: "context-menu", MENU_SIZE, &[MENU_OPEN, MENU_HIGHLIGHTED], specimens::context_menu(|_| (), specimens::ctrl);
     context_submenu: "context-menu", SUBMENU_SIZE, &[MENU_SUBMENU], specimens::context_menu(|_| (), specimens::ctrl);

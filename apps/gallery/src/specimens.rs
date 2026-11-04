@@ -1,9 +1,9 @@
 //! The widgets the goldens render, shared with the gallery's pages.
 
 use neue_kit::{
-    BevelButton, Button, CheckState, Checkbox, ContextMenu, Label, MaterialTile, Menu, MenuItem,
-    ProgressBar, Radio, ScrollAxes, ScrollView, Segmented, Shortcut, Slider, Specimen, Spinner,
-    Stack, Stepper, TextField, TextView, VirtualList,
+    BevelButton, Button, CheckState, Checkbox, ComboBox, ContextMenu, Label, MaterialTile, Menu,
+    MenuItem, PopUpButton, ProgressBar, PullDownButton, Radio, ScrollAxes, ScrollView, Segmented,
+    Shortcut, Slider, Specimen, Spinner, Stack, Stepper, TextField, TextView, VirtualList,
 };
 
 /// Golden window size for one push button (logical pixels): the button with the fixture's
@@ -284,4 +284,53 @@ pub fn context_menu<M: Clone + 'static>(
         Label::new("Right-click here").secondary(),
         sample_menu(send, shortcut),
     )
+}
+
+/// The sizes the pop-up button's menu is chosen from.
+pub const SIZES: [&str; 3] = ["Small", "Medium", "Large"];
+
+/// Golden window size for a pop-up button with room around it for its open menu, which
+/// sits over the button (logical pixels).
+pub const POPUP_SIZE: (u32, u32) = (180, 130);
+
+/// A pop-up button with [`SIZES`], "Medium" chosen, padded so its open menu fits in the
+/// window.
+pub fn pop_up_button<M: 'static>() -> Stack<M> {
+    Stack::column()
+        .padding(40.0)
+        .with(PopUpButton::new(SIZES).selected(1))
+}
+
+/// Golden window size for a pull-down button and its open menu below it.
+pub const PULL_DOWN_SIZE: (u32, u32) = (180, 130);
+
+/// A pull-down button of commands. `send(label)` is each item's message.
+pub fn pull_down_button<M: Clone + 'static>(send: impl Fn(&'static str) -> M) -> PullDownButton<M> {
+    let item = |label: &'static str| MenuItem::new(label).on_choose(send(label));
+    PullDownButton::new(
+        "Actions",
+        Menu::new()
+            .with(item("Rename"))
+            .with(item("Duplicate"))
+            .separator()
+            .with(item("Delete")),
+    )
+}
+
+/// Golden window size for a combo box and its open menu below it.
+pub const COMBO_SIZE: (u32, u32) = (220, 120);
+
+/// An empty combo box suggesting [`SIZES`].
+pub fn combo_box<M: 'static>() -> ComboBox<M> {
+    ComboBox::new(SIZES).placeholder("Size")
+}
+
+/// A combo box holding "Medium".
+pub fn combo_box_filled<M: 'static>() -> ComboBox<M> {
+    ComboBox::new(SIZES).text("Medium")
+}
+
+/// A text field with a few words to cut, copy and select, for the edit menu.
+pub fn edit_menu_field<M: 'static>() -> TextField<M> {
+    TextField::new().text("Edit me")
 }

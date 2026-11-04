@@ -1277,6 +1277,28 @@ pub mod stepper {
     }
 }
 
+/// Pop-up and pull-down buttons (neutral gel with an accent cap carrying arrows) and the
+/// combo box's arrow button.
+pub mod popup {
+    use crate::{Color, white};
+
+    /// Width of an arrow.
+    pub const ARROW_WIDTH: f64 = 6.0;
+    /// Height of an arrow.
+    pub const ARROW_HEIGHT: f64 = 4.0;
+    /// Gap between the two arrows of a pop-up button.
+    pub const ARROW_GAP: f64 = 2.0;
+    /// How much the cap or arrow button of an open menu darkens (1: not at all).
+    pub const OPEN_DIM: f32 = 0.86;
+    /// Opacity of a disabled button.
+    pub const DISABLED_OPACITY: f32 = 0.5;
+    /// Inset of the combo box's arrow button from the well's inner edge.
+    pub const COMBO_INSET: f64 = 1.0;
+
+    /// The arrows on the accent cap.
+    pub const CAP_ARROW: Color = white(1.0);
+}
+
 /// Text, search and secure fields: a white well with a hairline border, darker along the
 /// top, and an inner shadow under it. Search fields are rounded and carry a magnifier and
 /// a cancel button.

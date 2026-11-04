@@ -16,6 +16,7 @@
 //! - **Choosing.** The owner receives [`Chosen`] with the item's id and closes the menus.
 
 use std::any::TypeId;
+use std::cell::Cell;
 use std::sync::{Arc, Mutex, PoisonError};
 use std::time::Instant;
 
@@ -23,9 +24,9 @@ use masonry_core::accesskit::{Action, HasPopup, Node, Role, Toggled};
 use masonry_core::core::keyboard::{Key, Modifiers, NamedKey};
 use masonry_core::core::{
     AccessCtx, AccessEvent, ActionCtx, ChildrenIds, ErasedAction, EventCtx, Layer, LayerType,
-    LayoutCtx, MeasureCtx, NewWidget, NoAction, PaintCtx, PointerButtonEvent, PointerEvent,
-    PointerUpdate, PropertiesMut, PropertiesRef, RegisterCtx, TextEvent, Update, UpdateCtx,
-    UsesProperty, Widget, WidgetId, WidgetMut, WidgetPod,
+    LayoutCtx, MeasureCtx, MutateCtx, NewWidget, NoAction, PaintCtx, PointerButtonEvent,
+    PointerEvent, PointerUpdate, PropertiesMut, PropertiesRef, RegisterCtx, TextEvent, Update,
+    UpdateCtx, UsesProperty, Widget, WidgetId, WidgetMut, WidgetPod,
 };
 use masonry_core::dpi::PhysicalPosition;
 use masonry_core::imaging::Painter;
@@ -52,31 +53,113 @@ use crate::theme::ThemeProp;
 #[derive(Debug, Clone, Copy, PartialEq, Eq)]
 pub(crate) struct Chosen(pub(crate) usize);
 
-/// Opens `spec` as a menu owned by the widget of `ctx`, with its top-left corner at
-/// `at` (window coordinates). The owner's action type must be [`Chosen`]. `keyboard`:
-/// opened from the keyboard (or an assistive technology), so the first item is
-/// highlighted and releasing a button chooses straight away. An open menu of the same
-/// owner is replaced. `return_focus` is the owner's record of what had focus before its
-/// menu opened, kept across a reopening while the menu is up (focus is in that menu then).
+/// Called on a menu's owner, once its menus are gone, with the id of the item chosen (if
+/// any), for owners that keep state of their own (an open flag, a selection) or whose
+/// action type isn't [`Chosen`]. It then reports the choice itself; without it the owner
+/// receives [`Chosen`].
+pub(crate) type OnClosed = fn(WidgetMut<'_, dyn Widget>, Option<usize>);
+
+/// Where and how a menu opens.
+#[derive(Debug, Clone, Copy)]
+pub(crate) struct Anchor {
+    /// The menu's top-left corner, in window coordinates.
+    pub(crate) at: Point,
+    /// Where the pointer went down, for the drag that chooses on release (the menu's
+    /// corner for a context menu).
+    pub(crate) pointer: Point,
+    /// The menu is at least this wide (a pop-up button's width).
+    pub(crate) min_width: f64,
+    /// The item highlighted on opening, if any (a pop-up button's chosen one).
+    pub(crate) highlight: Option<usize>,
+    /// Told when the menus close.
+    pub(crate) on_closed: Option<OnClosed>,
+    /// Where focus goes back to if nothing had it when the menu opened.
+    pub(crate) refocus: Option<WidgetId>,
+}
+
+impl Anchor {
+    /// A menu with its corner at the pointer, `at`.
+    pub(crate) fn at(at: Point) -> Self {
+        Self {
+            at,
+            pointer: at,
+            min_width: 0.0,
+            highlight: None,
+            on_closed: None,
+            refocus: None,
+        }
+    }
+}
+
+thread_local! {
+    /// How many menus this thread has opened. A widget that opens a default menu after
+    /// an event (so that a context menu around it can take the event first) compares this
+    /// with its value at the event: a change means somebody else opened one. Menus open on
+    /// the UI thread only.
+    static OPENED: Cell<usize> = const { Cell::new(0) };
+}
+
+/// See [`OPENED`].
+pub(crate) fn opened() -> usize {
+    OPENED.with(Cell::get)
+}
+
+/// What opening a menu needs from the owner's context: an event, or a deferred mutation.
+pub(crate) trait Opener {
+    fn owner(&self) -> WidgetId;
+    /// The owner's open menu (root layer), if any.
+    fn open_menu(&self) -> Option<WidgetId>;
+    fn focus_target(&self) -> Option<WidgetId>;
+    fn create_menu(&mut self, menu: NewWidget<MenuWidget>, at: Point);
+}
+
+macro_rules! opener {
+    ($($ctx:ty),+) => {$(
+        impl Opener for $ctx {
+            fn owner(&self) -> WidgetId {
+                self.widget_id()
+            }
+            fn open_menu(&self) -> Option<WidgetId> {
+                self.get_attached_layer::<MenuWidget>()
+            }
+            fn focus_target(&self) -> Option<WidgetId> {
+                self.focus_target_id()
+            }
+            fn create_menu(&mut self, menu: NewWidget<MenuWidget>, at: Point) {
+                self.create_attached_layer(LayerType::Other, menu, at);
+            }
+        }
+    )+};
+}
+
+opener!(EventCtx<'_>, MutateCtx<'_>);
+
+/// Opens `spec` as a menu owned by the widget of `ctx`, placed by `anchor`. The owner's
+/// action type must be [`Chosen`] unless `anchor` has an `on_closed` that reports the
+/// choice. `keyboard`: opened from the keyboard (or an assistive technology), so the first
+/// item is highlighted and releasing a button chooses straight away. An open menu of the
+/// same owner is replaced. `return_focus` is the owner's record of what had focus before
+/// its menu opened, kept across a reopening while the menu is up (focus is in that menu
+/// then).
 pub(crate) fn open(
-    ctx: &mut EventCtx<'_>,
+    ctx: &mut impl Opener,
     spec: MenuSpec,
-    at: Point,
+    anchor: Anchor,
     keyboard: bool,
     return_focus: &mut Option<WidgetId>,
 ) {
     if spec.0.is_empty() {
         return;
     }
-    let owner = ctx.widget_id();
-    if ctx.get_attached_layer::<MenuWidget>().is_none() {
-        *return_focus = ctx.focus_target_id();
+    let owner = ctx.owner();
+    if ctx.open_menu().is_none() {
+        *return_focus = ctx.focus_target().or(anchor.refocus);
     }
     let return_focus = *return_focus;
     let session = Arc::new(Mutex::new(Session {
         inside: false,
         armed: keyboard,
-        origin: at,
+        origin: anchor.pointer,
     }));
     let menu = MenuWidget::new(
         spec,
@@ -85,15 +168,19 @@ pub(crate) fn open(
             root: None,
             parent: None,
             return_focus,
+            on_closed: anchor.on_closed,
             session,
         },
-        if keyboard {
+        if keyboard || anchor.highlight.is_some() {
             OnReady::FocusFirst
         } else {
             OnReady::Focus
         },
+        anchor.min_width,
+        anchor.highlight,
     );
-    ctx.create_attached_layer(LayerType::Other, NewWidget::new(menu), at);
+    OPENED.with(|n| n.set(n.get() + 1));
+    ctx.create_menu(NewWidget::new(menu), anchor.at);
 }
 
 /// State one menu and its submenus share.
@@ -118,6 +205,8 @@ struct Chain {
     parent: Option<(WidgetId, WidgetId)>,
     /// What had keyboard focus before the root menu opened.
     return_focus: Option<WidgetId>,
+    /// What the owner wants to know when the menus close.
+    on_closed: Option<OnClosed>,
     session: Arc<Mutex<Session>>,
 }
 
@@ -222,6 +311,8 @@ pub(crate) struct MenuWidget {
     tops: Vec<f64>,
     chain: Chain,
     on_ready: OnReady,
+    /// The menu is at least this wide.
+    min_width: f64,
     /// The row under the pointer or the keyboard (keyboard focus is on it).
     highlighted: Option<usize>,
     /// The open submenu: the row it opened from, and its layer.
@@ -241,7 +332,13 @@ impl std::fmt::Debug for MenuWidget {
 }
 
 impl MenuWidget {
-    fn new(spec: MenuSpec, chain: Chain, on_ready: OnReady) -> Self {
+    fn new(
+        spec: MenuSpec,
+        chain: Chain,
+        on_ready: OnReady,
+        min_width: f64,
+        highlighted: Option<usize>,
+    ) -> Self {
         let rows = spec
             .0
             .iter()
@@ -257,7 +354,8 @@ impl MenuWidget {
             tops: Vec::new(),
             chain,
             on_ready,
-            highlighted: None,
+            min_width,
+            highlighted,
             submenu: None,
             type_select: TypeSelect::default(),
             replayer: ImagingReplayer::new(),
@@ -350,7 +448,7 @@ impl MenuWidget {
         } else {
             OnReady::Nothing
         };
-        let menu = NewWidget::new(MenuWidget::new(spec, chain, on_ready));
+        let menu = NewWidget::new(MenuWidget::new(spec, chain, on_ready, 0.0, None));
         self.submenu = Some((i, menu.id()));
         ctx.attach(menu, at);
         ctx.repaint();
@@ -369,13 +467,25 @@ impl MenuWidget {
             ctx.focus(focus);
         }
         let root = self.chain.root.unwrap_or(ctx.id());
+        let on_closed = self.chain.on_closed;
         ctx.later(self.chain.owner, move |mut owner| {
             // The owner may have replaced this menu with a new one already.
-            if owner.ctx.get_attached_layer::<MenuWidget>() == Some(root) {
+            let current = owner.ctx.get_attached_layer::<MenuWidget>() == Some(root);
+            if current {
                 owner.ctx.remove_layer(root);
             }
-            if let Some(id) = chosen {
-                owner.ctx.submit_action::<Chosen>(Chosen(id));
+            match on_closed {
+                // The owner reports the choice in its own action type.
+                Some(on_closed) => {
+                    if current {
+                        on_closed(owner, chosen);
+                    }
+                }
+                None => {
+                    if let Some(id) = chosen {
+                        owner.ctx.submit_action::<Chosen>(Chosen(id));
+                    }
+                }
             }
         });
     }
@@ -622,7 +732,7 @@ impl Widget for MenuWidget {
     ) -> Length {
         Length::px(match axis {
             Axis::Horizontal => {
-                let mut width: f64 = MIN_WIDTH - 2.0 * RIM;
+                let mut width: f64 = (MIN_WIDTH - 2.0 * RIM).max(self.min_width - 2.0 * RIM);
                 for row in &mut self.rows {
                     let w = ctx.compute_length(
                         row,

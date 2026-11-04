@@ -55,3 +55,4 @@ Don't edit an accepted ADR's decision; supersede it with a new one.
 | [0043](0043-scroll-view-virtual-list.md) | Scroll view with overlay scrollers, and the virtual list | Accepted |
 | [0044](0044-text-view.md) | Text view: multi-line text as scroll view content | Accepted |
 | [0045](0045-menus.md) | Menus: the menu model, menu layers and context menus | Accepted |
+| [0046](0046-popup-buttons-combo-box-edit-menu.md) | Pop-up button, pull-down button, combo box and the edit menu | Accepted |

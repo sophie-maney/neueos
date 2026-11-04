@@ -11,6 +11,7 @@ pub mod hud;
 mod linen;
 mod menu;
 pub mod menu_bar;
+mod popup;
 mod progress;
 mod scroller;
 mod segmented;
@@ -30,6 +31,10 @@ pub use focus_ring::focus_ring;
 pub use linen::{Linen, fill_linen};
 pub use menu::{
     MenuMark, menu_highlight, menu_mark, menu_outline, menu_panel, menu_separator, submenu_arrow,
+};
+pub use popup::{
+    PopUpButton, PopUpKind, combo_arrow, combo_arrow_rect, popup_button, popup_button_outline,
+    popup_cap_rect,
 };
 pub use progress::{Progress, progress_bar};
 pub use scroller::{Scroller, scroller, scroller_knob, scroller_travel};

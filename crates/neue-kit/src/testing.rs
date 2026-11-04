@@ -76,6 +76,8 @@ impl Fixture {
         scale: f64,
         size: (u32, u32),
     ) -> Self {
+        // Shortcuts in goldens read the same on every host.
+        crate::menu::command_is_ctrl_here();
         let (widget, _wiring) = element.into().into_parts();
         let target = widget.id();
         let mut stack = StackWidget::new(Axis::Vertical, 0.0);
@@ -111,6 +113,13 @@ impl Fixture {
     /// Holds the primary button down over the widget.
     pub fn press(&mut self) {
         self.hover();
+        self.harness.mouse_button_press(None);
+    }
+
+    /// Holds the primary button down `(fx, fy)` of the way across the widget (as
+    /// [`hover_at`](Self::hover_at)).
+    pub fn press_at(&mut self, fx: f64, fy: f64) {
+        self.hover_at(fx, fy);
         self.harness.mouse_button_press(None);
     }
 
