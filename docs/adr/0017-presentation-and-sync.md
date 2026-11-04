@@ -65,7 +65,7 @@ context; tearing control it does not.
 - Tearing (asynchronous flips): waits for Smithay support; then only for a full-screen
   surface on its own plane (direct scanout, task 1.15).
 - Explicit sync could not be exercised headless or in the OrbStack VM (no DRM device);
-  the owner checks it on the NVIDIA PC (`docs/dev-setup.md` §13).
+  the owner checks it on the NVIDIA PC (`docs/checks/phase-1.md` §13).
 - No per-app policy on the security context's `app_id` (e.g. letting a trusted sandboxed
   app keep a privileged global); `neuectl` does not show which clients are sandboxed.
 - Feedback for the cursor and drag-icon surfaces is not collected (they rarely ask).

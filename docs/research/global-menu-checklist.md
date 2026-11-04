@@ -26,7 +26,7 @@ have or `flatpak install flathub com.visualstudio.code`.
 
 Start Plasma from the VM console (tty1), not over SSH, because it needs a seat:
 ```sh
-# On the VM console, logged in as your user (see dev-setup §2.3 for getty/seatd):
+# On the VM console, logged in as your user (see dev-setup §3.2 for getty/seatd):
 dbus-run-session startplasma-wayland
 ```
 Then open a terminal (Konsole) inside Plasma and use it for everything below.

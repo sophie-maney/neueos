@@ -1,4 +1,4 @@
-# Sourced on the VM over ssh by docs/dev-setup.md §17 (the VM's shell is bash, so the
+# Sourced on the VM over ssh (docs/dev-setup.md §1.4; the VM's shell is bash, so the
 # Mac's shell, fish or zsh, never has to parse any of this):
 #   ssh neueos-vm '. ~/neueos/docs/vm-env.sh; neuectl windows'
 export XDG_RUNTIME_DIR=/run/user/1000 WAYLAND_DISPLAY=wayland-1

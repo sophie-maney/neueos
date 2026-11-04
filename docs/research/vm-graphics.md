@@ -1,6 +1,6 @@
 # VM graphics checks (task 0.5, 2026-11-03)
 
-Run in the Parallels VM `neueos-vm` (see `docs/dev-setup.md` §2), driven over SSH from the Mac.
+Run in the Parallels VM `neueos-vm` (see `docs/dev-setup.md` §3.2), driven over SSH from the Mac.
 Screens were checked with `prlctl capture neueos-vm --file <png>` on the Mac.
 
 **Result: accepted.** Smithay's `anvil` shows a client window on the VM's DRM device, and also
@@ -42,7 +42,7 @@ One blocker was found and fixed: archboot's `kmscon` console holds DRM master (s
 archboot installs `kmscon` as the tty1 console (`kmsconvt@tty1.service`, and `autovt@.service` is a
 link to it). kmscon keeps DRM master, so seatd logs `Could not make device fd drm master: Device
 or resource busy` and every atomic commit fails with `EACCES` ("Permission denied" in weston).
-**Fix:** use the stock `getty@tty1` (fbcon) instead; see `docs/dev-setup.md` §2.3. After that,
+**Fix:** use the stock `getty@tty1` (fbcon) instead; see `docs/dev-setup.md` §3.2. After that,
 `/sys/kernel/debug/dri/0/clients` shows the compositor's fd (opened by seatd) as master.
 
 ### anvil on DRM
@@ -125,7 +125,7 @@ the VM is therefore llvmpipe (inferred; llvmpipe is the only Vulkan adapter).
 4. **Vblank timing:** frame pacing measured with `weston-presentation-shm` under weston. Not run.
 
 ## Reproduce
-On the VM (packages: `weston wayland-utils`; build deps are already in dev-setup §2.3):
+On the VM (packages: `weston wayland-utils`; build deps are already in dev-setup §3.2):
 ```sh
 git clone --depth 1 https://github.com/Smithay/smithay ~/src/smithay
 cd ~/src/smithay && cargo +1.98.1 build --release -p anvil --no-default-features --features egl,winit,udev

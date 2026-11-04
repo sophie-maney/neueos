@@ -58,7 +58,7 @@ and what to announce in `gtk_shell1.capabilities`.
 - Re-fetch `gtk-shell.xml` when GTK adds a version; our v5 global does not need it.
 
 ## Not done
-- Checking against real Kate and GNOME Text Editor: manual steps in `docs/dev-setup.md`
+- Checking against real Kate and GNOME Text Editor: manual steps in `docs/checks/phase-1.md`
   §18, run by the owner.
 - Addresses for popups and subsurfaces (only toplevels are reported).
 - Revoking a stale address when the app's bus name disappears: the shell sees that on D-Bus.

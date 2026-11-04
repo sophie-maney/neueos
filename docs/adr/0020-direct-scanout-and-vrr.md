@@ -55,6 +55,6 @@ the mode's fixed one; DRM exposes this as the connector's `vrr_capable` and the 
 ## Consequences
 - Full-screen video and games skip the copy (presentation feedback shows `zero_copy`).
 - Whether a plane accepts a buffer is up to the driver; it can only be confirmed on real
-  hardware (`docs/dev-setup.md` §16).
+  hardware (`docs/checks/phase-1.md` §16).
 - Overlay planes, buffer transforms for rotated outputs and tearing (async flips, ADR 0017)
   are later work. Several GPUs need feedback per GPU (later task).

@@ -32,7 +32,7 @@ exists (1.3), and whether the headless backend renders.
 - `libwayland-client` must be installed where `cargo xtask check` runs on Linux: with
   `--all-features`, the dev-only `winit` feature switches `wayland-backend` to the dlopened
   system library for the whole build, test clients included. CI installs
-  `libwayland-client0`; `docs/dev-setup.md` §1.2 installs `wayland` in OrbStack. Builds
+  `libwayland-client0`; `docs/dev-setup.md` §3.1 installs `wayland` in OrbStack. Builds
   without `winit` use the pure-Rust backend and need nothing.
 - Client steps block on the compositor; a compositor hang hangs the test. CI jobs have a
   45-minute timeout. `with_state` fails after 10 s.
