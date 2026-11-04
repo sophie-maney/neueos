@@ -70,7 +70,7 @@ pub use widgets::{
     Align, BevelButton, Button, Cell, CheckState, Checkbox, Column, ComboBox, ContextMenu, Entry,
     IconImage, Label, MaterialTile, Outline, PopUpButton, ProgressBar, PullDownButton, Radio,
     ScrollAxes, ScrollView, Segmented, Slider, SortOrder, SourceList, Specimen, Spinner, Stack,
-    Stepper, Table, TextField, TextStyle, TextView, VirtualList, Zoom,
+    Stepper, Table, TextField, TextStyle, TextView, VirtualGrid, VirtualList, Zoom,
 };
 
 /// Design tokens (colours, metrics, type scale, motion).

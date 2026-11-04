@@ -407,6 +407,10 @@ fn scrolling(_: &mut PageHandles) -> Element<Message> {
                 .with(section(
                     "Virtual list (1,000,000 rows)",
                     Stack::column().with(specimens::virtual_list(1_000_000)),
+                ))
+                .with(section(
+                    "Virtual grid (1,000,000 items)",
+                    Stack::column().with(specimens::virtual_grid(1_000_000)),
                 )),
         )
         .into()
