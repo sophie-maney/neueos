@@ -1,6 +1,6 @@
-//! Screencopy: `ext-image-capture-source-v1` with output sources and
-//! `ext-image-copy-capture-v1` (task 1.16b, ADR 0022). `grim`, `wf-recorder` and the
-//! screencast portal capture outputs through these.
+//! Screencopy: `ext-image-capture-source-v1` with output and toplevel sources and
+//! `ext-image-copy-capture-v1` (tasks 1.16b and 1.16c, ADRs 0022 and 0023). `grim`,
+//! `wf-recorder` and the screencast portal capture outputs and windows through these.
 //!
 //! Smithay runs the protocol (sessions, frames, buffer checks against the constraints);
 //! this module draws. Each session has its own [`OffscreenOutput`]: a frame draws the
@@ -10,27 +10,33 @@
 //! waits until the output changes (the backends call [`State::capture_waiting_frames`]
 //! after drawing an output), as the protocol allows, so a recording client does not spin.
 //!
-//! Captures are upright (transform normal) and the size of the output's current mode
-//! after its transform. The cursor is drawn when the client asks for it (`paint_cursors`)
-//! and the backend draws one itself: the tty backend. Only unsandboxed clients see the
-//! globals (ADR 0017).
+//! Output captures are upright (transform normal) and the size of the output's current
+//! mode after its transform. The cursor is drawn when the client asks for it
+//! (`paint_cursors`) and the backend draws one itself: the tty backend. A toplevel capture
+//! shows one window's surfaces (no title bar, no cursor) on a transparent background, at
+//! the window's geometry size and the scale of the output it is on. Only unsandboxed
+//! clients see the globals (ADR 0017).
 
 use std::fmt;
 
+use neue_ipc::WindowId;
 use smithay::backend::allocator::format::FormatSet;
 use smithay::backend::allocator::{Fourcc, Modifier};
 use smithay::backend::drm::DrmNode;
 use smithay::backend::renderer::gles::GlesRenderer;
 use smithay::backend::renderer::{BufferType, buffer_type};
+use smithay::desktop::Window;
 use smithay::output::{Output, WeakOutput};
 use smithay::reexports::wayland_server::DisplayHandle;
 use smithay::reexports::wayland_server::protocol::wl_buffer::WlBuffer;
 use smithay::reexports::wayland_server::protocol::wl_shm;
 use smithay::utils::{Buffer as BufferCoords, Physical, Rectangle, Size, Transform};
 use smithay::wayland::dmabuf::get_dmabuf;
+use smithay::wayland::foreign_toplevel_list::{ForeignToplevelHandle, ForeignToplevelWeakHandle};
 use smithay::wayland::image_capture_source::{
     ImageCaptureSource, ImageCaptureSourceHandler, ImageCaptureSourceState,
-    OutputCaptureSourceHandler, OutputCaptureSourceState,
+    OutputCaptureSourceHandler, OutputCaptureSourceState, ToplevelCaptureSourceHandler,
+    ToplevelCaptureSourceState,
 };
 use smithay::wayland::image_copy_capture::{
     BufferConstraints, CaptureFailureReason, DmabufConstraints, Frame, FrameRef,
@@ -39,7 +45,7 @@ use smithay::wayland::image_copy_capture::{
 use smithay::wayland::shm::with_buffer_contents_mut;
 use tracing::{debug, warn};
 
-use crate::render::{OffscreenOutput, ScreenElement};
+use crate::render::{CLEAR_COLOR, OffscreenOutput, ScreenElement, window_content_elements};
 use crate::security::is_unrestricted;
 use crate::state::{Backend, State};
 
@@ -55,10 +61,14 @@ const DMABUF_FORMATS: [Fourcc; 4] = [
     Fourcc::Xbgr8888,
 ];
 
+/// What a window capture is cleared to: transparent.
+const TRANSPARENT: [f32; 4] = [0.0; 4];
+
 /// The screencopy globals and the open capture sessions.
 pub struct Screencopy {
     _source_state: ImageCaptureSourceState,
     output_source_state: OutputCaptureSourceState,
+    toplevel_source_state: ToplevelCaptureSourceState,
     copy_state: ImageCopyCaptureState,
     sessions: Vec<CaptureSession>,
 }
@@ -80,29 +90,75 @@ impl Screencopy {
                 dh,
                 is_unrestricted,
             ),
+            toplevel_source_state: ToplevelCaptureSourceState::new_with_filter::<State, _>(
+                dh,
+                is_unrestricted,
+            ),
             copy_state: ImageCopyCaptureState::new_with_filter::<State, _>(dh, is_unrestricted),
             sessions: Vec::new(),
         }
     }
 }
 
-/// One client's capture of one output. Dropping it stops the session.
+/// What a capture session shows.
+#[derive(Clone)]
+enum Subject {
+    Output(WeakOutput),
+    Toplevel(ForeignToplevelWeakHandle),
+}
+
+/// Where a subject is right now: what to draw and how big the capture is.
+enum Resolved {
+    Output {
+        output: Output,
+        size: Size<i32, Physical>,
+    },
+    Window {
+        window: Window,
+        size: Size<i32, Physical>,
+        scale: f64,
+    },
+}
+
+impl Resolved {
+    fn size(&self) -> Size<i32, Physical> {
+        match self {
+            Self::Output { size, .. } | Self::Window { size, .. } => *size,
+        }
+    }
+}
+
+/// One client's capture of one output or window. Dropping it stops the session.
 struct CaptureSession {
     session: Session,
-    output: WeakOutput,
+    subject: Subject,
     /// The size last sent in the buffer constraints.
     size: Size<i32, Physical>,
     /// Where this session's frames are drawn; made on the first frame and remade when the
-    /// output's size or scale changes.
+    /// size or scale changes.
     target: Option<OffscreenOutput>,
     /// A frame the client asked for that waits for the output to change.
     waiting: Option<Frame>,
 }
 
-/// The output an image capture source shows, if it is an output source whose output still
-/// exists.
-fn source_output(source: &ImageCaptureSource) -> Option<Output> {
-    source.user_data().get::<WeakOutput>()?.upgrade()
+/// What an image capture source shows, if it is one of ours.
+fn source_subject(source: &ImageCaptureSource) -> Option<Subject> {
+    let data = source.user_data();
+    data.get::<WeakOutput>()
+        .cloned()
+        .map(Subject::Output)
+        .or_else(|| {
+            data.get::<ForeignToplevelWeakHandle>()
+                .cloned()
+                .map(Subject::Toplevel)
+        })
+}
+
+/// The window id in a toplevel's `ext-foreign-toplevel-list` identifier
+/// (`window-<id>`, see `State::announce_toplevel`).
+fn handle_window_id(handle: &ForeignToplevelHandle) -> Option<WindowId> {
+    let id = handle.identifier().strip_prefix("window-")?.parse().ok()?;
+    Some(WindowId(id))
 }
 
 /// Size of a capture of `output`: its current mode after its transform.
@@ -164,9 +220,44 @@ fn offered_formats(node: DrmNode, formats: &FormatSet) -> Option<DmabufConstrain
 }
 
 impl State {
-    /// Buffer constraints for capturing `output`, or `None` if it cannot be captured.
-    fn capture_constraints_for(&mut self, output: &Output) -> Option<BufferConstraints> {
-        let size = capture_size(output)?;
+    /// Where `subject` is now, or `None` if it cannot be captured: the output has no mode,
+    /// the window closed or has no size yet.
+    fn resolve(&self, subject: &Subject) -> Option<Resolved> {
+        match subject {
+            Subject::Output(output) => {
+                let output = output.upgrade()?;
+                let size = capture_size(&output)?;
+                Some(Resolved::Output { output, size })
+            }
+            Subject::Toplevel(handle) => {
+                let handle = handle.upgrade().filter(|h| !h.is_closed())?;
+                let window = self.window_by_id(handle_window_id(&handle)?)?;
+                // The scale of the output the window is on (the first one if it spans
+                // several, any if it is minimised).
+                let scale = self
+                    .space
+                    .outputs_for_element(&window)
+                    .first()
+                    .or_else(|| self.outputs().next())
+                    .map_or(1.0, |output| output.current_scale().fractional_scale());
+                let size = window
+                    .geometry()
+                    .size
+                    .to_f64()
+                    .to_physical(scale)
+                    .to_i32_round();
+                (size.w > 0 && size.h > 0).then_some(Resolved::Window {
+                    window,
+                    size,
+                    scale,
+                })
+            }
+        }
+    }
+
+    /// Buffer constraints for capturing `subject`, or `None` if it cannot be captured.
+    fn capture_constraints_for(&mut self, subject: &Subject) -> Option<BufferConstraints> {
+        let size = self.resolve(subject)?.size();
         capture_renderer(&mut self.backend)?;
         Some(BufferConstraints {
             size: (size.w, size.h).into(),
@@ -177,57 +268,80 @@ impl State {
 
     /// Outputs changed: stop the sessions of outputs that left the layout, and send new
     /// buffer constraints to those whose output changed size (failing a waiting frame,
-    /// whose buffer no longer fits). Called from `report_outputs`.
+    /// whose buffer no longer fits). Called from `report_outputs`. Window sessions notice
+    /// a new size when they next capture.
     pub(crate) fn refresh_capture_sessions(&mut self) {
         let outputs: Vec<Output> = self.outputs().cloned().collect();
-        let before = self.screencopy.sessions.len();
-        self.screencopy.sessions.retain(|s| {
-            s.output
-                .upgrade()
-                .is_some_and(|output| outputs.contains(&output))
-        });
-        if self.screencopy.sessions.len() != before {
-            debug!(
-                stopped = before - self.screencopy.sessions.len(),
-                "screencopy sessions of removed outputs stopped"
-            );
-        }
-        for index in 0..self.screencopy.sessions.len() {
+        let mut index = 0;
+        while index < self.screencopy.sessions.len() {
             let session = &self.screencopy.sessions[index];
-            let Some(output) = session.output.upgrade() else {
+            let (subject, old_size) = (session.subject.clone(), session.size);
+            let left_layout = matches!(
+                &subject,
+                Subject::Output(output) if output.upgrade().is_none_or(|o| !outputs.contains(&o))
+            );
+            let size = if left_layout {
+                None
+            } else {
+                self.resolve(&subject).map(|resolved| resolved.size())
+            };
+            let constraints = match size {
+                Some(size) if size == old_size => {
+                    index += 1;
+                    continue;
+                }
+                Some(_) => self.capture_constraints_for(&subject),
+                None => None,
+            };
+            let (Some(size), Some(constraints)) = (size, constraints) else {
+                // Gone, or no mode any more: nothing to capture.
+                debug!("screencopy session of a removed output stopped");
+                self.screencopy.sessions.swap_remove(index);
                 continue;
             };
-            let size = capture_size(&output);
-            if size == Some(session.size) {
-                continue;
-            }
-            let constraints = self.capture_constraints_for(&output);
             let session = &mut self.screencopy.sessions[index];
-            match (size, constraints) {
-                (Some(size), Some(constraints)) => {
-                    session.size = size;
-                    session.session.update_constraints(constraints);
-                    if let Some(frame) = session.waiting.take() {
-                        frame.fail(CaptureFailureReason::BufferConstraints);
-                    }
-                }
-                // No mode any more: nothing to capture.
-                _ => {
-                    self.screencopy.sessions.swap_remove(index);
-                    return self.refresh_capture_sessions();
-                }
+            session.size = size;
+            session.session.update_constraints(constraints);
+            if let Some(frame) = session.waiting.take() {
+                frame.fail(CaptureFailureReason::BufferConstraints);
+            }
+            index += 1;
+        }
+    }
+
+    /// A toplevel went away: stop the sessions that capture it.
+    pub(crate) fn stop_toplevel_captures(&mut self, handle: &ForeignToplevelHandle) {
+        self.screencopy.sessions.retain(|s| match &s.subject {
+            Subject::Toplevel(weak) => weak.upgrade().is_none_or(|h| !h.matches(handle)),
+            Subject::Output(_) => true,
+        });
+    }
+
+    /// Whether a change on `output` may change what `subject` shows.
+    fn subject_on_output(&self, subject: &Subject, output: &Output) -> bool {
+        match subject {
+            Subject::Output(weak) => weak.upgrade().as_ref() == Some(output),
+            Subject::Toplevel(handle) => {
+                let window = handle
+                    .upgrade()
+                    .and_then(|handle| self.window_by_id(handle_window_id(&handle)?));
+                window.is_none_or(|window| {
+                    let outputs = self.space.outputs_for_element(&window);
+                    // Minimised (or not on any output): any output's frame will do.
+                    outputs.is_empty() || outputs.contains(output)
+                })
             }
         }
     }
 
-    /// `output` was drawn: give the frames waiting on it another try.
+    /// `output` was drawn: give the frames waiting on it, or on windows on it, another try.
     pub(crate) fn capture_waiting_frames(&mut self, output: &Output) {
         let waiting: Vec<usize> = self
             .screencopy
             .sessions
             .iter()
             .enumerate()
-            .filter(|(_, s)| s.waiting.is_some() && s.output == *output)
+            .filter(|(_, s)| s.waiting.is_some() && self.subject_on_output(&s.subject, output))
             .map(|(index, _)| index)
             .collect();
         for index in waiting {
@@ -235,9 +349,44 @@ impl State {
         }
     }
 
-    /// Draw session `index`'s output and, if anything changed since its previous frame,
+    /// Draw session `index`'s subject and, if anything changed since its previous frame,
     /// complete the waiting frame. Otherwise the frame keeps waiting.
     fn capture(&mut self, index: usize) {
+        let Some(session) = self.screencopy.sessions.get(index) else {
+            return;
+        };
+        if session.waiting.is_none() {
+            return;
+        }
+        let (subject, session_size) = (session.subject.clone(), session.size);
+        let Some(resolved) = self.resolve(&subject) else {
+            if let Some(frame) = self.screencopy.sessions[index].waiting.take() {
+                frame.fail(CaptureFailureReason::Stopped);
+            }
+            return;
+        };
+        if resolved.size() != session_size {
+            // The subject changed size since the constraints went out (a window resized):
+            // send the new ones, and the frame's buffer no longer fits.
+            if let Some(constraints) = self.capture_constraints_for(&subject) {
+                let session = &mut self.screencopy.sessions[index];
+                session.size = resolved.size();
+                session.session.update_constraints(constraints);
+                if let Some(frame) = session.waiting.take() {
+                    frame.fail(CaptureFailureReason::BufferConstraints);
+                }
+            }
+            return;
+        }
+        // An output that is not laid out (yet) waits for `refresh_capture_sessions`.
+        let output_geo = match &resolved {
+            Resolved::Output { output, .. } => match self.space.output_geometry(output) {
+                Some(geo) => Some(geo),
+                None => return,
+            },
+            Resolved::Window { .. } => None,
+        };
+
         let time = self.start_time.elapsed();
         let now = self.clock.now();
         let pointer_location = self.pointer.current_location();
@@ -256,25 +405,21 @@ impl State {
         let Some(frame) = session.waiting.take() else {
             return;
         };
-        let Some(output) = session.output.upgrade() else {
-            frame.fail(CaptureFailureReason::Stopped);
-            return;
-        };
-        let (Some(size), Some(output_geo)) =
-            (capture_size(&output), space.output_geometry(&output))
-        else {
-            // Not laid out (yet): wait for `refresh_capture_sessions`.
-            session.waiting = Some(frame);
-            return;
-        };
         let Some((renderer, cursors)) = capture_renderer(backend) else {
             frame.fail(CaptureFailureReason::Unknown);
             return;
         };
-        let scale = output.current_scale().fractional_scale();
+        let (size, scale, clear) = match &resolved {
+            Resolved::Output { output, size } => (
+                *size,
+                output.current_scale().fractional_scale(),
+                CLEAR_COLOR,
+            ),
+            Resolved::Window { size, scale, .. } => (*size, *scale, TRANSPARENT),
+        };
         let mut target = match session.target.take() {
             Some(target) if target.fits(size, scale) => target,
-            _ => match OffscreenOutput::new(renderer, size, scale) {
+            _ => match OffscreenOutput::with_clear(renderer, size, scale, clear) {
                 Ok(target) => target,
                 Err(err) => {
                     warn!(err, "screencopy failed");
@@ -285,35 +430,48 @@ impl State {
         };
 
         let mut elements: Vec<ScreenElement> = Vec::new();
-        #[cfg(feature = "tty")]
-        if let Some(cursors) = cursors
-            && session.session.draw_cursor()
-        {
-            let pointer = crate::tty::PointerLook {
-                status: cursor_status,
-                dnd_icon: dnd_icon.as_ref(),
-                location: pointer_location,
-            };
-            let scale = smithay::utils::Scale::from(scale);
-            elements.extend(
-                crate::tty::pointer_elements(renderer, cursors, &pointer, output_geo, scale, time)
-                    .0,
-            );
+        match (&resolved, output_geo) {
+            (Resolved::Output { output, .. }, Some(output_geo)) => {
+                #[cfg(feature = "tty")]
+                if let Some(cursors) = cursors
+                    && session.session.draw_cursor()
+                {
+                    let pointer = crate::tty::PointerLook {
+                        status: cursor_status,
+                        dnd_icon: dnd_icon.as_ref(),
+                        location: pointer_location,
+                    };
+                    let scale = smithay::utils::Scale::from(scale);
+                    elements.extend(
+                        crate::tty::pointer_elements(
+                            renderer, cursors, &pointer, output_geo, scale, time,
+                        )
+                        .0,
+                    );
+                }
+                #[cfg(not(feature = "tty"))]
+                let _ = (
+                    cursors,
+                    cursor_status,
+                    dnd_icon,
+                    pointer_location,
+                    time,
+                    output_geo,
+                );
+                elements.extend(
+                    crate::render::output_elements(renderer, space, chrome, output)
+                        .into_iter()
+                        .map(ScreenElement::Output),
+                );
+            }
+            (Resolved::Window { window, .. }, _) => elements.extend(
+                window_content_elements(renderer, window, scale)
+                    .into_iter()
+                    .map(ScreenElement::Output),
+            ),
+            // Outputs always have a geometry here (checked above).
+            (Resolved::Output { .. }, None) => {}
         }
-        #[cfg(not(feature = "tty"))]
-        let _ = (
-            cursors,
-            cursor_status,
-            dnd_icon,
-            pointer_location,
-            time,
-            output_geo,
-        );
-        elements.extend(
-            crate::render::output_elements(renderer, space, chrome, &output)
-                .into_iter()
-                .map(ScreenElement::Output),
-        );
 
         let damage = target.render(renderer, &elements);
         let result = damage.and_then(|damage| {
@@ -416,30 +574,46 @@ impl OutputCaptureSourceHandler for State {
     }
 }
 
+impl ToplevelCaptureSourceHandler for State {
+    fn toplevel_capture_source_state(&mut self) -> &mut ToplevelCaptureSourceState {
+        &mut self.screencopy.toplevel_source_state
+    }
+
+    fn toplevel_source_created(
+        &mut self,
+        source: ImageCaptureSource,
+        toplevel: ForeignToplevelHandle,
+    ) {
+        source
+            .user_data()
+            .insert_if_missing(|| toplevel.downgrade());
+    }
+}
+
 impl ImageCopyCaptureHandler for State {
     fn image_copy_capture_state(&mut self) -> &mut ImageCopyCaptureState {
         &mut self.screencopy.copy_state
     }
 
     fn capture_constraints(&mut self, source: &ImageCaptureSource) -> Option<BufferConstraints> {
-        let output = source_output(source)?;
-        self.capture_constraints_for(&output)
+        let subject = source_subject(source)?;
+        self.capture_constraints_for(&subject)
     }
 
     fn new_session(&mut self, session: Session) {
         // Smithay asked `capture_constraints` just before, so both are there; if not,
         // dropping the session stops it.
-        let Some(output) = source_output(&session.source()) else {
+        let Some(subject) = source_subject(&session.source()) else {
             return;
         };
-        let Some(size) = capture_size(&output) else {
+        let Some(resolved) = self.resolve(&subject) else {
             return;
         };
-        debug!(output = output.name(), "screencopy session started");
+        debug!("screencopy session started");
         self.screencopy.sessions.push(CaptureSession {
             session,
-            output: output.downgrade(),
-            size,
+            subject,
+            size: resolved.size(),
             target: None,
             waiting: None,
         });

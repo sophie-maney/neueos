@@ -1,5 +1,6 @@
-//! Screencopy of outputs: `ext-image-copy-capture-v1` with output sources (task 1.16b,
-//! ADR 0022). Captures need the headless renderer, so Mesa's software EGL device.
+//! Screencopy of outputs and windows: `ext-image-copy-capture-v1` with output and toplevel
+//! sources (tasks 1.16b and 1.16c, ADRs 0022 and 0023). Captures need the headless
+//! renderer, so Mesa's software EGL device.
 #![cfg(target_os = "linux")]
 #![allow(clippy::unwrap_used, clippy::expect_used)] // test code
 
@@ -177,4 +178,162 @@ fn nothing_to_capture_without_a_renderer() {
     let events = client.session_events(&session);
     assert!(events.stopped, "{events:?}");
     assert_eq!(events.buffer_size, None);
+}
+
+// ---- toplevel sources (1.16c, ADR 0023) ----
+
+const TRANSPARENT: u32 = 0;
+
+#[test]
+fn toplevel_capture_shows_only_that_window() {
+    let server = Server::start_rendering();
+    let mut client = server.connect();
+    client.track_foreign_toplevels();
+    let mut back = client.create_toplevel("Back", "org.neueos.Test", (100, 60));
+    client.fill(&mut back, RED);
+    let mut front = client.create_toplevel("Front", "org.neueos.Test", (80, 50));
+    client.fill(&mut front, BLUE);
+    let windows = server.with_state(|state| state.windows());
+    let find = |title: &str| {
+        windows
+            .iter()
+            .find(|w| w.title.as_deref() == Some(title))
+            .expect("window")
+            .clone()
+    };
+    let (back_info, front_info) = (find("Back"), find("Front"));
+    // The front window sits on the back one (new windows are cascaded), so an output
+    // capture would show blue there; the window capture must not.
+    assert!(
+        front_info.x < back_info.x + back_info.width
+            && front_info.y < back_info.y + back_info.height,
+        "{back_info:?} {front_info:?}"
+    );
+    let toplevels = client.foreign_toplevels();
+    let n = toplevels
+        .iter()
+        .position(|t| t.title == "Back")
+        .expect("Back in the list");
+
+    let session = client.capture_toplevel(n);
+    let events = client.session_events(&session).clone();
+    assert_eq!(events.buffer_size, Some((100, 60)), "{events:?}");
+    assert!(events.shm_formats.contains(&wl_shm::Format::Argb8888));
+    assert_eq!(events.done, 1);
+
+    let frame = client.capture_frame(&session);
+    let damage = ready_damage(client.wait_for_frame(&frame));
+    assert_eq!(damage, vec![(0, 0, 100, 60)]);
+    for (x, y) in [(0, 0), (99, 0), (0, 59), (99, 59), (50, 30)] {
+        assert_eq!(frame.pixel(x, y), RED, "at {x},{y}");
+    }
+    // Right under the front window's top-left corner.
+    let (ox, oy) = (front_info.x - back_info.x, front_info.y - back_info.y);
+    assert_eq!(frame.pixel(ox.max(0) + 5, oy.max(0) + 5), RED);
+}
+
+#[test]
+fn toplevel_capture_is_transparent_where_the_window_is() {
+    let server = Server::start_rendering();
+    let mut client = server.connect();
+    client.track_foreign_toplevels();
+    let mut window = client.create_toplevel("Clear", "org.neueos.Test", (40, 30));
+    client.fill(&mut window, TRANSPARENT);
+    let session = client.capture_toplevel(0);
+    let frame = client.capture_frame(&session);
+    ready_damage(client.wait_for_frame(&frame));
+    assert_eq!(frame.pixel(20, 15), TRANSPARENT);
+}
+
+#[test]
+fn toplevel_frame_waits_for_the_window_to_change() {
+    let server = Server::start_rendering();
+    let mut client = server.connect();
+    client.track_foreign_toplevels();
+    let mut window = client.create_toplevel("Doc", "org.neueos.Test", (80, 40));
+    client.fill(&mut window, RED);
+    let session = client.capture_toplevel(0);
+    let first = client.capture_frame(&session);
+    ready_damage(client.wait_for_frame(&first));
+
+    let second = client.capture_frame(&session);
+    std::thread::sleep(std::time::Duration::from_millis(100));
+    client.roundtrip();
+    assert_eq!(client.frame_state(&second), FrameState::Pending);
+
+    client.fill(&mut window, BLUE);
+    let damage = ready_damage(client.wait_for_frame(&second));
+    assert_eq!(damage, vec![(0, 0, 80, 40)]);
+    assert_eq!(second.pixel(40, 20), BLUE);
+}
+
+#[test]
+fn window_resize_sends_new_constraints() {
+    let server = Server::start_rendering();
+    let mut client = server.connect();
+    client.track_foreign_toplevels();
+    let mut window = client.create_toplevel("Doc", "org.neueos.Test", (80, 40));
+    client.fill(&mut window, RED);
+    let id = only_window(&server).id;
+    let session = client.capture_toplevel(0);
+    let first = client.capture_frame(&session);
+    ready_damage(client.wait_for_frame(&first));
+    let waiting = client.capture_frame(&session);
+
+    server.with_state(move |state| {
+        let window = state.window_by_id(id).expect("window");
+        state.resize_window(&window, (120, 90).into());
+    });
+    client.ack_and_commit(&mut window);
+    client.fill(&mut window, BLUE);
+    assert_eq!(
+        client.wait_for_frame(&waiting),
+        FrameState::Failed(BUFFER_CONSTRAINTS)
+    );
+    let events = client.session_events(&session).clone();
+    assert_eq!(events.buffer_size, Some((120, 90)));
+    assert_eq!(events.done, 2);
+
+    let frame = client.capture_frame(&session);
+    assert_eq!(frame.size, (120, 90));
+    ready_damage(client.wait_for_frame(&frame));
+    assert_eq!(frame.pixel(60, 45), BLUE);
+}
+
+#[test]
+fn minimised_window_can_be_captured() {
+    let server = Server::start_rendering();
+    let mut client = server.connect();
+    client.track_foreign_toplevels();
+    let mut window = client.create_toplevel("Doc", "org.neueos.Test", (60, 40));
+    client.fill(&mut window, RED);
+    let id = only_window(&server).id;
+    server.with_state(move |state| {
+        let window = state.window_by_id(id).expect("window");
+        state.minimize_window(&window);
+    });
+    assert!(only_window(&server).minimized);
+    let session = client.capture_toplevel(0);
+    let frame = client.capture_frame(&session);
+    ready_damage(client.wait_for_frame(&frame));
+    assert_eq!(frame.pixel(30, 20), RED);
+}
+
+#[test]
+fn closed_window_stops_its_session() {
+    let server = Server::start_rendering();
+    let mut client = server.connect();
+    client.track_foreign_toplevels();
+    let mut keep = client.create_toplevel("Keep", "org.neueos.Test", (60, 40));
+    client.fill(&mut keep, RED);
+    let mut gone = client.create_toplevel("Gone", "org.neueos.Test", (60, 40));
+    client.fill(&mut gone, BLUE);
+    let kept = client.capture_toplevel(0);
+    let closed = client.capture_toplevel(1);
+    assert!(!client.session_events(&closed).stopped);
+
+    client.destroy_toplevel(gone);
+    client.roundtrip();
+    assert!(client.session_events(&closed).stopped);
+    assert!(!client.session_events(&kept).stopped);
 }

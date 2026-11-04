@@ -1,5 +1,6 @@
-//! Screencopy on the test client (task 1.16b): `ext-image-capture-source-v1` output
-//! sources and `ext-image-copy-capture-v1` sessions and frames, captured into shm.
+//! Screencopy on the test client (tasks 1.16b, 1.16c): `ext-image-capture-source-v1`
+//! output and toplevel sources and `ext-image-copy-capture-v1` sessions and frames,
+//! captured into shm.
 
 use std::fs::File;
 use std::os::fd::AsFd;
@@ -9,6 +10,7 @@ use std::time::Duration;
 use wayland_client::protocol::{wl_buffer::WlBuffer, wl_shm};
 use wayland_client::{Connection, Dispatch, QueueHandle, WEnum, delegate_noop};
 use wayland_protocols::ext::image_capture_source::v1::client::{
+    ext_foreign_toplevel_image_capture_source_manager_v1::ExtForeignToplevelImageCaptureSourceManagerV1,
     ext_image_capture_source_v1::ExtImageCaptureSourceV1,
     ext_output_image_capture_source_manager_v1::ExtOutputImageCaptureSourceManagerV1,
 };
@@ -72,6 +74,7 @@ pub(super) struct CaptureData {
         ExtOutputImageCaptureSourceManagerV1,
         ExtImageCopyCaptureManagerV1,
     )>,
+    toplevel_manager: Option<ExtForeignToplevelImageCaptureSourceManagerV1>,
     sessions: Vec<SessionEvents>,
     frames: Vec<FrameState>,
     /// Damage and transform of each frame, collected until `ready`.
@@ -106,6 +109,36 @@ impl TestClient {
         let (sources, copy) = self.capture_managers();
         let output = self.output_global(n);
         let source = sources.create_source(&output, &self.qh, ());
+        self.start_capture_session(&copy, source, paint_cursors)
+    }
+
+    /// Start a capture session of the `n`th toplevel the foreign toplevel list announced
+    /// (see [`TestClient::track_foreign_toplevels`]) and wait for the compositor's first
+    /// answer.
+    pub fn capture_toplevel(&mut self, n: usize) -> CaptureSession {
+        let (_, copy) = self.capture_managers();
+        let manager = match &self.data.capture.toplevel_manager {
+            Some(manager) => manager.clone(),
+            None => {
+                let manager: ExtForeignToplevelImageCaptureSourceManagerV1 = self
+                    ._globals
+                    .bind(&self.qh, 1..=1, ())
+                    .expect("binding ext_foreign_toplevel_image_capture_source_manager_v1");
+                self.data.capture.toplevel_manager = Some(manager.clone());
+                manager
+            }
+        };
+        let handle = self.foreign_handle(n);
+        let source = manager.create_source(&handle, &self.qh, ());
+        self.start_capture_session(&copy, source, false)
+    }
+
+    fn start_capture_session(
+        &mut self,
+        copy: &ExtImageCopyCaptureManagerV1,
+        source: ExtImageCaptureSourceV1,
+        paint_cursors: bool,
+    ) -> CaptureSession {
         let index = self.data.capture.sessions.len();
         self.data.capture.sessions.push(SessionEvents::default());
         let options = if paint_cursors {
@@ -278,5 +311,6 @@ impl Dispatch<ExtImageCopyCaptureFrameV1, usize> for ClientData {
 }
 
 delegate_noop!(ClientData: ignore ExtOutputImageCaptureSourceManagerV1);
+delegate_noop!(ClientData: ignore ExtForeignToplevelImageCaptureSourceManagerV1);
 delegate_noop!(ClientData: ignore ExtImageCaptureSourceV1);
 delegate_noop!(ClientData: ignore ExtImageCopyCaptureManagerV1);

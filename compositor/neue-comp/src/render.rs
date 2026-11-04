@@ -204,6 +204,26 @@ fn backdrop(
     )
 }
 
+/// The surfaces of `window` (and its popups) with its geometry's top-left corner at the
+/// origin, drawn at `scale`: what a toplevel capture shows. No title bar.
+pub fn window_content_elements(
+    renderer: &mut GlesRenderer,
+    window: &Window,
+    scale: f64,
+) -> Vec<OutputElement> {
+    let location: Point<i32, Logical> = Point::from((0, 0)) - window.geometry().loc;
+    window
+        .render_elements::<WaylandSurfaceRenderElement<GlesRenderer>>(
+            renderer,
+            location.to_physical_precise_round(scale),
+            Scale::from(scale),
+            1.0,
+        )
+        .into_iter()
+        .map(OutputElement::Surface)
+        .collect()
+}
+
 /// Render element id of an output's full-screen backdrop.
 struct BackdropId(Id);
 
@@ -223,6 +243,8 @@ pub struct OffscreenOutput {
     damage_tracker: OutputDamageTracker,
     /// The buffer holds the previous frame (buffer age 1). False until the first render.
     drawn: bool,
+    /// What the buffer is cleared to under the elements (premultiplied).
+    clear: [f32; 4],
 }
 
 impl std::fmt::Debug for OffscreenOutput {
@@ -243,6 +265,17 @@ impl OffscreenOutput {
         size: Size<i32, Physical>,
         scale: f64,
     ) -> Result<Self, String> {
+        Self::with_clear(renderer, size, scale, CLEAR_COLOR)
+    }
+
+    /// Like [`Self::new`], cleared to `clear` (premultiplied RGBA) instead of
+    /// [`CLEAR_COLOR`]: transparent for a window capture.
+    pub fn with_clear(
+        renderer: &mut GlesRenderer,
+        size: Size<i32, Physical>,
+        scale: f64,
+        clear: [f32; 4],
+    ) -> Result<Self, String> {
         let buffer = renderer
             .create_buffer(OFFSCREEN_FORMAT, (size.w, size.h).into())
             .map_err(|err| format!("creating the offscreen buffer: {err:?}"))?;
@@ -252,6 +285,7 @@ impl OffscreenOutput {
             scale,
             damage_tracker: OutputDamageTracker::new(size, scale, Transform::Normal),
             drawn: false,
+            clear,
         })
     }
 
@@ -264,7 +298,7 @@ impl OffscreenOutput {
         self.size
     }
 
-    /// Draw `elements` (topmost first) on [`CLEAR_COLOR`] and return what changed since the
+    /// Draw `elements` (topmost first) on the clear colour and return what changed since the
     /// previous call: everything the first time, nothing if nothing changed (then nothing
     /// is drawn).
     pub fn render<E: RenderElement<GlesRenderer>>(
@@ -278,7 +312,7 @@ impl OffscreenOutput {
         let age = usize::from(self.drawn);
         let result = self
             .damage_tracker
-            .render_output(renderer, &mut framebuffer, age, elements, CLEAR_COLOR)
+            .render_output(renderer, &mut framebuffer, age, elements, self.clear)
             .map_err(|err| format!("rendering: {err:?}"))?;
         self.drawn = true;
         Ok(result.damage.cloned().unwrap_or_default())

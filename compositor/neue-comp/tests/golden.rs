@@ -1,5 +1,5 @@
-//! Golden-image test of screencopy (task 1.16b, ADR 0022): a scripted client captures a
-//! headless output and the capture is compared with `tests/golden/*.png`.
+//! Golden-image tests of screencopy (tasks 1.16b and 1.16c, ADRs 0022 and 0023): a
+//! scripted client captures a headless output or a window and the capture is compared with `tests/golden/*.png`.
 //!
 //! The goldens are rendered by Mesa's llvmpipe; regenerate them on Linux with
 //! `cargo xtask linux cargo xtask golden --bless` and inspect the images before
@@ -105,4 +105,25 @@ fn screencopy_output() {
     let state = client.wait_for_frame(&frame);
     assert!(matches!(state, FrameState::Ready { .. }), "{state:?}");
     check("screencopy-output", to_pixmap(frame.size, &frame.data()));
+}
+
+#[test]
+fn screencopy_toplevel() {
+    let server = Server::start_rendering();
+    server
+        .with_state(|state| state.headless_set_mode(HEADLESS_OUTPUT_NAME, (320, 240)))
+        .expect("changing the mode");
+    let mut client = server.connect();
+    client.track_foreign_toplevels();
+    let mut back = client.create_toplevel("Back", "org.neueos.Test", (120, 80));
+    client.fill(&mut back, 0xffc03020);
+    let mut front = client.create_toplevel("Front", "org.neueos.Test", (90, 60));
+    client.fill(&mut front, 0xff2040c0);
+
+    // The back window, with the front one on top of it: only the back one is captured.
+    let session = client.capture_toplevel(0);
+    let frame = client.capture_frame(&session);
+    let state = client.wait_for_frame(&frame);
+    assert!(matches!(state, FrameState::Ready { .. }), "{state:?}");
+    check("screencopy-toplevel", to_pixmap(frame.size, &frame.data()));
 }

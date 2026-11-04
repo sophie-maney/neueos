@@ -362,6 +362,11 @@ impl TestClient {
         self.roundtrip();
     }
 
+    /// The `n`th toplevel the list has announced (for a capture source).
+    pub(super) fn foreign_handle(&self, n: usize) -> ExtForeignToplevelHandleV1 {
+        self.data.shell.foreign[n].0.clone()
+    }
+
     /// The toplevels the list has announced, oldest first (closed ones stay, flagged).
     pub fn foreign_toplevels(&self) -> Vec<ForeignToplevel> {
         self.data

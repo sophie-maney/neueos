@@ -188,6 +188,7 @@ impl State {
     /// Tell `ext-foreign-toplevel-list` clients that `window` is gone.
     pub(crate) fn retire_foreign_toplevel(&mut self, window: &Window) {
         if let Some(handle) = window.user_data().get::<ForeignToplevelHandle>() {
+            self.stop_toplevel_captures(handle);
             self.foreign_toplevel_list_state.remove_toplevel(handle);
         }
     }
