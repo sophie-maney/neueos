@@ -32,7 +32,7 @@ use smithay::reexports::calloop::channel::{self, Event, Sender};
 pub use client::{
     Anchor, CaptureFrame, CaptureSession, Constraint, ConstraintEvents, Drag, Feedback,
     ForeignToplevel, FrameState, GestureSeen, InputMethodEvents, KdeDefaultMode, KdeMode,
-    KeyboardInteractivity, Layer, LayerHandle, RelativeMotion, SessionEvents, SessionLock,
+    KeyboardInteractivity, Layer, LayerHandle, Popup, RelativeMotion, SessionEvents, SessionLock,
     TestClient, TextInputEvents, Toplevel, XdgMode, global_names, read_all,
 };
 

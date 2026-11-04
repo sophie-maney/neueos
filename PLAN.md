@@ -158,7 +158,8 @@ These are user-facing names. Crates use the `neue-` prefix.
   tests and coding agents use. Protocol and channel boundaries: ADR 0003.
 - **Config:** TOML in `~/.config/neueos/`, hot-reloaded. Preferences writes it through
   `neue-settingsd`. File layout, layering and reload: ADR 0004.
-- **Library:** Smithay from a pinned git rev, GLES renderer, no X11 features: ADR 0001.
+- **Library:** Smithay from a pinned git rev, GLES renderer, no X11 features: ADR 0001. The
+  rev is on our fork while it carries a patch (ADR 0029).
 
 ### 3.2 Toolkit (`neue-kit` and friends)
 | Crate | Responsibility |
@@ -787,16 +788,17 @@ Decisions to follow: ADR 0001 (Smithay), 0003 (IPC), 0004 (config), 0005 (global
       **Diverged:** git deps are fetched by `cargo fetch --locked`, not vendored (ADR 0028).
       **Owner:** installed the packages in the VM (`docs/dev-setup.md` §21): passes.
 - [ ] **1.21 Daily-drive pass** · Opus with the owner. foot/Alacritty, Firefox, a Qt app, a
-      Flatpak, an X11 app on the NVIDIA PC, an AMD/Intel PC and the VM; fix or file bugs.
+      Flatpak, an X11 app on the NVIDIA PC and the VM; fix or file bugs. (No AMD or Intel
+      PC is available, so that column was dropped.)
       *Accept:* the Phase 1 exit criterion below, with a results table in
       `docs/research/phase1-daily-drive.md`.
       *Progress:* the VM passes, checked over ssh with `neuectl`. Two bugs were found and fixed:
       `neue-comp` now sends `xdg_toplevel.configure_bounds` (mpv no longer opens larger than
       the screen), and `ExecStop=-neuectl quit` (logout no longer leaves the unit `failed`).
       The NVIDIA PC (RTX 2080, `nvidia-open`) passes, run by the owner; there was no HiDPI or
-      second monitor to test. Open bugs B3, B5 and B6 are in the results file.
-      **Owner:** the AMD/Intel PC (`docs/dev-setup.md` §22), plus typing and mouse checks by hand
-      in the VM.
+      second monitor to test. B5 (Smithay popup log spam) is fixed by pinning a Smithay fork
+      commit (ADR 0029). Open bugs B3 and B6 are in the results file.
+      **Owner:** typing and mouse checks by hand in the VM.
 - **Exit:** daily-drivable with third-party apps (foot/Alacritty, Firefox, Flatpaks) on the
   PC and the VM.
 
