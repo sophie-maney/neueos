@@ -4,6 +4,7 @@ use neue_kit::tokens::metrics::spacing;
 use neue_kit::{Button, Element, Label, Stack, TextStyle};
 
 use crate::Message;
+use crate::fonts::CANDIDATES;
 use crate::specimens;
 
 /// A gallery page: its title in the page list, and its content.
@@ -22,6 +23,10 @@ pub const PAGES: &[Page] = &[
     Page {
         title: "Text",
         build: text,
+    },
+    Page {
+        title: "Fonts",
+        build: fonts,
     },
 ];
 
@@ -85,14 +90,63 @@ fn text() -> Element<Message> {
             "Small: captions and secondary information",
         ),
     ];
-    let mut page = Stack::column().spacing(spacing::L).with(heading(
-        "Text",
-        "The type scale; the UI font is chosen in task 2.10",
-    ));
+    let mut page = Stack::column()
+        .spacing(spacing::L)
+        .with(heading("Text", "The type scale in the UI font"));
     let mut list = Stack::column().spacing(spacing::S);
     for (style, sample) in styles {
         list = list.with(Label::new(sample).style(style));
     }
     page = page.with(list.with(Label::new("Secondary label").secondary()));
     page.into()
+}
+
+/// The same specimen in each UI font candidate (task 2.10, PLAN open question 2).
+fn fonts() -> Element<Message> {
+    let specimen = |family: &'static str| {
+        Stack::column()
+            .spacing(spacing::XS)
+            .with(Label::new(family).style(TextStyle::Small).secondary())
+            .with(
+                Label::new("Display 0123456789")
+                    .family(family)
+                    .style(TextStyle::Display),
+            )
+            .with(
+                Label::new("Title: Hamburgefonstiv")
+                    .family(family)
+                    .style(TextStyle::Title),
+            )
+            .with(
+                Label::new("Headline: Sharing & Privacy")
+                    .family(family)
+                    .style(TextStyle::Headline),
+            )
+            .with(
+                Label::new("Body: Quick brown fox, Il1 O0 rn m g y ? ! @ &")
+                    .family(family)
+                    .style(TextStyle::Body),
+            )
+            .with(
+                Label::new("Small: 3 items, 12.4 GB available — 100%")
+                    .family(family)
+                    .style(TextStyle::Small),
+            )
+    };
+    let mut grid = Stack::column().spacing(spacing::M);
+    for pair in CANDIDATES.chunks(2) {
+        let mut row = Stack::row().spacing(spacing::L);
+        for candidate in pair {
+            row = row.with(specimen(candidate.family));
+        }
+        grid = grid.with(row);
+    }
+    Stack::column()
+        .spacing(spacing::L)
+        .with(heading(
+            "Fonts",
+            "UI font candidates at the type scale (Regular only): the owner picks (task 2.10)",
+        ))
+        .with(grid)
+        .into()
 }

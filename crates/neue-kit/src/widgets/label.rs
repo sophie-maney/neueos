@@ -33,6 +33,10 @@ impl LabelWidget {
         self.line.set_style(style);
     }
 
+    pub(crate) fn set_family(&mut self, family: &'static str) {
+        self.line.set_family(family);
+    }
+
     pub(crate) fn set_secondary(&mut self, secondary: bool) {
         self.secondary = secondary;
     }

@@ -47,6 +47,9 @@ pub struct Settings {
     pub theme: Theme,
     /// Reverse-DNS app id (`org.neueos.Calculator`) for windows that don't set their own.
     pub app_id: String,
+    /// Extra fonts, usable by family name through [`crate::Label::family`]. For comparing
+    /// typefaces (the gallery's Fonts page); apps normally leave this empty.
+    pub extra_fonts: Vec<&'static [u8]>,
 }
 
 /// Errors that end [`run`].
@@ -61,6 +64,11 @@ pub fn run<A: Application>(app: A, settings: Settings) -> Result<(), Error> {
     let options = neue_platform::Options {
         default_properties: Arc::new(theme::default_properties(settings.theme)),
         font: Some(Blob::new(Arc::new(neue_paint::text::ui_font_data()))),
+        extra_fonts: settings
+            .extra_fonts
+            .iter()
+            .map(|data| Blob::new(Arc::new(*data)))
+            .collect(),
     };
     let mut runner = Runner::new(app, settings);
     neue_platform::run(&mut runner, options)?;

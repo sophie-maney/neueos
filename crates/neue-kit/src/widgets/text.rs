@@ -42,6 +42,7 @@ impl TextStyle {
 pub(crate) struct TextLine {
     text: String,
     style: TextStyle,
+    family: Option<&'static str>,
     layout: Layout<BrushIndex>,
     stale: bool,
 }
@@ -60,6 +61,7 @@ impl TextLine {
         Self {
             text,
             style,
+            family: None,
             layout: Layout::new(),
             stale: true,
         }
@@ -88,6 +90,12 @@ impl TextLine {
         true
     }
 
+    /// Overrides the UI family (a font from `Settings::extra_fonts`).
+    pub(crate) fn set_family(&mut self, family: &'static str) {
+        self.family = Some(family);
+        self.stale = true;
+    }
+
     /// Forces a new layout (the font collection changed).
     pub(crate) fn invalidate(&mut self) {
         self.stale = true;
@@ -99,7 +107,10 @@ impl TextLine {
         (fonts, layouts): (&mut FontContext, &mut LayoutContext<BrushIndex>),
     ) -> Size {
         if self.stale {
-            let family = format!("\"{}\", sans-serif", typography::UI_FAMILY);
+            let family = format!(
+                "\"{}\", sans-serif",
+                self.family.unwrap_or(typography::UI_FAMILY)
+            );
             let mut builder = layouts.ranged_builder(fonts, &self.text, 1.0, true);
             builder.push_default(StyleProperty::FontSize(self.style.size()));
             builder.push_default(StyleProperty::FontFamily(FontFamily::Source(Cow::Owned(

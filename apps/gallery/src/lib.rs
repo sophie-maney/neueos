@@ -5,6 +5,7 @@
 //! the gallery shows and what the goldens pin down are the same thing. Every widget task
 //! adds a page here and its specimens' goldens (ADR 0037).
 
+pub mod fonts;
 pub mod pages;
 pub mod specimens;
 
@@ -89,6 +90,16 @@ fn page_label(title: &str, current: bool) -> String {
         format!("› {title}")
     } else {
         title.to_owned()
+    }
+}
+
+impl Gallery {
+    /// A gallery that opens on page `n` (clamped), for screenshots.
+    pub fn on_page(n: usize) -> Self {
+        Self {
+            page: n.min(pages::PAGES.len() - 1),
+            ..Self::default()
+        }
     }
 }
 
