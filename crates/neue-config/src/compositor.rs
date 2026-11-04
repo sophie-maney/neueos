@@ -20,6 +20,8 @@ pub struct CompositorConfig {
     pub keyboard: KeyboardConfig,
     /// `[pointer]`: scrolling.
     pub pointer: PointerConfig,
+    /// `[touchpad]`: tapping, clicking and gestures.
+    pub touchpad: TouchpadConfig,
     /// `[windows]`: title-bar behaviour.
     pub windows: WindowsConfig,
     /// `[keybindings]`: key chord (`"Super+Q"`) to action name. Action names are those of
@@ -35,6 +37,7 @@ impl Default for CompositorConfig {
         Self {
             keyboard: KeyboardConfig::default(),
             pointer: PointerConfig::default(),
+            touchpad: TouchpadConfig::default(),
             windows: WindowsConfig::default(),
             keybindings: BTreeMap::from([(
                 Chord {
@@ -140,6 +143,51 @@ impl Default for PointerConfig {
             scroll_factor: 1.0,
         }
     }
+}
+
+/// `[touchpad]`. Applied to every touchpad libinput reports; the other settings of a
+/// device (acceleration, scroll method) stay at libinput's defaults.
+#[derive(Debug, Clone, PartialEq, Serialize, Deserialize)]
+#[serde(default, rename_all = "kebab-case")]
+pub struct TouchpadConfig {
+    /// A light tap clicks (one finger left, two right, three middle).
+    pub tap_to_click: bool,
+    /// Tap, then touch again and move to drag.
+    pub tap_and_drag: bool,
+    /// Keep dragging for a moment after the finger lifts, until the next tap.
+    pub drag_lock: bool,
+    /// Ignore the touchpad while typing.
+    pub disable_while_typing: bool,
+    /// How a physical click is told left from right: `"clickfinger"` (the number of
+    /// fingers on the pad; the default) or `"button-areas"` (the bottom corners).
+    pub click_method: ClickMethod,
+    /// Send multi-finger swipe, pinch and hold gestures to the focused app. Off drops them
+    /// (the compositor does not use them yet).
+    pub gestures: bool,
+}
+
+impl Default for TouchpadConfig {
+    fn default() -> Self {
+        Self {
+            tap_to_click: true,
+            tap_and_drag: true,
+            drag_lock: false,
+            disable_while_typing: true,
+            click_method: ClickMethod::default(),
+            gestures: true,
+        }
+    }
+}
+
+/// How a touchpad click is classified (`[touchpad] click-method`).
+#[derive(Debug, Clone, Copy, Default, PartialEq, Eq, Serialize, Deserialize)]
+#[serde(rename_all = "kebab-case")]
+pub enum ClickMethod {
+    /// By the number of fingers resting on the pad.
+    #[default]
+    Clickfinger,
+    /// By where on the pad the finger is.
+    ButtonAreas,
 }
 
 /// `[windows]`.
@@ -284,6 +332,19 @@ mod tests {
     }
 
     #[test]
+    fn touchpad_settings_load() {
+        let loaded = load_text(
+            "[touchpad]\ntap-to-click = false\ndrag-lock = true\nclick-method = \"button-areas\"\ngestures = false\n",
+        )
+        .unwrap();
+        let t = loaded.config.touchpad;
+        assert!(!t.tap_to_click && t.drag_lock && !t.gestures);
+        assert!(t.tap_and_drag && t.disable_while_typing);
+        assert_eq!(t.click_method, ClickMethod::ButtonAreas);
+        assert!(load_text("[touchpad]\nclick-method = \"nope\"\n").is_err());
+    }
+
+    #[test]
     fn keyboard_and_pointer_settings_load() {
         let loaded = load_text(
             r#"
@@ -311,6 +372,7 @@ position = [-1280, 0]
         assert_eq!((c.keyboard.repeat_delay, c.keyboard.repeat_rate), (200, 40));
         assert!(c.pointer.natural_scroll);
         assert_eq!(c.pointer.scroll_factor, 2.5);
+        assert_eq!(c.touchpad, TouchpadConfig::default());
         assert_eq!(c.outputs["HDMI-A-1"].scale, Some(1.5));
         assert_eq!(c.outputs["HDMI-A-1"].position, Some([-1280, 0]));
         assert_eq!(c.windows.title_bar_double_click, TitleBarDoubleClick::Zoom);

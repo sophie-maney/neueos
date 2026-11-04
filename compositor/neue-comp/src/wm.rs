@@ -257,6 +257,8 @@ impl State {
         }
         let keyboard = self.keyboard.clone();
         keyboard.set_focus(self, None, serial);
+        // Smithay does not call `focus_changed` when focus is dropped.
+        self.refresh_pointer_constraint_for(None);
         self.send_pending_configures();
     }
 

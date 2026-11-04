@@ -4,7 +4,8 @@
 //! Adapted from Smithay's `smallvil` (MIT): `smallvil/src/input.rs`.
 
 use smithay::backend::input::{
-    AbsolutePositionEvent, Axis, AxisSource, ButtonState, Event, InputBackend, InputEvent,
+    AbsolutePositionEvent, Axis, AxisSource, ButtonState, Event, GestureBeginEvent,
+    GestureEndEvent, GesturePinchUpdateEvent, GestureSwipeUpdateEvent, InputBackend, InputEvent,
     InputTime, KeyState, KeyboardKeyEvent, PointerAxisEvent, PointerButtonEvent,
     PointerMotionEvent,
 };
@@ -13,6 +14,7 @@ use smithay::input::pointer::{AxisFrame, ButtonEvent, MotionEvent};
 use smithay::utils::{Logical, Point, Rectangle, SERIAL_COUNTER};
 use tracing::{debug, info, warn};
 
+use crate::input_protocols::Gesture;
 use crate::state::State;
 
 /// What a key press that the compositor takes for itself does.
@@ -50,6 +52,56 @@ impl State {
             }
             InputEvent::PointerButton { event } => self.on_pointer_button::<I>(event),
             InputEvent::PointerAxis { event } => self.on_pointer_axis::<I>(event),
+            InputEvent::GestureSwipeBegin { event } => self.gesture(
+                Gesture::SwipeBegin {
+                    fingers: event.fingers(),
+                },
+                event.time(),
+            ),
+            InputEvent::GestureSwipeUpdate { event } => self.gesture(
+                Gesture::SwipeUpdate {
+                    delta: event.delta(),
+                },
+                event.time(),
+            ),
+            InputEvent::GestureSwipeEnd { event } => self.gesture(
+                Gesture::SwipeEnd {
+                    cancelled: event.cancelled(),
+                },
+                event.time(),
+            ),
+            InputEvent::GesturePinchBegin { event } => self.gesture(
+                Gesture::PinchBegin {
+                    fingers: event.fingers(),
+                },
+                event.time(),
+            ),
+            InputEvent::GesturePinchUpdate { event } => self.gesture(
+                Gesture::PinchUpdate {
+                    delta: event.delta(),
+                    scale: event.scale(),
+                    rotation: event.rotation(),
+                },
+                event.time(),
+            ),
+            InputEvent::GesturePinchEnd { event } => self.gesture(
+                Gesture::PinchEnd {
+                    cancelled: event.cancelled(),
+                },
+                event.time(),
+            ),
+            InputEvent::GestureHoldBegin { event } => self.gesture(
+                Gesture::HoldBegin {
+                    fingers: event.fingers(),
+                },
+                event.time(),
+            ),
+            InputEvent::GestureHoldEnd { event } => self.gesture(
+                Gesture::HoldEnd {
+                    cancelled: event.cancelled(),
+                },
+                event.time(),
+            ),
             _ => {}
         }
     }
@@ -136,14 +188,10 @@ impl State {
     }
 
     /// Relative motion (mice and touchpads on the tty backend). The pointer stays on the
-    /// outputs: a move into a gap of the layout lands on the nearest output's edge.
+    /// outputs: a move into a gap of the layout lands on the nearest output's edge. Clients
+    /// with a relative pointer get the delta too (see [`State::move_pointer_by`]).
     fn on_pointer_motion<I: InputBackend>(&mut self, event: I::PointerMotionEvent) {
-        let target = self.pointer.current_location() + event.delta();
-        let rects = self.outputs().filter_map(|o| self.space.output_geometry(o));
-        let Some(pos) = crate::outputs::clamp_to_nearest(target, rects) else {
-            return;
-        };
-        self.move_pointer(pos, event.time());
+        self.move_pointer_by(event.delta(), event.delta_unaccel(), event.time());
     }
 
     /// Absolute motion (tablets, touchscreens, VM pointers and the nested backend) maps
@@ -161,16 +209,18 @@ impl State {
         };
         let target = event.position_transformed(bounds.size) + bounds.loc.to_f64();
         let rects = self.outputs().filter_map(|o| self.space.output_geometry(o));
-        let Some(pos) = crate::outputs::clamp_to_nearest(target, rects) else {
+        let Some(target) = crate::outputs::clamp_to_nearest(target, rects) else {
             return;
         };
-        self.move_pointer(pos, event.time());
+        // A locked pointer ignores absolute motion; a confined one stays in its region.
+        self.move_pointer_towards(target, event.time());
     }
 
     /// Move the pointer to `pos` (global logical coordinates) and update its focus.
     /// Backends call this for absolute and relative motion; tests use it to script input.
     pub fn move_pointer(&mut self, pos: Point<f64, Logical>, time: InputTime) {
         self.notify_activity();
+        self.pointer_pos = pos;
         let under = self.surface_under(pos);
         let pointer = self.pointer.clone();
         pointer.motion(
@@ -186,6 +236,7 @@ impl State {
         if !pointer.is_grabbed() && !self.is_locked() {
             self.update_chrome_hover(pos);
         }
+        self.refresh_pointer_constraint();
     }
 
     fn on_pointer_button<I: InputBackend>(&mut self, event: I::PointerButtonEvent) {

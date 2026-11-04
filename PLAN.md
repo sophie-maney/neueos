@@ -619,9 +619,15 @@ Decisions to follow: ADR 0001 (Smithay), 0003 (IPC), 0004 (config), 0005 (global
       `fuzzel`, `swaybg`, `swayidle`) and found it fine. Not done: idle inhibit by
       visibility, layers of a removed output are closed not moved, per-output exclusive
       focus, lock surface reconfigure on mode change.
-- [ ] **1.13 Input protocols** · Sonnet. pointer-constraints, relative-pointer,
+- [x] **1.13 Input protocols** · Sonnet. pointer-constraints, relative-pointer,
       pointer-gestures, text-input-v3, input-method-v2, touchpad gestures config.
       *Accept:* headless tests; an IME (e.g. fcitx5) commits text into a GTK app in the VM.
+      *Done:* rules in ADR 0016. `input_protocols.rs` (constraints follow keyboard focus,
+      lock/confine in `move_pointer_by` and `move_pointer_towards`, relative motion,
+      gestures via `State::gesture`, input method popups), `[touchpad]` in `compositor.toml`
+      applied through libinput in `tty.rs`. 15 headless tests in `tests/input_protocols.rs`.
+      Not done: owner's VM check (`docs/dev-setup.md` §12; fcitx5 into GTK), gestures and
+      touchpad config on real hardware, escape hatch from a lock, popup constraining.
 - [ ] **1.14 Presentation and sync** · Opus. linux-drm-syncobj-v1 (explicit sync),
       presentation-time, tearing-control, security-context-v1 filtering of privileged globals.
       *Accept:* headless tests; explicit sync exercised on the NVIDIA PC (owner, see 1.18).
