@@ -26,10 +26,14 @@ use smithay::wayland::foreign_toplevel_list::ForeignToplevelListState;
 use smithay::wayland::fractional_scale::FractionalScaleManagerState;
 use smithay::wayland::idle_inhibit::IdleInhibitManagerState;
 use smithay::wayland::idle_notify::IdleNotifierState;
+use smithay::wayland::input_method::InputMethodManagerState;
 use smithay::wayland::keyboard_shortcuts_inhibit::{
     KeyboardShortcutsInhibitState, KeyboardShortcutsInhibitor,
 };
 use smithay::wayland::output::OutputManagerState;
+use smithay::wayland::pointer_constraints::PointerConstraintsState;
+use smithay::wayland::pointer_gestures::PointerGesturesState;
+use smithay::wayland::relative_pointer::RelativePointerManagerState;
 use smithay::wayland::selection::data_device::DataDeviceState;
 use smithay::wayland::selection::ext_data_control::DataControlState as ExtDataControlState;
 use smithay::wayland::selection::primary_selection::PrimarySelectionState;
@@ -43,6 +47,7 @@ use smithay::wayland::shell::xdg::decoration::XdgDecorationState;
 use smithay::reexports::wayland_protocols_misc::server_decoration::server::org_kde_kwin_server_decoration_manager::Mode as KdeDefaultMode;
 use smithay::wayland::shm::ShmState;
 use smithay::wayland::socket::ListeningSocketSource;
+use smithay::wayland::text_input::TextInputManagerState;
 use smithay::wayland::viewporter::ViewporterState;
 use smithay::wayland::xdg_activation::XdgActivationState;
 use smithay::wayland::xdg_foreign::XdgForeignState;
@@ -168,6 +173,24 @@ pub struct State {
     /// The shortcut inhibitor of the focused surface, while it is active: key bindings are
     /// off.
     pub active_inhibitor: Option<KeyboardShortcutsInhibitor>,
+    /// `pointer-constraints`: lock or confine the pointer (see `input_protocols.rs`).
+    pub pointer_constraints_state: PointerConstraintsState,
+    /// The surface whose pointer constraint is active, if any.
+    pub constrained_surface: Option<WlSurface>,
+    /// Pointer constraints that exist (an upper bound: one-shot constraints that ended
+    /// are not subtracted). While zero, nothing needs checking.
+    pub constraint_count: usize,
+    /// Where the pointer is, kept by `move_pointer`. Constraint checks read this instead
+    /// of the seat's pointer, whose lock is held while a grab runs.
+    pub pointer_pos: Point<f64, Logical>,
+    /// `relative-pointer`: unaccelerated motion for games and 3D views.
+    pub relative_pointer_state: RelativePointerManagerState,
+    /// `pointer-gestures`: touchpad swipe, pinch and hold.
+    pub pointer_gestures_state: PointerGesturesState,
+    /// `text-input-v3`: apps ask for an input method.
+    pub text_input_state: TextInputManagerState,
+    /// `input-method-v2`: the input method (fcitx5, ibus) that commits text.
+    pub input_method_state: InputMethodManagerState,
     pub seat_state: SeatState<State>,
     pub seat: Seat<State>,
     pub keyboard: KeyboardHandle<State>,
@@ -248,6 +271,12 @@ impl State {
         toplevel_icon_manager.replace_icon_sizes([64, 128]);
         let system_bell_state = XdgSystemBellState::new::<Self>(&dh);
         let shortcuts_inhibit_state = KeyboardShortcutsInhibitState::new::<Self>(&dh);
+        let pointer_constraints_state = PointerConstraintsState::new::<Self>(&dh);
+        let relative_pointer_state = RelativePointerManagerState::new::<Self>(&dh);
+        let pointer_gestures_state = PointerGesturesState::new::<Self>(&dh);
+        let text_input_state = TextInputManagerState::new::<Self>(&dh);
+        // Any client may be the input method: fcitx5 and ibus are ordinary clients.
+        let input_method_state = InputMethodManagerState::new::<Self, _>(&dh, |_| true);
 
         let mut seat_state = SeatState::new();
         let mut seat: Seat<Self> = seat_state.new_wl_seat(&dh, "seat0");
@@ -311,6 +340,14 @@ impl State {
             system_bell_state,
             shortcuts_inhibit_state,
             active_inhibitor: None,
+            pointer_constraints_state,
+            constrained_surface: None,
+            constraint_count: 0,
+            pointer_pos: Point::default(),
+            relative_pointer_state,
+            pointer_gestures_state,
+            text_input_state,
+            input_method_state,
             seat_state,
             seat,
             keyboard,

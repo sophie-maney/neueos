@@ -205,6 +205,7 @@ impl State {
 
         let old = &self.config.active;
         let outputs_changed = new.outputs != old.outputs;
+        let touchpad_changed = new.touchpad != old.touchpad;
         if new.keyboard != old.keyboard {
             let keyboard = &new.keyboard;
             let layout = keyboard.xkb_layout();
@@ -236,6 +237,12 @@ impl State {
 
         self.config.bindings = bindings;
         self.config.active = new;
+        #[cfg(feature = "tty")]
+        if touchpad_changed && let crate::state::Backend::Tty(tty) = &mut self.backend {
+            tty.configure_touchpads(&self.config.active.touchpad);
+        }
+        #[cfg(not(feature = "tty"))]
+        let _ = touchpad_changed;
         if outputs_changed {
             self.apply_output_config();
         }

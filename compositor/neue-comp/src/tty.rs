@@ -20,6 +20,7 @@ use std::fmt;
 use std::path::PathBuf;
 use std::time::Duration;
 
+use neue_config::compositor::{ClickMethod, TouchpadConfig};
 use smithay::backend::allocator::Fourcc;
 use smithay::backend::allocator::format::FormatSet;
 use smithay::backend::allocator::gbm::{GbmAllocator, GbmBufferFlags, GbmDevice};
@@ -28,6 +29,7 @@ use smithay::backend::drm::exporter::gbm::GbmFramebufferExporter;
 use smithay::backend::drm::output::{DrmOutput, DrmOutputManager, DrmOutputRenderElements};
 use smithay::backend::drm::{DrmDevice, DrmDeviceFd, DrmEvent, DrmNode, NodeType};
 use smithay::backend::egl::{EGLContext, EGLDevice, EGLDisplay};
+use smithay::backend::input::InputEvent;
 use smithay::backend::libinput::{LibinputInputBackend, LibinputSessionInterface};
 use smithay::backend::renderer::ImportDma;
 use smithay::backend::renderer::element::Kind;
@@ -45,7 +47,7 @@ use smithay::output::{Mode, Output, PhysicalProperties};
 use smithay::reexports::calloop::timer::{TimeoutAction, Timer};
 use smithay::reexports::calloop::{LoopHandle, RegistrationToken};
 use smithay::reexports::drm::control::{Device as _, ModeTypeFlags, connector, crtc};
-use smithay::reexports::input::Libinput;
+use smithay::reexports::input::{self, Libinput};
 use smithay::reexports::rustix::fs::OFlags;
 use smithay::reexports::wayland_server::DisplayHandle;
 use smithay::utils::{DeviceFd, IsAlive, Physical, Point, Rectangle, Scale};
@@ -124,6 +126,8 @@ pub struct TtyData {
     cursors: cursor::Themes,
     /// The session is active (our VT is in front). False while switched away.
     active: bool,
+    /// The touchpads libinput has reported, to configure them again on a config reload.
+    touchpads: Vec<input::Device>,
     libinput: Libinput,
     session: LibSeatSession,
 }
@@ -283,6 +287,68 @@ impl TtyData {
     }
 }
 
+/// Apply `[touchpad]` to `device` if it is a touchpad (libinput says so by its tap
+/// support). Settings a device does not support are skipped.
+fn configure_touchpad(device: &mut input::Device, config: &TouchpadConfig) {
+    use smithay::reexports::input::{ClickMethod as LibinputClick, DragLockState};
+    let drag_lock = if config.drag_lock {
+        DragLockState::EnabledTimeout
+    } else {
+        DragLockState::Disabled
+    };
+    let click = match config.click_method {
+        ClickMethod::Clickfinger => LibinputClick::Clickfinger,
+        ClickMethod::ButtonAreas => LibinputClick::ButtonAreas,
+    };
+    let name = device.name().into_owned();
+    let results = [
+        (
+            "tap-to-click",
+            device.config_tap_set_enabled(config.tap_to_click),
+        ),
+        (
+            "tap-and-drag",
+            device.config_tap_set_drag_enabled(config.tap_and_drag),
+        ),
+        (
+            "drag-lock",
+            device.config_tap_set_drag_lock_enabled(drag_lock),
+        ),
+        (
+            "disable-while-typing",
+            device.config_dwt_set_enabled(config.disable_while_typing),
+        ),
+        ("click-method", device.config_click_set_method(click)),
+    ];
+    for (setting, result) in results {
+        if let Err(err) = result {
+            debug!(device = name, setting, ?err, "touchpad setting not applied");
+        }
+    }
+}
+
+/// A libinput device appeared: remember it if it is a touchpad, and configure it.
+fn on_device_added(state: &mut State, device: &input::Device) {
+    if device.config_tap_finger_count() == 0 {
+        return;
+    }
+    let mut device = device.clone();
+    configure_touchpad(&mut device, &state.config.active.touchpad);
+    info!(device = %device.name(), "touchpad configured");
+    if let Some(tty) = tty(state) {
+        tty.touchpads.push(device);
+    }
+}
+
+impl TtyData {
+    /// Apply a changed `[touchpad]` section to the touchpads that are plugged in.
+    pub fn configure_touchpads(&mut self, config: &TouchpadConfig) {
+        for device in &mut self.touchpads {
+            configure_touchpad(device, config);
+        }
+    }
+}
+
 /// Open the seat, the primary GPU and its connected displays, and register the session,
 /// DRM, udev and libinput event sources on `handle`.
 pub fn init(
@@ -370,7 +436,18 @@ pub fn init(
     handle
         .insert_source(
             LibinputInputBackend::new(libinput.clone()),
-            |event, _, state| state.process_input_event(event),
+            |event, _, state| {
+                match &event {
+                    InputEvent::DeviceAdded { device } => on_device_added(state, device),
+                    InputEvent::DeviceRemoved { device } => {
+                        if let Some(tty) = tty(state) {
+                            tty.touchpads.retain(|known| known != device);
+                        }
+                    }
+                    _ => {}
+                }
+                state.process_input_event(event);
+            },
         )
         .map_err(|e| e.error)
         .map_err(Error::init("adding the libinput source"))?;
@@ -407,6 +484,7 @@ pub fn init(
         _dmabuf_global: dmabuf_global,
         cursors: cursor::Themes::from_env(),
         active: true,
+        touchpads: Vec::new(),
     };
     // Initial outputs; `State::new` adds them to the layout.
     let changes = data.sync_connectors();

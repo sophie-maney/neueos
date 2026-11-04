@@ -424,3 +424,28 @@ each client from a foot terminal (the compositor's `WAYLAND_DISPLAY` is set ther
    lists all of them. The toplevel list's identifiers (`window-<id>`) are covered by the
    headless tests.
 Record which of these you ran in the PR.
+
+## 12. Checking the input protocols in the VM (task 1.13)
+Install once: `sudo pacman -S --needed fcitx5 fcitx5-mozc fcitx5-gtk gtk3-demos wev foot`
+(any input method engine works; `fcitx5-chinese-addons` and `fcitx5-hangul` are alternatives).
+Rebuild and start on the tty as in §4 (`-c foot`, `RUST_LOG=info,neue_comp=debug`).
+1. **Globals:** `wayland-info | grep -E 'pointer_constraints|relative_pointer|pointer_gestures|text_input|input_method'`
+   lists all five.
+2. **Input method (the acceptance check):** from a foot terminal run
+   `GTK_IM_MODULE=wayland fcitx5 -d`, then `gtk3-demo` and open *Entry*. Add the engine in
+   `fcitx5-configtool` (or `~/.config/fcitx5/profile`). Click the entry, switch to the engine
+   (Ctrl+Space) and type: text is composed and committed into the entry, and the candidate
+   popup shows next to the caret. Switching windows and back keeps working.
+   `RUST_LOG=neue_comp=debug` shows no "cannot track an input method popup" warning.
+3. **Relative pointer and lock:** `wev` shows pointer motion; for a lock use any client that
+   locks (a game, `mpv` in a 3D mode, Blender's *Cursor warp*). The pointer stops while
+   locked and relative motion still arrives. Switching windows (a key binding) releases it.
+   Parallels' pointer is absolute: a lock there only holds while the VM captures the mouse
+   (Ctrl+Alt to release). Locks are best judged on real hardware.
+4. **Gestures:** on a touchpad (real hardware, or a Mac trackpad forwarded to the VM):
+   `wev` does not show gestures; use `libinput debug-events --show-keycodes` for the device
+   side and a client with pinch zoom (`gtk3-demo` *Gestures*, Firefox) for the compositor side.
+   Setting `[touchpad] gestures = false` in `compositor.toml` stops them reaching clients.
+5. **Touchpad config:** set `tap-to-click = false`, save, and tapping stops clicking without a
+   restart; the log line `touchpad configured` appears for each touchpad at start-up.
+Record which of these you ran in the PR; 3 and 4 need real hardware.

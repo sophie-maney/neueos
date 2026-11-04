@@ -32,10 +32,14 @@ use wayland_protocols::xdg::shell::client::{
 };
 
 mod decoration;
+mod input;
 mod selection;
 mod shell;
 
 pub use decoration::{KdeDefaultMode, KdeMode, XdgMode};
+pub use input::{
+    Constraint, ConstraintEvents, GestureSeen, InputMethodEvents, RelativeMotion, TextInputEvents,
+};
 pub use selection::{Drag, read_all};
 pub use shell::{Anchor, ForeignToplevel, KeyboardInteractivity, Layer, LayerHandle, SessionLock};
 
@@ -103,6 +107,8 @@ struct ClientData {
     decorations: decoration::Decorations,
     /// Shell-facing protocol objects and events (see `shell.rs`).
     shell: shell::ShellData,
+    /// Input protocol objects and events (see `input.rs`).
+    input: input::InputData,
 }
 
 impl TestClient {

@@ -29,7 +29,6 @@ use smithay::wayland::compositor::{
 use smithay::wayland::dmabuf::{DmabufGlobal, DmabufHandler, DmabufState, ImportNotifier};
 use smithay::wayland::fractional_scale::FractionalScaleHandler;
 use smithay::wayland::output::OutputHandler;
-use smithay::wayland::pointer_constraints::PointerConstraintsHandler;
 use smithay::wayland::selection::SelectionHandler;
 use smithay::wayland::selection::data_device::{
     DataDeviceHandler, DataDeviceState, WaylandDndGrabHandler, set_data_device_focus,
@@ -249,6 +248,8 @@ impl SeatHandler for State {
         set_primary_focus(dh, seat, client);
 
         self.update_shortcut_inhibitor(focused);
+        // A pointer constraint follows keyboard focus too.
+        self.refresh_pointer_constraint_for(focused);
 
         // Tell `neuectl` subscribers, once per actual change.
         let window = focused
@@ -342,9 +343,6 @@ impl WaylandDndGrabHandler for State {
         }
     }
 }
-
-// Required by the seat machinery; the protocol itself is task 1.13.
-impl PointerConstraintsHandler for State {}
 
 impl XdgShellHandler for State {
     fn xdg_shell_state(&mut self) -> &mut XdgShellState {

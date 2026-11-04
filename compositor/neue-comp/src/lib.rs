@@ -31,6 +31,7 @@ mod grabs;
 mod handlers;
 mod headless;
 mod input;
+pub mod input_protocols;
 pub mod interaction;
 mod ipc;
 mod layer;
