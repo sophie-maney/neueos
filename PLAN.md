@@ -790,6 +790,11 @@ Decisions to follow: ADR 0001 (Smithay), 0003 (IPC), 0004 (config), 0005 (global
       Flatpak, an X11 app on the NVIDIA PC, an AMD/Intel PC and the VM; fix or file bugs.
       *Accept:* the Phase 1 exit criterion below, with a results table in
       `docs/research/phase1-daily-drive.md`.
+      *Progress:* the VM passes, checked over ssh with `neuectl`. Two bugs were found and fixed:
+      `neue-comp` now sends `xdg_toplevel.configure_bounds` (mpv no longer opens larger than
+      the screen), and `ExecStop=-neuectl quit` (logout no longer leaves the unit `failed`).
+      **Owner:** the NVIDIA PC and the AMD/Intel PC (`docs/dev-setup.md` §22), plus typing and
+      mouse checks by hand in the VM.
 - **Exit:** daily-drivable with third-party apps (foot/Alacritty, Firefox, Flatpaks) on the
   PC and the VM.
 

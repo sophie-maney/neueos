@@ -167,7 +167,7 @@ impl State {
     }
 
     /// Where `window`'s client area may go on the active output.
-    fn active_content_area(&self, window: &Window) -> Rectangle<i32, Logical> {
+    pub(crate) fn active_content_area(&self, window: &Window) -> Rectangle<i32, Logical> {
         let work = self
             .active_output()
             .map(|o| self.work_area(&o))

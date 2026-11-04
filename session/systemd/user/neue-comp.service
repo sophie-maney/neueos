@@ -16,7 +16,9 @@ ExecStart=/usr/bin/neue-comp --tty --notify
 # ExecStop runs, so `neuectl` sees the WAYLAND_DISPLAY that `--notify` imported. systemd
 # sends KillSignal once ExecStop returns, and `quit` replies just before the compositor
 # exits, so use a harmless one; SIGKILL follows after TimeoutStopSec if it hangs.
-ExecStop=/usr/bin/neuectl quit
+# systemd also runs ExecStop after the compositor quit by itself (Super+Q, `neuectl quit`);
+# then there is no socket and `neuectl` fails, so `-` ignores its exit status.
+ExecStop=-/usr/bin/neuectl quit
 KillSignal=SIGCONT
 TimeoutStartSec=30
 TimeoutStopSec=10

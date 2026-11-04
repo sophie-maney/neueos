@@ -237,6 +237,18 @@ fn zoom_fills_the_work_area_and_toggles_back() {
 }
 
 #[test]
+fn new_windows_are_told_the_work_area_size() {
+    let server = Server::start();
+    let (out_w, out_h) = neue_comp::HEADLESS_OUTPUT_SIZE;
+    let mut client = server.connect();
+    let t = client.create_toplevel("Doc", APP, (300, 200));
+    let (w, h) = client.events(&t).bounds.expect("configure_bounds sent");
+    // The whole output minus the title bar, if the window gets one.
+    assert_eq!(w, out_w);
+    assert!(h > 0 && h <= out_h, "bounds height {h}");
+}
+
+#[test]
 fn move_and_resize_actions() {
     let server = Server::start();
     let mut client = server.connect();

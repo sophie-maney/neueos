@@ -87,6 +87,8 @@ pub struct ToplevelEvents {
     pub size: (i32, i32),
     /// States from the last `xdg_toplevel.configure`.
     pub states: Vec<xdg_toplevel::State>,
+    /// The last `xdg_toplevel.configure_bounds`, if any.
+    pub bounds: Option<(i32, i32)>,
     pub close_requested: bool,
     /// The last `wp_fractional_scale_v1.preferred_scale`, in 120ths (see
     /// [`TestClient::track_scale`]).
@@ -457,6 +459,9 @@ impl Dispatch<XdgToplevel, usize> for ClientData {
                     .iter()
                     .filter_map(|c| xdg_toplevel::State::try_from(u32::from_ne_bytes(*c)).ok())
                     .collect();
+            }
+            xdg_toplevel::Event::ConfigureBounds { width, height } => {
+                events.bounds = Some((width, height));
             }
             xdg_toplevel::Event::Close => events.close_requested = true,
             _ => {}

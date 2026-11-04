@@ -768,3 +768,56 @@ ssh neueos-vm 'pacman -Ql neue-session | head -20; neuectl --help | head -3; sys
 ```
 Expected: the three packages install, the units verify, and a greetd login works as in §20
 steps 2 and 5. `sudo pacman -R neue-session neue-comp neuectl` removes them cleanly.
+
+## 22. Daily-drive pass on a PC (task 1.21)
+Needs Arch Linux x86_64 installed on the PC (`archinstall` with the "minimal" profile is
+enough), a user with sudo, ssh from the Mac (as §2.4, host names `neueos-nvidia` and
+`neueos-amd`), and no other display manager enabled. Record the results in
+`docs/research/phase1-daily-drive.md`, one column per PC.
+
+**1. Drivers.** AMD and Intel need nothing beyond `mesa` (and `vulkan-radeon` or
+`vulkan-intel`). NVIDIA (Turing or newer) needs the open kernel module with KMS:
+```sh
+sudo pacman -S --needed nvidia-open nvidia-utils   # nvidia-open-dkms for a non-stock kernel
+cat /sys/module/nvidia_drm/parameters/modeset        # must print Y after a reboot
+ls /dev/dri                                          # card0 (or card1) and renderD128
+```
+
+**2. Apps.**
+```sh
+sudo pacman -S --needed greetd greetd-agreety foot alacritty firefox kate gnome-text-editor \
+  flatpak xwayland-satellite xterm mpv wl-clipboard xclip grim
+flatpak install -y flathub com.visualstudio.code com.valvesoftware.Steam   # Steam is X11
+```
+
+**3. Packages.** On the Mac, from the branch under test, then install them on the PC as §21:
+```sh
+cargo xtask package neue-comp --arch x86_64
+scp target/package/x86_64/*.pkg.tar.* neueos-nvidia:/tmp/
+ssh -t neueos-nvidia 'sudo pacman -U --noconfirm /tmp/neue*.pkg.tar.* &&
+  sudo install -m644 /usr/share/neueos/greetd/config.toml /etc/greetd/config.toml &&
+  sudo systemctl enable --now greetd'
+```
+
+**4. Log in and start every app.** Log in at the console. Then, over ssh:
+```sh
+ssh neueos-nvidia 'export XDG_RUNTIME_DIR=/run/user/$(id -u) WAYLAND_DISPLAY=wayland-1
+  for app in foot alacritty firefox kate gnome-text-editor xterm "flatpak run com.visualstudio.code"; do
+    systemd-run --user --collect $app; sleep 3; done
+  neuectl windows; neuectl outputs'
+```
+Expected: one window per app in `neuectl windows`, each drawn correctly. Steam (X11) also
+appears when started with `systemd-run --user flatpak run com.valvesoftware.Steam`.
+
+**5. By hand, at the PC.** Fill in a row for each of these:
+- type in each app; click, scroll, select text; drag a file from GNOME Text Editor's open
+  dialog;
+- copy between foot and xterm both ways, and middle-click paste;
+- drag, resize, zoom (green button) and full-screen windows; Super+Q;
+- play a 1080p or 4K video in Firefox (YouTube) and in mpv: smooth, with sound;
+- on a HiDPI or second monitor: `neuectl outputs` shows the right scale; unplug and replug it;
+- use it for real for an hour or more; note every crash with
+  `journalctl --user -u neue-comp -b`.
+
+**6. Logout.** Super+Q: the console returns to the greetd login, and
+`systemctl --user show neue-comp -p Result` prints `Result=success`.
