@@ -13,3 +13,16 @@ window_geometry() {
 output_name() {
     neuectl --json outputs | jq -r '.[0].name'
 }
+
+# Click at (DX, DY) logical pixels inside the first window (`neuectl windows`), with ydotool
+# (daemon as in docs/dev-setup.md §1.4). Halves the target for the `--absolute` quirk
+# (§1.7), so it is only exact at output scale 1.
+click_in_window() {
+    local x y
+    read -r x y < <(neuectl --json windows | jq -r '.[0] | "\(.x) \(.y)"')
+    export YDOTOOL_SOCKET=/tmp/.ydotool_socket
+    ydotool mousemove --absolute -x $(((x + $1) / 2)) -y $(((y + $2) / 2))
+    sleep 0.2
+    ydotool mousemove -x 1 -y 0
+    ydotool click 0xC0
+}

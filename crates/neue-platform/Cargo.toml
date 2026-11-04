@@ -1,0 +1,38 @@
+[package]
+name = "neue-platform"
+description = "Windowing drivers for neueOS's toolkit: Wayland (smithay-client-toolkit) and winit"
+version.workspace = true
+edition.workspace = true
+rust-version.workspace = true
+license.workspace = true
+repository.workspace = true
+publish.workspace = true
+
+# Portable crate: the Wayland driver is Linux-only (cfg-gated), the winit driver (task 2.4)
+# builds everywhere.
+[dependencies]
+masonry_core.workspace = true
+thiserror.workspace = true
+tracing.workspace = true
+
+[target.'cfg(target_os = "linux")'.dependencies]
+masonry_imaging.workspace = true
+raw-window-handle.workspace = true
+smithay-client-toolkit.workspace = true
+wayland-backend = { workspace = true, features = ["client_system", "dlopen"] }
+wayland-client.workspace = true
+wayland-protocols.workspace = true
+wgpu.workspace = true
+pollster.workspace = true
+
+[dev-dependencies]
+anyhow.workspace = true
+neue-paint = { workspace = true, features = ["imaging"] }
+tracing-subscriber.workspace = true
+
+[target.'cfg(target_os = "linux")'.dev-dependencies]
+masonry.workspace = true
+wayland-protocols-misc.workspace = true
+
+[lints]
+workspace = true

@@ -21,11 +21,15 @@ the paper and leather materials move to Phase 6/7 (Widgets, Write).
       `docs/research/masonry-spike.md`.
       *Done:* fork `sophie-maney/xilem` (ADR 0030), `neue_paint::imaging`, the button goldens
       match on macOS, Linux aarch64 and Linux x86_64.
-- [ ] **2.2 Masonry spike B: sctk driver** · Opus. Minimal sctk driver for `RenderRoot`:
+- [x] **2.2 Masonry spike B: sctk driver** · Opus. Minimal sctk driver for `RenderRoot`:
       one xdg-toplevel and one layer-shell surface, a wgpu surface, fractional scale,
       text-input-v3 into a `TextInput`, and one Masonry layer realised as an xdg-popup.
       *Accept:* works under neue-comp in the VM (checked with `neuectl screenshot`);
       go/no-go recorded as an ADR 0002 amendment.
+      *Done:* **go**. New crate `neue-platform` with `wayland` (Linux-only module) and the
+      `sctk_spike` and `ime_probe` examples, checked in the VM (`docs/checks/phase-2.md` §1).
+      Findings for 2.5/2.6 and Phase 3 are in `docs/research/masonry-spike.md`: neue-comp
+      sends no scale to layer surfaces, and it has no virtual-keyboard, so fcitx5 can't bind.
 - [ ] **2.3 `neue-theme` crate** · Opus. New portable crate: semantic colours, metrics,
       radii, type scale and durations; light and dark; accent colour (blue, graphite);
       increased contrast; spring presets and the reduced-motion flag. neue-paint materials

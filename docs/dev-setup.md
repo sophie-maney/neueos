@@ -95,6 +95,7 @@ user), then move, click and type:
 ssh -t neueos-vm 'sudo sh -c "setsid nohup ydotoold --socket-path=/tmp/.ydotool_socket --socket-own=1000:1000 >/dev/null 2>&1 </dev/null &"'
 ssh neueos-vm 'export YDOTOOL_SOCKET=/tmp/.ydotool_socket; ydotool mousemove -x 40 -y 40; ydotool click 0xC0; ydotool type "echo ok"; ydotool key 28:1 28:0'
 prlctl send-key-event neueos-vm -s 29 -e press     # key chords: press each (Ctrl=29), then release
+ssh neueos-vm '. ~/neueos/docs/vm-env.sh; click_in_window 100 50'   # click at (100,50) in the first window (scale 1)
 ```
 
 **Logs:**

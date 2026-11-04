@@ -11,7 +11,7 @@ Don't edit an accepted ADR's decision; supersede it with a new one.
 | ADR | Title | Status |
 |---|---|---|
 | [0001](0001-smithay.md) | Smithay as the compositor library | Accepted |
-| [0002](0002-toolkit-stack.md) | Toolkit stack: neue-paint on vello_cpu/vello_gpu, Masonry for the widget tree | Accepted |
+| [0002](0002-toolkit-stack.md) | Toolkit stack: neue-paint on vello_cpu/vello_gpu, Masonry for the widget tree | Accepted (gate passed 2026-11-04) |
 | [0003](0003-ipc.md) | IPC boundaries and the `neuectl` protocol | Accepted |
 | [0004](0004-config-format.md) | Configuration format and reload | Accepted |
 | [0005](0005-global-menu.md) | Global-menu strategy | Accepted |
