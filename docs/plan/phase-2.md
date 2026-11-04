@@ -250,5 +250,46 @@ the paper and leather materials move to Phase 6/7 (Widgets, Write).
       secure fields). ADR amendment to 0034.
       *Accept:* in the VM, selecting text in the gallery's field and middle-clicking in
       foot pastes it.
+- [ ] **2.29 macOS: one see-through, garbled frame** · Opus (hard debugging). Found in
+      2.17a, on the macOS host (winit driver, Metal). Now and then, for a single frame,
+      the whole gallery window is drawn see-through (the desktop shows through it), and
+      its top-left corner (the first sidebar buttons) fills with garbled pixels that
+      look like menu rows. Seen at 60 fps while hovering menu items: when the highlight
+      moved from Cut to Copy, and when Text Size opened its submenu. The next frame is fine.
+      *Ruled out:* rendering the same frames offscreen does not reproduce it. Over 200
+      frames at 2× (a window of buttons with the menu open, hover cycling through items),
+      neither the headless vello_hybrid renderer nor `texture_render::Renderer` into an
+      `Rgba8Unorm` texture on Metal produced a bad frame. That test skipped only the
+      surface steps (`get_current_texture`, the blit and `present` in
+      `neue-platform/src/gpu.rs`).
+      *Hypotheses:* (1) the surface path: a frame presented before it was fully rendered,
+      or a surface reconfigure mid-frame (`Outdated`/`Lost` → `configure` in `Gpu::render`),
+      shows leftover pixels with alpha below 1; (2) a vello_hybrid bug with clip layers.
+      The menu panel's shadow uses `push_clip`, and the Aqua buttons use layers too.
+      *Steps:*
+      1. Log while reproducing: `RUST_LOG=neue_platform=debug cargo xtask gallery 2>&1 |
+         tee /tmp/gallery.log`, then open "Menus", right-click, and sweep the pointer over
+         the items for a minute. Then run `grep -E "WARN|ERROR|skipping|reconfigure|failed"
+         /tmp/gallery.log`. Lines like "no surface texture", "skipping frame" or
+         "rendering Masonry content failed" point to (1).
+      2. Is it specific to menus? Sweep and click quickly over the Push Button and
+         Buttons pages, and scroll on Scrolling, for a minute each with a screen
+         recording. A bad frame without a menu means the cause is the winit/gpu path,
+         not the menu paint.
+      3. Note the display: built-in ProMotion, external, or scaled. Check whether
+         dragging the window to the other display changes how often it happens.
+      4. If (1): add a `debug!` with the frame number and timing around
+         `get_current_texture`, `render_to_texture`, the blit and `present`. Check
+         whether the bad frame matches a reconfigure or a `Suboptimal` texture. Fixes to
+         try: skip presenting after a reconfigure in the same frame, or render straight
+         to the surface texture when its format allows. Compare with `masonry_winit`'s
+         render loop.
+      5. If (2): draw the menu shadow without the clip (the panel is opaque until
+         Phase 3) and see whether it goes away. If it does, make a minimal vello_hybrid
+         repro (base scene with layers + an overlay with a clip) and report it upstream,
+         noting it in ADR 0002's vello_gpu caveats.
+      *Accept:* the cause is found and fixed (or worked around, with an upstream issue).
+      A one-minute screen recording of menu hovering on macOS has no bad frame (check at
+      60 fps, e.g. `ffmpeg -vf signalstats` and look for dips in mean brightness).
 - **Exit:** the gallery shows the whole widget set, in light and dark, identically on
   macOS and in the VM.
