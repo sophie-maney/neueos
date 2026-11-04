@@ -762,8 +762,9 @@ Decisions to follow: ADR 0001 (Smithay), 0003 (IPC), 0004 (config), 0005 (global
       (after 1 s if it died young). `--command` children get `DISPLAY`; no satellite on
       `PATH` means no display and a warning. Options `--no-xwayland` and
       `--xwayland-satellite <path>`. 4 headless tests in `tests/xwayland.rs` with a shell
-      script as a stand-in. **Still to do:** the VM check with real `xeyes` (`docs/dev-setup.md`
-      §19); the compositor does not set its own `DISPLAY`, so task 1.19 must import it into
+      script as a stand-in. **Owner:** ran `docs/dev-setup.md` §19 steps 1 and 2 in the VM with
+      satellite 0.8.3: nothing X-related before the first client, then `xeyes` appears.
+      **Still to do:** §19 steps 3 (restart) and 4 (clean exit); the compositor does not set its own `DISPLAY`, so task 1.19 must import it into
       the session. Not done: a `compositor.toml` switch.
 - [ ] **1.19 `neue-session` and systemd units** · Sonnet. New `session/neue-session` crate:
       environment import, `graphical-session.target`, units for `neue-comp`, and a greetd /
