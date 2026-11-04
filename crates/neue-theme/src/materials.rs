@@ -2015,3 +2015,74 @@ pub mod split {
         }
     }
 }
+
+/// The tab view: a strip of tabs over a bordered box, as in `NSTabView` (task 2.21b). The
+/// strip's gel is the segmented control's ([`segmented`]); this holds the box and the
+/// strip's inactive look.
+pub mod tabs {
+    use crate::{Appearance, Color, Variant, black, white};
+
+    /// Corner radius of the box.
+    pub const BOX_RADIUS: f64 = crate::radii::CONTROL;
+    /// Space between the box's border and the selected tab's content, at the sides and
+    /// the bottom.
+    pub const PADDING: f64 = 12.0;
+    /// Space between the strip's bottom edge and the content.
+    pub const PADDING_TOP: f64 = 8.0;
+    /// Opacity of a disabled tab view's strip and box.
+    pub const DISABLED_OPACITY: f32 = 0.5;
+    /// How much the selected tab darkens while the window is inactive (1: not at all).
+    pub const INACTIVE_DIM: f32 = 0.92;
+
+    /// Colours of the box.
+    #[derive(Clone, Copy, Debug, PartialEq)]
+    pub struct Palette {
+        /// The box's fill.
+        pub fill: Color,
+        /// The border.
+        pub border: Color,
+        /// The etched highlight along the bottom, just outside the border.
+        pub etch: Color,
+    }
+
+    impl Palette {
+        /// Colours for `variant`.
+        pub fn new(variant: Variant) -> Self {
+            let p = match variant.appearance {
+                Appearance::Light => Self {
+                    fill: black(0.05),
+                    border: black(0.26),
+                    etch: white(0.7),
+                },
+                Appearance::Dark => Self {
+                    fill: white(0.05),
+                    border: black(0.65),
+                    etch: white(0.08),
+                },
+            };
+            if variant.is_increased_contrast() {
+                Self {
+                    border: black((p.border.components[3] + 0.25).min(1.0)),
+                    ..p
+                }
+            } else {
+                p
+            }
+        }
+    }
+
+    #[cfg(test)]
+    mod tests {
+        use super::*;
+
+        #[test]
+        fn light_and_dark_differ() {
+            let light = Variant::default();
+            let dark = Variant {
+                appearance: Appearance::Dark,
+                ..light
+            };
+            assert_ne!(Palette::new(light), Palette::new(dark));
+        }
+    }
+}

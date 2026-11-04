@@ -8,7 +8,7 @@ use neue_kit::{
     Slider, SortOrder, SourceList, Specimen, Spinner, Stack, Stepper, Table, TextField, TextView,
     VectorIcon, VirtualGrid, VirtualList,
 };
-use neue_kit::{DividerStyle, Pane, SplitView};
+use neue_kit::{DividerStyle, Pane, SplitView, TabView};
 
 /// Golden window size for one push button (logical pixels): the button with the fixture's
 /// margin, room for its focus ring.
@@ -718,4 +718,19 @@ pub fn split_view_collapsed<M: 'static>(style: DividerStyle) -> SplitView<M> {
         .with_pane(pane_label("Content"), Pane::new().min(24.0))
         .width(200.0)
         .height(80.0)
+}
+
+/// Golden window size for a 260 × 90 tab view with the fixture's margin.
+pub const TABS_SIZE: (u32, u32) = (276, 106);
+
+/// A 260 × 90 tab view of "General", "Advanced" and a disabled "Hidden" tab, tab `selected`
+/// shown.
+pub fn tab_view<M: 'static>(selected: usize) -> TabView<M> {
+    TabView::new()
+        .with_tab("General", pane_label("General settings"))
+        .with_tab("Advanced", pane_label("Advanced settings"))
+        .with_disabled_tab("Hidden", pane_label("Hidden"))
+        .selected(selected)
+        .width(260.0)
+        .height(90.0)
 }

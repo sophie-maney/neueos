@@ -63,3 +63,4 @@ Don't edit an accepted ADR's decision; supersede it with a new one.
 | [0051](0051-icon-type.md) | Icon type: glyphs and filled SVG-path vector icons, current or fixed light/dark paints | Accepted |
 | [0052](0052-collection-view.md) | Collection view: a collection body on the virtual grid, ids for the app and indices inside, items that draw their selection | Accepted |
 | [0053](0053-split-view.md) | Split view: one widget owns panes and dividers, lengths as state, a divider moves a pair, collapse | Accepted |
+| [0054](0054-tab-view.md) | Tab view: one widget owns strip, box and stashed panels, synthetic tab nodes, Ctrl-Tab from inside | Accepted |

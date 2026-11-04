@@ -67,6 +67,8 @@ pub enum Message {
     CollectionOpened(u32),
     /// The Panes page: a split view's panes were resized to these lengths.
     SplitResized(Vec<f64>),
+    /// The Panes page: a tab view's tab was selected.
+    TabSelected(usize),
     OpenFile(usize),
     SortFiles(usize, neue_kit::SortOrder),
 }
@@ -335,6 +337,9 @@ impl Application for Gallery {
             Message::CollectionOpened(id) => {
                 let text = format!("Opened “{}”", specimens::collection_label(id));
                 self.status.set_text(cx, text);
+            }
+            Message::TabSelected(tab) => {
+                self.status.set_text(cx, format!("Tab {}", tab + 1));
             }
             Message::SplitResized(lengths) => {
                 let parts: Vec<String> = lengths.iter().map(|l| format!("{l:.0}")).collect();

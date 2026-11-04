@@ -752,3 +752,27 @@ follows the picked divider. Switch to dark and to 2x: all stays sharp.
 VoiceOver on (Cmd-F5), move to a divider: it is read as a splitter with its value, and
 Up and Down (VoiceOver's adjust) move it.
 
+
+## 18. Checking the tab view (task 2.21b)
+Not run yet. Steps 1 to 3 run in the VM, set up as in `docs/dev-setup.md` §1.3; step 4 is
+on the Mac. The tab view is the last section of the "Panes" page (page 11). The helpers
+are those of §8.
+
+**1. Build and open the page:** as §8 step 1 with `NEUE_GALLERY_PAGE=11`, screenshot
+`/tmp/s1.png`. Expected: no `WARN` or `ERROR`; below the split views, two 260 × 110 tab
+views: "General", "Advanced" and a greyed "Hidden" tab, and "Fields" and "About".
+
+**2. Click:** click "Advanced", "Hidden", "General"; screenshot after each as
+`/tmp/s2-N.png`. Expected: the content follows the selected tab and the selected tab is
+blue gel with a white label; "Hidden" does nothing; the status line reads "Tab 2", "Tab 1".
+
+**3. Keys:** Tab to a strip (a blue ring around it); press Right, Left, Home, End. In the
+second view click into the "Name" field, then press Ctrl-Tab and Ctrl-Shift-Tab.
+Expected: the arrows skip "Hidden"; Ctrl-Tab switches tabs from inside the field, the
+focus moves to the strip, and the second tab's content shows. Alt-tab away from the
+window: the selected tab turns grey. Switch to dark and to 2x: all stays sharp.
+
+**4. macOS (owner):** `cargo xtask gallery`, open "Panes" and repeat steps 2 and 3. With
+VoiceOver on (Cmd-F5), move into a tab view: the tabs are read as a tab group with the
+selected one and its position ("2 of 3"), and the adjust gesture (Up and Down) changes tab.
+Clicking a tab through VoiceOver is not supported yet (ADR 0054).

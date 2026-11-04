@@ -71,7 +71,7 @@ pub use widgets::{
     Align, BevelButton, Button, Cell, CheckState, Checkbox, Collection, Column, ComboBox,
     ContextMenu, Entry, IconImage, Item, Label, MaterialTile, Outline, Pane, PopUpButton,
     ProgressBar, PullDownButton, Radio, ScrollAxes, ScrollView, Segmented, Slider, SortOrder,
-    SourceList, Specimen, Spinner, SplitView, Stack, Stepper, Table, TextField, TextStyle,
+    SourceList, Specimen, Spinner, SplitView, Stack, Stepper, TabView, Table, TextField, TextStyle,
     TextView, VirtualGrid, VirtualList, Zoom,
 };
 

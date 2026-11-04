@@ -386,7 +386,7 @@ the paper and leather materials move to Phase 6/7 (Widgets, Write).
         collections (1,000 items at 32 px, 12 at 64 px) with status messages. Steps for the
         VM in `docs/checks/phase-2.md` §16, not run. Not yet: the items listed under "Not
         in scope", gaps between cells, a borderless style, and the VoiceOver check on macOS.
-- [ ] **2.21 Split view and tab view** · Sonnet. Split into 2.21a and 2.21b.
+- [x] **2.21 Split view and tab view** · Sonnet. Split into 2.21a and 2.21b.
   - [x] **2.21a Split view** · Sonnet. `SplitView`: panes side by side or stacked, thin
         and thick (grip) dividers, per-pane minimum and maximum, a pane that holds its size
         on resize, collapsing (drag, double-click, Return, handle), keyboard and AccessKit
@@ -409,7 +409,7 @@ the paper and leather materials move to Phase 6/7 (Widgets, Write).
         (page 11). Steps for the VM in `docs/checks/phase-2.md` §17, not run. Not yet: the
         items under "Not in scope", a wider grab area for thin dividers, pushing past a
         pane into the next one.
-  - [ ] **2.21b Tab view** · Sonnet. `TabView`: a strip of tabs over a bordered box (the
+  - [x] **2.21b Tab view** · Sonnet. `TabView`: a strip of tabs over a bordered box (the
         `NSTabView` look), all tab contents built up front and only the selected one
         shown, its own strip widget (not `Segmented`). Left/Right move between tabs,
         Ctrl-Tab and Ctrl-Shift-Tab cycle; AccessKit `TabList`, `Tab`, `TabPanel`;
@@ -417,6 +417,19 @@ the paper and leather materials move to Phase 6/7 (Widgets, Write).
         *Accept:* tests for selection, keys and a disabled tab; goldens (normal, selected,
         disabled, unfocused × light/dark × 1×/2×); a gallery page; an ADR.
         Not in scope: closable or reorderable tabs, tabs on other edges.
+        *Done:* ADR 0054. `neue_kit::TabView` (`new`, `with_tab`, `with_disabled_tab`,
+        `selected`, `on_select(usize)`, `width`, `height`, `disabled`, `bind`;
+        `Handle::{set_selected, set_tab_enabled, set_enabled}`). One widget owns the
+        strip, box and panels; panels other than the selected one are stashed. Left and
+        Right (and Home and End) on the focused strip skip disabled tabs; Ctrl-Tab and
+        Ctrl-Shift-Tab wrap, from anywhere inside, and focus the strip. The tab list and
+        tabs are synthetic AccessKit nodes (read, but not clickable through AT; the view
+        takes `Increment` and `Decrement`). Material `neue_theme::materials::tabs`,
+        `neue_paint::materials::{tab_strip, tab_box}`; the selected tab is neutral while
+        the window is inactive. 7 end-to-end tests; 20 goldens (macOS only, Linux aarch64
+        and x86_64 not run); gallery: a "Tab view" section on the "Panes" page. Steps for
+        the VM in `docs/checks/phase-2.md` §18, not run. Not yet: the items under "Not in
+        scope", a strip wider than the view, clickable tabs for assistive technology.
 - [ ] **2.22 Window chrome and unified toolbar** · Opus. ADR: client-side title bars
       (reusing neue-paint's) vs. extending the server-side ones (ADR 0013).
 - [ ] **2.23 Sheet, popover, HUD panel** · Opus. Sheets map to xdg-dialog; popovers are
