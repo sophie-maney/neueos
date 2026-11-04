@@ -17,7 +17,9 @@ use smithay::input::dnd::{DnDGrab, DndGrabHandler, DndTarget, GrabType, Source};
 use smithay::input::pointer::{CursorImageStatus, Focus};
 use smithay::input::tablet::TabletSeatHandler;
 use smithay::input::{Seat, SeatHandler, SeatState};
+use smithay::output::Output;
 use smithay::reexports::wayland_protocols::xdg::shell::server::xdg_toplevel;
+use smithay::reexports::wayland_server::protocol::wl_output::WlOutput;
 use smithay::reexports::wayland_server::protocol::{wl_buffer, wl_seat, wl_surface::WlSurface};
 use smithay::reexports::wayland_server::{Client, Resource};
 use smithay::utils::{Logical, Point, Serial};
@@ -399,6 +401,25 @@ impl XdgShellHandler for State {
             self.set_zoomed(&window, false, None);
         } else {
             surface.send_configure();
+        }
+    }
+
+    fn fullscreen_request(&mut self, surface: ToplevelSurface, output: Option<WlOutput>) {
+        let output = output.as_ref().and_then(Output::from_resource);
+        match self.any_window_for_toplevel(&surface) {
+            Some(window) => self.set_fullscreen(&window, output),
+            None => {
+                surface.send_configure();
+            }
+        }
+    }
+
+    fn unfullscreen_request(&mut self, surface: ToplevelSurface) {
+        match self.any_window_for_toplevel(&surface) {
+            Some(window) => self.unset_fullscreen(&window),
+            None => {
+                surface.send_configure();
+            }
         }
     }
 

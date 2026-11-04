@@ -248,6 +248,19 @@ impl TestClient {
         self.roundtrip();
     }
 
+    /// Ack the last configure and commit a buffer of `size`, whatever was configured
+    /// (a client that ignores the size it was given).
+    pub fn ack_and_commit_size(&mut self, toplevel: &mut Toplevel, size: (i32, i32)) {
+        self.roundtrip();
+        let serial = self.data.toplevels[toplevel.index]
+            .configure_serial
+            .expect("no configure to ack");
+        toplevel.xdg_surface.ack_configure(serial);
+        self.attach_buffer(toplevel, size);
+        toplevel.surface.commit();
+        self.roundtrip();
+    }
+
     /// Send pending requests and process every event the compositor sends in reply.
     pub fn roundtrip(&mut self) {
         self.queue

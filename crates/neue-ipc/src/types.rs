@@ -117,7 +117,7 @@ pub enum Event {
     /// A window was mapped.
     WindowOpened(WindowInfo),
     /// Something in a window's [`WindowInfo`] other than `focused` changed: its title,
-    /// geometry, or minimised, zoomed or attention state. Sent once the change is done
+    /// geometry, or minimised, zoomed, full-screen or attention state. Sent once the change is done
     /// (at the end of an interactive move, not for every pointer motion).
     WindowChanged(WindowInfo),
     /// A window was unmapped or destroyed.
@@ -256,6 +256,10 @@ pub struct WindowInfo {
     /// Zoomed windows fill the work area (`xdg_toplevel` maximized state).
     #[serde(default)]
     pub zoomed: bool,
+    /// Full-screen windows fill their output without a title bar (`xdg_toplevel`
+    /// fullscreen state, task 1.15a).
+    #[serde(default)]
+    pub fullscreen: bool,
     /// The window asked for focus and was refused (xdg-activation). Cleared when it is
     /// focused. The dock will bounce its icon.
     #[serde(default)]

@@ -29,6 +29,7 @@ pub mod config;
 #[cfg(feature = "tty")]
 mod cursor;
 pub mod decorations;
+pub mod fullscreen;
 mod grabs;
 mod handlers;
 mod headless;

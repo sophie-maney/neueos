@@ -8,7 +8,7 @@
 //! with its own render and vblank cycle (task 1.7). udev change events on the GPU rescan
 //! the connectors: new ones become outputs, disconnected ones are removed, and a changed
 //! preferred mode (a monitor switch, or a resized VM window) is applied with a modeset.
-//! Several GPUs, direct scanout and VRR are task 1.15. The pointer (XCursor theme, task 1.9) is
+//! Direct scanout and VRR are task 1.15c; several GPUs a later task. The pointer (XCursor theme, task 1.9) is
 //! drawn on the cursor plane where the hardware has one (the DRM compositor falls back to
 //! compositing it otherwise).
 //!
@@ -68,7 +68,7 @@ use crate::state::{Backend, State};
 const CLEAR_COLOR: [f32; 4] = [0.18, 0.2, 0.24, 1.0];
 /// Primary plane formats, tried in order. 8-bit only until colour management (PLAN §3.1).
 const COLOR_FORMATS: [Fourcc; 2] = [Fourcc::Argb8888, Fourcc::Abgr8888];
-/// Overlay and primary-plane scanout of client buffers is task 1.15; until then only the
+/// Overlay and primary-plane scanout of client buffers is task 1.15c; until then only the
 /// cursor goes on its own plane and everything else is composited.
 const FRAME_FLAGS: FrameFlags = FrameFlags::ALLOW_CURSOR_PLANE_SCANOUT;
 /// How far (logical pixels) from an output the pointer can be and still have its image
@@ -266,7 +266,7 @@ impl TtyData {
         let mut planes = drm
             .planes(&crtc)
             .map_err(|err| format!("querying planes: {err}"))?;
-        // Overlays are for direct scanout (task 1.15). Not offering them also sidesteps the
+        // Overlays are for direct scanout (task 1.15c). Not offering them also sidesteps the
         // known overlay breakage on NVIDIA that anvil works around.
         planes.overlay.clear();
 
@@ -678,7 +678,7 @@ fn on_udev_event(event: UdevEvent, state: &mut State) {
             debug!("GPU changed: rescanning connectors");
             rescan(state);
         }
-        // One GPU for now (task 1.15 adds more).
+        // One GPU for now (several GPUs are a later task).
         _ => {}
     }
 }
@@ -765,7 +765,7 @@ fn schedule_render(tty: &mut TtyData, crtc: crtc::Handle, delay: Duration) {
 
 /// Compose a frame for `crtc` and queue it for its next vblank. Without damage nothing is
 /// queued and the next attempt is one refresh interval later (as in anvil; render-on-commit
-/// and a damage review come with task 1.15).
+/// and a damage review come with task 1.15b).
 fn render(state: &mut State, crtc: crtc::Handle) {
     let time = state.start_time.elapsed();
     let pointer_location = state.pointer.current_location();

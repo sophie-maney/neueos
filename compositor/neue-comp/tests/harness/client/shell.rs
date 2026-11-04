@@ -150,6 +150,26 @@ impl TestClient {
         output
     }
 
+    /// Bind the `n`th `wl_output` global (in the order the compositor added them).
+    pub fn output_global(&mut self, n: usize) -> WlOutput {
+        let name = self
+            ._globals
+            .contents()
+            .with_list(|list| {
+                list.iter()
+                    .filter(|g| g.interface == "wl_output")
+                    .nth(n)
+                    .map(|g| g.name)
+            })
+            .expect("no such wl_output");
+        let output = self
+            ._globals
+            .registry()
+            .bind::<WlOutput, _, _>(name, 4, &self.qh, ());
+        self.roundtrip();
+        output
+    }
+
     // ---- wlr-layer-shell ----
 
     /// Create a layer surface on the first output: `setup` sets size, anchor and so on
