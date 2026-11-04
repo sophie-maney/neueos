@@ -17,6 +17,7 @@
 use std::any::{Any, TypeId};
 use std::cell::RefCell;
 use std::collections::BTreeSet;
+use std::hash::Hash;
 use std::rc::Rc;
 use std::time::Instant;
 
@@ -33,13 +34,17 @@ use masonry_core::kurbo::{Affine, Axis, Point, Rect, Size, Vec2};
 use masonry_core::layout::{LenDef, LenReq, Length, SizeDef};
 use neue_paint::Scene;
 use neue_paint::imaging::ImagingReplayer;
-use neue_paint::materials::{TableHeader, column_edges, table_header};
+use neue_paint::materials::{
+    TableHeader, column_edges, disclosure_rect, disclosure_triangle, outline_text_inset,
+    table_header,
+};
 use neue_theme::materials::table::{
     CELL_INSET, COLUMN_WIDTH, DIVIDER_GRAB, HEADER_HEIGHT, MIN_COLUMN_WIDTH, Palette, ROW_HEIGHT,
     SORT_ARROW_INSET, SORT_ARROW_WIDTH, TITLE_INSET,
 };
 
 use super::menu::TypeSelect;
+use super::outline::{Change, FlatTree, RowInfo, SharedTree, Tree};
 use super::rows::{MakeRow, RowsWidget};
 use super::scroll::{Frame, ScrollAxes, ScrollWidget};
 use super::stack::Align;
@@ -236,10 +241,40 @@ impl Selection {
     }
 
     /// Sets the selection from the app.
-    fn set(&mut self, rows: impl IntoIterator<Item = usize>, count: usize) {
+    pub(super) fn set(&mut self, rows: impl IntoIterator<Item = usize>, count: usize) {
         self.rows = rows.into_iter().filter(|&r| r < count).collect();
         self.anchor = self.rows.first().copied();
         self.cursor = self.rows.last().copied();
+    }
+
+    /// The rows to follow through a change of the outline: the selected rows, then the
+    /// anchor and the cursor (those that are set).
+    fn keep(&self) -> Vec<usize> {
+        self.rows
+            .iter()
+            .copied()
+            .chain(self.anchor)
+            .chain(self.cursor)
+            .collect()
+    }
+
+    /// Follows [`Self::keep`]'s rows to where they are now. Rows that are no longer
+    /// visible leave the selection; if `collapsed` hid some, it is selected instead.
+    fn remap(&mut self, kept: &[Option<usize>], collapsed: Option<usize>) {
+        let mut moved = kept.iter().copied();
+        let before = self.rows.len();
+        let mut rows: BTreeSet<usize> = moved.by_ref().take(before).flatten().collect();
+        let mut anchor = self.anchor.and_then(|_| moved.next().flatten());
+        let mut cursor = self.cursor.and_then(|_| moved.next().flatten());
+        let lost = rows.len() < before;
+        if let Some(row) = collapsed.filter(|_| lost) {
+            rows.insert(row);
+            anchor = anchor.or(self.anchor.map(|_| row));
+            cursor = cursor.or(self.cursor.map(|_| row));
+        }
+        self.rows = rows;
+        self.anchor = anchor;
+        self.cursor = cursor;
     }
 
     /// Forgets rows at or past `count`.
@@ -256,15 +291,22 @@ pub(crate) struct TableState {
     multiple: bool,
     alternating: bool,
     /// The app listens for activation (Return would otherwise reach the default button).
-    activates: bool,
+    pub(crate) activates: bool,
     /// Column widths as set (by the app, then by resizing).
     pub(crate) widths: Vec<f64>,
     pub(crate) selection: Selection,
     /// The body has focus in a focused window: the selection is in the accent.
     pub(crate) emphasized: bool,
+    /// An outline view's flattened tree (ADR 0049); a plain table has none.
+    pub(crate) outline: Option<SharedTree>,
 }
 
 impl TableState {
+    /// The outline row `row` is, if this is an outline.
+    fn outline_row(&self, row: usize) -> Option<RowInfo> {
+        self.outline.as_ref()?.borrow().info(row)
+    }
+
     fn look(&self, row: usize) -> Look {
         Look {
             selected: self.selection.rows.contains(&row),
@@ -326,6 +368,9 @@ pub(crate) struct CellWidget {
     align: Align,
     content: CellContent,
     look: Look,
+    /// The first cell of an outline row: its level and disclosure.
+    outline: Option<RowInfo>,
+    replayer: ImagingReplayer,
 }
 
 impl std::fmt::Debug for CellWidget {
@@ -348,6 +393,12 @@ impl CellWidget {
             CellContent::Text(line) => Some(line.text()),
             CellContent::Element(_) => None,
         }
+    }
+
+    /// How far in from the cell's edge the content starts, beyond the usual inset.
+    fn lead(&self) -> f64 {
+        self.outline
+            .map_or(0.0, |o| outline_text_inset(o.level) - CELL_INSET)
     }
 
     fn set_look(this: &mut WidgetMut<'_, Self>, look: Look) {
@@ -406,13 +457,14 @@ impl Widget for CellWidget {
 
     fn layout(&mut self, ctx: &mut LayoutCtx<'_>, _props: &PropertiesRef<'_>, size: Size) {
         ctx.set_clip_path(size.to_rect());
+        let lead = self.lead();
         if let CellContent::Element(child) = &mut self.content {
-            let room = Size::new((size.width - 2.0 * CELL_INSET).max(0.0), size.height);
+            let room = Size::new((size.width - 2.0 * CELL_INSET - lead).max(0.0), size.height);
             let auto = SizeDef::new(LenDef::MaxContent, LenDef::MaxContent);
             let want = ctx.compute_size(child, auto, room.into()).min(room);
             ctx.run_layout(child, want);
             let y = ((size.height - want.height) / 2.0).round();
-            ctx.place_child(child, Point::new(CELL_INSET, y));
+            ctx.place_child(child, Point::new(CELL_INSET + lead, y));
         }
     }
 
@@ -422,21 +474,36 @@ impl Widget for CellWidget {
         props: &PropertiesRef<'_>,
         painter: &mut Painter<'_>,
     ) {
+        let ThemeProp(theme) = *props.get::<ThemeProp>(ctx.property_cache());
+        let colors = theme.colors();
+        let on_selection = self.look.selected && self.look.emphasized;
+        let size = ctx.content_box().size();
+        if let Some(outline) = self.outline.filter(|o| o.expandable) {
+            let color = if ctx.is_disabled() {
+                colors.disabled_label
+            } else if on_selection {
+                colors.selected_label
+            } else {
+                Palette::new(theme.variant).disclosure
+            };
+            let mut scene = Scene::new(size.width, size.height);
+            let column = disclosure_rect(size.to_rect(), outline.level);
+            disclosure_triangle(&mut scene, column, outline.expanded, color);
+            self.replayer.replay(&scene, ctx.scale_factor(), painter);
+        }
+        let lead = self.lead();
         let CellContent::Text(line) = &mut self.content else {
             return;
         };
-        let ThemeProp(theme) = *props.get::<ThemeProp>(ctx.property_cache());
-        let colors = theme.colors();
         let color = if ctx.is_disabled() {
             colors.disabled_label
-        } else if self.look.selected && self.look.emphasized {
+        } else if on_selection {
             colors.selected_label
         } else {
             colors.label
         };
-        let size = ctx.content_box().size();
         let text = line.size(ctx.text_contexts());
-        let x = aligned(self.align, (0.0, size.width), text.width, CELL_INSET);
+        let x = aligned(self.align, (lead, size.width), text.width, CELL_INSET);
         let y = ((size.height - text.height) / 2.0).round();
         line.paint(painter, Affine::translate(Vec2::new(x, y)), color);
     }
@@ -479,6 +546,8 @@ pub(crate) struct TableRowWidget {
     /// Column widths as set; the last is stretched to the row's width.
     widths: Vec<f64>,
     look: Look,
+    /// An outline row's level and state, for assistive technology.
+    outline: Option<RowInfo>,
 }
 
 impl TableRowWidget {
@@ -563,6 +632,19 @@ impl Widget for TableRowWidget {
         node.set_row_index(self.index);
         node.set_selected(self.look.selected);
         node.add_action(Action::Click);
+        if let Some(o) = self.outline {
+            node.set_level(o.level + 1);
+            node.set_size_of_set(o.set_size);
+            node.set_position_in_set(o.position);
+            if o.expandable {
+                node.set_expanded(o.expanded);
+                node.add_action(if o.expanded {
+                    Action::Collapse
+                } else {
+                    Action::Expand
+                });
+            }
+        }
     }
 
     fn children_ids(&self) -> ChildrenIds {
@@ -600,6 +682,39 @@ impl TableBody {
     /// How wide the columns are together.
     pub(crate) fn columns_width(&self) -> f64 {
         self.shared.borrow().widths.iter().sum()
+    }
+
+    /// Edits the outline with `f` (given the rows to follow), and moves the selection to
+    /// where its rows went. The new number of rows, if anything changed.
+    fn apply(
+        &self,
+        f: impl FnOnce(&mut dyn FlatTree, &[usize]) -> Option<Change>,
+    ) -> Option<usize> {
+        let tree = self.shared.borrow().outline.clone()?;
+        let mut state = self.shared.borrow_mut();
+        let keep = state.selection.keep();
+        let change = f(&mut *tree.borrow_mut(), &keep)?;
+        state.selection.remap(&change.kept, change.collapsed);
+        Some(change.len)
+    }
+
+    /// What assistive technology takes the body for: a table, or an outline's tree grid.
+    pub(crate) fn role(&self) -> Role {
+        if self.shared.borrow().outline.is_some() {
+            Role::TreeGrid
+        } else {
+            Role::Table
+        }
+    }
+
+    /// How many rows an outline has now.
+    pub(crate) fn outline_len(&self) -> Option<usize> {
+        Some(self.shared.borrow().outline.as_ref()?.borrow().len())
+    }
+
+    /// The tree an outline's rows are, for a type the caller knows.
+    pub(crate) fn tree(&self) -> Option<SharedTree> {
+        self.shared.borrow().outline.clone()
     }
 
     pub(crate) fn forget_past(&self, count: usize) {
@@ -685,6 +800,31 @@ impl RowsWidget {
         this.ctx.request_layout();
     }
 
+    /// Changes an outline's tree from the app with `f` (given the rows to follow), then
+    /// shows the new rows. No message goes back.
+    pub(super) fn edit_tree(
+        this: &mut WidgetMut<'_, Self>,
+        f: impl FnOnce(&mut dyn FlatTree, &[usize]) -> Option<Change>,
+    ) {
+        let Some(len) = this.widget.table.as_ref().and_then(|t| t.apply(f)) else {
+            return;
+        };
+        Self::edit_count_and_reload(this, len);
+    }
+
+    /// Runs `f` on an outline's tree, if this is one over nodes of type `Id`.
+    pub(super) fn with_tree<Id, R>(
+        this: &mut WidgetMut<'_, Self>,
+        f: impl FnOnce(&mut Tree<Id>) -> R,
+    ) -> Option<R>
+    where
+        Id: Clone + Eq + Hash + 'static,
+    {
+        let tree = this.widget.table.as_ref()?.tree()?;
+        let mut tree = tree.borrow_mut();
+        Some(f(tree.as_any_mut().downcast_mut::<Tree<Id>>()?))
+    }
+
     /// Sets the selection from the app: no message goes back.
     pub(super) fn set_selection(this: &mut WidgetMut<'_, Self>, rows: Vec<usize>) {
         let count = this.widget.count;
@@ -697,11 +837,16 @@ impl RowsWidget {
 
     /// The selection changed by the user: tell the app, repaint, restyle the rows.
     fn selection_changed(&mut self, ctx: &mut EventCtx<'_>, before: &BTreeSet<usize>) {
+        self.report_selection(ctx, before);
+        Self::restyle_later(ctx);
+    }
+
+    /// Tells the app the selection changed from `before`, if it did.
+    fn report_selection(&mut self, ctx: &mut EventCtx<'_>, before: &BTreeSet<usize>) {
         let rows = self.table_mut().shared.borrow().selection.rows.clone();
         if &rows != before {
             ctx.submit_untyped_action(Box::new(TableAction::Selected(rows.into_iter().collect())));
         }
-        Self::restyle_later(ctx);
     }
 
     /// Changes the selection with `f`, then reports it.
@@ -723,6 +868,74 @@ impl RowsWidget {
         ctx.request_scroll_to(Rect::new(x, y0, x, y1));
     }
 
+    /// Row `row` of the outline, if this is one.
+    fn outline_row(&mut self, row: usize) -> Option<RowInfo> {
+        self.table_mut().shared.borrow().outline_row(row)
+    }
+
+    /// After an outline's rows changed from an event: rebuild them, tell the app if the
+    /// selection moved off rows.
+    fn outline_changed(&mut self, ctx: &mut EventCtx<'_>, before: &BTreeSet<usize>, len: usize) {
+        ctx.request_layout();
+        ctx.request_accessibility_update();
+        ctx.later(move |mut w| {
+            let mut body = w.downcast::<RowsWidget>();
+            Self::edit_count_and_reload(&mut body, len);
+        });
+        // The rows are built again with the selection as it is: no restyling.
+        self.report_selection(ctx, before);
+    }
+
+    /// Expands or collapses outline row `row` (`None`: the other way), with its
+    /// descendants if `recursive`.
+    fn outline_toggle(
+        &mut self,
+        ctx: &mut EventCtx<'_>,
+        row: usize,
+        expanded: Option<bool>,
+        recursive: bool,
+    ) {
+        let before = self.table_mut().shared.borrow().selection.rows.clone();
+        let len = self.table_mut().apply(|tree, keep| {
+            let expanded = expanded.unwrap_or_else(|| !tree.info(row).is_some_and(|i| i.expanded));
+            tree.set_expanded(row, expanded, recursive, keep)
+        });
+        if let Some(len) = len {
+            self.outline_changed(ctx, &before, len);
+        }
+    }
+
+    /// Right and Left in an outline: opens or closes the cursor row, or moves into or out
+    /// of it. The row to select instead, if the key moves; `Err` if it did nothing.
+    fn outline_arrow(
+        &mut self,
+        ctx: &mut EventCtx<'_>,
+        row: usize,
+        right: bool,
+        recursive: bool,
+    ) -> Result<Option<usize>, ()> {
+        let Some(info) = self.outline_row(row) else {
+            return Err(());
+        };
+        if right {
+            if info.expandable && (!info.expanded || recursive) {
+                self.outline_toggle(ctx, row, Some(true), recursive);
+                Ok(None)
+            } else if info.expanded {
+                Ok(Some(row + 1))
+            } else {
+                Err(())
+            }
+        } else if info.expanded {
+            self.outline_toggle(ctx, row, Some(false), recursive);
+            Ok(None)
+        } else {
+            let tree = self.table_mut().tree().ok_or(())?;
+            let parent = tree.borrow().parent(row);
+            parent.map(Some).ok_or(())
+        }
+    }
+
     pub(super) fn table_pointer(&mut self, ctx: &mut EventCtx<'_>, event: &PointerEvent) {
         match event {
             PointerEvent::Down(PointerButtonEvent {
@@ -732,10 +945,23 @@ impl RowsWidget {
             }) => {
                 ctx.request_focus();
                 ctx.capture_pointer();
-                let y = ctx.local_position(state.position).y;
+                let at = ctx.local_position(state.position);
+                let y = at.y;
                 let mods = state.modifiers;
                 let multiple = self.table_mut().shared.borrow().multiple;
                 let row = self.row_at(y);
+                // A press on a disclosure triangle opens or closes the row, and leaves the
+                // selection alone.
+                if let Some(row) = row
+                    && let Some(info) = self.outline_row(row).filter(|i| i.expandable)
+                {
+                    let cell = Rect::new(0.0, 0.0, f64::INFINITY, self.row_height);
+                    let column = disclosure_rect(cell, info.level);
+                    if at.x >= column.x0 && at.x < column.x1 {
+                        self.table_mut().dragging = false;
+                        return self.outline_toggle(ctx, row, None, mods.alt());
+                    }
+                }
                 self.table_mut().dragging = row.is_some();
                 match row {
                     Some(row) if mods.shift() && multiple => {
@@ -809,6 +1035,17 @@ impl RowsWidget {
             Key::Named(NamedKey::PageDown) => {
                 cursor.map_or(0, |c| (c + self.page_rows()).min(last))
             }
+            Key::Named(arrow @ (NamedKey::ArrowRight | NamedKey::ArrowLeft))
+                if self.table_mut().shared.borrow().outline.is_some() =>
+            {
+                let Some(row) = cursor else { return };
+                let right = *arrow == NamedKey::ArrowRight;
+                match self.outline_arrow(ctx, row, right, mods.alt()) {
+                    Ok(Some(target)) => target,
+                    Ok(None) => return ctx.set_handled(),
+                    Err(()) => return,
+                }
+            }
             Key::Named(NamedKey::Enter) => {
                 let state = self.table_mut().shared.borrow();
                 if !state.activates {
@@ -861,7 +1098,10 @@ impl RowsWidget {
     }
 
     pub(super) fn table_access(&mut self, ctx: &mut EventCtx<'_>, event: &AccessEvent) {
-        if event.action != Action::Click {
+        if !matches!(
+            event.action,
+            Action::Click | Action::Expand | Action::Collapse
+        ) {
             return;
         }
         let target = ctx.target();
@@ -869,10 +1109,13 @@ impl RowsWidget {
             .rows
             .iter()
             .find_map(|(&i, pod)| (pod.id() == target).then_some(i));
-        if let Some(row) = row {
-            self.select(ctx, |s| s.only(row));
-            ctx.set_handled();
+        let Some(row) = row else { return };
+        match event.action {
+            Action::Expand => self.outline_toggle(ctx, row, Some(true), false),
+            Action::Collapse => self.outline_toggle(ctx, row, Some(false), false),
+            _ => self.select(ctx, |s| s.only(row)),
         }
+        ctx.set_handled();
     }
 
     pub(super) fn table_paint(
@@ -1368,8 +1611,8 @@ impl Widget for HeaderWidget {
 
 // --- MARK: BUILDER
 
-type OnSelect<M> = Box<dyn FnMut(&[usize]) -> M>;
-type OnActivate<M> = Box<dyn FnMut(usize) -> M>;
+type OnSelect<M> = Box<dyn FnMut(&[usize]) -> Option<M>>;
+type OnActivate<M> = Box<dyn FnMut(usize) -> Option<M>>;
 type OnSort<M> = Box<dyn FnMut(usize, SortOrder) -> M>;
 
 /// Rows of cells under a header of column titles, in a bordered view that scrolls both
@@ -1389,7 +1632,7 @@ type OnSort<M> = Box<dyn FnMut(usize, SortOrder) -> M>;
 /// column stretches to fill the view.
 pub struct Table<M> {
     inner: NewWidget<ScrollWidget>,
-    shared: Shared,
+    pub(super) shared: Shared,
     count: usize,
     body: WidgetId,
     /// The header is built last, with the initial sort.
@@ -1431,6 +1674,7 @@ impl<M: 'static> Table<M> {
                 let mut wiring = Wiring::<M>::default();
                 let state = shared.borrow();
                 let look = state.look(row);
+                let outline = state.outline_row(row);
                 let cells = aligns
                     .iter()
                     .enumerate()
@@ -1446,6 +1690,8 @@ impl<M: 'static> Table<M> {
                             align,
                             content,
                             look,
+                            outline: outline.filter(|_| column == 0),
+                            replayer: ImagingReplayer::new(),
                         })
                         .to_pod()
                     })
@@ -1455,6 +1701,7 @@ impl<M: 'static> Table<M> {
                     cells,
                     widths: state.widths.clone(),
                     look,
+                    outline,
                 };
                 (
                     NewWidget::new(widget).erased(),
@@ -1519,7 +1766,15 @@ impl<M: 'static> Table<M> {
     /// Sends the message `make` returns, given the selected rows (in order), when the
     /// user changes the selection. Changes through a [`Handle`] send nothing.
     #[must_use]
-    pub fn on_select(mut self, make: impl FnMut(&[usize]) -> M + 'static) -> Self {
+    pub fn on_select(self, mut make: impl FnMut(&[usize]) -> M + 'static) -> Self {
+        self.on_select_opt(move |rows| Some(make(rows)))
+    }
+
+    /// Like [`on_select`](Self::on_select), where `make` can decline to send anything.
+    pub(super) fn on_select_opt(
+        mut self,
+        make: impl FnMut(&[usize]) -> Option<M> + 'static,
+    ) -> Self {
         self.on_select = Some(Box::new(make));
         self
     }
@@ -1527,10 +1782,23 @@ impl<M: 'static> Table<M> {
     /// Sends the message `make` returns, given the row, when the user double-clicks a row
     /// or presses Return. Without it, Return goes on to the default button.
     #[must_use]
-    pub fn on_activate(mut self, make: impl FnMut(usize) -> M + 'static) -> Self {
+    pub fn on_activate(self, mut make: impl FnMut(usize) -> M + 'static) -> Self {
+        self.on_activate_opt(move |row| Some(make(row)))
+    }
+
+    /// Like [`on_activate`](Self::on_activate), where `make` can decline to send anything.
+    pub(super) fn on_activate_opt(
+        mut self,
+        make: impl FnMut(usize) -> Option<M> + 'static,
+    ) -> Self {
         self.shared.borrow_mut().activates = true;
         self.on_activate = Some(Box::new(make));
         self
+    }
+
+    /// The scroll view's widget, which a handle points at.
+    pub(super) fn scroll_id(&self) -> WidgetId {
+        self.inner.id()
     }
 
     /// Sends the message `make` returns, given the column and order, when the user clicks
@@ -1584,8 +1852,8 @@ impl<M: 'static> From<Table<M>> for Element<M> {
         if on_select.is_some() || on_activate.is_some() {
             element.on_action(table.body, move |action| {
                 match action.downcast_ref::<TableAction>()? {
-                    TableAction::Selected(rows) => on_select.as_mut().map(|f| f(rows)),
-                    TableAction::Activated(row) => on_activate.as_mut().map(|f| f(*row)),
+                    TableAction::Selected(rows) => on_select.as_mut().and_then(|f| f(rows)),
+                    TableAction::Activated(row) => on_activate.as_mut().and_then(|f| f(*row)),
                 }
             });
         }

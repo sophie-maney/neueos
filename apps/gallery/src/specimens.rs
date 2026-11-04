@@ -2,9 +2,9 @@
 
 use neue_kit::{
     Align, BevelButton, Button, CheckState, Checkbox, Column, ComboBox, ContextMenu, Label,
-    MaterialTile, Menu, MenuItem, PopUpButton, ProgressBar, PullDownButton, Radio, ScrollAxes,
-    ScrollView, Segmented, Shortcut, Slider, SortOrder, Specimen, Spinner, Stack, Stepper, Table,
-    TextField, TextView, VirtualList,
+    MaterialTile, Menu, MenuItem, Outline, PopUpButton, ProgressBar, PullDownButton, Radio,
+    ScrollAxes, ScrollView, Segmented, Shortcut, Slider, SortOrder, Specimen, Spinner, Stack,
+    Stepper, Table, TextField, TextView, VirtualList,
 };
 
 /// Golden window size for one push button (logical pixels): the button with the fixture's
@@ -304,6 +304,83 @@ pub fn table<M: 'static>() -> Table<M> {
     .selected([1])
     .width(240.0)
     .height(120.0)
+}
+
+/// Golden window size for an outline: the table's width, room for six rows.
+pub const OUTLINE_SIZE: (u32, u32) = (256, 156);
+
+/// A node of the outline's sample folders: id, parent (0 for the top level), name, kind.
+pub type SampleNode = (u32, u32, &'static str, &'static str);
+
+/// The outlines' sample folders and files. Ids are stable; a node's children are those
+/// naming it as parent.
+pub const NODES: [SampleNode; 13] = [
+    (1, 0, "Documents", "Folder"),
+    (11, 1, "Work", "Folder"),
+    (111, 11, "Annual Report.pdf", "PDF document"),
+    (112, 11, "Budget 2026.ods", "Spreadsheet"),
+    (12, 1, "Letters", "Folder"),
+    (121, 12, "Letter to Sam.odt", "Text document"),
+    (2, 0, "Pictures", "Folder"),
+    (21, 2, "Beach Photo.jpg", "JPEG image"),
+    (22, 2, "Screenshot.png", "PNG image"),
+    (3, 0, "Music", "Folder"),
+    (31, 3, "Mixtape.flac", "FLAC audio"),
+    (4, 0, "Field Notes.txt", "Plain text"),
+    (5, 0, "Recipes.md", "Markdown"),
+];
+
+/// The ids of the nodes inside `parent` (`None`: the top level), in order.
+pub fn node_children(parent: Option<&u32>) -> Vec<u32> {
+    let parent = parent.copied().unwrap_or(0);
+    NODES
+        .iter()
+        .filter(|n| n.1 == parent)
+        .map(|n| n.0)
+        .collect()
+}
+
+/// The text of node `id`'s cell in `column` of [`node_columns`].
+pub fn node_cell(id: u32, column: usize) -> String {
+    NODES
+        .iter()
+        .find(|n| n.0 == id)
+        .map(|n| if column == 0 { n.2 } else { n.3 })
+        .unwrap_or_default()
+        .to_owned()
+}
+
+/// The columns of an outline of [`NODES`]: name and kind.
+pub fn node_columns() -> Vec<Column> {
+    vec![
+        Column::new("Name").width(150.0).min_width(80.0),
+        Column::new("Kind").width(80.0),
+    ]
+}
+
+/// An outline of the sample folders, all closed.
+pub fn outline<M: 'static>() -> Outline<M, u32> {
+    Outline::new(node_columns(), node_children, |&id, column| {
+        node_cell(id, column)
+    })
+    .width(240.0)
+    .height(140.0)
+}
+
+/// The sample outline with Documents open.
+pub fn outline_expanded<M: 'static>() -> Outline<M, u32> {
+    outline().expanded([1])
+}
+
+/// The sample outline with Documents and Work open: two levels deep.
+pub fn outline_nested<M: 'static>() -> Outline<M, u32> {
+    outline().expanded([1, 11])
+}
+
+/// The nested outline, striped, with the open folder Work selected (its triangle turns
+/// white with focus).
+pub fn outline_selected<M: 'static>() -> Outline<M, u32> {
+    outline_nested().alternating_rows(true).selected([11])
 }
 
 /// Golden window size for an open context menu (logical pixels).

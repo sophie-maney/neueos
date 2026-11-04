@@ -274,13 +274,29 @@ the paper and leather materials move to Phase 6/7 (Widgets, Write).
       yet: variable row heights, editable cells, column reordering, row drag and drop,
       autoscroll while drag-selecting, ellipsis truncation, white element cells on a
       selection.
-- [ ] **2.19b Outline view** · Sonnet (the 2.19a pattern). A table whose first column is
+- [x] **2.19b Outline view** · Sonnet (the 2.19a pattern). A table whose first column is
       a tree: an app tree source (children of a node, expandable), disclosure triangles,
       expand and collapse by click, Left/Right and Option/Alt-click (recursive), indent
       per level; the visible rows are flattened and virtualised.
       *Accept:* AccessKit `TreeGrid`/`Row` with level, expanded, set size and position;
       gallery entries; goldens (collapsed, expanded, nested, selected × light/dark ×
       1×/2×); keyboard tests.
+      *Done:* ADR 0049. `neue_kit::Outline<M, Id>` on a `Table`: `Outline::new(columns,
+      children, cell)` or `with_expandable`; `expanded`, `selected`, `on_select(&[Id])`,
+      `on_activate(&Id)` and the table's options; `Handle::{reload, set_expanded,
+      set_selection, scroll_to, set_enabled}`. `widgets/outline.rs`: `Tree<Id>` (flattened
+      visible rows, expansion by id) behind the object-safe `FlatTree` that the table body
+      reads; the selection follows its rows through every change. First cells indent and
+      draw a disclosure triangle; click (Option: all levels), Right and Left (Option: all
+      levels), and the AccessKit `Expand`/`Collapse` actions toggle; AccessKit `TreeGrid`
+      with `level`, `expanded`, `size_of_set`, `position_in_set`. Paint
+      `neue_paint::materials::{disclosure_rect, disclosure_triangle, outline_text_inset}`,
+      tokens `neue_theme::materials::table::{OUTLINE_INDENT, DISCLOSURE_*}` and
+      `Palette::disclosure`. Gallery: an outline on the "Tables" page; 24 goldens (closed,
+      closed disabled, one level, two levels, selected, selected focused × light/dark ×
+      1×/2×; Linux aarch64 and x86_64 not run); 8 end-to-end and 7 tree tests. Steps for
+      the VM and macOS in `docs/checks/phase-2.md` §12, not run. Not yet: animated
+      expansion, lazy loading placeholders, drag and drop, `on_expand` notifications.
 - [ ] **2.19c Source-list sidebar** · Sonnet (on 2.19b). An outline style: group headers
       (small caps, Show/Hide on hover), rows with icon, label and optional count badge,
       the sidebar background, the source-list selection gradient (focused and unfocused,

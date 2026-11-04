@@ -1579,7 +1579,7 @@ pub mod menu {
     }
 }
 
-/// Tables (task 2.19a): a header bar of column titles over rows of one height, in a scroll
+/// Tables (task 2.19a) and outline views (2.19b): a header bar of column titles over rows of one height, in a scroll
 /// view with a hairline border. Row stripes and the selection use the semantic colours
 /// ([`crate::colors::SemanticColors::alternate_row`], `selection`, `unfocused_selection`).
 pub mod table {
@@ -1611,6 +1611,15 @@ pub mod table {
     pub const SORT_ARROW_HEIGHT: f64 = 5.0;
     /// Space between the sort indicator and the column's right edge.
     pub const SORT_ARROW_INSET: f64 = 6.0;
+    /// How far each level of an outline view indents its first column (task 2.19b).
+    pub const OUTLINE_INDENT: f64 = 14.0;
+    /// Width of the disclosure column of an outline row: the triangle sits in it, and
+    /// rows without one keep it empty so their text lines up.
+    pub const DISCLOSURE_WIDTH: f64 = 14.0;
+    /// The disclosure triangle's long side (its base) and short side (its depth).
+    pub const DISCLOSURE_BASE: f64 = 9.0;
+    /// The disclosure triangle's depth.
+    pub const DISCLOSURE_DEPTH: f64 = 6.0;
 
     /// Colours of a table's header and frame.
     #[derive(Clone, Copy, Debug, PartialEq)]
@@ -1631,6 +1640,9 @@ pub mod table {
         pub disabled_title: Color,
         /// The sort indicator.
         pub sort_arrow: Color,
+        /// An outline view's disclosure triangles (white on a focused selection, the
+        /// semantic `selected_label`).
+        pub disclosure: Color,
         /// The scroll view's border.
         pub border: Color,
     }
@@ -1649,6 +1661,7 @@ pub mod table {
                     title: black(0.85),
                     disabled_title: black(0.30),
                     sort_arrow: black(if contrast { 0.75 } else { 0.50 }),
+                    disclosure: black(if contrast { 0.80 } else { 0.55 }),
                     border: if contrast { black(0.6) } else { grey(0.66) },
                 },
                 Appearance::Dark => Self {
@@ -1660,6 +1673,7 @@ pub mod table {
                     title: white(0.88),
                     disabled_title: white(0.32),
                     sort_arrow: white(if contrast { 0.85 } else { 0.60 }),
+                    disclosure: white(if contrast { 0.90 } else { 0.65 }),
                     border: if contrast { white(0.5) } else { black(0.6) },
                 },
             }

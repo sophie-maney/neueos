@@ -6,7 +6,8 @@
 //! Colours and metrics come from [`neue_theme::materials::table`].
 
 use neue_theme::materials::table::{
-    BORDER, DIVIDER, HEADER_BORDER, Palette, SORT_ARROW_HEIGHT, SORT_ARROW_INSET, SORT_ARROW_WIDTH,
+    BORDER, CELL_INSET, DISCLOSURE_BASE, DISCLOSURE_DEPTH, DISCLOSURE_WIDTH, DIVIDER,
+    HEADER_BORDER, OUTLINE_INDENT, Palette, SORT_ARROW_HEIGHT, SORT_ARROW_INSET, SORT_ARROW_WIDTH,
 };
 use vello_common::kurbo::{BezPath, Point, Rect, Stroke};
 use vello_common::peniko::{Color, Gradient};
@@ -100,6 +101,46 @@ pub fn table_header(
     }
 }
 
+/// Where the disclosure column of an outline row at `level` (0 for the top) goes, in a first
+/// cell filling `cell`: as tall as the cell, [`DISCLOSURE_WIDTH`] wide. The triangle is
+/// centred in it, and a press in it expands or collapses the row.
+pub fn disclosure_rect(cell: Rect, level: usize) -> Rect {
+    let x0 = cell.x0 + CELL_INSET + indent(level);
+    Rect::new(x0, cell.y0, x0 + DISCLOSURE_WIDTH, cell.y1)
+}
+
+/// How far right of the cell's left edge an outline row's text starts at `level`.
+pub fn outline_text_inset(level: usize) -> f64 {
+    CELL_INSET + indent(level) + DISCLOSURE_WIDTH
+}
+
+fn indent(level: usize) -> f64 {
+    #[expect(clippy::cast_precision_loss, reason = "levels far below 2^52")]
+    let level = level as f64;
+    level * OUTLINE_INDENT
+}
+
+/// Draw a disclosure triangle in the disclosure column `column` (see [`disclosure_rect`]):
+/// pointing right when collapsed, down when expanded, in `color`.
+pub fn disclosure_triangle(scene: &mut Scene, column: Rect, expanded: bool, color: Color) {
+    let c = Point::new(column.center().x.round(), column.center().y.round());
+    let (long, short) = (DISCLOSURE_BASE, DISCLOSURE_DEPTH);
+    let mut path = BezPath::new();
+    if expanded {
+        // Pointing down: the base on top.
+        path.move_to(Point::new(c.x - long / 2.0, c.y - short / 2.0));
+        path.line_to(Point::new(c.x + long / 2.0, c.y - short / 2.0));
+        path.line_to(Point::new(c.x, c.y + short / 2.0));
+    } else {
+        // Pointing right: the base on the left.
+        path.move_to(Point::new(c.x - short / 2.0, c.y - long / 2.0));
+        path.line_to(Point::new(c.x + short / 2.0, c.y));
+        path.line_to(Point::new(c.x - short / 2.0, c.y + long / 2.0));
+    }
+    path.close_path();
+    scene.fill(&path, color);
+}
+
 /// Draw the hairline border of a table's scroll view filling `rect`, inside its edge.
 pub fn table_border(scene: &mut Scene, rect: Rect, variant: impl Into<Variant>) {
     let p = Palette::new(variant.into());
@@ -122,5 +163,17 @@ mod tests {
         let r = sort_arrow_rect(Rect::new(0.0, 0.0, 200.0, 17.0), (0.0, 100.0));
         assert_eq!(r.x1, 100.0 - SORT_ARROW_INSET);
         assert!(r.y0 >= 0.0 && r.y1 <= 16.0, "{r:?}");
+    }
+
+    #[test]
+    fn each_outline_level_indents_the_disclosure_column_and_the_text() {
+        let cell = Rect::new(0.0, 0.0, 100.0, 19.0);
+        let top = disclosure_rect(cell, 0);
+        let nested = disclosure_rect(cell, 2);
+        assert_eq!(top.x0, CELL_INSET);
+        assert_eq!(nested.x0 - top.x0, 2.0 * OUTLINE_INDENT);
+        assert_eq!((top.height(), top.width()), (19.0, DISCLOSURE_WIDTH));
+        assert_eq!(outline_text_inset(0), top.x1, "text follows the column");
+        assert_eq!(outline_text_inset(2), nested.x1);
     }
 }

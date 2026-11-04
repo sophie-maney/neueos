@@ -442,13 +442,22 @@ fn tables(handles: &mut PageHandles) -> Element<Message> {
     .on_select(|rows| Message::TableSelection(rows.len()))
     .width(300.0)
     .height(200.0);
+    let folders = specimens::outline::<Message>()
+        .multiple(true)
+        .alternating_rows(true)
+        .expanded([1])
+        .on_select(|ids| Message::TableSelection(ids.len()))
+        .width(300.0)
+        .height(200.0);
     Stack::column()
         .spacing(spacing::L)
         .with(heading(
             "Tables",
             "Click a row · Shift-click or Shift-arrows extend the selection, Cmd/Ctrl-click \
              adds a row · type a name to jump · Return or double-click opens · click a title \
-             to sort, again to reverse · drag a divider to resize a column",
+             to sort, again to reverse · drag a divider to resize a column · in the outline, \
+             click a triangle (Option-click: every level below) or press Right and Left to \
+             open and close folders",
         ))
         .with(
             Stack::row()
@@ -462,6 +471,7 @@ fn tables(handles: &mut PageHandles) -> Element<Message> {
                     Stack::column().with(tasks),
                 )),
         )
+        .with(section("Outline (folders)", Stack::column().with(folders)))
         .into()
 }
 
