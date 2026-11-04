@@ -628,10 +628,12 @@ fn copy_into(
 ) -> Result<(), String> {
     match buffer_type(buffer) {
         Some(BufferType::Shm) => {
+            debug!("screencopy frame into a shm buffer");
             let pixels = target.read_back(renderer)?;
             copy_into_shm(&pixels, target.size(), buffer)
         }
         Some(BufferType::Dma) => {
+            debug!("screencopy frame into a dmabuf");
             let mut dmabuf = get_dmabuf(buffer)
                 .map_err(|err| format!("not a dmabuf: {err:?}"))?
                 .clone();

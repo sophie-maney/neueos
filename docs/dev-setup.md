@@ -546,34 +546,83 @@ called FreeSync) switched on in the monitor's own menu. Rebuild and start on the
 Record which of these you ran, on which GPU and monitor, in the PR.
 
 ## 17. Checking screenshots and screencopy in the VM (task 1.16d)
-Install once: `sudo pacman -S --needed grim wf-recorder` (grim 1.5 or newer speaks
-`ext-image-copy-capture`; older ones only know wlr-screencopy and fail with "compositor
-doesn't support the screen capture protocol"). Rebuild and start on the tty as in §4, with
-`RUST_LOG=info,neue_comp=debug neue-comp --tty -c foot 2>/tmp/comp.log`, then run these
-from a terminal inside the session (or over ssh with `NEUE_SOCKET` and `WAYLAND_DISPLAY`
-set). View the PNGs by copying them to the Mac (§2.4).
-1. **`neuectl screenshot`:** `neuectl screenshot /tmp/a.png` prints the path, output name
-   and size, and the PNG shows the whole screen with the `foot` window and its title bar.
-   `neuectl --json screenshot b.png` writes `b.png` in the current directory.
-   `neuectl screenshot --output NOPE /tmp/c.png` fails with `unknown_output`, and a path
-   in a directory that does not exist fails with `capture_failed`.
-2. **Cursor:** `neuectl screenshot --cursor /tmp/cursor.png` shows the pointer (move it
-   over the `foot` window first); without `--cursor` it is missing.
-3. **grim, shm:** `grim /tmp/grim.png` matches step 1 (no pointer). `grim -g "$(neuectl
-   --json windows | jq -r '.[0] | "\(.x),\(.y) \(.width)x\(.height)"')" /tmp/win.png`
-   crops to the window.
-4. **grim, cursor:** `grim -c /tmp/grim-cursor.png` shows the pointer exactly as the
-   screen does, including a client's own cursor image (hover a text field in a GTK app)
-   and while dragging a file between windows (the drag icon). This path only exists on
-   the tty backend, which CI cannot run.
-5. **dmabuf:** `wf-recorder -f /tmp/rec.mp4` for a few seconds while moving a window
-   (Ctrl-C to stop), then play `/tmp/rec.mp4`: smooth, correct colours, no stale frames.
-   It uses dmabufs unless you pass `--no-dmabuf`; the first `screencopy session started`
-   line in `/tmp/comp.log` is logged either way, so note whether the recorder reported a
-   dmabuf or an shm capture. If it only works with `--no-dmabuf`, copy the log lines
-   around the failure into the PR: that is the dmabuf blit (ADR 0022) failing on this
-   GPU.
-6. **Mode change:** with `wf-recorder` running, change the output mode (resize the
-   Parallels window, or `neuectl outputs` before and after); the recording continues or
-   ends cleanly, and the compositor does not crash.
-Record which of these you ran, and on which GPU, in the PR.
+Everything runs from the Mac over ssh, from the repo root. `neueos-vm` is the host from
+§2.4; the session is on the tty as in §4. Every `ssh` below sets the two variables the
+Wayland tools need (`R` is just shorthand for them, nothing on the VM changes).
+
+**1. Install once** (needs `grim` 1.5 or newer, which speaks `ext-image-copy-capture`;
+older ones only know wlr-screencopy and say the compositor "doesn't support the screen
+capture protocol"):
+```sh
+ssh -t neueos-vm 'sudo pacman -S --needed grim wf-recorder jq ydotool'
+ssh neueos-vm 'grim -h 2>&1 | head -3; wf-recorder --version'
+```
+
+**2. Build, start, and wait until it listens.** Stop weston and any old compositor first.
+```sh
+rsync -az --delete --exclude target --exclude .git ./ neueos-vm:neueos/
+ssh neueos-vm 'cd neueos && cargo build --release -p neue-comp -p neuectl --no-default-features --features tty'
+ssh neueos-vm 'export XDG_RUNTIME_DIR=/run/user/1000
+  pkill -x weston; WAYLAND_DISPLAY=wayland-1 ~/neueos/target/release/neuectl quit 2>/dev/null; sleep 1
+  unset WAYLAND_DISPLAY; export RUST_LOG=info,neue_comp=debug
+  setsid nohup ~/neueos/target/release/neue-comp --tty -c foot >/tmp/comp.log 2>&1 </dev/null &
+  sleep 3; WAYLAND_DISPLAY=wayland-1 ~/neueos/target/release/neuectl windows'
+```
+`neuectl windows` must list one `foot` window. If not, read `ssh neueos-vm tail -30
+/tmp/comp.log` (`seatd` and `/dev/dri` are the usual causes, §2.3).
+
+**3. Put the pointer on the screen** (ydotool as in §3; the cursor is only drawn when the
+pointer is over an output, and the tty backend draws it itself):
+```sh
+ssh neueos-vm 'sudo sh -c "setsid nohup ydotoold --socket-path=/tmp/.ydotool_socket \
+  --socket-own=1000:1000 >/dev/null 2>&1 </dev/null &"; sleep 1
+  YDOTOOL_SOCKET=/tmp/.ydotool_socket ydotool mousemove -x 40 -y 40'
+```
+
+**4. `neuectl screenshot`.** Set the shorthand once per shell, then run the lines:
+```sh
+R='export XDG_RUNTIME_DIR=/run/user/1000 WAYLAND_DISPLAY=wayland-1; N=~/neueos/target/release'
+ssh neueos-vm "$R; \$N/neuectl screenshot /tmp/a.png"                 # path, output name, size
+ssh neueos-vm "$R; cd /tmp && \$N/neuectl --json screenshot b.png"    # relative path, JSON
+ssh neueos-vm "$R; \$N/neuectl screenshot --cursor /tmp/cursor.png"
+ssh neueos-vm "$R; \$N/neuectl screenshot --output NOPE /tmp/c.png"    # error: unknown_output
+ssh neueos-vm "$R; \$N/neuectl screenshot /tmp/nodir/d.png"            # error: capture_failed
+```
+Expected: the first two print the file, the output name and its size (`1920x1080` or
+whatever the VM runs); the last two print the error code and exit non-zero.
+
+**5. `grim`** (shm captures; `-c` is the cursor path that only the tty backend has):
+```sh
+ssh neueos-vm "$R; grim /tmp/grim.png; grim -c /tmp/grim-cursor.png"
+ssh neueos-vm "$R; grim -g \"\$(\$N/neuectl --json windows | jq -r '.[0] | \"\(.x),\(.y) \(.width)x\(.height)\"')\" /tmp/grim-win.png"
+```
+
+**6. dmabuf.** The compositor logs which kind of buffer each frame went into. Run a capture
+and read the log:
+```sh
+ssh neueos-vm "$R; rm -f /tmp/rec.mp4; timeout -s INT 5 wf-recorder -f /tmp/rec.mp4; true"
+ssh neueos-vm 'grep -c "into a shm buffer" /tmp/comp.log; grep -c "into a dmabuf" /tmp/comp.log'
+```
+`wf-recorder` only uses dmabufs together with a GPU encoder, so for a dmabuf run also try
+`ssh neueos-vm "$R; rm -f /tmp/rec2.mp4; timeout -s INT 5 wf-recorder -c h264_vaapi -d
+/dev/dri/renderD128 -f /tmp/rec2.mp4; true"` and look at the same two counts. On the
+Parallels virtio GPU there is probably no VA-API: then the command fails with an encoder
+error, and the dmabuf path stays unverified (say so in the PR; the x86_64 PC with a real
+GPU is the place for it). Recorder says it cannot find a capture protocol: its version
+predates the ext protocol, skip this step.
+
+**7. Look at the results on the Mac.**
+```sh
+mkdir -p ~/Desktop/neueos-shots && scp 'neueos-vm:/tmp/*.png' 'neueos-vm:/tmp/rec*.mp4' ~/Desktop/neueos-shots/
+open ~/Desktop/neueos-shots
+```
+Check: `a.png` is the whole screen with the `foot` window and title bar; `cursor.png` and
+`grim-cursor.png` show a pointer near the top-left and `a.png` and `grim.png` do not;
+`grim-win.png` is only the window; `rec.mp4` plays smoothly, and moving a window
+meanwhile (not scripted) shows up in it.
+
+**8. Clean up.**
+```sh
+ssh neueos-vm "$R; \$N/neuectl quit; sudo pkill -x ydotoold; true"
+```
+Record which steps you ran, and what the log counts in step 6 were, in the PR.
