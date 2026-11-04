@@ -371,9 +371,14 @@ pub fn is_server_decorated(window: &Window) -> bool {
     })
 }
 
-/// Height of `window`'s server-side title bar, 0 if it draws its own.
+/// Whether `window` shows our title bar: server-side decorated and not full screen.
+pub fn has_title_bar(window: &Window) -> bool {
+    is_server_decorated(window) && !State::is_fullscreen(window)
+}
+
+/// Height of `window`'s title bar, 0 if it draws its own or is full screen.
 pub fn title_bar_height(window: &Window) -> i32 {
-    if is_server_decorated(window) {
+    if has_title_bar(window) {
         TITLE_BAR_HEIGHT
     } else {
         0

@@ -11,6 +11,7 @@
 //!   together. Minimised windows are never focused or under the pointer.
 //! - **Zoom** is the OS X name for the green button; on Wayland it is the `maximized`
 //!   state, filling the work area. Dragging a zoomed window unzooms it.
+//! - **Full screen** is in `fullscreen.rs` (ADR 0018).
 //! - **xdg-activation** only grants focus to tokens made by the focused client (see
 //!   `handlers.rs`); a refused request marks the window as demanding attention.
 
@@ -43,6 +44,11 @@ pub struct WmData {
     /// Geometry before zooming, restored when unzooming. `None` if it was zoomed before it
     /// was first mapped.
     pub unzoomed: Option<Rectangle<i32, Logical>>,
+    /// The output the window is full screen on (`fullscreen.rs`).
+    pub fullscreen: Option<Output>,
+    /// Geometry before going full screen, restored when leaving it. `None` if it was
+    /// zoomed or not mapped yet.
+    pub unfullscreen: Option<Rectangle<i32, Logical>>,
     /// An activation request was refused (see [`State::request_attention`]).
     pub demands_attention: bool,
     /// An interactive move or resize is running; changes are reported when it ends.
@@ -290,7 +296,12 @@ impl State {
     pub(crate) fn map_new_window(&mut self, window: Window) {
         let work = self.active_content_area(&window);
         let size = window.geometry().size;
-        let location = if Self::with_wm_data(&window, |d| d.zoomed) {
+        let fullscreen = Self::fullscreen_output(&window)
+            .and_then(|o| self.space.output_geometry(&o))
+            .map(|g| g.loc);
+        let location = if let Some(loc) = fullscreen {
+            loc
+        } else if Self::with_wm_data(&window, |d| d.zoomed) {
             work.loc
         } else {
             let (_, app_id) = title_and_app_id(&window);
@@ -334,8 +345,10 @@ impl State {
         let parent = self.parent_window(window);
         let client = client_of(window);
         self.chrome_window_gone(window);
-        let geometry = Self::with_wm_data(window, |d| d.zoomed.then_some(d.unzoomed).flatten())
-            .or_else(|| self.window_geometry(window));
+        let geometry = Self::with_wm_data(window, |d| {
+            d.unfullscreen.or(d.zoomed.then_some(d.unzoomed).flatten())
+        })
+        .or_else(|| self.window_geometry(window));
         if let ((_, Some(app_id)), None, Some(geo)) = (title_and_app_id(window), &parent, geometry)
         {
             self.remembered.insert(app_id, (geo.loc.x, geo.loc.y));
@@ -433,6 +446,13 @@ impl State {
         let Some(toplevel) = window.toplevel().cloned() else {
             return;
         };
+        if Self::is_fullscreen(window) {
+            // Ignored while full screen (ADR 0018), but xdg-shell wants a configure.
+            if toplevel.is_initial_configure_sent() {
+                toplevel.send_configure();
+            }
+            return;
+        }
         let mapped = self.space.element_geometry(window);
         let work = match mapped {
             Some(_) => self.work_area_for(window),
@@ -509,6 +529,9 @@ impl State {
         let Some(toplevel) = window.toplevel().cloned() else {
             return;
         };
+        if Self::is_fullscreen(window) {
+            self.unset_fullscreen(window);
+        }
         if Self::with_wm_data(window, |d| d.zoomed) {
             self.set_zoomed(window, false, None);
         }
@@ -536,7 +559,8 @@ impl State {
     }
 
     /// `xdg_toplevel.move`: drag the window with the pointer. A zoomed window is unzoomed
-    /// first, keeping the pointer at the same relative spot of its title bar.
+    /// first, keeping the pointer at the same relative spot of its title bar. Refused
+    /// while full screen.
     pub(crate) fn start_move(&mut self, surface: &WlSurface, seat: &Seat<State>, serial: Serial) {
         let Some(start_data) = self.check_grab(seat, surface, serial) else {
             return;
@@ -559,12 +583,15 @@ impl State {
     /// Get `window` ready to be dragged with the pointer at `pointer`: a zoomed window is
     /// unzoomed first, keeping the pointer at the same relative spot of its title bar, and
     /// the window is marked as grabbed. Returns where its geometry starts, or `None` if it
-    /// is not mapped.
+    /// is not mapped or is full screen.
     pub(crate) fn begin_move(
         &mut self,
         window: &Window,
         pointer: Point<f64, Logical>,
     ) -> Option<Point<i32, Logical>> {
+        if Self::is_fullscreen(window) {
+            return None;
+        }
         let mut geo = self.space.element_geometry(window)?;
         if Self::with_wm_data(window, |d| d.zoomed) {
             let unzoomed = Self::with_wm_data(window, |d| d.unzoomed);
@@ -580,7 +607,8 @@ impl State {
         Some(geo.loc)
     }
 
-    /// `xdg_toplevel.resize`: drag `edge` with the pointer. Ignored while zoomed.
+    /// `xdg_toplevel.resize`: drag `edge` with the pointer. Ignored while zoomed or full
+    /// screen.
     pub(crate) fn start_resize(
         &mut self,
         surface: &WlSurface,
@@ -597,7 +625,7 @@ impl State {
         let Some(geo) = self.space.element_geometry(&window) else {
             return;
         };
-        if Self::with_wm_data(&window, |d| d.zoomed) {
+        if Self::with_wm_data(&window, |d| d.zoomed) || Self::is_fullscreen(&window) {
             return;
         }
         Self::with_wm_data(&window, |d| d.grabbed = true);
@@ -630,6 +658,7 @@ impl State {
                 self.space.map_element(window.clone(), loc, false);
             }
         }
+        self.fullscreen_committed(window);
         self.notify_window_changed(window);
     }
 

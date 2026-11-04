@@ -20,6 +20,7 @@ fn window(id: u64) -> WindowInfo {
         focused: true,
         minimized: false,
         zoomed: false,
+        fullscreen: false,
         demands_attention: false,
         parent: None,
     }

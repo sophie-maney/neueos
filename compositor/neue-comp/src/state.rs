@@ -42,7 +42,7 @@ use smithay::wayland::selection::primary_selection::PrimarySelectionState;
 use smithay::wayland::selection::wlr_data_control::DataControlState as WlrDataControlState;
 use smithay::wayland::session_lock::SessionLockManagerState;
 use smithay::wayland::shell::kde::decoration::KdeDecorationState;
-use smithay::wayland::shell::wlr_layer::WlrLayerShellState;
+use smithay::wayland::shell::wlr_layer::{Layer, WlrLayerShellState};
 use smithay::wayland::shell::xdg::dialog::XdgDialogState;
 use smithay::wayland::shell::xdg::XdgShellState;
 use smithay::wayland::shell::xdg::decoration::XdgDecorationState;
@@ -459,6 +459,7 @@ impl State {
             focused: focus == Some(toplevel.wl_surface()),
             minimized: self.is_minimized(window),
             zoomed,
+            fullscreen: Self::is_fullscreen(window),
             demands_attention,
             parent: self.parent_window(window).and_then(|p| self.window_id(&p)),
         })
@@ -473,7 +474,21 @@ impl State {
         if self.is_locked() {
             return self.lock_surface_under(pos);
         }
-        if let Some(hit) = self.layer_surface_under(pos, &crate::layer::ABOVE_WINDOWS) {
+        // A full-screen window covers its output's top layer (ADR 0018).
+        let covered = self
+            .space
+            .output_under(pos)
+            .next()
+            .is_some_and(|o| crate::fullscreen::fullscreen_window_on(&self.space, o).is_some());
+        let (above, below): (&[Layer], &[Layer]) = if covered {
+            (
+                &[Layer::Overlay],
+                &[Layer::Top, Layer::Bottom, Layer::Background],
+            )
+        } else {
+            (&crate::layer::ABOVE_WINDOWS, &crate::layer::BELOW_WINDOWS)
+        };
+        if let Some(hit) = self.layer_surface_under(pos, above) {
             return Some(hit);
         }
         // Title bars and resize edges belong to the compositor, not to the client.
@@ -487,7 +502,7 @@ impl State {
                     .surface_under(pos - location.to_f64(), WindowSurfaceType::ALL)
                     .map(|(surface, offset)| (surface, (offset + location).to_f64()))
             })
-            .or_else(|| self.layer_surface_under(pos, &crate::layer::BELOW_WINDOWS))
+            .or_else(|| self.layer_surface_under(pos, below))
     }
 
     /// The mapped or minimised window whose toplevel is `surface`.

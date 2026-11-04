@@ -39,7 +39,7 @@ Code: `compositor/neue-comp/src/wm.rs` (policy), `grabs.rs` (pointer grabs),
   yet (genie/scale comes with the dock).
 - **Zoom** (the green button) is the xdg `maximized` state filling the work area. It
   toggles back to the previous geometry. Dragging a zoomed window unzooms it, keeping the
-  pointer at the same relative x in the title bar. Fullscreen is untouched (Phase 4/1.15).
+  pointer at the same relative x in the title bar. Full screen is ADR 0018.
 - **xdg-activation:** every token is accepted, but it is marked *granted* only if the
   requesting client had keyboard focus when it made the token, and any serial it passed
   is no older than the keyboard's last enter. A granted token used within 10 s focuses

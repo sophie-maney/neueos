@@ -180,6 +180,7 @@ fn window_flags(w: &WindowInfo) -> String {
     for (on, name) in [
         (w.minimized, "minimized"),
         (w.zoomed, "zoomed"),
+        (w.fullscreen, "fullscreen"),
         (w.demands_attention, "attention"),
     ] {
         if on {
@@ -252,6 +253,7 @@ mod tests {
             focused,
             minimized: id == 1,
             zoomed: false,
+            fullscreen: false,
             demands_attention: false,
             parent: None,
         };

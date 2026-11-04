@@ -83,6 +83,12 @@ const ACTIONS: &[(&str, &str, WindowArg, &[&str])] = &[
         &[],
     ),
     (
+        "fullscreen-window",
+        "Toggle between filling the output (no title bar) and the previous size",
+        WindowArg::Optional,
+        &[],
+    ),
+    (
         "move-window",
         "Move a window's top-left corner to x, y",
         WindowArg::Optional,
@@ -429,9 +435,21 @@ impl State {
                 self.set_zoomed(&window, !zoomed, None);
                 Ok(())
             }
+            "fullscreen-window" => {
+                let window = self.window_arg(params.window, WindowArg::Optional)?;
+                if Self::is_fullscreen(&window) {
+                    self.unset_fullscreen(&window);
+                } else {
+                    self.set_fullscreen(&window, None);
+                }
+                Ok(())
+            }
             "move-window" => {
                 let (x, y) = (required(params.x, "x")?, required(params.y, "y")?);
                 let window = self.window_arg(params.window, WindowArg::Optional)?;
+                if Self::is_fullscreen(&window) {
+                    self.unset_fullscreen(&window);
+                }
                 if Self::with_wm_data(&window, |d| d.zoomed) {
                     self.set_zoomed(&window, false, None);
                 }

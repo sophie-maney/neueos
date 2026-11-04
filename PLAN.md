@@ -545,7 +545,7 @@ Decisions to follow: ADR 0001 (Smithay), 0003 (IPC), 0004 (config), 0005 (global
       `foot`; the owner resized the Parallels window three times and got one
       `output_changed` per resize with the new mode. A second display can't be tested in
       Parallels, so plugging and unplugging is covered only by the headless tests and
-      waits for real hardware. Not done: mode/transform/enable settings, EDID names, several GPUs (1.15).
+      waits for real hardware. Not done: mode/transform/enable settings, EDID names, several GPUs (later task, see 1.15).
 - [x] **1.8 Clipboard and DnD** · Sonnet. Data device (core part exists since 1.1), primary selection, ext-data-control,
       DnD with icon surfaces.
       *Accept:* `wl-copy`/`wl-paste` round trip in a headless test; DnD of a file between two
@@ -644,8 +644,34 @@ Decisions to follow: ADR 0001 (Smithay), 0003 (IPC), 0004 (config), 0005 (global
       step 4). Not done: tearing, explicit sync untested on hardware,
       per-app sandbox policy.
 - [ ] **1.15 Direct scanout and VRR** · Opus. Direct scanout for full-screen surfaces,
-      adaptive sync per output (config), damage review.
-      *Accept:* scanout and VRR confirmed on real x86_64 hardware (owner); flagged in the PR.
+      adaptive sync per output (config), damage review. Split in three (owner agreed);
+      several GPUs are not part of it (see the 1.7 notes) and get their own task later.
+  - [x] **1.15a Full-screen windows** · Opus. `xdg_toplevel` set/unset fullscreen: the
+        window fills its output (or the one it asks for) without a title bar, above the
+        `top` layer, ignoring exclusive zones; unset restores its place and size; it
+        follows its output on unplug and mode changes. A stopgap until full-screen Spaces
+        (Phase 4), ADR.
+        *Accept:* headless tests (configure size, restore, stacking, unplug); `mpv --fs`
+        in the VM (owner).
+        *Done:* rules in ADR 0018. `fullscreen.rs` (state in `WmData`, output choice,
+        centring on a black backdrop, refit on mode/scale/unplug, the "covered output" rule
+        that drops the `top` layer below the windows unless another app's window is on
+        top), `has_title_bar` hides the bar, `fullscreen` in `WindowInfo` and the
+        `fullscreen-window` action. 8 headless tests in `tests/fullscreen.rs`. VM check
+        (`docs/dev-setup.md` §14) still to do by the owner. Not done: exclusive `top`
+        keyboard surfaces under a full-screen window, animation, menu-bar reveal.
+  - [ ] **1.15b Draw only when needed (damage review)** · Opus. tty stops polling at the
+        refresh rate: outputs are redrawn on commits, input, chrome, layer, lock and config
+        changes; frame callbacks of empty frames are timed from an estimated vblank;
+        animated cursors get their own timer.
+        *Accept:* an idle desktop renders nothing (trace counter); no visual regressions in
+        the VM checklist (owner).
+  - [ ] **1.15c Direct scanout and VRR** · Opus. Primary-plane scanout of full-screen
+        surfaces (overlay planes stay off, NVIDIA), scanout tranche in per-surface dmabuf
+        feedback, `[outputs."NAME"] adaptive_sync = "off" | "on" | "fullscreen"` (default
+        `off`) checked against the connector, shown in `neuectl outputs`.
+        *Accept:* config tests headless; scanout and VRR confirmed on real x86_64 hardware
+        (owner, steps in `docs/dev-setup.md`); flagged in the PR.
 - [ ] **1.16 Screencopy** · Sonnet (Opus for the renderer part). ext-image-copy-capture
       (output and toplevel sources), `neuectl screenshot`. First gives the headless backend
       an optional GLES renderer on EGL surfaceless/device (ADR 0006); CI then needs Mesa.

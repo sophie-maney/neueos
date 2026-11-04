@@ -12,7 +12,8 @@
 //!   rounded up), refreshed once per loop iteration ([`State::refresh_surface_scales`]).
 //! - **Hotplug:** a removed output's windows move to the first remaining output at the same
 //!   offset, clamped into its work area; zoomed windows are refitted when their output
-//!   changes size; windows left on no output are pulled onto the first one.
+//!   changes size, full-screen ones follow theirs or move to the first output (ADR 0018);
+//!   windows left on no output are pulled onto the first one.
 //! - **Frame callbacks** go to each window from the output it overlaps most, so a window is
 //!   paced by one display ([`send_frames`]).
 //! - **IPC:** `output_added`, `output_changed` and `output_removed` (topic `outputs`) are
@@ -202,7 +203,7 @@ impl State {
             let target_work = self.work_area(&target);
             for window in stranded {
                 let work = self.content_area(&window, target_work);
-                if Self::with_wm_data(&window, |d| d.zoomed) {
+                if Self::with_wm_data(&window, |d| d.zoomed) || Self::is_fullscreen(&window) {
                     continue; // refitted below
                 }
                 let Some(geo) = self.space.element_geometry(&window) else {
@@ -296,6 +297,10 @@ impl State {
         };
         let windows: Vec<Window> = self.space.elements().cloned().collect();
         for window in windows {
+            if Self::is_fullscreen(&window) {
+                self.refit_fullscreen(&window);
+                continue;
+            }
             let primary = primary_output(&self.space, &window);
             if Self::with_wm_data(&window, |d| d.zoomed) {
                 let work =
@@ -323,11 +328,24 @@ impl State {
                 self.place_window(&window, loc.into());
             }
         }
+        // Minimised full-screen windows follow their output like mapped ones.
+        let minimized_fullscreen: Vec<Window> = self
+            .minimized
+            .iter()
+            .map(|(w, _)| w.clone())
+            .filter(Self::is_fullscreen)
+            .collect();
+        for window in minimized_fullscreen {
+            self.refit_fullscreen(&window);
+        }
         // Minimised windows come back where they were; keep that somewhere visible.
         let areas: Vec<Rectangle<i32, Logical>> =
             self.outputs().map(|o| self.work_area(o)).collect();
         let first_work = self.work_area(&first);
         for (window, loc) in &mut self.minimized {
+            if Self::is_fullscreen(window) {
+                continue;
+            }
             let size = window.geometry().size;
             let rect = Rectangle::new(*loc, size);
             if !areas.iter().any(|a| a.overlaps(rect)) {

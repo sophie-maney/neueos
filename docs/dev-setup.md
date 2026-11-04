@@ -470,3 +470,21 @@ Install once: `sudo pacman -S --needed weston wayland-utils flatpak mesa-utils v
    flicker or stalls, and `WAYLAND_DEBUG=1 vkcube 2>&1 | grep -m3 set_acquire_point`
    shows the client using it.
 Record which of these you ran in the PR; 4 needs the NVIDIA PC.
+
+## 14. Checking full-screen windows in the VM (task 1.15a)
+Install once: `sudo pacman -S --needed mpv waybar`. Rebuild and start on the tty as in §4
+(`-c foot`). Get a short video onto the VM (any file; `mpv` also plays
+`av://lavfi:testsrc` without one).
+1. **Client request:** `waybar &`, then `mpv --fs av://lavfi:testsrc`. The video fills the
+   whole screen: no title bar, the bar of `waybar` is hidden behind it, and
+   `neuectl windows` shows mpv with `[fullscreen]` at `0,0` and the output's size.
+   Press `f` in mpv: it goes back to its window, at its old place and size, below
+   `waybar` again. Press `f` again, then `q`.
+2. **Action:** open `foot`, then `neuectl action fullscreen-window`: it fills the screen;
+   run it again (`--window ID` from `neuectl windows`) and it comes back where it was.
+3. **Dialog:** in `gnome-text-editor` (or `gedit`) press F11 for full screen, then open
+   the Save dialog (Ctrl+Shift+S): the dialog shows over it and `waybar` stays hidden.
+   Escape, then F11 to leave.
+4. **Mode change:** with mpv full screen, resize the Parallels window: mpv follows the new
+   size.
+Record which of these you ran in the PR.

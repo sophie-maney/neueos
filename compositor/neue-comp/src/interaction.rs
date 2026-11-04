@@ -13,7 +13,7 @@ use smithay::desktop::Window;
 use smithay::input::pointer::{Focus, GrabStartData};
 use smithay::utils::{Logical, Point, Rectangle, Serial};
 
-use crate::decorations::{Hover, TITLE_BAR_HEIGHT, frame_geometry, is_server_decorated};
+use crate::decorations::{Hover, TITLE_BAR_HEIGHT, frame_geometry, has_title_bar};
 use crate::grabs::{Edges, ResizeGrab, TitleBarGrab, TrafficLightGrab};
 use crate::state::State;
 
@@ -104,7 +104,7 @@ impl State {
             if client.as_ref() == Some(window) {
                 return None;
             }
-            if !is_server_decorated(window) {
+            if !has_title_bar(window) {
                 continue;
             }
             let Some(geometry) = self.space.element_geometry(window) else {
