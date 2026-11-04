@@ -90,12 +90,22 @@ the paper and leather materials move to Phase 6/7 (Widgets, Write).
 - [x] **2.8 Springs and animation** · Opus. Spring animation on `on_anim_frame` with the
       `neue-theme` presets, honouring reduced motion.
       *Accept:* unit tests step deterministically; reduced motion snaps to the end value.
-- [ ] **2.9 Gallery, golden harness, push button (the pattern)** · Opus. `apps/gallery`
+- [x] **2.9 Gallery, golden harness, push button (the pattern)** · Opus. `apps/gallery`
       with page list and light/dark, scale and accent switches; a golden helper in
       neue-kit (states × light/dark × scale 1 and 2), gallery added to `GOLDEN_CRATES`;
       the Aqua push button with default-pulse, focus ring, AccessKit and keyboard.
       *Accept:* the gallery runs on macOS and in the VM; button goldens pass on macOS and
       Linux.
+      *Done:* ADR 0037. `apps/gallery` (`neue-gallery`, `cargo xtask gallery`): page list,
+      switches for appearance, accent, contrast, reduced motion and zoom (zoom multiplies
+      the display scale; a real scale override would need a platform API). Golden
+      comparison moved to `neue_paint::golden`; `neue_kit::testing` (feature) renders a
+      `Fixture` in states and `check_states` covers states × light/dark × 1x/2x; 52
+      push-button goldens. Push button: neutral gel, accent when default or held, pulse,
+      focus ring, disabled; Space presses the focused button, Return the default button
+      via a window root that is the focus fallback (new `WindowSpec::focus_fallback`).
+      Also `Cx::set_theme` and `Zoom`. Goldens pass on macOS, Linux aarch64 and x86_64;
+      VM check `docs/checks/phase-2.md` §5 run by the agent.
 - [ ] **2.10 UI font decision (Q2)** · Sonnet. Gallery page comparing the PLAN.md §4 candidates
       side by side; **the owner picks**; bundle the font (OFL) and write an ADR.
       *Accept:* the theme's type scale uses it; goldens re-blessed after diff review.

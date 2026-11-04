@@ -1,19 +1,21 @@
 //! The Elm-style app model (ADR 0035): the app is the model, widgets send messages, and
 //! `update` changes the model and, through handles, the widgets.
 
+use std::collections::hash_map::Entry;
 use std::collections::{HashMap, VecDeque};
 use std::future::Future;
 use std::sync::Arc;
 
 use masonry_core::app::RenderRoot;
-use masonry_core::core::{ErasedAction, FromDynWidget, Widget, WidgetId, WidgetMut};
+use masonry_core::core::{ErasedAction, FromDynWidget, NewWidget, Widget, WidgetId, WidgetMut};
 use masonry_core::peniko::Blob;
 use neue_platform::{WindowId, WindowSpec};
 use neue_theme::Theme;
 
-use crate::element::{Element, Handle, Handler, Handlers};
+use crate::element::{Element, Handle, Handler, Wiring};
 use crate::task::{Mailbox, Sender, Task};
 use crate::theme;
+use crate::widgets::{ButtonWidget, Pressed, RootAction, RootWidget};
 
 /// An app: its state is the model, [`Application::Message`] is everything that can happen
 /// to it, and [`Application::update`] is the only place the state changes.
@@ -153,6 +155,8 @@ pub(crate) struct Kit<M> {
     settings: Settings,
     /// Widget → (its window, what its actions mean).
     handlers: HashMap<WidgetId, (WindowId, Handler<M>)>,
+    /// Each window's default button, which Return presses.
+    defaults: HashMap<WindowId, WidgetId>,
     /// Messages for `update`, in order.
     queue: VecDeque<M>,
     mailbox: Mailbox<M>,
@@ -186,8 +190,11 @@ impl<M> Cx<'_, M> {
     /// Opens a window. It appears after the current callback returns; handles to its
     /// widgets work from then on.
     pub fn open_window(&mut self, window: Window<M>) -> WindowId {
-        let (root, handlers) = window.root.into_parts();
-        let mut spec = WindowSpec::new(window.title, window.size, root);
+        let (content, wiring) = window.root.into_parts();
+        let root = NewWidget::new(RootWidget::new(content));
+        let root_id = root.id();
+        let mut spec = WindowSpec::new(window.title, window.size, root.erased());
+        spec.focus_fallback = Some(root_id);
         spec.app_id = window
             .app_id
             .unwrap_or_else(|| self.kit.settings.app_id.clone());
@@ -195,7 +202,7 @@ impl<M> Cx<'_, M> {
         spec.parent = window.parent;
         spec.modal = window.modal;
         let id = self.host.open_window(spec);
-        self.register_handlers(id, handlers);
+        self.register_wiring(id, wiring);
         id
     }
 
@@ -203,6 +210,7 @@ impl<M> Cx<'_, M> {
     pub fn close_window(&mut self, window: WindowId) {
         self.host.close_window(window);
         self.kit.handlers.retain(|_, (w, _)| *w != window);
+        self.kit.defaults.remove(&window);
     }
 
     /// Open windows, in no particular order.
@@ -218,6 +226,21 @@ impl<M> Cx<'_, M> {
     /// The app's theme.
     pub fn theme(&self) -> Theme {
         self.kit.settings.theme
+    }
+
+    /// Switches every window, and windows opened later, to `theme`. Widgets repaint (and
+    /// re-lay out) with its colours and motion.
+    pub fn set_theme(&mut self, theme: Theme) {
+        if self.kit.settings.theme == theme {
+            return;
+        }
+        self.kit.settings.theme = theme;
+        let props = Arc::new(theme::default_properties(theme));
+        for window in self.host.windows() {
+            if let Some(root) = self.host.render_root(window) {
+                root.set_default_properties(Arc::clone(&props));
+            }
+        }
     }
 
     /// Queues `message` for `update`, after the messages already queued.
@@ -249,9 +272,19 @@ impl<M> Cx<'_, M> {
         Some(root.edit_widget(id, |mut widget| f(widget.downcast::<W>())))
     }
 
-    pub(crate) fn register_handlers(&mut self, window: WindowId, handlers: Handlers<M>) {
-        for (id, handler) in handlers {
+    pub(crate) fn register_wiring(&mut self, window: WindowId, wiring: Wiring<M>) {
+        for (id, handler) in wiring.handlers {
             self.kit.handlers.insert(id, (window, handler));
+        }
+        if let Some(id) = wiring.default_button {
+            match self.kit.defaults.entry(window) {
+                Entry::Occupied(_) => {
+                    tracing::warn!(%id, %window, "the window already has a default button");
+                }
+                Entry::Vacant(slot) => {
+                    slot.insert(id);
+                }
+            }
         }
     }
 
@@ -263,6 +296,14 @@ impl<M> Cx<'_, M> {
         self.kit
             .handlers
             .retain(|id, (w, _)| *w != window || root.has_widget(*id));
+        if self
+            .kit
+            .defaults
+            .get(&window)
+            .is_some_and(|id| !root.has_widget(*id))
+        {
+            self.kit.defaults.remove(&window);
+        }
     }
 }
 
@@ -317,6 +358,7 @@ impl<A: Application> Runner<A> {
         let kit = self.kit.insert(Kit {
             settings,
             handlers: HashMap::new(),
+            defaults: HashMap::new(),
             queue: VecDeque::new(),
             mailbox: Mailbox::new(wake),
         });
@@ -324,7 +366,17 @@ impl<A: Application> Runner<A> {
         self.drain(host);
     }
 
-    pub(crate) fn action(&mut self, host: &mut dyn Host, widget: WidgetId, action: ErasedAction) {
+    pub(crate) fn action(
+        &mut self,
+        host: &mut dyn Host,
+        window: WindowId,
+        widget: WidgetId,
+        action: ErasedAction,
+    ) {
+        let action = match action.downcast::<RootAction>() {
+            Ok(root) => return self.root_action(host, window, *root),
+            Err(action) => action,
+        };
         let Some(kit) = &mut self.kit else { return };
         let Some((_, handler)) = kit.handlers.get_mut(&widget) else {
             tracing::trace!(?action, "action without a handler");
@@ -334,6 +386,39 @@ impl<A: Application> Runner<A> {
             kit.queue.push_back(message);
         }
         self.drain(host);
+    }
+
+    /// Handles a window root's action: Return presses the default button, and window focus
+    /// changes its look.
+    fn root_action(&mut self, host: &mut dyn Host, window: WindowId, action: RootAction) {
+        let Some(kit) = &mut self.kit else { return };
+        let Some(&id) = kit.defaults.get(&window) else {
+            return;
+        };
+        let Some(root) = host.render_root(window) else {
+            return;
+        };
+        match action {
+            RootAction::DefaultKey => {
+                let enabled = root
+                    .get_widget(id)
+                    .is_some_and(|button| !button.ctx().is_disabled());
+                let handler = kit.handlers.get_mut(&id);
+                if let (true, Some((_, handler))) = (enabled, handler)
+                    && let Some(message) = handler(Box::new(Pressed))
+                {
+                    kit.queue.push_back(message);
+                }
+                self.drain(host);
+            }
+            RootAction::WindowFocus(_) => {
+                if root.has_widget(id) {
+                    root.edit_widget(id, |mut button| {
+                        ButtonWidget::edit_window_focus(&mut button.downcast());
+                    });
+                }
+            }
+        }
     }
 
     pub(crate) fn close_requested(&mut self, host: &mut dyn Host, window: WindowId) {
@@ -360,11 +445,11 @@ impl<A: Application> neue_platform::App for Runner<A> {
     fn on_action(
         &mut self,
         cx: &mut neue_platform::Ctx<'_>,
-        _window: WindowId,
+        window: WindowId,
         widget: WidgetId,
         action: ErasedAction,
     ) {
-        self.action(cx, widget, action);
+        self.action(cx, window, widget, action);
     }
 
     fn on_close_requested(&mut self, cx: &mut neue_platform::Ctx<'_>, window: WindowId) {

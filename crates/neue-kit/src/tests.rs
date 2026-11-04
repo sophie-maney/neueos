@@ -9,7 +9,7 @@ use std::time::{Duration, Instant};
 
 use masonry_core::accesskit::{Action, ActionRequest, NodeId, TreeId};
 use masonry_core::app::RenderRoot;
-use masonry_core::core::keyboard::{Key, KeyState, KeyboardEvent};
+use masonry_core::core::keyboard::{Key, KeyState, KeyboardEvent, NamedKey};
 use masonry_core::core::{NewWidget, TextEvent, WidgetId};
 use masonry_core::kurbo::Axis;
 use masonry_testing::{TestHarness, TestHarnessParams};
@@ -18,8 +18,8 @@ use neue_theme::Theme;
 
 use crate::app::{Host, Runner};
 use crate::theme::default_properties;
-use crate::widgets::{LabelWidget, StackWidget};
-use crate::{Application, Button, Cx, Handle, Label, Settings, Stack, Task, Window};
+use crate::widgets::{ButtonWidget, LabelWidget, StackWidget};
+use crate::{Application, Button, Cx, Handle, Label, Settings, Stack, Task, Window, Zoom};
 
 /// Windows as harnesses; the root of each is a stack holding the window's root widget.
 #[derive(Default)]
@@ -27,6 +27,8 @@ struct FakeHost {
     windows: BTreeMap<WindowId, TestHarness<StackWidget>>,
     next: u64,
     exited: bool,
+    /// The theme windows open with.
+    theme: Theme,
 }
 
 impl Host for FakeHost {
@@ -35,11 +37,12 @@ impl Host for FakeHost {
         self.next += 1;
         let mut root = StackWidget::new(Axis::Vertical, 0.0);
         root.push(spec.root);
-        let harness = TestHarness::create_with(
-            default_properties(Theme::default()),
+        let mut harness = TestHarness::create_with(
+            default_properties(self.theme),
             NewWidget::new(root),
             TestHarnessParams::default().with_size((spec.width, spec.height)),
         );
+        harness.set_focus_fallback(spec.focus_fallback);
         self.windows.insert(id, harness);
         id
     }
@@ -84,12 +87,12 @@ fn deliver<A: Application>(runner: &mut Runner<A>, host: &mut FakeHost) {
     loop {
         let action = host
             .windows
-            .values_mut()
-            .find_map(TestHarness::pop_action_erased);
-        let Some((action, widget)) = action else {
+            .iter_mut()
+            .find_map(|(&window, harness)| Some((window, harness.pop_action_erased()?)));
+        let Some((window, (action, widget))) = action else {
             break;
         };
-        runner.action(host, widget, action);
+        runner.action(host, window, widget, action);
     }
 }
 
@@ -239,26 +242,168 @@ fn disabled_buttons_send_nothing_and_enabling_repaints() {
     assert!(runner.app().target_pressed, "enabled");
 }
 
+fn tap(harness: &mut TestHarness<StackWidget>, key: &Key) {
+    for state in [KeyState::Down, KeyState::Up] {
+        harness.process_text_event(TextEvent::Keyboard(KeyboardEvent {
+            state,
+            key: key.clone(),
+            ..KeyboardEvent::default()
+        }));
+    }
+}
+
+const SPACE: fn() -> Key = || Key::Character(" ".into());
+const RETURN: Key = Key::Named(NamedKey::Enter);
+
 #[test]
-fn space_and_return_press_a_focused_button() {
+fn space_presses_a_focused_button_and_return_does_not() {
     let (mut runner, mut host, _) = start(Counter::default());
     let inc = runner.app().increment;
-    for key in [
-        Key::Character(" ".into()),
-        Key::Named(masonry_core::core::keyboard::NamedKey::Enter),
-    ] {
-        let harness = host.only();
-        harness.focus_on(Some(id(&inc)));
-        for state in [KeyState::Down, KeyState::Up] {
-            harness.process_text_event(TextEvent::Keyboard(KeyboardEvent {
-                state,
-                key: key.clone(),
-                ..KeyboardEvent::default()
-            }));
-        }
-        deliver(&mut runner, &mut host);
+    let harness = host.only();
+    harness.focus_on(Some(id(&inc)));
+    tap(harness, &SPACE());
+    deliver(&mut runner, &mut host);
+    assert_eq!(runner.app().count, 1);
+    // Return belongs to the default button, and this window has none.
+    tap(host.only(), &RETURN);
+    deliver(&mut runner, &mut host);
+    assert_eq!(runner.app().count, 1);
+}
+
+/// A dialog: "Cancel", and "Save" as the default button.
+#[derive(Default)]
+struct Dialog {
+    cancel: Handle<Button<&'static str>>,
+    save: Handle<Button<&'static str>>,
+    pressed: Vec<&'static str>,
+}
+
+impl Application for Dialog {
+    type Message = &'static str;
+
+    fn start(&mut self, cx: &mut Cx<'_, &'static str>) {
+        let root = Stack::row()
+            .with(
+                Button::new("Cancel")
+                    .on_press("cancel")
+                    .bind(&mut self.cancel),
+            )
+            .with(
+                Button::new("Save")
+                    .on_press("save")
+                    .as_default()
+                    .bind(&mut self.save),
+            );
+        cx.open_window(Window::new("Dialog", (300, 60), root));
     }
-    assert_eq!(runner.app().count, 2);
+
+    fn update(&mut self, cx: &mut Cx<'_, &'static str>, message: &'static str) {
+        match message {
+            "disable" => self.save.set_enabled(cx, false),
+            pressed => self.pressed.push(pressed),
+        }
+    }
+}
+
+#[test]
+fn return_presses_the_default_button_from_anywhere_in_the_window() {
+    let (mut runner, mut host, _) = start(Dialog::default());
+    let cancel = runner.app().cancel;
+    // Nothing focused: the window root (the focus fallback) takes Return.
+    tap(host.only(), &RETURN);
+    deliver(&mut runner, &mut host);
+    // Another button focused: Return bubbles past it; Space presses it.
+    host.only().focus_on(Some(id(&cancel)));
+    tap(host.only(), &RETURN);
+    deliver(&mut runner, &mut host);
+    tap(host.only(), &SPACE());
+    deliver(&mut runner, &mut host);
+    assert_eq!(runner.app().pressed, ["save", "save", "cancel"]);
+
+    // A disabled default button ignores Return.
+    host.only().focus_on(None);
+    runner.send(&mut host, "disable");
+    tap(host.only(), &RETURN);
+    deliver(&mut runner, &mut host);
+    assert_eq!(runner.app().pressed.len(), 3);
+}
+
+#[test]
+fn the_default_button_tells_assistive_technology_its_shortcut() {
+    let (runner, mut host, _) = start(Dialog::default());
+    let (cancel, save) = (runner.app().cancel, runner.app().save);
+    let harness = host.only();
+    let _ = harness.render();
+    let shortcut = |id| {
+        harness
+            .access_node(id)
+            .expect("node")
+            .data()
+            .keyboard_shortcut()
+            .map(str::to_owned)
+    };
+    assert_eq!(shortcut(id(&save)).as_deref(), Some("Return"));
+    assert_eq!(shortcut(id(&cancel)), None);
+}
+
+fn pulse_of(host: &mut FakeHost, button: WidgetId) -> f64 {
+    host.only()
+        .get_widget_with_id(button)
+        .downcast::<ButtonWidget>()
+        .expect("a button")
+        .inner()
+        .pulse()
+}
+
+#[test]
+fn the_default_button_pulses_only_in_an_active_window() {
+    let (runner, mut host, _) = start(Dialog::default());
+    let (cancel, save) = (id(&runner.app().cancel), id(&runner.app().save));
+    let half = u64::try_from(neue_theme::motion::DEFAULT_BUTTON_PULSE.as_millis() / 2).unwrap();
+    for _ in 0..2 {
+        host.only().animate_ms(half / 2);
+    }
+    assert!(
+        (pulse_of(&mut host, save) - 1.0).abs() < 1e-9,
+        "peak at half a period"
+    );
+    assert_eq!(
+        pulse_of(&mut host, cancel),
+        0.0,
+        "only the default button pulses"
+    );
+
+    // Inactive window: the pulse rests (and stops asking for frames).
+    host.only()
+        .process_text_event(TextEvent::WindowFocusChange(false));
+    host.only().animate_ms(16);
+    assert_eq!(pulse_of(&mut host, save), 0.0);
+}
+
+#[test]
+fn reduced_motion_keeps_the_default_button_still() {
+    let mut runner = Runner::new(
+        Dialog::default(),
+        Settings {
+            theme: Theme {
+                reduced_motion: true,
+                ..Theme::default()
+            },
+            ..Settings::default()
+        },
+    );
+    let mut host = FakeHost {
+        theme: Theme {
+            reduced_motion: true,
+            ..Theme::default()
+        },
+        ..FakeHost::default()
+    };
+    runner.start(&mut host, Arc::new(|| {}));
+    let save = id(&runner.app().save);
+    host.only().animate_ms(300);
+    host.only().animate_ms(300);
+    assert_eq!(pulse_of(&mut host, save), 0.0);
 }
 
 #[test]
@@ -423,4 +568,70 @@ fn closing_a_window_drops_its_handlers() {
     runner.close_requested(&mut host, window);
     assert!(host.windows.is_empty());
     assert_eq!(runner.handler_count(), 0);
+}
+
+/// A button inside a 2× zoom, and a theme switch.
+#[derive(Default)]
+struct Zoomed {
+    zoom: Handle<Zoom<ZoomMsg>>,
+    button: Handle<Button<ZoomMsg>>,
+    pressed: usize,
+}
+
+#[derive(Debug, Clone)]
+enum ZoomMsg {
+    Pressed,
+    Dark,
+}
+
+impl Application for Zoomed {
+    type Message = ZoomMsg;
+
+    fn start(&mut self, cx: &mut Cx<'_, ZoomMsg>) {
+        let button = Button::new("Big")
+            .on_press(ZoomMsg::Pressed)
+            .bind(&mut self.button);
+        let root = Stack::column().with(Zoom::new(2.0, button).bind(&mut self.zoom));
+        cx.open_window(Window::new("Zoom", (300, 100), root));
+    }
+
+    fn update(&mut self, cx: &mut Cx<'_, ZoomMsg>, message: ZoomMsg) {
+        match message {
+            ZoomMsg::Pressed => self.pressed += 1,
+            ZoomMsg::Dark => cx.set_theme(Theme {
+                variant: neue_theme::Variant::new(neue_theme::Appearance::Dark),
+                ..cx.theme()
+            }),
+        }
+    }
+}
+
+#[test]
+fn zoom_scales_its_child_and_clicks_still_land() {
+    let (mut runner, mut host, _) = start(Zoomed::default());
+    let (zoom, button) = (id(&runner.app().zoom), id(&runner.app().button));
+    let harness = host.only();
+    let outer = harness.get_widget_with_id(zoom).ctx().border_box().size();
+    let inner = harness.get_widget_with_id(button).ctx().border_box().size();
+    assert_eq!(outer, inner * 2.0);
+    assert_eq!(inner.height, neue_theme::metrics::control::REGULAR_HEIGHT);
+
+    harness.mouse_click_on(button, None);
+    deliver(&mut runner, &mut host);
+    assert_eq!(runner.app().pressed, 1);
+}
+
+#[test]
+fn set_theme_repaints_open_windows() {
+    let (mut runner, mut host, _) = start(Zoomed::default());
+    let corner = |host: &mut FakeHost| *host.only().render().get_pixel(1, 1);
+    let light = corner(&mut host);
+    runner.send(&mut host, ZoomMsg::Dark);
+    let dark = corner(&mut host);
+    assert!(dark.0[0] < light.0[0], "{light:?} → {dark:?}");
+    assert_eq!(
+        runner.app().pressed,
+        0,
+        "switching themes sends no other messages"
+    );
 }

@@ -11,8 +11,14 @@ publish.workspace = true
 # Portable crate (AGENTS.md platform matrix). Masonry stays behind this crate's API: app
 # crates depend on neue-kit, never on `masonry_*` (ADR 0002 §4, ADR 0035; checked by
 # `cargo xtask check`).
+[features]
+# `neue_kit::testing`: render widgets the way goldens are rendered (vello_cpu), in states
+# and themes. For dev-dependencies of crates with widget goldens.
+testing = ["dep:masonry_testing"]
+
 [dependencies]
 masonry_core.workspace = true
+masonry_testing = { workspace = true, optional = true }
 neue-paint = { workspace = true, features = ["imaging"] }
 neue-platform.workspace = true
 neue-theme.workspace = true

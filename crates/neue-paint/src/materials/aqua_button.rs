@@ -1,14 +1,18 @@
-//! The Aqua gel push button (the default button, tinted by the accent colour).
+//! The Aqua gel push button: neutral at rest, tinted by the accent colour when it is the
+//! default button (pulsing) or held down.
 //!
 //! Built from vector layers only: a soft shadow and etched highlight below, a rim, a
 //! four-stop gel body with a hard midline, and a gloss over the upper half. Colours and
 //! metrics come from [`neue_theme::materials::aqua_button`].
 
 use neue_theme::materials::aqua_button::{
-    ETCH_OFFSET, GLOSS_INSET, GLOSS_TOP, Palette, RADIUS, RIM, SHADOW_BLUR, SHADOW_OFFSET,
+    DISABLED_OPACITY, ETCH_OFFSET, GLOSS_INSET, GLOSS_TOP, Palette, RADIUS, RIM, SHADOW_BLUR,
+    SHADOW_OFFSET,
 };
 use vello_common::kurbo::{Point, Rect, RoundedRect, RoundedRectRadii, Vec2};
 use vello_common::peniko::{Color, Gradient};
+
+use super::focus_ring;
 
 use crate::Variant;
 use crate::scene::Scene;
@@ -27,13 +31,66 @@ fn vertical(rect: Rect, stops: &[(f32, Color)]) -> Gradient {
     Gradient::new_linear(Point::new(0.0, rect.y0), Point::new(0.0, rect.y1)).with_stops(stops)
 }
 
-/// Draw an Aqua push button filling `rect` (logical pixels;
-/// [`neue_theme::metrics::control::REGULAR_HEIGHT`] tall is the regular size). `variant`
-/// accepts an [`crate::Appearance`] for the default accent and contrast.
-///
-/// The button has no label yet: text rendering arrives with neue-kit.
+/// Everything that changes how a push button looks.
+#[derive(Clone, Copy, Debug, Default, PartialEq)]
+pub struct PushButton {
+    /// At rest or held down.
+    pub state: ButtonState,
+    /// The default button (Return presses it): accent gel at rest. Pass `false` while its
+    /// window is inactive.
+    pub default: bool,
+    /// The default button's pulse, from 0 (rest) to 1 (brightest). Ignored for other
+    /// buttons.
+    pub pulse: f32,
+    /// Greyed out: neutral gel at reduced opacity, no focus ring.
+    pub disabled: bool,
+    /// Draws the keyboard focus ring around the button.
+    pub focused: bool,
+}
+
+/// The outline of a push button filling `rect`: the shape focus rings follow.
+pub fn push_button_outline(rect: Rect) -> RoundedRect {
+    RoundedRect::from_rect(rect, RADIUS.min(rect.height() / 2.0))
+}
+
+/// Draw a push button filling `rect` (logical pixels; the label is the caller's). The
+/// focus ring reaches [`neue_theme::metrics::control::FOCUS_RING`] outside `rect`.
+pub fn push_button(scene: &mut Scene, rect: Rect, button: PushButton, variant: impl Into<Variant>) {
+    let variant = variant.into();
+    let palette = if button.disabled {
+        Palette::plain(variant)
+    } else if button.state == ButtonState::Pressed {
+        Palette::new(variant, true)
+    } else if button.default {
+        Palette::new(variant, false).pulsed(button.pulse)
+    } else {
+        Palette::plain(variant)
+    };
+    if button.disabled {
+        scene.push_opacity(DISABLED_OPACITY);
+        draw(scene, rect, &palette);
+        scene.pop_layer();
+    } else {
+        draw(scene, rect, &palette);
+        if button.focused {
+            focus_ring(scene, push_button_outline(rect), variant);
+        }
+    }
+}
+
+/// Draw an accent-coloured Aqua button filling `rect` (logical pixels;
+/// [`neue_theme::metrics::control::REGULAR_HEIGHT`] tall is the regular size): the default
+/// button at rest, or any button held down. `variant` accepts an [`crate::Appearance`] for
+/// the default accent and contrast. [`push_button`] covers every other look.
 pub fn aqua_button(scene: &mut Scene, rect: Rect, state: ButtonState, variant: impl Into<Variant>) {
-    let p = Palette::new(variant.into(), state == ButtonState::Pressed);
+    draw(
+        scene,
+        rect,
+        &Palette::new(variant.into(), state == ButtonState::Pressed),
+    );
+}
+
+fn draw(scene: &mut Scene, rect: Rect, p: &Palette) {
     let radius = RADIUS.min(rect.height() / 2.0);
 
     // Etched highlight below the button, then the drop shadow.
@@ -101,5 +158,29 @@ mod tests {
         );
         assert_eq!(scene.open_layers(), 0);
         assert!(matches!(scene.commands().last(), Some(Command::PopLayer)));
+    }
+
+    #[test]
+    fn disabled_buttons_balance_layers_and_skip_the_focus_ring() {
+        let rect = Rect::new(4.0, 4.0, 96.0, 26.0);
+        let mut focused = Scene::new(100.0, 30.0);
+        let button = PushButton {
+            focused: true,
+            ..PushButton::default()
+        };
+        push_button(&mut focused, rect, button, Appearance::Light);
+        let mut disabled = Scene::new(100.0, 30.0);
+        let button = PushButton {
+            disabled: true,
+            ..button
+        };
+        push_button(&mut disabled, rect, button, Appearance::Light);
+        assert_eq!(disabled.open_layers(), 0);
+        // Opacity layer push and pop replace the focus ring's single stroke.
+        assert_eq!(
+            disabled.commands().len(),
+            focused.commands().len() + 1,
+            "disabled: no ring, one opacity layer"
+        );
     }
 }

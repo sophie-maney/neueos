@@ -50,6 +50,10 @@ pub struct WindowSpec {
     /// A modal dialog (xdg-dialog `set_modal`): its parent takes no input while it's open.
     /// Wayland only for now.
     pub modal: bool,
+    /// The widget that gets keyboard events while no widget has focus
+    /// (`RenderRoot::set_focus_fallback`). neue-kit points it at its window root, which
+    /// turns Return into a press of the default button.
+    pub focus_fallback: Option<WidgetId>,
 }
 
 impl WindowSpec {
@@ -65,6 +69,7 @@ impl WindowSpec {
             kind: WindowKind::Toplevel,
             parent: None,
             modal: false,
+            focus_fallback: None,
         }
     }
 }

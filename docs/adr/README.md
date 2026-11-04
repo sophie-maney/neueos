@@ -46,3 +46,4 @@ Don't edit an accepted ADR's decision; supersede it with a new one.
 | [0034](0034-wayland-popups-clipboard-a11y.md) | Wayland driver: popup placement, clipboard, activation, dialogs, AccessKit | Accepted |
 | [0035](0035-neue-kit-app-model.md) | neue-kit app model: messages, retained widgets, handles, background tasks | Accepted |
 | [0036](0036-spring-animation.md) | Spring animation: closed-form solver in neue-theme, stepped on Masonry frames | Accepted |
+| [0037](0037-widget-pattern-goldens-default-button.md) | The widget pattern: gallery goldens, window root, default button | Accepted |

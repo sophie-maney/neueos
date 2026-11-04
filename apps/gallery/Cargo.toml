@@ -1,0 +1,22 @@
+[package]
+name = "neue-gallery"
+description = "neueOS widget gallery: every neue-kit widget, in every theme, and the source of their goldens"
+version.workspace = true
+edition.workspace = true
+rust-version.workspace = true
+license.workspace = true
+repository.workspace = true
+publish.workspace = true
+
+# Portable (AGENTS.md platform matrix): runs on macOS through neue-kit's winit driver.
+# Uses neue-kit only, never `masonry_*` (checked by `cargo xtask check`).
+[dependencies]
+anyhow.workspace = true
+neue-kit.workspace = true
+tracing-subscriber.workspace = true
+
+[dev-dependencies]
+neue-kit = { workspace = true, features = ["testing"] }
+
+[lints]
+workspace = true

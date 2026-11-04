@@ -56,6 +56,8 @@ mod anim;
 mod app;
 mod element;
 mod task;
+#[cfg(feature = "testing")]
+pub mod testing;
 mod theme;
 mod widgets;
 
@@ -66,7 +68,7 @@ pub use app::{Application, Cx, Error, Settings, Window, run};
 pub use element::{Element, Handle};
 pub use neue_platform::WindowId;
 pub use task::{Sender, Task};
-pub use widgets::{Align, Button, Label, Stack, TextStyle};
+pub use widgets::{Align, Button, Label, Stack, TextStyle, Zoom};
 
 /// Design tokens (colours, metrics, type scale, motion).
 pub use neue_theme as tokens;
