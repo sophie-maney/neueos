@@ -333,7 +333,7 @@ ssh neueos-vm 'export XDG_RUNTIME_DIR=/run/user/1000 RUST_LOG=info; unset WAYLAN
   setsid nohup ~/neueos/target/release/neue-gallery >/tmp/gallery.log 2>&1 </dev/null &
   sleep 4; neuectl windows; grep -E "WARN|ERROR" /tmp/gallery.log; neuectl screenshot /tmp/gal1.png'
 ```
-Expected: "Widget Gallery" at 860x480+82+110, no `WARN` or `ERROR`. `gal1.png` shows the
+Expected: "Widget Gallery" at 860x560+82+110, no `WARN` or `ERROR`. `gal1.png` shows the
 page list, the switches, and the Push Button page with a blue "OK" default button.
 
 **2. Keyboard: Return, Tab, Space:**

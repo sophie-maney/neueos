@@ -7,6 +7,59 @@
 /// Darkening applied to rims under increased contrast.
 const CONTRAST_RIM: f32 = 0.6;
 
+/// What a translucent material sits on.
+///
+/// The menu bar, the dock shelf and HUD panels are translucent. Their colours are defined
+/// with alpha, for the compositor to draw over a blurred copy of what is behind them
+/// (Phase 3: the backdrop-blur protocol, ADR 0002 §7). Until a surface has a blur behind
+/// it, [`Backdrop::Opaque`] draws the same tint flattened over a nominal backdrop.
+#[derive(Clone, Copy, Debug, Default, PartialEq, Eq, Hash)]
+pub enum Backdrop {
+    /// Nothing is blurred behind the material: draw the tint flattened onto a nominal
+    /// backdrop, so it is fully opaque. The default, and the fallback.
+    #[default]
+    Opaque,
+    /// The compositor blurs the content behind the material: draw the translucent tint.
+    Translucent,
+}
+
+impl Backdrop {
+    /// What to draw for `variant`: increased contrast reduces transparency, so it is
+    /// always opaque.
+    pub fn for_variant(self, variant: crate::Variant) -> Self {
+        if variant.is_increased_contrast() {
+            Self::Opaque
+        } else {
+            self
+        }
+    }
+}
+
+/// `color` flattened onto the opaque grey `base`: the colour it shows over a backdrop of
+/// that grey.
+fn flatten(color: crate::Color, base: f32) -> crate::Color {
+    let a = color.components[3];
+    let [r, g, b, _] = color.components;
+    crate::rgb(
+        base * (1.0 - a) + r * a,
+        base * (1.0 - a) + g * a,
+        base * (1.0 - a) + b * a,
+    )
+}
+
+/// `colors` as drawn on `backdrop`: unchanged when translucent, flattened onto the grey
+/// `base` when opaque.
+fn on_backdrop<const N: usize>(
+    colors: [crate::Color; N],
+    backdrop: Backdrop,
+    base: f32,
+) -> [crate::Color; N] {
+    match backdrop {
+        Backdrop::Translucent => colors,
+        Backdrop::Opaque => colors.map(|c| flatten(c, base)),
+    }
+}
+
 /// The Aqua gel push button.
 pub mod aqua_button {
     use super::CONTRAST_RIM;
@@ -497,6 +550,236 @@ pub mod title_bar {
     }
 }
 
+/// The menu bar: a light (or dark) gradient strip across the top of the screen.
+pub mod menu_bar {
+    use super::{Backdrop, on_backdrop};
+    use crate::{Appearance, Color, Variant, black, rgba, white};
+
+    /// Height of the bar.
+    pub const HEIGHT: f64 = 22.0;
+    /// Thickness of the highlight along the top edge and the line along the bottom.
+    pub const EDGE: f64 = 1.0;
+    /// Font size of the menu titles.
+    pub const FONT_SIZE: f32 = crate::typography::BODY;
+    /// Baseline of the labels, from the top of the bar.
+    pub const LABEL_BASELINE: f64 = 15.0;
+    /// How far the label's embossed shadow sits below the text.
+    pub const LABEL_EMBOSS_OFFSET: f64 = 1.0;
+
+    /// Colours of the bar.
+    #[derive(Clone, Copy, Debug, PartialEq)]
+    pub struct Palette {
+        /// Gradient top and bottom.
+        pub fill: [Color; 2],
+        /// Highlight along the top edge.
+        pub highlight: Color,
+        /// Line along the bottom edge, between the bar and what is below.
+        pub separator: Color,
+        /// Menu titles and menu extras.
+        pub label: Color,
+        /// Embossed shadow below the labels.
+        pub label_shadow: Color,
+    }
+
+    impl Palette {
+        /// Colours for `variant` on `backdrop`. The accent does not tint the bar.
+        /// Increased contrast makes the bar opaque with a firmer line and text.
+        pub fn new(variant: Variant, backdrop: Backdrop) -> Self {
+            let backdrop = backdrop.for_variant(variant);
+            let contrast = variant.is_increased_contrast();
+            let p = match variant.appearance {
+                Appearance::Light => Self {
+                    fill: on_backdrop(
+                        [rgba(0.97, 0.97, 0.97, 0.80), rgba(0.84, 0.84, 0.85, 0.80)],
+                        backdrop,
+                        0.62,
+                    ),
+                    highlight: white(0.60),
+                    separator: black(0.45),
+                    label: black(0.85),
+                    label_shadow: white(0.45),
+                },
+                Appearance::Dark => Self {
+                    fill: on_backdrop(
+                        [rgba(0.27, 0.27, 0.29, 0.76), rgba(0.14, 0.14, 0.16, 0.76)],
+                        backdrop,
+                        0.15,
+                    ),
+                    highlight: white(0.14),
+                    separator: black(0.80),
+                    label: white(0.88),
+                    label_shadow: black(0.50),
+                },
+            };
+            match (contrast, variant.appearance) {
+                (false, _) => p,
+                (true, Appearance::Light) => Self {
+                    separator: black(0.80),
+                    label: black(1.0),
+                    ..p
+                },
+                (true, Appearance::Dark) => Self {
+                    separator: black(1.0),
+                    label: white(1.0),
+                    highlight: white(0.30),
+                    ..p
+                },
+            }
+        }
+    }
+}
+
+/// The dock shelf: translucent glass, seen in perspective or flat.
+pub mod dock_shelf {
+    use super::{Backdrop, on_backdrop};
+    use crate::{Appearance, Color, Variant, black, rgba, white};
+
+    /// Height of the shelf in perspective.
+    pub const DEPTH: f64 = 24.0;
+    /// How far the far (top) edge of the shelf in perspective is inset from the near edge
+    /// at each end.
+    pub const PERSPECTIVE_INSET: f64 = 18.0;
+    /// Corner radius of the flat shelf.
+    pub const FLAT_RADIUS: f64 = 8.0;
+    /// Thickness of the edge highlights.
+    pub const EDGE: f64 = 1.0;
+    /// Share of the shelf's height that the sheen covers, from its far edge.
+    pub const SHEEN_HEIGHT: f64 = 0.45;
+
+    /// Colours of the shelf.
+    #[derive(Clone, Copy, Debug, PartialEq)]
+    pub struct Palette {
+        /// Glass body, far edge and near edge.
+        pub fill: [Color; 2],
+        /// Sheen over the far part of the glass, far edge and where it ends.
+        pub sheen: [Color; 2],
+        /// Highlight along the far edge (the top of the glass).
+        pub top_edge: Color,
+        /// Highlight along the slanted (or rounded) sides.
+        pub side_edge: Color,
+        /// Line along the near edge, where the glass meets the screen.
+        pub bottom_edge: Color,
+    }
+
+    impl Palette {
+        /// Colours for `variant` on `backdrop`. The accent does not tint the glass.
+        /// Increased contrast makes it opaque with firmer edges.
+        pub fn new(variant: Variant, backdrop: Backdrop) -> Self {
+            let backdrop = backdrop.for_variant(variant);
+            let contrast = variant.is_increased_contrast();
+            let edge_boost = if contrast { 0.35 } else { 0.0 };
+            match variant.appearance {
+                Appearance::Light => Self {
+                    fill: on_backdrop(
+                        [rgba(1.0, 1.0, 1.0, 0.20), rgba(1.0, 1.0, 1.0, 0.52)],
+                        backdrop,
+                        0.55,
+                    ),
+                    sheen: [white(0.38), white(0.04)],
+                    top_edge: white(0.70 + edge_boost),
+                    side_edge: white(0.45 + edge_boost),
+                    bottom_edge: black(0.22 + edge_boost),
+                },
+                Appearance::Dark => Self {
+                    fill: on_backdrop(
+                        [rgba(1.0, 1.0, 1.0, 0.07), rgba(1.0, 1.0, 1.0, 0.20)],
+                        backdrop,
+                        0.14,
+                    ),
+                    sheen: [white(0.20), white(0.02)],
+                    top_edge: white(0.32 + edge_boost),
+                    side_edge: white(0.20 + edge_boost),
+                    bottom_edge: black(0.60 + edge_boost),
+                },
+            }
+        }
+    }
+}
+
+/// The dark HUD panel: volume and brightness indicators, HUD windows.
+pub mod hud {
+    use super::{Backdrop, on_backdrop};
+    use crate::{Appearance, Color, Variant, black, radii, rgba, white};
+
+    /// Corner radius.
+    pub const RADIUS: f64 = radii::PANEL;
+    /// Rim thickness.
+    pub const RIM: f64 = 1.0;
+    /// How far the drop shadow sits below the panel.
+    pub const SHADOW_OFFSET: f64 = 3.0;
+    /// Blur radius (standard deviation) of the drop shadow.
+    pub const SHADOW_BLUR: f64 = 5.0;
+    /// How far the shadow reaches beyond the panel's sides and top, for callers that
+    /// leave room for it.
+    pub const SHADOW_REACH: f64 = 3.0 * SHADOW_BLUR;
+    /// Share of the panel's height that the gloss covers, from the top.
+    pub const GLOSS_HEIGHT: f64 = 0.45;
+
+    /// Colours of the panel.
+    #[derive(Clone, Copy, Debug, PartialEq)]
+    pub struct Palette {
+        /// Drop shadow.
+        pub shadow: Color,
+        /// Body, top and bottom.
+        pub fill: [Color; 2],
+        /// Gloss over the upper part of the body, top and bottom.
+        pub gloss: [Color; 2],
+        /// Rim, inside the body's edge.
+        pub rim: Color,
+        /// Text and glyphs.
+        pub label: Color,
+        /// Secondary text.
+        pub secondary_label: Color,
+    }
+
+    impl Palette {
+        /// Colours for `variant` on `backdrop`. The HUD is dark in both appearances: in
+        /// the dark one it is deeper and has a brighter rim and shadow, so it stays
+        /// separate from dark windows. The accent does not tint it. Increased contrast
+        /// makes it opaque with a bright rim.
+        pub fn new(variant: Variant, backdrop: Backdrop) -> Self {
+            let backdrop = backdrop.for_variant(variant);
+            let contrast = variant.is_increased_contrast();
+            let p = match variant.appearance {
+                Appearance::Light => Self {
+                    shadow: black(0.45),
+                    fill: on_backdrop(
+                        [rgba(0.20, 0.20, 0.21, 0.80), rgba(0.06, 0.06, 0.07, 0.82)],
+                        backdrop,
+                        0.50,
+                    ),
+                    gloss: [white(0.24), white(0.03)],
+                    rim: white(0.28),
+                    label: white(0.95),
+                    secondary_label: white(0.60),
+                },
+                Appearance::Dark => Self {
+                    shadow: black(0.75),
+                    fill: on_backdrop(
+                        [rgba(0.10, 0.10, 0.11, 0.86), rgba(0.02, 0.02, 0.03, 0.88)],
+                        backdrop,
+                        0.15,
+                    ),
+                    gloss: [white(0.14), white(0.02)],
+                    rim: white(0.36),
+                    label: white(0.92),
+                    secondary_label: white(0.55),
+                },
+            };
+            if contrast {
+                Self {
+                    rim: white(0.70),
+                    label: white(1.0),
+                    secondary_label: white(0.80),
+                    ..p
+                }
+            } else {
+                p
+            }
+        }
+    }
+}
+
 #[cfg(test)]
 mod tests {
     use super::title_bar::{BarPalette, Light, LightPalette, LightState};
@@ -546,6 +829,67 @@ mod tests {
                 LightPalette::new(Light::Close, state, dark)
             );
         }
+    }
+
+    #[test]
+    fn translucent_materials_have_distinct_dark_variants() {
+        for light in variants() {
+            let dark = Variant {
+                appearance: Appearance::Dark,
+                ..light
+            };
+            for backdrop in [Backdrop::Opaque, Backdrop::Translucent] {
+                assert_ne!(
+                    menu_bar::Palette::new(light, backdrop),
+                    menu_bar::Palette::new(dark, backdrop)
+                );
+                assert_ne!(
+                    dock_shelf::Palette::new(light, backdrop),
+                    dock_shelf::Palette::new(dark, backdrop)
+                );
+                assert_ne!(
+                    hud::Palette::new(light, backdrop),
+                    hud::Palette::new(dark, backdrop)
+                );
+            }
+        }
+    }
+
+    #[test]
+    fn opaque_fills_are_opaque_and_translucent_ones_are_not() {
+        let alphas = |v: Variant, backdrop: Backdrop| {
+            [
+                menu_bar::Palette::new(v, backdrop).fill.to_vec(),
+                dock_shelf::Palette::new(v, backdrop).fill.to_vec(),
+                hud::Palette::new(v, backdrop).fill.to_vec(),
+            ]
+            .concat()
+            .into_iter()
+            .map(|c| c.components[3])
+            .collect::<Vec<_>>()
+        };
+        for appearance in [Appearance::Light, Appearance::Dark] {
+            let v = Variant::new(appearance);
+            assert!(alphas(v, Backdrop::Opaque).iter().all(|&a| a == 1.0));
+            assert!(alphas(v, Backdrop::Translucent).iter().all(|&a| a < 1.0));
+            // Increased contrast reduces transparency.
+            let strong = v.with_contrast(Contrast::Increased);
+            assert!(
+                alphas(strong, Backdrop::Translucent)
+                    .iter()
+                    .all(|&a| a == 1.0)
+            );
+        }
+    }
+
+    #[test]
+    fn flattening_blends_toward_the_base() {
+        let c = flatten(crate::rgba(1.0, 1.0, 1.0, 0.5), 0.0);
+        assert_eq!(c.components, [0.5, 0.5, 0.5, 1.0]);
+        assert_eq!(
+            flatten(crate::rgb(0.2, 0.3, 0.4), 0.9).components,
+            [0.2, 0.3, 0.4, 1.0]
+        );
     }
 
     #[test]

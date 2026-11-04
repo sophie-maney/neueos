@@ -116,9 +116,16 @@ the paper and leather materials move to Phase 6/7 (Widgets, Write).
       The comparison page and its multi-font plumbing were removed again (commits
       b57c90c, edf9bc5 in the branch history); `NEUE_GALLERY_PAGE=<n>` stays for screenshots.
       Regular weight only, so no bold yet.
-- [ ] **2.11 Materials for Phases 2–3** · Sonnet. Dark HUD, translucent menu bar, glass
+- [x] **2.11 Materials for Phases 2–3** · Sonnet. Dark HUD, translucent menu bar, glass
       dock shelf, in light and dark, plus a Materials gallery page.
       *Accept:* goldens per material; CPU and GPU renders match within tolerance.
+      *Done:* ADR 0039. `neue_theme::materials::{menu_bar, dock_shelf, hud}` palettes with
+      alpha and `Backdrop::{Opaque, Translucent}` (opaque is the derived Phase 2 fallback;
+      increased contrast forces it); drawing in `neue_paint::materials` (dock shelf in
+      perspective and flat). 48 neue-paint goldens plus 16 gallery goldens of the new
+      `neue_kit::Specimen`; `neue-paint/tests/gpu.rs` compares CPU and GPU renders (max
+      channel difference 2 on Apple GPUs; skips without an adapter). Gallery page
+      "Materials" (window now 860×560). Goldens pass on macOS, Linux aarch64 and x86_64.
 - [ ] **2.12 Buttons batch** · Sonnet. Bevel and recessed buttons, checkbox, radio,
       segmented control.
 - [ ] **2.13 Value controls** · Sonnet. Slider, stepper, progress bar with barber pole,

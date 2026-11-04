@@ -1,7 +1,7 @@
 //! The gallery's pages, one per widget (or family of widgets).
 
 use neue_kit::tokens::metrics::spacing;
-use neue_kit::{Button, Element, Label, Stack, TextStyle};
+use neue_kit::{Button, Element, Label, MaterialTile, Stack, TextStyle};
 
 use crate::Message;
 use crate::specimens;
@@ -22,6 +22,10 @@ pub const PAGES: &[Page] = &[
     Page {
         title: "Text",
         build: text,
+    },
+    Page {
+        title: "Materials",
+        build: materials,
     },
 ];
 
@@ -95,4 +99,41 @@ fn text() -> Element<Message> {
     }
     page = page.with(list.with(Label::new("Secondary label").secondary()));
     page.into()
+}
+
+fn materials() -> Element<Message> {
+    let column = |translucent: bool| {
+        let tile = |tile| specimens::material(tile, translucent);
+        Stack::column()
+            .spacing(spacing::M)
+            .with(section(
+                "Menu bar",
+                Stack::row().with(tile(MaterialTile::MenuBar)),
+            ))
+            .with(section(
+                "Dock shelf",
+                Stack::row().with(tile(MaterialTile::DockShelf)),
+            ))
+            .with(section(
+                "Dock shelf, flat (left and right edges)",
+                Stack::row().with(tile(MaterialTile::DockShelfFlat)),
+            ))
+            .with(section(
+                "HUD panel",
+                Stack::row().with(tile(MaterialTile::Hud)),
+            ))
+    };
+    Stack::column()
+        .spacing(spacing::M)
+        .with(heading(
+            "Materials",
+            "Left: opaque (no blur behind). Right: translucent (blurred backdrop, Phase 3).",
+        ))
+        .with(
+            Stack::row()
+                .spacing(spacing::L)
+                .with(column(false))
+                .with(column(true)),
+        )
+        .into()
 }

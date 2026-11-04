@@ -26,7 +26,7 @@ mod scene;
 pub mod text;
 
 pub use neue_theme as theme;
-pub use neue_theme::{Accent, Appearance, Contrast, Variant};
+pub use neue_theme::{Accent, Appearance, Backdrop, Contrast, Variant};
 pub use scene::{Brush, Command, ProceduralTexture, Scene, TextureBrush};
 pub use vello_common::kurbo;
 pub use vello_common::peniko;

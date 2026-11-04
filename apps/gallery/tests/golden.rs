@@ -13,7 +13,7 @@ use neue_kit::testing::{
     self, DISABLED, FOCUSED, Fixture, Goldens, INACTIVE, NORMAL, PRESSED, State,
 };
 use neue_kit::tokens::motion::DEFAULT_BUTTON_PULSE;
-use neue_kit::{Accent, Theme, Variant};
+use neue_kit::{Accent, Element, MaterialTile, Theme, Variant};
 
 fn goldens() -> Goldens {
     Goldens::new(
@@ -68,4 +68,27 @@ fn default_button_graphite() {
         || specimens::default_button::<()>().into(),
     )
     .unwrap();
+}
+
+/// The Specimen widget, painting the HUD and the menu bar through Masonry: opaque and
+/// translucent, light and dark, scale 1 and 2. The materials themselves have their
+/// goldens in neue-paint.
+#[test]
+fn material_specimens() {
+    for (tile, name) in [
+        (MaterialTile::Hud, "specimen-hud"),
+        (MaterialTile::MenuBar, "specimen-menu-bar"),
+    ] {
+        for (translucent, look) in [(false, "opaque"), (true, "translucent")] {
+            testing::check_states(
+                &goldens(),
+                &format!("{name}-{look}"),
+                specimens::material_window_size(tile),
+                Theme::default(),
+                &[NORMAL],
+                move || Element::<()>::from(specimens::material(tile, translucent)),
+            )
+            .unwrap();
+        }
+    }
 }
