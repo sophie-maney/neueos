@@ -35,7 +35,7 @@ column was dropped.
 | Multi-monitor, hotplug | n/a | — (one monitor) |
 | A day of real use without a crash | — | — (short test session, no crash) |
 | Logout returns to greetd, unit ends `success` | ✅ after B2 | ✅ (B6 in the log) |
-| Compositor log free of errors | ⚠️ B3 | ⚠️ B3, B5 (fixed since) |
+| Compositor log free of errors | ⚠️ B3 | ⚠️ B3 (B5 fixed) |
 
 The VM checks ran over ssh: apps were started with `systemd-run --user`, as a launcher would,
 and checked with `neuectl windows` and `neuectl screenshot`. Input by hand was not tested.
@@ -47,7 +47,7 @@ and checked with `neuectl windows` and `neuectl screenshot`. Input by hand was n
 | B2 | When the compositor quit by itself (Super+Q, `neuectl quit`), systemd still ran `ExecStop=neuectl quit`, which failed, so `neue-comp.service` ended `failed`. | `session/systemd/user/neue-comp.service` | **Fixed in this PR:** `ExecStop=-…` ignores its exit status. |
 | B3 | On exit, Smithay logs `ERROR … Failed to restore previous state: Invalid argument`. Seen on virtio-gpu and on NVIDIA. The console comes back anyway. | `neue-comp` tty backend | Open, cosmetic. |
 | B4 | Kate shows no global-menu address without a DBusMenu registrar. | — | Expected until Phase 3 (ADR 0025). |
-| B5 | NVIDIA PC: Smithay logged `ERROR smithay::wayland::shell::xdg: surface missing from known popups` 11 times in 75 s. Cause: Smithay's `xdg_popup` pre-commit hook stays on the `wl_surface` after the client destroys the `xdg_popup`, and GTK commits that bare surface when it closes a menu. That is valid protocol, so the hook found no popup and logged instead. Nothing was lost (no grab, no real error). | Smithay | **Fixed:** Smithay pinned to a fork commit that skips the hook once the popup is gone (ADR 0029). Test `popups::committing_a_closed_popups_surface_logs_no_error`. Not rechecked on the PC. |
+| B5 | NVIDIA PC: Smithay logged `ERROR smithay::wayland::shell::xdg: surface missing from known popups` 11 times in 75 s. Cause: Smithay's `xdg_popup` pre-commit hook stays on the `wl_surface` after the client destroys the `xdg_popup`, and GTK commits that bare surface when it closes a menu. That is valid protocol, so the hook found no popup and logged instead. Nothing was lost (no grab, no real error). | Smithay | **Fixed:** Smithay pinned to a fork commit that skips the hook once the popup is gone (ADR 0029). Test `popups::committing_a_closed_popups_surface_logs_no_error`. Rechecked on the NVIDIA PC: no occurrences in a session with every app's menus used (the old build logged 12 in 90 s). |
 | B6 | At logout, `xwayland-satellite` panics with `Failed flushing clientside events: … EPIPE` (`src/server/mod.rs:802`) once the compositor has gone. | xwayland-satellite 0.8.3 | Upstream, harmless (session ending). |
 
 ## Not covered
