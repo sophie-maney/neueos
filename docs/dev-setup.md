@@ -547,8 +547,9 @@ Record which of these you ran, on which GPU and monitor, in the PR.
 
 ## 17. Checking screenshots and screencopy in the VM (task 1.16d)
 Everything runs from the Mac over ssh, from the repo root. `neueos-vm` is the host from
-§2.4; the session is on the tty as in §4. Every `ssh` below sets the two variables the
-Wayland tools need (`R` is just shorthand for them, nothing on the VM changes).
+§2.4; the session is on the tty as in §4. The commands contain no local shell syntax, so
+they work from fish, zsh or bash. Over ssh the Wayland tools need `XDG_RUNTIME_DIR` and
+`WAYLAND_DISPLAY`: `docs/vm-env.sh` (rsynced with the repo) sets them.
 
 **1. Install once** (needs `grim` 1.5 or newer, which speaks `ext-image-copy-capture`;
 older ones only know wlr-screencopy and say the compositor "doesn't support the screen
@@ -579,37 +580,40 @@ ssh neueos-vm 'sudo sh -c "setsid nohup ydotoold --socket-path=/tmp/.ydotool_soc
   YDOTOOL_SOCKET=/tmp/.ydotool_socket ydotool mousemove -x 40 -y 40'
 ```
 
-**4. `neuectl screenshot`.** Set the shorthand once per shell, then run the lines:
+**4. `neuectl screenshot`.** Each line sources `docs/vm-env.sh` on the VM (it sets
+`XDG_RUNTIME_DIR`, `WAYLAND_DISPLAY` and `PATH`). All the commands are single-quoted, so
+they work unchanged from fish, zsh or bash on the Mac.
 ```sh
-R='export XDG_RUNTIME_DIR=/run/user/1000 WAYLAND_DISPLAY=wayland-1; N=~/neueos/target/release'
-ssh neueos-vm "$R; \$N/neuectl screenshot /tmp/a.png"                 # path, output name, size
-ssh neueos-vm "$R; cd /tmp && \$N/neuectl --json screenshot b.png"    # relative path, JSON
-ssh neueos-vm "$R; \$N/neuectl screenshot --cursor /tmp/cursor.png"
-ssh neueos-vm "$R; \$N/neuectl screenshot --output NOPE /tmp/c.png"    # error: unknown_output
-ssh neueos-vm "$R; \$N/neuectl screenshot /tmp/nodir/d.png"            # error: capture_failed
+ssh neueos-vm '. ~/neueos/docs/vm-env.sh; neuectl screenshot /tmp/a.png'
+ssh neueos-vm '. ~/neueos/docs/vm-env.sh; cd /tmp && neuectl --json screenshot b.png'
+ssh neueos-vm '. ~/neueos/docs/vm-env.sh; neuectl screenshot --cursor /tmp/cursor.png'
+ssh neueos-vm '. ~/neueos/docs/vm-env.sh; neuectl screenshot --output NOPE /tmp/c.png'
+ssh neueos-vm '. ~/neueos/docs/vm-env.sh; neuectl screenshot /tmp/nodir/d.png'
 ```
-Expected: the first two print the file, the output name and its size (`1920x1080` or
-whatever the VM runs); the last two print the error code and exit non-zero.
+Expected: the first three print the file (or JSON), the output name and its size
+(`1920x1080` or whatever the VM runs); the last two print `unknown_output` and
+`capture_failed` and exit non-zero.
 
 **5. `grim`** (shm captures; `-c` is the cursor path that only the tty backend has):
 ```sh
-ssh neueos-vm "$R; grim /tmp/grim.png; grim -c /tmp/grim-cursor.png"
-ssh neueos-vm "$R; grim -g \"\$(\$N/neuectl --json windows | jq -r '.[0] | \"\(.x),\(.y) \(.width)x\(.height)\"')\" /tmp/grim-win.png"
+ssh neueos-vm '. ~/neueos/docs/vm-env.sh; grim /tmp/grim.png; grim -c /tmp/grim-cursor.png'
+ssh neueos-vm '. ~/neueos/docs/vm-env.sh; grim -g "$(window_geometry)" /tmp/grim-win.png'
 ```
 
 **6. dmabuf.** The compositor logs which kind of buffer each frame went into. Run a capture
 and read the log:
 ```sh
-ssh neueos-vm "$R; rm -f /tmp/rec.mp4; timeout -s INT 5 wf-recorder -f /tmp/rec.mp4; true"
+ssh neueos-vm '. ~/neueos/docs/vm-env.sh; rm -f /tmp/rec.mp4; timeout -s INT 5 wf-recorder -f /tmp/rec.mp4; true'
 ssh neueos-vm 'grep -c "into a shm buffer" /tmp/comp.log; grep -c "into a dmabuf" /tmp/comp.log'
 ```
-`wf-recorder` only uses dmabufs together with a GPU encoder, so for a dmabuf run also try
-`ssh neueos-vm "$R; rm -f /tmp/rec2.mp4; timeout -s INT 5 wf-recorder -c h264_vaapi -d
-/dev/dri/renderD128 -f /tmp/rec2.mp4; true"` and look at the same two counts. On the
-Parallels virtio GPU there is probably no VA-API: then the command fails with an encoder
-error, and the dmabuf path stays unverified (say so in the PR; the x86_64 PC with a real
-GPU is the place for it). Recorder says it cannot find a capture protocol: its version
-predates the ext protocol, skip this step.
+`wf-recorder` only uses dmabufs together with a GPU encoder, so for a dmabuf run also try:
+```sh
+ssh neueos-vm '. ~/neueos/docs/vm-env.sh; rm -f /tmp/rec2.mp4; timeout -s INT 5 wf-recorder -c h264_vaapi -d /dev/dri/renderD128 -f /tmp/rec2.mp4; true'
+```
+and look at the same two counts. On the Parallels virtio GPU there is probably no VA-API:
+then the command fails with an encoder error, and the dmabuf path stays unverified (say so
+in the PR; the x86_64 PC with a real GPU is the place for it). If the recorder says it
+cannot find a capture protocol, its version predates the ext protocol: skip this step.
 
 **7. Look at the results on the Mac.**
 ```sh
@@ -623,6 +627,6 @@ meanwhile (not scripted) shows up in it.
 
 **8. Clean up.**
 ```sh
-ssh neueos-vm "$R; \$N/neuectl quit; sudo pkill -x ydotoold; true"
+ssh neueos-vm '. ~/neueos/docs/vm-env.sh; neuectl quit; sudo pkill -x ydotoold; true'
 ```
 Record which steps you ran, and what the log counts in step 6 were, in the PR.
