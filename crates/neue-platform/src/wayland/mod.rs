@@ -48,6 +48,7 @@ use smithay_client_toolkit::compositor::{CompositorState, FrameCallbackData, Reg
 use smithay_client_toolkit::dispatch2::Dispatch2;
 use smithay_client_toolkit::output::OutputState;
 use smithay_client_toolkit::reexports::calloop::channel::{self as calloop_channel, Sender};
+use smithay_client_toolkit::reexports::calloop::ping as calloop_ping;
 use smithay_client_toolkit::reexports::calloop::{EventLoop, LoopHandle};
 use smithay_client_toolkit::reexports::calloop_wayland_source::WaylandSource;
 use smithay_client_toolkit::registry::{ProvidesRegistryState, RegistryState};
@@ -81,7 +82,7 @@ use wayland_protocols::xdg::shell::client::xdg_toplevel;
 use crate::app::{DriverWindow, Registry};
 use crate::gpu::{Gpu, GpuError, SurfaceTarget};
 use crate::{
-    Anchor, App, Ctx, LayerKeyboard, LayerSpec, Options, ShellLayer, WindowId, WindowKind,
+    Anchor, App, Ctx, LayerKeyboard, LayerSpec, Options, ShellLayer, Waker, WindowId, WindowKind,
     WindowSpec,
 };
 use access::{Access, AccessEvent};
@@ -143,11 +144,19 @@ pub fn run_with_connection(
         })
         .map_err(|e| Error::Loop(e.to_string()))?;
 
+    // `Waker::wake` pings the loop out of `dispatch`; the loop then calls `App::on_wake`.
+    let (ping, ping_source) = calloop_ping::make_ping().map_err(|e| Error::Loop(e.to_string()))?;
+    event_loop
+        .handle()
+        .insert_source(ping_source, |(), (), _: &mut State| {})
+        .map_err(|e| Error::Loop(e.to_string()))?;
+    let waker = Waker::new(move || ping.ping());
+
     let instance = wgpu::Instance::new(wgpu::InstanceDescriptor::new_with_display_handle_from_env(
         Box::new(handle::Display(conn.clone())),
     ));
     let mut state = State {
-        reg: Registry::default(),
+        reg: Registry::new(waker),
         events: Vec::new(),
         gpu: None,
         instance,
@@ -184,6 +193,9 @@ pub fn run_with_connection(
             .dispatch(None, &mut state)
             .map_err(|e| Error::Loop(e.to_string()))?;
         state.flush_focus_leave();
+        if state.reg.waker.take() {
+            app.on_wake(&mut Ctx::new(&mut state.reg));
+        }
         state.pump(app)?;
         state.draw_dirty();
         if let Err(err) = conn.flush() {

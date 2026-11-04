@@ -27,7 +27,7 @@ pub mod wayland;
 pub mod winit;
 
 pub use app::{
-    Anchor, App, Ctx, LayerKeyboard, LayerSpec, Margin, ShellLayer, WindowId, WindowKind,
+    Anchor, App, Ctx, LayerKeyboard, LayerSpec, Margin, ShellLayer, Waker, WindowId, WindowKind,
     WindowSpec,
 };
 #[cfg(target_os = "linux")]
