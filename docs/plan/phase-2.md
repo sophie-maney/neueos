@@ -30,12 +30,16 @@ the paper and leather materials move to Phase 6/7 (Widgets, Write).
       `sctk_spike` and `ime_probe` examples, checked in the VM (`docs/checks/phase-2.md` §1).
       Findings for 2.5/2.6 and Phase 3 are in `docs/research/masonry-spike.md`: neue-comp
       sends no scale to layer surfaces, and it has no virtual-keyboard, so fcitx5 can't bind.
-- [ ] **2.3 `neue-theme` crate** · Opus. New portable crate: semantic colours, metrics,
+- [x] **2.3 `neue-theme` crate** · Opus. New portable crate: semantic colours, metrics,
       radii, type scale and durations; light and dark; accent colour (blue, graphite);
       increased contrast; spring presets and the reduced-motion flag. neue-paint materials
       take their values from it.
       *Accept:* no colour or metric literals left in materials; existing goldens unchanged
       bit-for-bit; neue-comp still builds.
+      *Done:* crate `neue-theme` (ADR 0031): `Variant` (appearance × accent × contrast)
+      selects colours; metrics, radii, type scale and motion are constants; a materials
+      table for the Aqua button, linen and title bar. Existing goldens re-blessed with no
+      byte change; 24 new goldens for graphite and increased contrast.
 - [ ] **2.4 `neue-platform` winit driver** · Opus. Our own `RenderRoot` driver replacing
       `masonry_winit`: wgpu surface, scale, pointer and keyboard, IME, cursor, clipboard,
       animation frames, multiple windows, AccessKit (`accesskit_winit`).

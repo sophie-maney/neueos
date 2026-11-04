@@ -19,6 +19,7 @@ imaging = ["dep:imaging"]
 
 [dependencies]
 imaging = { workspace = true, optional = true }
+neue-theme.workspace = true
 thiserror.workspace = true
 vello_common.workspace = true
 parley.workspace = true

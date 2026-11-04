@@ -17,7 +17,7 @@ use std::collections::HashMap;
 use std::sync::Arc;
 use std::time::Instant;
 
-use neue_paint::Appearance;
+use neue_paint::Variant;
 use neue_paint::Pixmap;
 use neue_paint::cpu::{CpuRenderer, Quality};
 use neue_paint::materials::title_bar::{
@@ -75,8 +75,9 @@ pub struct Chrome {
     text: TextEngine,
     /// Left, middle and right slices per style and scale (`f64::to_bits`).
     slices: HashMap<(TitleBarStyle, u64), Arc<[Pixmap; 3]>>,
-    /// Appearance of every title bar. Light until the appearance setting exists (Phase 3).
-    pub appearance: Appearance,
+    /// Theme variant of every title bar. Light, blue, standard contrast until the appearance
+    /// settings exist (Phase 3).
+    pub variant: Variant,
     /// The traffic lights under the pointer, if any.
     pub hover: Option<Hover>,
     /// The pointer is over some chrome (so the cursor is ours, not a client's).
@@ -92,7 +93,7 @@ impl Default for Chrome {
             renderer: CpuRenderer::new(Quality::Fast),
             text: TextEngine::new(),
             slices: HashMap::new(),
-            appearance: Appearance::Light,
+            variant: Variant::default(),
             hover: None,
             pointer_over: false,
             last_click: None,
@@ -271,7 +272,7 @@ impl Chrome {
             _ => (false, None),
         };
         let style = TitleBarStyle {
-            appearance: self.appearance,
+            variant: self.variant,
             focused: is_activated(window),
             hover,
             pressed,

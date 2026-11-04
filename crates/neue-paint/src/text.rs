@@ -18,7 +18,7 @@ use parley::{
 use vello_common::peniko::FontData;
 
 /// Family name of the bundled UI font.
-pub const UI_FAMILY: &str = "Fira Sans";
+pub const UI_FAMILY: &str = neue_theme::typography::UI_FAMILY;
 /// The bundled UI font (Fira Sans Regular, OFL-1.1).
 static UI_FONT: &[u8] = include_bytes!("../fonts/FiraSans-Regular.ttf");
 /// Appended to truncated text.

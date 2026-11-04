@@ -165,7 +165,7 @@ These are user-facing names. Crates use the `neue-` prefix.
 | Crate | Responsibility |
 |---|---|
 | `neue-paint` | Its own recorded `Scene` (kurbo, peniko), **materials** (linen, metal, aqua glass, HUD), nine-slice, procedural textures. Replayed per backend: GPU (`vello_gpu` on wgpu), CPU (`vello_cpu`, for compositor chrome and golden tests), and Masonry's `imaging` painter (ADR 0002) |
-| `neue-theme` | Design tokens: colours, metrics, typography, light and dark, accent colour, materials table |
+| `neue-theme` | Design tokens (ADR 0031): semantic colours, metrics, radii, typography, motion (springs, reduced motion), light and dark, accent colour, increased contrast, materials table |
 | `neue-platform` | Windowing backends. **Wayland** (smithay-client-toolkit: xdg-shell, layer-shell, fractional scale, text-input-v3, DnD, clipboard, xdg-activation, xdg-dialog). **winit** (macOS and dev, so apps and widget galleries run natively on the Mac) |
 | `neue-kit` | Widget tree on **`masonry_core`** (pinned git rev, hidden behind neue-kit's own API; ADR 0002), Masonry's layout, events, focus, animation (our springs on `on_anim_frame`), text through **parley** and fontique, accessibility through **AccessKit**, menus with DBusMenu export, an Elm-style app model, and async integration |
 | `neue-desktop` | freedesktop specs: desktop entries, icon themes, MIME (shared-mime-info), thumbnails, trash, recent files, autostart |

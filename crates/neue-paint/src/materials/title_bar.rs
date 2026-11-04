@@ -8,46 +8,39 @@
 //! the whole bar in one scene from the same pieces; golden tests use it.
 //!
 //! Everything is vector-drawn, with a light and a dark variant and a focused and an
-//! unfocused state.
+//! unfocused state. Colours and metrics come from [`neue_theme::materials::title_bar`].
 
 use vello_common::kurbo::{Cap, Circle, Line, Point, Rect, RoundedRect, RoundedRectRadii, Stroke};
 use vello_common::peniko::{Color, Gradient};
 
-use crate::Appearance;
+use neue_theme::materials::title_bar::{
+    self as tokens, BUTTON_DIAMETER, BUTTON_ETCH_OFFSET, BUTTON_PITCH, BUTTON_RIM, BUTTON_X,
+    BarPalette, CORNER_RADIUS, EDGE, GLYPH_REACH, GLYPH_WIDTH, Light, LightPalette, LightState,
+    TITLE_BASELINE, TITLE_EMBOSS_OFFSET, TITLE_MARGIN,
+};
+
+use crate::Variant;
 use crate::scene::Scene;
 use crate::text::TextLine;
 
-// TODO(phase 2): metrics and colours move to neue-theme tokens.
 /// Height of the title bar, in logical pixels.
-pub const TITLE_BAR_HEIGHT: f64 = 22.0;
+pub const TITLE_BAR_HEIGHT: f64 = tokens::HEIGHT;
 /// Width of the left slice: the rounded corner and the traffic lights.
-pub const LEFT_SLICE_WIDTH: f64 = 68.0;
+pub const LEFT_SLICE_WIDTH: f64 = tokens::LEFT_SLICE_WIDTH;
 /// Width of the right slice: the rounded corner.
-pub const RIGHT_SLICE_WIDTH: f64 = 8.0;
+pub const RIGHT_SLICE_WIDTH: f64 = tokens::RIGHT_SLICE_WIDTH;
 /// Width of the middle slice, stretched to fill the rest of the bar.
-pub const MIDDLE_SLICE_WIDTH: f64 = 1.0;
+pub const MIDDLE_SLICE_WIDTH: f64 = tokens::MIDDLE_SLICE_WIDTH;
 /// Narrowest bar that shows every slice in full.
 pub const MIN_WIDTH: f64 = LEFT_SLICE_WIDTH + MIDDLE_SLICE_WIDTH + RIGHT_SLICE_WIDTH;
 /// Font size of the title.
-pub const TITLE_FONT_SIZE: f32 = 13.0;
-/// Baseline of the title, from the top of the bar.
-const TITLE_BASELINE: f64 = 15.0;
-/// Space between the title and the buttons or the right end of the bar.
-const TITLE_MARGIN: f64 = 8.0;
-/// Radius of the top corners.
-const CORNER_RADIUS: f64 = 5.0;
-/// Diameter of a traffic-light button.
-const BUTTON_DIAMETER: f64 = 12.0;
-/// Left edge of the first button.
-const BUTTON_X: f64 = 8.0;
-/// Distance between the left edges of neighbouring buttons.
-const BUTTON_PITCH: f64 = 20.0;
+pub const TITLE_FONT_SIZE: f32 = tokens::TITLE_FONT_SIZE;
 
 /// Which window a title bar belongs to, as far as drawing is concerned.
 #[derive(Clone, Copy, Debug, Default, PartialEq, Eq, Hash)]
 pub struct TitleBarStyle {
-    /// Light or dark.
-    pub appearance: Appearance,
+    /// Theme variant: appearance, accent (graphite tints the traffic lights) and contrast.
+    pub variant: Variant,
     /// Whether the window is the focused (key) window.
     pub focused: bool,
     /// The pointer is over the traffic lights: all three show their glyphs and, in an
@@ -131,152 +124,27 @@ impl TrafficLight {
     }
 }
 
-/// Colours of the bar for one style.
-#[derive(Clone, Copy, Debug)]
-struct BarPalette {
-    /// Gradient top and bottom.
-    fill: [Color; 2],
-    /// One-pixel highlight along the top edge.
-    highlight: Color,
-    /// One-pixel line along the bottom edge, between the bar and the window content.
-    separator: Color,
-    text: Color,
-    /// Embossed shadow one pixel below the text.
-    text_shadow: Color,
-}
-
-const fn grey(v: f32) -> Color {
-    Color::new([v, v, v, 1.0])
-}
-
-const fn rgb(r: f32, g: f32, b: f32) -> Color {
-    Color::new([r, g, b, 1.0])
-}
-
-const fn rgba(r: f32, g: f32, b: f32, a: f32) -> Color {
-    Color::new([r, g, b, a])
-}
-
-impl BarPalette {
-    fn new(style: TitleBarStyle) -> Self {
-        match (style.appearance, style.focused) {
-            (Appearance::Light, true) => Self {
-                fill: [grey(0.910), grey(0.780)],
-                highlight: rgba(1.0, 1.0, 1.0, 0.75),
-                separator: grey(0.400),
-                text: grey(0.165),
-                text_shadow: rgba(1.0, 1.0, 1.0, 0.55),
-            },
-            (Appearance::Light, false) => Self {
-                fill: [grey(0.960), grey(0.905)],
-                highlight: rgba(1.0, 1.0, 1.0, 0.85),
-                separator: grey(0.640),
-                text: grey(0.520),
-                text_shadow: rgba(1.0, 1.0, 1.0, 0.50),
-            },
-            (Appearance::Dark, true) => Self {
-                fill: [grey(0.300), grey(0.205)],
-                highlight: rgba(1.0, 1.0, 1.0, 0.16),
-                separator: grey(0.060),
-                text: grey(0.880),
-                text_shadow: rgba(0.0, 0.0, 0.0, 0.55),
-            },
-            (Appearance::Dark, false) => Self {
-                fill: [grey(0.235), grey(0.195)],
-                highlight: rgba(1.0, 1.0, 1.0, 0.09),
-                separator: grey(0.090),
-                text: grey(0.520),
-                text_shadow: rgba(0.0, 0.0, 0.0, 0.40),
-            },
+impl TrafficLight {
+    fn token(self) -> Light {
+        match self {
+            Self::Close => Light::Close,
+            Self::Minimize => Light::Minimize,
+            Self::Zoom => Light::Zoom,
         }
     }
 }
 
-/// Colours of one traffic-light button.
-#[derive(Clone, Copy, Debug)]
-struct ButtonPalette {
-    /// Rim gradient, top and bottom.
-    rim: [Color; 2],
-    /// Body glow: centre (low in the button) and edge.
-    body: [Color; 2],
-    /// Gloss alpha at its top and bottom.
-    gloss: [f32; 2],
-    /// Etched highlight below the button.
-    etch: Color,
+fn bar_palette(style: TitleBarStyle) -> BarPalette {
+    BarPalette::new(style.variant, style.focused)
 }
 
-impl ButtonPalette {
-    fn new(button: TrafficLight, style: TitleBarStyle) -> Self {
-        let dark = style.appearance == Appearance::Dark;
-        let etch = if dark {
-            rgba(1.0, 1.0, 1.0, 0.06)
-        } else {
-            rgba(1.0, 1.0, 1.0, 0.60)
-        };
-        // Hovering the buttons lights them even in an unfocused window.
-        if !(style.focused || style.hover) {
-            return if dark {
-                Self {
-                    rim: [grey(0.16), grey(0.12)],
-                    body: [grey(0.42), grey(0.30)],
-                    gloss: [0.22, 0.02],
-                    etch,
-                }
-            } else {
-                Self {
-                    rim: [grey(0.66), grey(0.58)],
-                    body: [grey(0.90), grey(0.80)],
-                    gloss: [0.70, 0.10],
-                    etch,
-                }
-            };
-        }
-        let (rim, body) = match button {
-            TrafficLight::Close => (
-                [rgb(0.62, 0.13, 0.10), rgb(0.48, 0.07, 0.05)],
-                [rgb(1.00, 0.52, 0.45), rgb(0.88, 0.22, 0.17)],
-            ),
-            TrafficLight::Minimize => (
-                [rgb(0.66, 0.44, 0.04), rgb(0.52, 0.32, 0.02)],
-                [rgb(1.00, 0.88, 0.45), rgb(0.93, 0.64, 0.10)],
-            ),
-            TrafficLight::Zoom => (
-                [rgb(0.10, 0.45, 0.10), rgb(0.05, 0.34, 0.06)],
-                [rgb(0.62, 0.92, 0.45), rgb(0.27, 0.70, 0.18)],
-            ),
-        };
-        let (rim, body) = if dark {
-            (rim.map(|c| darken(c, 0.75)), body.map(|c| darken(c, 0.85)))
-        } else {
-            (rim, body)
-        };
-        let palette = Self {
-            rim,
-            body,
-            gloss: if dark { [0.45, 0.04] } else { [0.70, 0.06] },
-            etch,
-        };
-        if style.pressed == Some(button) {
-            palette.pressed()
-        } else {
-            palette
-        }
-    }
-
-    /// The darker, flatter look of a button held down.
-    fn pressed(self) -> Self {
-        Self {
-            rim: self.rim.map(|c| darken(c, 0.85)),
-            body: self.body.map(|c| darken(c, 0.72)),
-            gloss: self.gloss.map(|a| a * 0.4),
-            etch: self.etch,
-        }
-    }
-}
-
-fn darken(color: Color, factor: f32) -> Color {
-    let [r, g, b, a] = color.components;
-    Color::new([r * factor, g * factor, b * factor, a])
+fn light_palette(which: TrafficLight, style: TitleBarStyle) -> LightPalette {
+    let state = LightState {
+        focused: style.focused,
+        hover: style.hover,
+        pressed: style.pressed == Some(which),
+    };
+    LightPalette::new(which.token(), state, style.variant)
 }
 
 fn vertical(y0: f64, y1: f64, stops: &[(f32, Color)]) -> Gradient {
@@ -285,7 +153,7 @@ fn vertical(y0: f64, y1: f64, stops: &[(f32, Color)]) -> Gradient {
 
 /// Draw the bar background (no buttons, no title) `width` wide at the origin.
 fn background(scene: &mut Scene, width: f64, style: TitleBarStyle) {
-    let p = BarPalette::new(style);
+    let p = bar_palette(style);
     let h = TITLE_BAR_HEIGHT;
     let shape = RoundedRect::from_rect(
         Rect::new(0.0, 0.0, width, h),
@@ -296,33 +164,32 @@ fn background(scene: &mut Scene, width: f64, style: TitleBarStyle) {
         &Rect::new(0.0, 0.0, width, h),
         vertical(0.0, h, &[(0.0, p.fill[0]), (1.0, p.fill[1])]),
     );
-    scene.fill(&Rect::new(0.0, 0.0, width, 1.0), p.highlight);
-    scene.fill(&Rect::new(0.0, h - 1.0, width, h), p.separator);
+    scene.fill(&Rect::new(0.0, 0.0, width, EDGE), p.highlight);
+    scene.fill(&Rect::new(0.0, h - EDGE, width, h), p.separator);
     scene.pop_layer();
 }
 
 /// Draw one traffic-light button.
 fn button(scene: &mut Scene, which: TrafficLight, style: TitleBarStyle) {
-    let p = ButtonPalette::new(which, style);
+    let p = light_palette(which, style);
     let rect = which.rect();
     let center = rect.center();
     let r = BUTTON_DIAMETER / 2.0;
 
     // Etched highlight peeking out below the rim.
-    scene.fill(&Circle::new(center + (0.0, 0.75), r), p.etch);
+    scene.fill(&Circle::new(center + (0.0, BUTTON_ETCH_OFFSET), r), p.etch);
     // Rim.
     scene.fill(
         &Circle::new(center, r),
         vertical(rect.y0, rect.y1, &[(0.0, p.rim[0]), (1.0, p.rim[1])]),
     );
     // Body: a glow rising from the bottom.
-    let inner = r - 1.0;
+    let inner = r - BUTTON_RIM;
     #[allow(clippy::cast_possible_truncation, reason = "small logical radius")]
     let glow = Gradient::new_radial(center + (0.0, inner * 0.55), (inner * 1.35) as f32)
         .with_stops([(0.0, p.body[0]), (1.0, p.body[1])]);
     scene.fill(&Circle::new(center, inner), glow);
     // Gloss over the upper half.
-    let white = |a: f32| Color::WHITE.with_alpha(a);
     let gloss = vello_common::kurbo::Ellipse::new(
         center - (0.0, inner * 0.45),
         (inner * 0.70, inner * 0.45),
@@ -333,18 +200,13 @@ fn button(scene: &mut Scene, which: TrafficLight, style: TitleBarStyle) {
         vertical(
             center.y - inner * 0.9,
             center.y,
-            &[(0.0, white(p.gloss[0])), (1.0, white(p.gloss[1]))],
+            &[(0.0, p.gloss[0]), (1.0, p.gloss[1])],
         ),
     );
     if style.hover {
         glyph(scene, which, center, p.rim[1]);
     }
 }
-
-/// Half the length of a glyph stroke, from its centre.
-const GLYPH_REACH: f64 = 2.6;
-/// Line width of the glyphs.
-const GLYPH_WIDTH: f64 = 1.5;
 
 /// The symbol a button shows while the pointer is over the traffic lights: a cross, a
 /// bar and a plus.
@@ -415,14 +277,18 @@ pub fn title_x(bar_width: f64, text_width: f64) -> f64 {
 
 /// Width of the scene [`title_text`] draws into for `line`: the text plus its shadow.
 pub fn title_text_width(line: &TextLine) -> f64 {
-    line.width().ceil() + 1.0
+    line.width().ceil() + TITLE_EMBOSS_OFFSET
 }
 
 /// Draw the embossed title `line` with the left end of the bar's text area at the origin;
 /// the scene should be [`title_text_width`] × [`TITLE_BAR_HEIGHT`].
 pub fn title_text(scene: &mut Scene, line: &TextLine, style: TitleBarStyle) {
-    let p = BarPalette::new(style);
-    scene.draw_text(line, Point::new(0.0, TITLE_BASELINE + 1.0), p.text_shadow);
+    let p = bar_palette(style);
+    scene.draw_text(
+        line,
+        Point::new(0.0, TITLE_BASELINE + TITLE_EMBOSS_OFFSET),
+        p.text_shadow,
+    );
     scene.draw_text(line, Point::new(0.0, TITLE_BASELINE), p.text);
 }
 
@@ -483,7 +349,7 @@ mod tests {
     #[test]
     fn slices_match_the_full_bar() {
         let style = TitleBarStyle {
-            appearance: Appearance::Light,
+            variant: crate::Appearance::Light.into(),
             focused: true,
             ..TitleBarStyle::default()
         };
