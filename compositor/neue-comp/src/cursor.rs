@@ -110,6 +110,22 @@ impl Animation {
         }
         &self.frames[0].0
     }
+
+    /// How long after `elapsed` the frame shown changes; `None` for a still image.
+    fn until_next(&self, elapsed: Duration) -> Option<Duration> {
+        if self.total_ms == 0 {
+            return None;
+        }
+        let mut t = (elapsed.as_millis() % u128::from(self.total_ms)) as u32;
+        for (_, delay) in &self.frames {
+            if t < *delay {
+                return Some(Duration::from_millis(u64::from(delay - t)));
+            }
+            t -= delay;
+        }
+        // Unreachable: `t < total_ms`, the sum of the delays.
+        Some(Duration::from_millis(1))
+    }
 }
 
 /// An XCursor theme with a cache of decoded cursors, per icon and pixel size.
@@ -161,6 +177,19 @@ impl Themes {
             self.cache.insert((icon, size), animation);
         }
         self.cache[&(icon, size)].at(elapsed)
+    }
+
+    /// How long after `elapsed` the image [`Themes::frame`] returned for `icon` at `scale`
+    /// changes; `None` for a still cursor (or one not loaded yet).
+    pub fn until_next_frame(
+        &self,
+        icon: CursorIcon,
+        scale: f64,
+        elapsed: Duration,
+    ) -> Option<Duration> {
+        self.cache
+            .get(&(icon, self.pixel_size(scale)))?
+            .until_next(elapsed)
     }
 
     /// Load `icon` from the theme (trying the standard name, then the legacy aliases).
@@ -349,6 +378,23 @@ mod tests {
     fn a_single_frame_is_still() {
         let animation = animation_from(&[image(24, 50)], 24).unwrap();
         assert_eq!(animation.total_ms, 0);
+        assert_eq!(animation.until_next(Duration::from_millis(10)), None);
+    }
+
+    #[test]
+    fn next_frame_change_is_timed_from_the_delays() {
+        let images = [image(24, 100), image(24, 300)];
+        let animation = animation_from(&images, 24).unwrap();
+        let ms = Duration::from_millis;
+        assert_eq!(animation.until_next(ms(0)), Some(ms(100)));
+        assert_eq!(animation.until_next(ms(150)), Some(ms(250)));
+        assert_eq!(animation.until_next(ms(430)), Some(ms(70)));
+        let themes = Themes::new("neue-no-such-theme", 24);
+        assert_eq!(
+            themes.until_next_frame(CursorIcon::Default, 1.0, ms(0)),
+            None,
+            "nothing loaded yet"
+        );
     }
 
     #[test]

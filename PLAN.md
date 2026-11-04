@@ -660,12 +660,21 @@ Decisions to follow: ADR 0001 (Smithay), 0003 (IPC), 0004 (config), 0005 (global
         `fullscreen-window` action. 8 headless tests in `tests/fullscreen.rs`. VM check
         (`docs/dev-setup.md` §14) still to do by the owner. Not done: exclusive `top`
         keyboard surfaces under a full-screen window, animation, menu-bar reveal.
-  - [ ] **1.15b Draw only when needed (damage review)** · Opus. tty stops polling at the
+  - [x] **1.15b Draw only when needed (damage review)** · Opus. tty stops polling at the
         refresh rate: outputs are redrawn on commits, input, chrome, layer, lock and config
         changes; frame callbacks of empty frames are timed from an estimated vblank;
         animated cursors get their own timer.
         *Accept:* an idle desktop renders nothing (trace counter); no visual regressions in
         the VM checklist (owner).
+        *Done:* rules in ADR 0019. `redraw.rs` (per-output state: idle, scheduled, waiting
+        for a vblank or an estimated one; unit tests), driven by `tty.rs`;
+        `State::queue_redraw_all` on Wayland client traffic (one hook covers commits,
+        destroys, titles, layers and lock), commits, input, `neuectl` traffic, config
+        apply, hotplug and session resume; empty frames send their callbacks at the next
+        refresh boundary after the last vblank; animated cursors arm a per-output timer.
+        Each render logs a `trace` event with running counts. VM check
+        (`docs/dev-setup.md` §15) still to do by the owner. Not done: per-output redraw
+        requests (all outputs are marked), winit still redraws continuously.
   - [ ] **1.15c Direct scanout and VRR** · Opus. Primary-plane scanout of full-screen
         surfaces (overlay planes stay off, NVIDIA), scanout tranche in per-surface dmabuf
         feedback, `[outputs."NAME"] adaptive_sync = "off" | "on" | "fullscreen"` (default
