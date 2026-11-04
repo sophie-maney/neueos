@@ -507,3 +507,35 @@ the area: the menu opens at the pointer; press-drag-release onto an item chooses
 hovering Text Size opens the submenu; type "w" to jump to Wrap Lines; Escape closes. In the
 text field, Shift-F10 opens the menu and Escape gives focus back to the field. Shortcuts
 show ⌘ here (⌃ on Linux).
+
+## 9. Checking pop-up buttons, combo boxes and the edit menu (task 2.17b)
+Not run yet (the agent had no VM). Steps 1–3 run in the VM, set up as in
+`docs/dev-setup.md` §1.3; step 4 is on the Mac. The gallery's "Pop-ups" page is page 7.
+The helpers are those of §8.
+
+**1. Build and open the page:** as §8 step 1 with `NEUE_GALLERY_PAGE=7`, screenshot
+`/tmp/p1.png`. Expected: no `WARN` or `ERROR`; `p1.png` shows a pop-up button ("Medium"),
+a pull-down ("Actions"), disabled copies of both, two combo boxes (the second disabled), a
+text field and a text view.
+
+**2. Pop-up button:** click the pop-up button (`click_at X Y` from §8, positions from
+`p1.png`) and take `/tmp/p2.png`. Expected: a menu over the button with "Medium" checked,
+highlighted and level with where the button was; the button's cap dark. Move the pointer to
+"Large" and click: `p3.png` shows the menu gone and the button reading "Large", the status
+line `Size: “Large”`. Open it again, press Escape: no change, and the pop-up focus ring is
+back after Tab. Wayland: near the top of the screen the popup may be moved down by the
+compositor, so the chosen item no longer lines up with the button (a known gap).
+
+**3. Pull-down and combo box:** click "Actions" (`p4.png`: a menu right below it, nothing
+highlighted), click "Rename" (`Pressed “Rename”`). Click the combo box's arrow (`p5.png`:
+a menu below the field, as wide as the field, the arrow button dark), click "Large": the
+field reads "Large". Type into the field: the status line follows. Click into the field,
+press Down: the menu opens with its first item highlighted. Right-click the text field
+(`p6.png`): Cut, Copy and Select All; Select All selects everything and keeps focus in
+the field; the same on the text view. Shift-F10 in the field opens it too.
+
+**4. macOS (owner):** `cargo xtask gallery`, open "Pop-ups". Press and hold the pop-up,
+drag to an item, release: it chooses. Click the pop-up, release, click an item. Tab to a
+pop-up: Space, Return and Down open it; type "s" while it is closed. Two-finger click a text
+field: the edit menu; Cut and Copy put text on the clipboard (paste it into another app);
+Paste is missing on purpose (ADR 0046).

@@ -2,8 +2,8 @@
 
 use neue_kit::tokens::metrics::spacing;
 use neue_kit::{
-    BevelButton, Button, Checkbox, ContextMenu, Element, Handle, Label, MaterialTile, ProgressBar,
-    Radio, Segmented, Slider, Spinner, Stack, Stepper, TextField, TextStyle,
+    BevelButton, Button, Checkbox, ContextMenu, Element, Handle, Label, MaterialTile, PopUpButton,
+    ProgressBar, Radio, Segmented, Slider, Spinner, Stack, Stepper, TextField, TextStyle,
 };
 
 use crate::Message;
@@ -56,6 +56,10 @@ pub const PAGES: &[Page] = &[
     Page {
         title: "Menus",
         build: menus,
+    },
+    Page {
+        title: "Pop-ups",
+        build: pop_ups,
     },
     Page {
         title: "Text",
@@ -392,6 +396,58 @@ fn menus(_: &mut PageHandles) -> Element<Message> {
                     )),
                 )),
         )
+        .into()
+}
+
+fn pop_ups(_: &mut PageHandles) -> Element<Message> {
+    Stack::column()
+        .spacing(spacing::L)
+        .with(heading(
+            "Pop-ups",
+            "Press a button to open its menu · Space, Return or Down open it from the keyboard · \
+             type to choose in a closed pop-up · the combo box takes your own text too · \
+             right-click a field for Cut, Copy and Select All · the status line shows what \
+             you chose",
+        ))
+        .with(
+            Stack::row()
+                .spacing(spacing::L)
+                .with(section(
+                    "Pop-up button",
+                    Stack::column().with(
+                        PopUpButton::new(specimens::SIZES)
+                            .selected(1)
+                            .on_select(|i| Message::Field("Size", specimens::SIZES[i].into())),
+                    ),
+                ))
+                .with(section(
+                    "Pull-down button",
+                    Stack::column().with(specimens::pull_down_button(Message::Pressed)),
+                ))
+                .with(section(
+                    "Disabled",
+                    Stack::column()
+                        .with(PopUpButton::new(specimens::SIZES).disabled(true))
+                        .with(specimens::pull_down_button(Message::Pressed).disabled(true)),
+                )),
+        )
+        .with(section(
+            "Combo box",
+            Stack::column()
+                .with(
+                    specimens::combo_box()
+                        .on_change(|t| Message::Field("Combo", t))
+                        .on_select(|_, t| Message::Field("Combo", t)),
+                )
+                .with(specimens::combo_box_filled().disabled(true)),
+        ))
+        .with(section(
+            "Edit menu (text field and text view)",
+            Stack::row()
+                .spacing(spacing::L)
+                .with(specimens::edit_menu_field())
+                .with(specimens::text_view_filled()),
+        ))
         .into()
 }
 

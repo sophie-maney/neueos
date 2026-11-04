@@ -10,14 +10,14 @@
 use std::any::TypeId;
 use std::time::Duration;
 
-use masonry_core::accesskit::{Action, ActionData, Node, Role};
+use masonry_core::accesskit::{Action, ActionData, HasPopup, Node, Role};
 use masonry_core::core::keyboard::{Key, NamedKey};
 use masonry_core::core::{
     AccessCtx, AccessEvent, BrushIndex, ChildrenIds, CursorIcon, EventCtx, Ime, LayoutCtx,
-    MeasureCtx, NewWidget, PaintCtx, PlainEditorAccessibility, PointerButton, PointerButtonEvent,
-    PointerEvent, PointerUpdate, PropertiesMut, PropertiesRef, QueryCtx, RegisterCtx, TextEvent,
-    Update, UpdateCtx, UsesProperty, Widget, WidgetMut, render_text,
-    set_accesskit_brush_properties,
+    MeasureCtx, MutateCtx, NewWidget, PaintCtx, PlainEditorAccessibility, PointerButton,
+    PointerButtonEvent, PointerEvent, PointerUpdate, PropertiesMut, PropertiesRef, QueryCtx,
+    RegisterCtx, TextEvent, Update, UpdateCtx, UsesProperty, Widget, WidgetId, WidgetMut,
+    render_text, set_accesskit_brush_properties,
 };
 use masonry_core::imaging::Painter;
 use masonry_core::kurbo::{Affine, Axis, Insets, Point, Rect, Size, Vec2};
@@ -28,19 +28,25 @@ use masonry_core::util::bounding_box_to_rect;
 use neue_paint::Scene;
 use neue_paint::imaging::ImagingReplayer;
 use neue_paint::materials::{
-    FieldShape, TextField as FieldSpec, cancel_button, cancel_button_rect, magnifier, text_field,
-    text_field_inside,
+    FieldShape, TextField as FieldSpec, cancel_button, cancel_button_rect, combo_arrow,
+    combo_arrow_rect, magnifier, text_field, text_field_inside,
 };
 use neue_theme::materials::text_field::CARET_WIDTH;
 use neue_theme::metrics::control;
 use neue_theme::motion::{CARET_BLINK, CARET_BLINK_TIMEOUT};
 use neue_theme::typography;
 
+use super::edit_menu::{self, EditCommand};
+use super::menu::{self, Anchor, MenuWidget};
 use super::text::{TextLine, TextStyle};
 use crate::Cx;
 use crate::anim::AnimCtx;
 use crate::element::{Element, Handle};
+use crate::menu::MenuSpec;
 use crate::theme::ThemeProp;
+
+mod combo;
+pub use combo::ComboBox;
 
 /// What a secure field shows for each character.
 const BULLET: &str = "\u{2022}";
@@ -60,6 +66,8 @@ pub(crate) enum FieldAction {
     Changed(String),
     /// Return, in a field with a submit handler.
     Submitted(String),
+    /// A combo box's suggestion was chosen: its index.
+    Chosen(usize),
 }
 
 /// The caret's blink: shown for the first half of each [`CARET_BLINK`], solid again
@@ -128,6 +136,25 @@ pub(crate) struct FieldWidget {
     /// Has keyboard focus. Without it the text shows from its start.
     focused: bool,
     blink: Blink,
+    /// A combo box's menu and state (`None`: not a combo box).
+    combo: Option<Combo>,
+    /// What had focus before the edit menu opened.
+    edit_return_focus: Option<WidgetId>,
+    /// A menu took focus away and gives it back: the text stays as it was, not selected
+    /// as Tab would.
+    keep_selection: bool,
+}
+
+/// What makes a text field a combo box: an arrow button inside its right end that opens a
+/// menu of suggestions as wide as the field (ADR 0046).
+#[derive(Debug)]
+struct Combo {
+    spec: MenuSpec,
+    /// The title of each item: what choosing it puts in the field.
+    labels: Vec<String>,
+    /// Its menu is up.
+    open: bool,
+    return_focus: Option<WidgetId>,
 }
 
 impl std::fmt::Debug for FieldWidget {
@@ -177,6 +204,9 @@ impl FieldWidget {
             caret_to_end: false,
             focused: false,
             blink: Blink::default(),
+            combo: None,
+            edit_return_focus: None,
+            keep_selection: false,
         }
     }
 
@@ -221,11 +251,96 @@ impl FieldWidget {
             Kind::Search => control::SEARCH_FIELD_INSET,
             Kind::Text | Kind::Secure => control::TEXT_FIELD_INSET,
         };
+        let arrow = if self.combo.is_some() {
+            control::COMBO_ARROW_WIDTH
+        } else {
+            0.0
+        };
         text_field_inside(self.rect(), self.shape())
             .rect()
-            .inset(Insets::new(-inset, 0.0, -inset, 0.0))
+            .inset(Insets::new(-inset, 0.0, -inset - arrow, 0.0))
     }
 
+    /// Whether `at` (local) is on a combo box's arrow button.
+    fn over_arrow(&self, at: Point) -> bool {
+        self.combo.is_some() && combo_arrow_rect(self.rect()).contains(at)
+    }
+
+    /// Opens a combo box's menu right below the field, as wide as the field.
+    fn open_menu(&mut self, ctx: &mut EventCtx<'_>, keyboard: bool, pointer: Option<Point>) {
+        let Some(combo) = &mut self.combo else {
+            return;
+        };
+        if ctx.is_disabled() {
+            return;
+        }
+        let rect = ctx.border_box();
+        let origin = ctx.to_window(rect.origin());
+        let at = Point::new(origin.x, origin.y + rect.height());
+        let anchor = Anchor {
+            at,
+            pointer: pointer.unwrap_or(at),
+            min_width: rect.width(),
+            highlight: None,
+            on_closed: Some(combo::closed),
+            refocus: None,
+        };
+        menu::open(
+            ctx,
+            combo.spec.clone(),
+            anchor,
+            keyboard,
+            &mut combo.return_focus,
+        );
+        combo.open = true;
+        self.keep_selection = true;
+        ctx.request_paint_only();
+        ctx.request_accessibility_update();
+    }
+
+    /// Opens the edit menu after the event that asked for it, unless a context menu
+    /// around the field opened one meanwhile (it gets the event after the field).
+    fn defer_edit_menu(&self, ctx: &mut EventCtx<'_>, at: Point, keyboard: bool) {
+        if self.kind == Kind::Secure || ctx.is_disabled() {
+            return;
+        }
+        let epoch = menu::opened();
+        let id = ctx.widget_id();
+        ctx.mutate_later(id, move |mut field| {
+            if menu::opened() != epoch {
+                return;
+            }
+            let mut this = field.downcast::<FieldWidget>();
+            this.widget.open_edit_menu(&mut this.ctx, at, keyboard);
+        });
+    }
+
+    /// Where a keyboard-opened edit menu goes: below the caret.
+    fn caret_window_point(&self, ctx: &EventCtx<'_>) -> Point {
+        let x = self
+            .editor
+            .cursor_geometry(1.0)
+            .map_or(0.0, |caret| caret.x0 + self.text_origin().x);
+        ctx.to_window(Point::new(x.clamp(0.0, self.size.width), self.size.height))
+    }
+
+    fn open_edit_menu(&mut self, ctx: &mut MutateCtx<'_>, at: Point, keyboard: bool) {
+        if ctx.is_disabled() {
+            return;
+        }
+        let spec = edit_menu::spec(
+            true,
+            !self.editor.raw_selection().is_collapsed(),
+            !self.is_empty(),
+        );
+        let anchor = Anchor {
+            on_closed: Some(edit_closed),
+            refocus: Some(ctx.widget_id()),
+            ..Anchor::at(at)
+        };
+        menu::open(ctx, spec, anchor, keyboard, &mut self.edit_return_focus);
+        self.keep_selection = true;
+    }
     /// The top left of the laid-out text, scrolled.
     fn text_origin(&self) -> Point {
         let height = self
@@ -396,6 +511,21 @@ impl FieldWidget {
                     d.move_to_text_start();
                 }
             }),
+            // The Menu key and Shift-F10: the edit menu, unless a context menu around the
+            // field takes the key (it is not handled here, so it bubbles up to one).
+            Key::Named(NamedKey::ContextMenu) => {
+                let at = self.caret_window_point(ctx);
+                self.defer_edit_menu(ctx, at, true);
+                return None;
+            }
+            Key::Named(NamedKey::F10) if shift && !mods.ctrl() && !mods.alt() && !mods.meta() => {
+                let at = self.caret_window_point(ctx);
+                self.defer_edit_menu(ctx, at, true);
+                return None;
+            }
+            Key::Named(NamedKey::ArrowDown) if self.combo.is_some() && !shift => {
+                self.open_menu(ctx, true, None);
+            }
             Key::Named(NamedKey::ArrowDown | NamedKey::End) => self.drive(ctx, |d| {
                 if shift {
                     d.select_to_text_end();
@@ -469,11 +599,43 @@ impl Widget for FieldWidget {
     ) {
         match event {
             PointerEvent::Down(PointerButtonEvent {
+                button: Some(PointerButton::Secondary),
+                state,
+                ..
+            }) => {
+                if self.editor.is_composing() {
+                    return;
+                }
+                let local = ctx.local_position(state.position);
+                if self.editor.raw_selection().is_collapsed() {
+                    let p = local - self.text_origin().to_vec2();
+                    let (fonts, layouts) = ctx.text_contexts();
+                    self.editor
+                        .driver(fonts, layouts)
+                        .move_to_point(p.x as f32, p.y as f32);
+                }
+                if !ctx.is_focus_target() {
+                    self.focus_by_click = true;
+                    ctx.request_focus();
+                }
+                self.defer_edit_menu(ctx, ctx.to_window(local), false);
+                self.after_edit(ctx, false);
+            }
+            PointerEvent::Down(PointerButtonEvent {
                 button: None | Some(PointerButton::Primary),
                 state,
                 ..
             }) => {
                 let local = ctx.local_position(state.position);
+                if self.over_arrow(local) {
+                    // While its menu is up the menu took this press as an outside one and
+                    // is closing: pressing the arrow again closes it.
+                    if ctx.get_attached_layer::<MenuWidget>().is_none() {
+                        let at = ctx.to_window(local);
+                        self.open_menu(ctx, false, Some(at));
+                    }
+                    return;
+                }
                 if self.over_cancel(local) {
                     self.cancel_held = true;
                     ctx.capture_pointer();
@@ -612,6 +774,10 @@ impl Widget for FieldWidget {
                 self.set_value(value);
                 self.after_edit(ctx, true);
             }
+            (Action::ShowContextMenu, _) => {
+                let at = self.caret_window_point(ctx);
+                self.defer_edit_menu(ctx, at, true);
+            }
             _ => {}
         }
     }
@@ -621,12 +787,15 @@ impl Widget for FieldWidget {
     fn update(&mut self, ctx: &mut UpdateCtx<'_>, _props: &mut PropertiesMut<'_>, event: &Update) {
         match event {
             Update::FocusChanged(focused) => {
-                if *focused && !self.focus_by_click {
+                if *focused && !self.focus_by_click && !self.keep_selection {
                     // Tab into a field selects its text.
                     let (fonts, layouts) = ctx.text_contexts();
                     self.editor.driver(fonts, layouts).select_all();
                 }
                 self.focus_by_click = false;
+                if *focused {
+                    self.keep_selection = false;
+                }
                 self.focused = *focused;
                 if !*focused && self.editor.is_composing() {
                     let (fonts, layouts) = ctx.text_contexts();
@@ -637,6 +806,17 @@ impl Widget for FieldWidget {
                 ctx.request_render();
             }
             Update::DisabledChanged(_) => ctx.request_render(),
+            // A compositor can take a combo box's menu away without telling us.
+            Update::HoveredChanged(_) => {
+                let up = ctx.get_attached_layer::<MenuWidget>().is_some();
+                if let Some(combo) = &mut self.combo
+                    && combo.open != up
+                {
+                    combo.open = up;
+                    ctx.request_paint_only();
+                    ctx.request_accessibility_update();
+                }
+            }
             Update::FontsChanged => {
                 let _ = self.editor.edit_styles();
                 self.placeholder.invalidate();
@@ -706,6 +886,15 @@ impl Widget for FieldWidget {
             disabled,
         };
         text_field(&mut scene, rect, spec, theme.variant);
+        if let Some(combo) = &self.combo {
+            combo_arrow(
+                &mut scene,
+                combo_arrow_rect(rect),
+                combo.open,
+                disabled,
+                theme.variant,
+            );
+        }
         if self.kind == Kind::Search {
             let h = rect.height();
             magnifier(
@@ -770,7 +959,7 @@ impl Widget for FieldWidget {
 
     fn get_cursor(&self, ctx: &QueryCtx<'_>, pos: Point) -> CursorIcon {
         let local = ctx.to_local(pos);
-        if ctx.is_disabled() || self.over_cancel(local) {
+        if ctx.is_disabled() || self.over_cancel(local) || self.over_arrow(local) {
             CursorIcon::Default
         } else {
             CursorIcon::Text
@@ -779,6 +968,7 @@ impl Widget for FieldWidget {
 
     fn accessibility_role(&self) -> Role {
         match self.kind {
+            Kind::Text if self.combo.is_some() => Role::ComboBox,
             Kind::Text => Role::TextInput,
             Kind::Search => Role::SearchInput,
             Kind::Secure => Role::PasswordInput,
@@ -796,6 +986,13 @@ impl Widget for FieldWidget {
             node.set_placeholder(self.placeholder.text().to_owned());
         }
         node.add_action(Action::SetValue);
+        if self.kind != Kind::Secure {
+            node.add_action(Action::ShowContextMenu);
+        }
+        if let Some(combo) = &self.combo {
+            node.set_has_popup(HasPopup::Menu);
+            node.set_expanded(combo.open);
+        }
         let origin = self.text_origin();
         let colour = theme.colors().label;
         // Spans of a secure field hold bullets: the editor never sees the real text.
@@ -849,6 +1046,22 @@ impl FieldWidget {
 
     pub(crate) fn text(&self) -> String {
         self.value()
+    }
+}
+
+/// The edit menu closed (`chosen`: the item, if one was chosen).
+fn edit_closed(mut owner: WidgetMut<'_, dyn Widget>, chosen: Option<usize>) {
+    let Some(command) = chosen.and_then(EditCommand::from_id) else {
+        return;
+    };
+    let mut this = owner.downcast::<FieldWidget>();
+    let changed = edit_menu::run(command, &mut this.widget.editor, &mut this.ctx, true);
+    this.ctx.request_layout();
+    this.ctx.request_render();
+    if changed {
+        let text = this.widget.value();
+        this.ctx
+            .submit_action::<FieldAction>(FieldAction::Changed(text));
     }
 }
 
@@ -977,6 +1190,7 @@ impl<M: 'static> From<TextField<M>> for Element<M> {
                 match action.downcast_ref::<FieldAction>()? {
                     FieldAction::Changed(text) => on_change.as_mut().map(|f| f(text.clone())),
                     FieldAction::Submitted(text) => on_submit.as_mut().map(|f| f(text.clone())),
+                    FieldAction::Chosen(_) => None,
                 }
             });
         }

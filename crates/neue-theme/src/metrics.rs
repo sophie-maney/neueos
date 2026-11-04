@@ -68,6 +68,12 @@ pub mod control {
     pub const TEXT_VIEW_HEIGHT: f64 = 120.0;
     /// Space between a text view's edge and its text, on every side.
     pub const TEXT_VIEW_INSET: f64 = 4.0;
+    /// Space between a pop-up or pull-down button's left rim and its title.
+    pub const POPUP_LABEL_INSET: f64 = 10.0;
+    /// Width of the accent cap with the arrows on the right of a pop-up or pull-down button.
+    pub const POPUP_CAP_WIDTH: f64 = 20.0;
+    /// Width of a combo box's arrow button, inside the field's right end.
+    pub const COMBO_ARROW_WIDTH: f64 = 18.0;
     /// Width of an overlay scroller across its axis: the strip along a scroll view's edge
     /// that takes the pointer while the scroller shows.
     pub const SCROLLER_WIDTH: f64 = 15.0;

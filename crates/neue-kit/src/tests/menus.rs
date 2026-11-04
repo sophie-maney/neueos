@@ -94,13 +94,13 @@ fn setup() -> (Runner<Menus>, FakeHost) {
 
 /// A node of the accessibility tree: its widget's id and bounds.
 #[derive(Debug, Clone, Copy)]
-struct Found {
-    node: NodeId,
-    bounds: Rect,
+pub(super) struct Found {
+    pub(super) node: NodeId,
+    pub(super) bounds: Rect,
 }
 
 /// Every node with `role` (and `label`, if given), in tree order.
-fn find(host: &mut FakeHost, role: Role, label: Option<&str>) -> Vec<Found> {
+pub(super) fn find(host: &mut FakeHost, role: Role, label: Option<&str>) -> Vec<Found> {
     let harness = host.only();
     let _ = harness.render();
     let state = harness.access_tree().state();
@@ -121,12 +121,12 @@ fn find(host: &mut FakeHost, role: Role, label: Option<&str>) -> Vec<Found> {
     found
 }
 
-fn menus_open(host: &mut FakeHost) -> usize {
+pub(super) fn menus_open(host: &mut FakeHost) -> usize {
     find(host, Role::Menu, None).len()
 }
 
 /// The menu row labelled `label` (any item role).
-fn item(host: &mut FakeHost, label: &str) -> Found {
+pub(super) fn item(host: &mut FakeHost, label: &str) -> Found {
     [Role::MenuItem, Role::MenuItemCheckBox, Role::MenuItemRadio]
         .into_iter()
         .find_map(|role| find(host, role, Some(label)).into_iter().next())
@@ -134,7 +134,7 @@ fn item(host: &mut FakeHost, label: &str) -> Found {
 }
 
 /// The label of the node with keyboard focus.
-fn focused(host: &mut FakeHost) -> Option<String> {
+pub(super) fn focused(host: &mut FakeHost) -> Option<String> {
     let harness = host.only();
     let _ = harness.render();
     harness.access_tree().state().focus_in_tree().label()
@@ -156,13 +156,13 @@ fn open(runner: &mut Runner<Menus>, host: &mut FakeHost) {
     deliver(runner, host);
 }
 
-fn hover(runner: &mut Runner<Menus>, host: &mut FakeHost, label: &str) {
+pub(super) fn hover<A: Application>(runner: &mut Runner<A>, host: &mut FakeHost, label: &str) {
     let at = item(host, label).bounds.center();
     host.only().mouse_move(at);
     deliver(runner, host);
 }
 
-fn click_item(runner: &mut Runner<Menus>, host: &mut FakeHost, label: &str) {
+pub(super) fn click_item<A: Application>(runner: &mut Runner<A>, host: &mut FakeHost, label: &str) {
     hover(runner, host, label);
     let harness = host.only();
     harness.mouse_button_press(Some(PointerButton::Primary));
@@ -170,7 +170,12 @@ fn click_item(runner: &mut Runner<Menus>, host: &mut FakeHost, label: &str) {
     deliver(runner, host);
 }
 
-fn press(runner: &mut Runner<Menus>, host: &mut FakeHost, key: Key, modifiers: Modifiers) {
+pub(super) fn press<A: Application>(
+    runner: &mut Runner<A>,
+    host: &mut FakeHost,
+    key: Key,
+    modifiers: Modifiers,
+) {
     for state in [KeyState::Down, KeyState::Up] {
         host.only()
             .process_text_event(TextEvent::Keyboard(KeyboardEvent {
@@ -183,11 +188,11 @@ fn press(runner: &mut Runner<Menus>, host: &mut FakeHost, key: Key, modifiers: M
     deliver(runner, host);
 }
 
-fn named(runner: &mut Runner<Menus>, host: &mut FakeHost, key: NamedKey) {
+pub(super) fn named<A: Application>(runner: &mut Runner<A>, host: &mut FakeHost, key: NamedKey) {
     press(runner, host, Key::Named(key), Modifiers::empty());
 }
 
-fn typed(runner: &mut Runner<Menus>, host: &mut FakeHost, text: &str) {
+pub(super) fn typed<A: Application>(runner: &mut Runner<A>, host: &mut FakeHost, text: &str) {
     for c in text.chars() {
         press(
             runner,
@@ -198,7 +203,7 @@ fn typed(runner: &mut Runner<Menus>, host: &mut FakeHost, text: &str) {
     }
 }
 
-fn a11y(host: &mut FakeHost, node: NodeId, action: Action) {
+pub(super) fn a11y(host: &mut FakeHost, node: NodeId, action: Action) {
     host.only().process_access_event(ActionRequest {
         action,
         target_tree: TreeId::ROOT,

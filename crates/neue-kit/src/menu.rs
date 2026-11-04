@@ -18,9 +18,28 @@
 //!     ));
 //! ```
 
+use std::cell::Cell;
 use std::sync::Arc;
 
 use crate::CheckState;
+
+thread_local! {
+    /// Overrides which key the command key is on this thread (goldens draw the same
+    /// shortcuts on every host).
+    static COMMAND_IS_CTRL: Cell<Option<bool>> = const { Cell::new(None) };
+}
+
+/// Makes the command key Ctrl on this thread, whatever the host.
+#[cfg(feature = "testing")]
+pub(crate) fn command_is_ctrl_here() {
+    COMMAND_IS_CTRL.with(|c| c.set(Some(true)));
+}
+
+fn command_is_ctrl() -> bool {
+    COMMAND_IS_CTRL
+        .with(Cell::get)
+        .unwrap_or(!cfg!(target_os = "macos"))
+}
 
 /// A list of items, separators and submenus.
 pub struct Menu<M> {
@@ -346,8 +365,7 @@ impl Shortcut {
 
     /// Ctrl, Alt, Shift and the command key, in display order, as (glyph, name).
     fn modifiers(&self) -> Vec<(&'static str, &'static str)> {
-        let command_is_ctrl = !cfg!(target_os = "macos");
-        let ctrl = self.ctrl || (self.command && command_is_ctrl);
+        let ctrl = self.ctrl || (self.command && command_is_ctrl());
         let mut mods = Vec::new();
         if ctrl {
             mods.push(("⌃", "Ctrl"));
@@ -358,7 +376,7 @@ impl Shortcut {
         if self.shift {
             mods.push(("⇧", "Shift"));
         }
-        if self.command && !command_is_ctrl {
+        if self.command && !command_is_ctrl() {
             mods.push(("⌘", "Cmd"));
         }
         mods

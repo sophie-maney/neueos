@@ -13,10 +13,10 @@ use masonry_core::accesskit::{Action, ActionData, Node, Role};
 use masonry_core::core::keyboard::{Key, NamedKey};
 use masonry_core::core::{
     AccessCtx, AccessEvent, BrushIndex, ChildrenIds, CursorIcon, EventCtx, Ime, LayoutCtx,
-    MeasureCtx, NewWidget, PaintCtx, PlainEditorAccessibility, PointerButton, PointerButtonEvent,
-    PointerEvent, PointerUpdate, PropertiesMut, PropertiesRef, QueryCtx, RegisterCtx, TextEvent,
-    Update, UpdateCtx, UsesProperty, Widget, WidgetMut, render_text,
-    set_accesskit_brush_properties,
+    MeasureCtx, MutateCtx, NewWidget, PaintCtx, PlainEditorAccessibility, PointerButton,
+    PointerButtonEvent, PointerEvent, PointerUpdate, PropertiesMut, PropertiesRef, QueryCtx,
+    RegisterCtx, TextEvent, Update, UpdateCtx, UsesProperty, Widget, WidgetId, WidgetMut,
+    render_text, set_accesskit_brush_properties,
 };
 use masonry_core::imaging::Painter;
 use masonry_core::kurbo::{Affine, Axis, Point, Size, Vec2};
@@ -28,7 +28,9 @@ use neue_theme::materials::text_field::CARET_WIDTH;
 use neue_theme::metrics::control;
 use neue_theme::typography;
 
+use super::edit_menu::{self, EditCommand};
 use super::field::Blink;
+use super::menu::{self, Anchor};
 use super::scroll::ScrollView;
 use super::text::TextStyle;
 use crate::Cx;
@@ -55,6 +57,23 @@ fn multi_line(text: &str) -> String {
         .collect()
 }
 
+/// The edit menu closed (`chosen`: the item, if one was chosen).
+fn edit_closed(mut owner: WidgetMut<'_, dyn Widget>, chosen: Option<usize>) {
+    let Some(command) = chosen.and_then(EditCommand::from_id) else {
+        return;
+    };
+    let mut this = owner.downcast::<TextViewWidget>();
+    let editable = this.widget.editable;
+    let changed = edit_menu::run(command, &mut this.widget.editor, &mut this.ctx, editable);
+    this.ctx.request_layout();
+    this.ctx.request_render();
+    if changed {
+        let text = this.widget.value();
+        this.ctx
+            .submit_action::<ViewAction>(ViewAction::Changed(text));
+    }
+}
+
 /// The Masonry widget behind [`TextView`].
 pub(crate) struct TextViewWidget {
     editor: PlainEditor<BrushIndex>,
@@ -70,6 +89,8 @@ pub(crate) struct TextViewWidget {
     caret_to_start: bool,
     focused: bool,
     blink: Blink,
+    /// What had focus before the edit menu opened.
+    edit_return_focus: Option<WidgetId>,
 }
 
 impl std::fmt::Debug for TextViewWidget {
@@ -97,6 +118,7 @@ impl TextViewWidget {
             caret_to_start: false,
             focused: false,
             blink: Blink::default(),
+            edit_return_focus: None,
         }
     }
 
@@ -160,6 +182,51 @@ impl TextViewWidget {
         op(&mut self.editor.driver(fonts, layouts));
     }
 
+    /// Opens the edit menu after the event that asked for it, unless a context menu
+    /// around the view opened one meanwhile (it gets the event after the view).
+    fn defer_edit_menu(&self, ctx: &mut EventCtx<'_>, at: Point, keyboard: bool) {
+        if ctx.is_disabled() {
+            return;
+        }
+        let epoch = menu::opened();
+        let id = ctx.widget_id();
+        ctx.mutate_later(id, move |mut view| {
+            if menu::opened() != epoch {
+                return;
+            }
+            let mut this = view.downcast::<TextViewWidget>();
+            this.widget.open_edit_menu(&mut this.ctx, at, keyboard);
+        });
+    }
+
+    /// Where a keyboard-opened edit menu goes: below the caret.
+    fn caret_window_point(&self, ctx: &EventCtx<'_>) -> Point {
+        let caret = self
+            .editor
+            .cursor_geometry(1.0)
+            .map(bounding_box_to_rect)
+            .map_or(Point::ORIGIN, |r| Point::new(r.x0, r.y1))
+            + Self::origin();
+        ctx.to_window(caret)
+    }
+
+    fn open_edit_menu(&mut self, ctx: &mut MutateCtx<'_>, at: Point, keyboard: bool) {
+        if ctx.is_disabled() {
+            return;
+        }
+        let spec = edit_menu::spec(
+            self.editable,
+            !self.editor.raw_selection().is_collapsed(),
+            !self.editor.raw_text().is_empty(),
+        );
+        let anchor = Anchor {
+            on_closed: Some(edit_closed),
+            refocus: Some(ctx.widget_id()),
+            ..Anchor::at(at)
+        };
+        menu::open(ctx, spec, anchor, keyboard, &mut self.edit_return_focus);
+    }
+
     /// After an event: lay out again if the editor changed, ask the scroll view to keep
     /// the caret in sight, and tell the app if the text changed.
     fn after_edit(&mut self, ctx: &mut EventCtx<'_>, changed: bool) {
@@ -202,6 +269,18 @@ impl TextViewWidget {
         let collapsed = self.editor.raw_selection().is_collapsed();
         let mut changed = false;
         match key {
+            // The Menu key and Shift-F10: the edit menu, unless a context menu around the
+            // view takes the key (it is not handled here, so it bubbles up to one).
+            Key::Named(NamedKey::ContextMenu) => {
+                let at = self.caret_window_point(ctx);
+                self.defer_edit_menu(ctx, at, true);
+                return None;
+            }
+            Key::Named(NamedKey::F10) if shift && !mods.ctrl() && !mods.alt() && !mods.meta() => {
+                let at = self.caret_window_point(ctx);
+                self.defer_edit_menu(ctx, at, true);
+                return None;
+            }
             Key::Character(c) if command && c.eq_ignore_ascii_case("a") => {
                 self.drive(ctx, |d| d.select_all());
             }
@@ -328,6 +407,29 @@ impl Widget for TextViewWidget {
     ) {
         match event {
             PointerEvent::Down(PointerButtonEvent {
+                button: Some(PointerButton::Secondary),
+                state,
+                ..
+            }) => {
+                if self.editor.is_composing() {
+                    return;
+                }
+                let local = ctx.local_position(state.position);
+                if self.editor.raw_selection().is_collapsed() {
+                    let p = local - Self::origin();
+                    let (fonts, layouts) = ctx.text_contexts();
+                    self.editor
+                        .driver(fonts, layouts)
+                        .move_to_point(p.x as f32, p.y as f32);
+                }
+                if !ctx.is_focus_target() {
+                    self.focus_by_click = true;
+                    ctx.request_focus();
+                }
+                self.defer_edit_menu(ctx, ctx.to_window(local), false);
+                self.after_edit(ctx, false);
+            }
+            PointerEvent::Down(PointerButtonEvent {
                 button: None | Some(PointerButton::Primary),
                 state,
                 ..
@@ -445,6 +547,10 @@ impl Widget for TextViewWidget {
             (Action::SetValue, Some(ActionData::Value(value))) if self.editable => {
                 self.set_value(value);
                 self.after_edit(ctx, true);
+            }
+            (Action::ShowContextMenu, _) => {
+                let at = self.caret_window_point(ctx);
+                self.defer_edit_menu(ctx, at, true);
             }
             _ => {}
         }
@@ -596,6 +702,7 @@ impl Widget for TextViewWidget {
         } else {
             node.set_read_only();
         }
+        node.add_action(Action::ShowContextMenu);
         let origin = Self::origin();
         let colour = theme.colors().label;
         let built = self.access.build_nodes(

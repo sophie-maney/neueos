@@ -17,8 +17,10 @@ use neue_platform::{WindowId, WindowSpec};
 use neue_theme::Theme;
 
 mod controls;
+mod editmenu;
 mod fields;
 mod menus;
+mod popups;
 mod scroll;
 mod textview;
 mod values;
