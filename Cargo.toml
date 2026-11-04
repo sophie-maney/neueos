@@ -57,6 +57,18 @@ toml = "1"
 # fontconfig and identical output on every host (ADR 0013).
 parley = { version = "0.12", default-features = false, features = ["std"] }
 
+# Widget tree (ADR 0002 §4, ADR 0030). Our fork's `neueos` branch: upstream main `dc49687`
+# plus linebender/xilem#1864 (parley 0.12, accesskit 0.25), `imaging` at the git rev below
+# (vello_cpu/vello_gpu 0.3, wgpu 30) and no C dependencies. See
+# docs/research/masonry-spike.md. Bump in its own PR. `imaging` is pre-alpha and
+# unreleased; pin the same rev the fork uses.
+masonry_core = { git = "https://github.com/sophie-maney/xilem", rev = "499f423522bc7fe8ed36816683b2cc6d14a86d97" }
+masonry_testing = { git = "https://github.com/sophie-maney/xilem", rev = "499f423522bc7fe8ed36816683b2cc6d14a86d97", default-features = false }
+# Spike only (ADR 0002 §4): replaced by neue-platform's own driver in task 2.4. Uses
+# vello_gpu through imaging_vello_hybrid, never vello's compute renderer.
+masonry_winit = { git = "https://github.com/sophie-maney/xilem", rev = "499f423522bc7fe8ed36816683b2cc6d14a86d97", default-features = false, features = ["imaging_vello_hybrid"] }
+imaging = { git = "https://github.com/forest-rs/imaging", rev = "f3f932a8a0e233f5ab52863041b8a3d6cff9255b", default-features = false, features = ["std"] }
+
 # Internal crates
 neue-paint = { path = "crates/neue-paint" }
 neue-ipc = { path = "crates/neue-ipc" }

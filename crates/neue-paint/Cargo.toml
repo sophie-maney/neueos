@@ -13,8 +13,12 @@ default = []
 # GPU backend: replays scenes into vello_gpu on wgpu. Off by default so CPU-only users
 # (compositor chrome, tests) don't pull in wgpu.
 gpu = ["dep:vello_gpu", "dep:wgpu"]
+# Replay target for `imaging::Painter`, the paint API Masonry widgets draw through
+# (ADR 0002 §4).
+imaging = ["dep:imaging"]
 
 [dependencies]
+imaging = { workspace = true, optional = true }
 thiserror.workspace = true
 vello_common.workspace = true
 parley.workspace = true
@@ -24,8 +28,17 @@ wgpu = { workspace = true, optional = true }
 
 [dev-dependencies]
 anyhow.workspace = true
+masonry_core.workspace = true
+masonry_testing.workspace = true
+# Enables the `imaging` feature for this crate's own tests, so `cargo test --workspace`
+# (without --all-features) still runs the Masonry golden test.
+neue-paint = { path = ".", features = ["imaging"] }
 pollster.workspace = true
 winit.workspace = true
+
+# masonry_winit pulls in winit's default (X11) features, so it stays off Linux. Spike only.
+[target.'cfg(target_os = "macos")'.dev-dependencies]
+masonry_winit.workspace = true
 
 [[example]]
 name = "poc"

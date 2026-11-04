@@ -3,7 +3,9 @@
 //! Drawing is recorded into a [`Scene`] (logical pixels) and replayed by a backend:
 //! - [`cpu::CpuRenderer`] (`vello_cpu`), always available, used for golden tests and
 //!   compositor chrome;
-//! - `gpu::GpuRenderer` (`vello_gpu` on wgpu), behind the `gpu` feature.
+//! - `gpu::GpuRenderer` (`vello_gpu` on wgpu), behind the `gpu` feature;
+//! - `imaging::ImagingReplayer` (an `imaging::Painter`, which Masonry widgets paint
+//!   through), behind the `imaging` feature.
 //!
 //! Materials in [`materials`] draw into a [`Scene`], so both backends share them. Text is
 //! laid out by [`text::TextEngine`] (parley, bundled fonts only).
@@ -14,6 +16,8 @@ pub mod cpu;
 pub mod demo;
 #[cfg(feature = "gpu")]
 pub mod gpu;
+#[cfg(feature = "imaging")]
+pub mod imaging;
 pub mod materials;
 mod replay;
 mod scene;

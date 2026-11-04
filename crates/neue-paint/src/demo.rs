@@ -35,3 +35,27 @@ pub fn sheet(appearance: Appearance) -> Scene {
     draw_sheet(&mut scene, appearance);
     scene
 }
+
+/// Button tile width in logical pixels: one Aqua button on linen.
+pub const BUTTON_TILE_WIDTH: f64 = 108.0;
+/// Button tile height in logical pixels.
+pub const BUTTON_TILE_HEIGHT: f64 = 38.0;
+
+/// Draw one button in `state` on linen, with the tile's top-left corner at the current
+/// origin. Shared by the golden tests and the Masonry spike (task 2.1), so a Masonry
+/// widget's render can be compared against neue-paint's own.
+pub fn draw_button_tile(scene: &mut Scene, appearance: Appearance, state: ButtonState) {
+    fill_linen(
+        scene,
+        &Rect::new(0.0, 0.0, BUTTON_TILE_WIDTH, BUTTON_TILE_HEIGHT),
+        appearance,
+    );
+    aqua_button(scene, Rect::new(12.0, 8.0, 96.0, 30.0), state, appearance);
+}
+
+/// A scene containing just the button tile.
+pub fn button_tile(appearance: Appearance, state: ButtonState) -> Scene {
+    let mut scene = Scene::new(BUTTON_TILE_WIDTH, BUTTON_TILE_HEIGHT);
+    draw_button_tile(&mut scene, appearance, state);
+    scene
+}

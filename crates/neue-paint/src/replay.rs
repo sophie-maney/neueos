@@ -25,26 +25,39 @@ pub(crate) fn paint_for(
             Some((PaintType::Gradient(gradient.clone()), Affine::IDENTITY))
         }
         Brush::Texture(texture) => {
-            if shape_transform.determinant().abs() < f64::EPSILON {
-                return None;
-            }
-            // The tile is rendered at device scale, so one texel is 1/scale logical pixels.
-            // The paint transform is relative to the shape's transform; undo it so the
-            // texture is anchored in scene space by `texture.transform`.
-            let paint_transform =
-                shape_transform.inverse() * texture.transform * Affine::scale(1.0 / scale);
+            let paint_transform = texture_paint_transform(texture, shape_transform, scale)?;
             let image = Image {
                 image: resolve(texture),
-                sampler: ImageSampler {
-                    x_extend: Extend::Repeat,
-                    y_extend: Extend::Repeat,
-                    quality: ImageQuality::Medium,
-                    alpha: 1.0,
-                },
+                sampler: TEXTURE_SAMPLER,
             };
             Some((PaintType::Image(image), paint_transform))
         }
     }
+}
+
+/// How texture tiles are sampled: repeated in both directions.
+pub(crate) const TEXTURE_SAMPLER: ImageSampler = ImageSampler {
+    x_extend: Extend::Repeat,
+    y_extend: Extend::Repeat,
+    quality: ImageQuality::Medium,
+    alpha: 1.0,
+};
+
+/// Paint transform of `texture` drawn under the logical-space shape transform
+/// `shape_transform` at device `scale`, relative to that shape transform (vello's and
+/// imaging's convention). `None` when the shape transform is degenerate.
+pub(crate) fn texture_paint_transform(
+    texture: &TextureBrush,
+    shape_transform: Affine,
+    scale: f64,
+) -> Option<Affine> {
+    if shape_transform.determinant().abs() < f64::EPSILON {
+        return None;
+    }
+    // The tile is rendered at device scale, so one texel is 1/scale logical pixels. The
+    // paint transform is relative to the shape's transform; undo it so the texture is
+    // anchored in scene space by `texture.transform`.
+    Some(shape_transform.inverse() * texture.transform * Affine::scale(1.0 / scale))
 }
 
 /// Replay `$scene` into `$ctx` at `$scale`. `$resources` are the backend's glyph and image
