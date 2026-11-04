@@ -10,51 +10,29 @@ use vello_common::kurbo::{Affine, Shape};
 use vello_common::peniko::ImageAlphaType;
 use vello_common::pixmap::{PixelMetadata, Pixmap};
 
-use crate::Appearance;
+use neue_theme::materials::linen::{self, Palette};
+
 use crate::scene::{ProceduralTexture, Scene, TextureBrush};
+use crate::{Appearance, Variant};
 
 /// Tile size in logical pixels. Every noise period below divides it, so the tile repeats
 /// seamlessly.
-const TILE: u16 = 128;
+const TILE: u16 = linen::TILE;
 
-/// Colours of one linen variant, in sRGB 0..1.
-#[derive(Clone, Copy, Debug, PartialEq)]
-struct LinenPalette {
-    base: [f32; 3],
-    /// How far fibres deviate from `base`.
-    contrast: f32,
-}
-
-impl LinenPalette {
-    // TODO(phase 2): move these into neue-theme tokens.
-    fn for_appearance(appearance: Appearance) -> Self {
-        match appearance {
-            Appearance::Light => Self {
-                base: [0.785, 0.788, 0.780],
-                contrast: 0.11,
-            },
-            Appearance::Dark => Self {
-                base: [0.224, 0.236, 0.259],
-                contrast: 0.075,
-            },
-        }
-    }
-}
-
-/// The linen texture for one appearance.
+/// The linen texture for one theme variant.
 #[derive(Clone, Copy, Debug, PartialEq, Eq)]
 pub struct Linen {
-    /// Light or dark variant.
-    pub appearance: Appearance,
+    /// Selects the colours (only the appearance changes linen today).
+    pub variant: Variant,
     /// Varies the weave pattern.
     pub seed: u32,
 }
 
 impl Linen {
-    /// The default linen for `appearance`.
-    pub fn new(appearance: Appearance) -> Self {
+    /// The default linen for `variant` (or an [`Appearance`]).
+    pub fn new(variant: impl Into<Variant>) -> Self {
         Self {
-            appearance,
+            variant: variant.into(),
             seed: 0x6e65_7565, // "neue"
         }
     }
@@ -103,7 +81,7 @@ impl Linen {
 
 impl ProceduralTexture for Linen {
     fn cache_key(&self) -> u64 {
-        let appearance = match self.appearance {
+        let appearance = match self.variant.appearance {
             Appearance::Light => 0,
             Appearance::Dark => 1,
         };
@@ -115,7 +93,7 @@ impl ProceduralTexture for Linen {
     }
 
     fn render(&self, scale: f64) -> Pixmap {
-        let palette = LinenPalette::for_appearance(self.appearance);
+        let palette = Palette::new(self.variant);
         // Scales are small positive numbers; the tile is at most a few thousand pixels.
         #[allow(
             clippy::cast_possible_truncation,
@@ -150,8 +128,8 @@ impl ProceduralTexture for Linen {
 }
 
 /// Fill `shape` with linen anchored at the scene origin.
-pub fn fill_linen(scene: &mut Scene, shape: &impl Shape, appearance: Appearance) {
-    scene.fill(shape, Linen::new(appearance).brush());
+pub fn fill_linen(scene: &mut Scene, shape: &impl Shape, variant: impl Into<Variant>) {
+    scene.fill(shape, Linen::new(variant).brush());
 }
 
 fn to_u8(v: f32) -> u8 {

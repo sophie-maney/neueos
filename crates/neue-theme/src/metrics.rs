@@ -1,0 +1,34 @@
+//! Spacing and control sizes, in logical pixels. Values that belong to one material live in
+//! [`crate::materials`].
+
+/// Spacing steps for padding and gaps between controls.
+pub mod spacing {
+    /// Hairline gap: between a control and its etched highlight.
+    pub const XXS: f64 = 2.0;
+    /// Tight gap, inside compound controls.
+    pub const XS: f64 = 4.0;
+    /// Between related controls.
+    pub const S: f64 = 8.0;
+    /// Between groups of controls.
+    pub const M: f64 = 12.0;
+    /// Window content inset.
+    pub const L: f64 = 20.0;
+}
+
+/// Standard control heights.
+pub mod control {
+    /// Regular push buttons, pop-up buttons and text fields.
+    pub const REGULAR_HEIGHT: f64 = 22.0;
+    /// Small controls.
+    pub const SMALL_HEIGHT: f64 = 19.0;
+    /// Mini controls.
+    pub const MINI_HEIGHT: f64 = 15.0;
+    /// Minimum width of a push button with a short label.
+    pub const BUTTON_MIN_WIDTH: f64 = 70.0;
+    /// Horizontal padding between a push button's rim and its label.
+    pub const BUTTON_PADDING: f64 = 12.0;
+    /// Width of a control's rim (outer border).
+    pub const RIM: f64 = 1.0;
+    /// Width of the keyboard focus ring.
+    pub const FOCUS_RING: f64 = 3.0;
+}

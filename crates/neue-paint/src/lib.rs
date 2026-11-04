@@ -7,8 +7,9 @@
 //! - `imaging::ImagingReplayer` (an `imaging::Painter`, which Masonry widgets paint
 //!   through), behind the `imaging` feature.
 //!
-//! Materials in [`materials`] draw into a [`Scene`], so both backends share them. Text is
-//! laid out by [`text::TextEngine`] (parley, bundled fonts only).
+//! Materials in [`materials`] draw into a [`Scene`], so both backends share them. Their
+//! colours and metrics come from `neue-theme` (re-exported as [`theme`]), selected by a
+//! [`Variant`]. Text is laid out by [`text::TextEngine`] (parley, bundled fonts only).
 //!
 //! Portable crate: must build and pass tests on macOS and Linux.
 
@@ -23,21 +24,13 @@ mod replay;
 mod scene;
 pub mod text;
 
+pub use neue_theme as theme;
+pub use neue_theme::{Accent, Appearance, Contrast, Variant};
 pub use scene::{Brush, Command, ProceduralTexture, Scene, TextureBrush};
 pub use vello_common::kurbo;
 pub use vello_common::peniko;
 pub use vello_common::peniko::color;
 pub use vello_common::pixmap::Pixmap;
-
-/// Light or dark appearance. Every material has both.
-#[derive(Clone, Copy, Debug, Default, PartialEq, Eq, Hash)]
-pub enum Appearance {
-    /// The default, light appearance.
-    #[default]
-    Light,
-    /// The dark appearance.
-    Dark,
-}
 
 /// Errors from rendering a [`Scene`].
 #[derive(Debug, thiserror::Error)]

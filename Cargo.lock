@@ -2468,6 +2468,7 @@ dependencies = [
  "masonry_testing",
  "masonry_winit",
  "neue-paint",
+ "neue-theme",
  "parley",
  "pollster 1.0.1",
  "thiserror 2.0.21",
@@ -2518,6 +2519,13 @@ dependencies = [
  "thiserror 2.0.21",
  "tracing",
  "tracing-subscriber",
+]
+
+[[package]]
+name = "neue-theme"
+version = "0.0.0"
+dependencies = [
+ "color",
 ]
 
 [[package]]

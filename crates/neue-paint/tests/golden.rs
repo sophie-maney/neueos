@@ -17,7 +17,7 @@ use neue_paint::cpu::{CpuRenderer, Quality};
 use neue_paint::materials::ButtonState;
 use neue_paint::materials::title_bar::{self, TitleBarStyle, TrafficLight};
 use neue_paint::text::TextEngine;
-use neue_paint::{Appearance, Pixmap, Scene, demo};
+use neue_paint::{Accent, Appearance, Contrast, Pixmap, Scene, Variant, demo};
 
 fn render_sheet(appearance: Appearance, scale: f64) -> Pixmap {
     CpuRenderer::new(Quality::Reference)
@@ -34,6 +34,35 @@ fn button_tile_goldens() {
                     .render(&demo::button_tile(appearance, state), scale)
                     .unwrap();
                 check(&button_golden_name(appearance, state, scale), pixmap);
+            }
+        }
+    }
+}
+
+/// Graphite accent and increased contrast: button tiles × light/dark × 1x/2x.
+#[test]
+fn button_tile_variant_goldens() {
+    let variants = [
+        ("graphite", Accent::Graphite, Contrast::Standard),
+        ("contrast", Accent::Blue, Contrast::Increased),
+    ];
+    for (v, accent, contrast) in variants {
+        for (appearance, a) in [(Appearance::Light, "light"), (Appearance::Dark, "dark")] {
+            for (state, st) in [
+                (ButtonState::Normal, "normal"),
+                (ButtonState::Pressed, "pressed"),
+            ] {
+                for (scale, s) in [(1.0, "1x"), (2.0, "2x")] {
+                    let variant = Variant {
+                        appearance,
+                        accent,
+                        contrast,
+                    };
+                    let pixmap = CpuRenderer::new(Quality::Reference)
+                        .render(&demo::button_tile(variant, state), scale)
+                        .unwrap();
+                    check(&format!("button-{v}-{st}-{a}@{s}"), pixmap);
+                }
             }
         }
     }
@@ -82,7 +111,7 @@ fn title_bar_goldens() {
         for (focused, f) in [(true, "focused"), (false, "unfocused")] {
             for (scale, s) in [(1.0, "1x"), (2.0, "2x")] {
                 let style = TitleBarStyle {
-                    appearance,
+                    variant: appearance.into(),
                     focused,
                     ..TitleBarStyle::default()
                 };
@@ -110,10 +139,40 @@ fn title_bar_interaction_goldens() {
         for (name, focused, pressed) in states {
             for (scale, s) in [(1.0, "1x"), (2.0, "2x")] {
                 let style = TitleBarStyle {
-                    appearance,
+                    variant: appearance.into(),
                     focused,
                     hover: true,
                     pressed,
+                };
+                check(
+                    &format!("titlebar-{name}-{a}@{s}"),
+                    render_title_bar(style, scale),
+                );
+            }
+        }
+    }
+}
+
+/// Graphite traffic lights (pointer over them) and an increased-contrast focused bar,
+/// × light/dark × 1x/2x.
+#[test]
+fn title_bar_variant_goldens() {
+    let variants = [
+        ("hover-graphite", Accent::Graphite, Contrast::Standard, true),
+        ("focused-contrast", Accent::Blue, Contrast::Increased, false),
+    ];
+    for (name, accent, contrast, hover) in variants {
+        for (appearance, a) in [(Appearance::Light, "light"), (Appearance::Dark, "dark")] {
+            for (scale, s) in [(1.0, "1x"), (2.0, "2x")] {
+                let style = TitleBarStyle {
+                    variant: Variant {
+                        appearance,
+                        accent,
+                        contrast,
+                    },
+                    focused: true,
+                    hover,
+                    pressed: None,
                 };
                 check(
                     &format!("titlebar-{name}-{a}@{s}"),

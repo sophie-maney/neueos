@@ -1,0 +1,17 @@
+[package]
+name = "neue-theme"
+description = "Design tokens for neueOS: colours, metrics, radii, type scale, motion and material values"
+version.workspace = true
+edition.workspace = true
+rust-version.workspace = true
+license.workspace = true
+repository.workspace = true
+publish.workspace = true
+
+[dependencies]
+# The colour type peniko (and so neue-paint) uses: `peniko::Color` is
+# `color::AlphaColor<Srgb>`, so tokens need no conversion.
+color.workspace = true
+
+[lints]
+workspace = true

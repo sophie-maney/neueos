@@ -81,8 +81,13 @@ masonry_imaging = { git = "https://github.com/sophie-maney/xilem", rev = "499f42
 masonry = { git = "https://github.com/sophie-maney/xilem", rev = "499f423522bc7fe8ed36816683b2cc6d14a86d97", default-features = false }
 imaging = { git = "https://github.com/forest-rs/imaging", rev = "f3f932a8a0e233f5ab52863041b8a3d6cff9255b", default-features = false, features = ["std"] }
 
+# Colour type shared with peniko (`peniko::Color` is `color::AlphaColor<Srgb>`); neue-theme
+# uses it directly. Must match the version peniko depends on. MIT OR Apache-2.0.
+color = { version = "0.3.3", default-features = false, features = ["std"] }
+
 # Internal crates
 neue-paint = { path = "crates/neue-paint" }
+neue-theme = { path = "crates/neue-theme" }
 neue-ipc = { path = "crates/neue-ipc" }
 neue-config = { path = "crates/neue-config" }
 neue-protocols = { path = "crates/neue-protocols" }
