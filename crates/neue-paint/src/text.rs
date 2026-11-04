@@ -21,6 +21,12 @@ use vello_common::peniko::FontData;
 pub const UI_FAMILY: &str = neue_theme::typography::UI_FAMILY;
 /// The bundled UI font (Fira Sans Regular, OFL-1.1).
 static UI_FONT: &[u8] = include_bytes!("../fonts/FiraSans-Regular.ttf");
+/// The bundled UI font's data, for text stacks other than [`TextEngine`] (neue-kit's
+/// widgets, through Masonry's font collection).
+pub fn ui_font_data() -> &'static [u8] {
+    UI_FONT
+}
+
 /// Appended to truncated text.
 const ELLIPSIS: char = '…';
 

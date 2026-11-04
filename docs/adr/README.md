@@ -44,3 +44,4 @@ Don't edit an accepted ADR's decision; supersede it with a new one.
 | [0032](0032-winit-driver.md) | neue-platform's winit driver: macOS only, one shared renderer | Accepted |
 | [0033](0033-wayland-driver.md) | neue-platform's Wayland driver: one app API, paced by frame callbacks | Accepted |
 | [0034](0034-wayland-popups-clipboard-a11y.md) | Wayland driver: popup placement, clipboard, activation, dialogs, AccessKit | Accepted |
+| [0035](0035-neue-kit-app-model.md) | neue-kit app model: messages, retained widgets, handles, background tasks | Accepted |

@@ -102,6 +102,7 @@ neue-ipc = { path = "crates/neue-ipc" }
 neue-config = { path = "crates/neue-config" }
 neue-protocols = { path = "crates/neue-protocols" }
 neue-platform = { path = "crates/neue-platform" }
+neue-kit = { path = "crates/neue-kit" }
 
 [workspace.lints.rust]
 unsafe_code = "deny"
