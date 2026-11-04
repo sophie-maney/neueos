@@ -30,7 +30,7 @@ column was dropped.
 | Clipboard Wayland ↔ X11, both ways, and primary | ✅ | ✅ |
 | Video: mpv 0.41, 720p60 test pattern + audio | ✅ after B1 (1 dropped frame in 8 s) | ✅ mpv and Firefox |
 | Resize / zoom / full screen (actions) | ✅ | ✅ |
-| Typing, mouse, drag and drop by hand | — (owner) | ✅ |
+| Typing, mouse, drag and drop by hand | ✅ (owner) | ✅ |
 | HiDPI output, fractional scale | n/a | — (no HiDPI monitor) |
 | Multi-monitor, hotplug | n/a | — (one monitor) |
 | A day of real use without a crash | — | — (short test session, no crash) |
@@ -38,7 +38,8 @@ column was dropped.
 | Compositor log free of errors | ⚠️ B3 | ⚠️ B3 (B5 fixed) |
 
 The VM checks ran over ssh: apps were started with `systemd-run --user`, as a launcher would,
-and checked with `neuectl windows` and `neuectl screenshot`. Input by hand was not tested.
+and checked with `neuectl windows` and `neuectl screenshot`. The owner did the input checks
+by hand.
 
 ## Bugs
 | # | Bug | Where | Status |
