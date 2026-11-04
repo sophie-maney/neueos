@@ -61,8 +61,8 @@ the paper and leather materials move to Phase 6/7 (Widgets, Write).
       frame-callback pacing; cursor shapes with xcursor fallback; key repeat and winit's
       key tables; click counting. `examples/demo.rs` replaces `winit_demo` and
       `sctk_spike`; `neue-comp/tests/platform.rs` maps and draws a driver window. VM check
-      run by the agent (`docs/checks/phase-2.md` §3, steps 1–4); the owner's steps 5–6
-      (cursor shapes, scale 1.5) are pending.
+      `docs/checks/phase-2.md` §3 passed: steps 1–4 run by the agent, 5–6 (cursor shapes,
+      scale 1.5) by the owner.
 - [ ] **2.6 Wayland driver: popups, clipboard, a11y** · Opus. xdg-popup positioning for
       all Masonry layers, clipboard and primary selection, xdg-activation, xdg-dialog,
       AccessKit on Linux (`accesskit_unix`).

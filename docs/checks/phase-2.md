@@ -132,7 +132,7 @@ Report: which steps passed, and the log lines of any step that didn't.
 ## 3. Checking the Wayland driver (task 2.5)
 The same demo as §2, under neue-comp in the VM, set up as in §1 (session running, ydotoold
 started, output at scale 1). The agent ran steps 1–4 on 2026-11-04 against the installed
-session; steps 5 and 6 need the owner's eyes.
+session; the owner ran steps 5 and 6 (cursor shapes, scale 1.5) the same day. All passed.
 
 **1. Sync, build, start the input-method probe and the demo** (the probe first, as in §1
 step 3):
