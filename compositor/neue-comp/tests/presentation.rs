@@ -18,7 +18,7 @@ const CLOCK_MONOTONIC: u32 = 1;
 const HEADLESS_REFRESH_NS: u32 = 16_666_666;
 
 /// Globals a sandboxed client must not see.
-const PRIVILEGED: [&str; 7] = [
+const PRIVILEGED: [&str; 9] = [
     "wp_security_context_manager_v1",
     "ext_session_lock_manager_v1",
     "zwlr_layer_shell_v1",
@@ -26,6 +26,8 @@ const PRIVILEGED: [&str; 7] = [
     "zwlr_data_control_manager_v1",
     "zwp_input_method_manager_v2",
     "ext_foreign_toplevel_list_v1",
+    "ext_output_image_capture_source_manager_v1",
+    "ext_image_copy_capture_manager_v1",
 ];
 
 /// Whether the (only) window's surface asks for tearing.

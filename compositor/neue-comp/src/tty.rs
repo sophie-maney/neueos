@@ -42,9 +42,7 @@ use smithay::backend::libinput::{LibinputInputBackend, LibinputSessionInterface}
 use smithay::backend::renderer::ImportDma;
 use smithay::backend::renderer::element::Kind;
 use smithay::backend::renderer::element::memory::MemoryRenderBufferRenderElement;
-use smithay::backend::renderer::element::surface::{
-    WaylandSurfaceRenderElement, render_elements_from_surface_tree,
-};
+use smithay::backend::renderer::element::surface::render_elements_from_surface_tree;
 use smithay::backend::renderer::gles::GlesRenderer;
 use smithay::backend::session::libseat::LibSeatSession;
 use smithay::backend::session::{Event as SessionEvent, Session};
@@ -59,7 +57,7 @@ use smithay::reexports::input::{self, Libinput};
 use smithay::reexports::rustix::fs::OFlags;
 use smithay::reexports::wayland_protocols::wp::presentation_time::server::wp_presentation_feedback;
 use smithay::reexports::wayland_server::DisplayHandle;
-use smithay::utils::{DeviceFd, IsAlive, Physical, Point, Rectangle, Scale};
+use smithay::utils::{DeviceFd, IsAlive, Logical, Physical, Point, Rectangle, Scale};
 use smithay::wayland::compositor::with_states;
 use smithay::wayland::dmabuf::{DmabufGlobal, DmabufState};
 use smithay::wayland::drm_syncobj::{DrmSyncobjState, supports_syncobj_eventfd};
@@ -69,8 +67,9 @@ use tracing::{debug, error, info, trace, warn};
 use crate::Error;
 use crate::cursor;
 use crate::redraw::Redraw;
-use crate::render::CLEAR_COLOR;
+use crate::render::{CLEAR_COLOR, ScreenElement as TtyElement};
 use crate::scanout::{self, FRAME_FLAGS, OutputFeedback};
+use crate::state::DndIcon;
 use crate::state::{Backend, State};
 use crate::vrr;
 
@@ -87,15 +86,6 @@ type Exporter = GbmFramebufferExporter<DrmDeviceFd>;
 type FrameData = OutputPresentationFeedback;
 type OutputManager = DrmOutputManager<Allocator, Exporter, FrameData, DrmDeviceFd>;
 type TtyOutput = DrmOutput<Allocator, Exporter, FrameData, DrmDeviceFd>;
-
-smithay::backend::renderer::element::render_elements! {
-    /// Everything drawn on a tty output, topmost first.
-    pub TtyElement<=GlesRenderer>;
-    Output=crate::render::OutputElement,
-    Cursor=MemoryRenderBufferRenderElement<GlesRenderer>,
-    /// A client-drawn cursor or the drag icon.
-    CursorSurface=WaylandSurfaceRenderElement<GlesRenderer>,
-}
 
 /// One lit connector: its output, the DRM output that scans it out, and its frame state.
 struct OutputSurface {
@@ -199,6 +189,21 @@ impl TtyData {
 
     pub fn renderer(&mut self) -> &mut GlesRenderer {
         &mut self.renderer
+    }
+
+    /// What screencopy draws with: the renderer and the cursor themes.
+    pub(crate) fn capture_parts(&mut self) -> (&mut GlesRenderer, &mut cursor::Themes) {
+        (&mut self.renderer, &mut self.cursors)
+    }
+
+    /// The node clients allocate screencopy dmabufs on and the formats the renderer can
+    /// draw into, or `None` without a render node (shm only, ADR 0022).
+    pub(crate) fn capture_dmabuf(&self) -> Option<(DrmNode, FormatSet)> {
+        let node = self.render_node?;
+        Some((
+            node,
+            self.renderer.egl_context().dmabuf_render_formats().clone(),
+        ))
     }
 
     /// Switch to virtual terminal `vt` (Ctrl+Alt+F`vt`).
@@ -990,79 +995,19 @@ fn render(state: &mut State, crtc: crtc::Handle) {
     }
     let scale = Scale::from(output.current_scale().fractional_scale());
 
-    // Topmost first: the cursor (if it is on this output), then the windows.
-    let mut elements: Vec<TtyElement> = Vec::new();
     if let CursorImageStatus::Surface(surface) = &*cursor_status
         && !surface.alive()
     {
         *cursor_status = CursorImageStatus::default_named();
     }
-    // Generous bounds, so a cursor straddling two outputs shows on both.
-    let cursor_near = output_geo.overlaps(Rectangle::new(
-        pointer_location.to_i32_floor() - Point::from((CURSOR_REACH, CURSOR_REACH)),
-        (2 * CURSOR_REACH, 2 * CURSOR_REACH).into(),
-    ));
-    let cursor_pos = pointer_location - output_geo.loc.to_f64();
-    // When an animated cursor shows its next image.
-    let mut cursor_change = None;
-    match &*cursor_status {
-        CursorImageStatus::Hidden => {}
-        _ if !cursor_near => {}
-        CursorImageStatus::Named(icon) => {
-            let frame = cursors.frame(*icon, scale.x, time);
-            let location: Point<f64, Physical> =
-                cursor_pos.to_physical(scale) - frame.hotspot.to_f64();
-            match MemoryRenderBufferRenderElement::from_buffer(
-                renderer,
-                location,
-                &frame.buffer,
-                None,
-                None,
-                Some(frame.logical_size(scale.x)),
-                Kind::Cursor,
-            ) {
-                Ok(element) => elements.push(TtyElement::Cursor(element)),
-                Err(err) => warn!(?err, "uploading the cursor failed"),
-            }
-            cursor_change = cursors.until_next_frame(*icon, scale.x, time);
-        }
-        CursorImageStatus::Surface(surface) => {
-            let hotspot = with_states(surface, |states| {
-                states
-                    .data_map
-                    .get::<CursorImageSurfaceData>()
-                    .and_then(|data| data.lock().ok().map(|attrs| attrs.hotspot))
-                    .unwrap_or_default()
-            });
-            let location = (cursor_pos - hotspot.to_f64())
-                .to_physical(scale)
-                .to_i32_round();
-            elements.extend(render_elements_from_surface_tree::<_, TtyElement>(
-                renderer,
-                surface,
-                location,
-                scale,
-                1.0,
-                Kind::Cursor,
-            ));
-        }
-    }
-    // The drag icon rides just under the cursor.
-    if let Some(icon) = dnd_icon.as_ref().filter(|i| i.surface.alive())
-        && cursor_near
-    {
-        let location = (cursor_pos + icon.offset.to_f64())
-            .to_physical(scale)
-            .to_i32_round();
-        elements.extend(render_elements_from_surface_tree::<_, TtyElement>(
-            renderer,
-            &icon.surface,
-            location,
-            scale,
-            1.0,
-            Kind::Unspecified,
-        ));
-    }
+    // Topmost first: the cursor (if it is on this output), then the windows.
+    let pointer = PointerLook {
+        status: &*cursor_status,
+        dnd_icon: dnd_icon.as_ref(),
+        location: pointer_location,
+    };
+    let (mut elements, cursor_change) =
+        pointer_elements(renderer, cursors, &pointer, output_geo, scale, time);
     elements.extend(
         crate::render::output_elements(renderer, space, chrome, &output)
             .into_iter()
@@ -1128,6 +1073,8 @@ fn render(state: &mut State, crtc: crtc::Handle) {
     // A real frame: callbacks now, so clients draw the next one while this one scans out.
     if queued {
         send_frame_callbacks(state, &output);
+        // The output changed: screencopy frames waiting for damage may have some now.
+        state.capture_waiting_frames(&output);
     }
     if vrr_changed {
         state.report_outputs();
@@ -1168,4 +1115,92 @@ fn render(state: &mut State, crtc: crtc::Handle) {
             Err(err) => warn!(err = %err.error, "arming the cursor animation timer failed"),
         }
     }
+}
+
+/// What the pointer looks like and where it is: the inputs of [`pointer_elements`].
+pub(crate) struct PointerLook<'a> {
+    pub status: &'a CursorImageStatus,
+    pub dnd_icon: Option<&'a DndIcon>,
+    pub location: Point<f64, Logical>,
+}
+
+/// The cursor and the drag icon on the output at `output_geo`, topmost first (nothing if
+/// the pointer is hidden or far away), and when an animated cursor shows its next image.
+/// Used for the screen and for screencopy with cursors (ADR 0022).
+pub(crate) fn pointer_elements(
+    renderer: &mut GlesRenderer,
+    cursors: &mut cursor::Themes,
+    pointer: &PointerLook<'_>,
+    output_geo: Rectangle<i32, Logical>,
+    scale: Scale<f64>,
+    time: Duration,
+) -> (Vec<TtyElement>, Option<Duration>) {
+    let mut elements: Vec<TtyElement> = Vec::new();
+    // Generous bounds, so a cursor straddling two outputs shows on both.
+    let cursor_near = output_geo.overlaps(Rectangle::new(
+        pointer.location.to_i32_floor() - Point::from((CURSOR_REACH, CURSOR_REACH)),
+        (2 * CURSOR_REACH, 2 * CURSOR_REACH).into(),
+    ));
+    let cursor_pos = pointer.location - output_geo.loc.to_f64();
+    // When an animated cursor shows its next image.
+    let mut cursor_change = None;
+    match pointer.status {
+        CursorImageStatus::Hidden => {}
+        _ if !cursor_near => {}
+        CursorImageStatus::Named(icon) => {
+            let frame = cursors.frame(*icon, scale.x, time);
+            let location: Point<f64, Physical> =
+                cursor_pos.to_physical(scale) - frame.hotspot.to_f64();
+            match MemoryRenderBufferRenderElement::from_buffer(
+                renderer,
+                location,
+                &frame.buffer,
+                None,
+                None,
+                Some(frame.logical_size(scale.x)),
+                Kind::Cursor,
+            ) {
+                Ok(element) => elements.push(TtyElement::Cursor(element)),
+                Err(err) => warn!(?err, "uploading the cursor failed"),
+            }
+            cursor_change = cursors.until_next_frame(*icon, scale.x, time);
+        }
+        CursorImageStatus::Surface(surface) => {
+            let hotspot = with_states(surface, |states| {
+                states
+                    .data_map
+                    .get::<CursorImageSurfaceData>()
+                    .and_then(|data| data.lock().ok().map(|attrs| attrs.hotspot))
+                    .unwrap_or_default()
+            });
+            let location = (cursor_pos - hotspot.to_f64())
+                .to_physical(scale)
+                .to_i32_round();
+            elements.extend(render_elements_from_surface_tree::<_, TtyElement>(
+                renderer,
+                surface,
+                location,
+                scale,
+                1.0,
+                Kind::Cursor,
+            ));
+        }
+    }
+    // The drag icon rides just under the cursor.
+    if let Some(icon) = pointer.dnd_icon.filter(|i| i.surface.alive())
+        && cursor_near
+    {
+        let location = (cursor_pos + icon.offset.to_f64())
+            .to_physical(scale)
+            .to_i32_round();
+        elements.extend(render_elements_from_surface_tree::<_, TtyElement>(
+            renderer,
+            &icon.surface,
+            location,
+            scale,
+            1.0,
+            Kind::Unspecified,
+        ));
+    }
+    (elements, cursor_change)
 }

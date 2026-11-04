@@ -48,6 +48,7 @@ mod redraw;
 mod render;
 #[cfg(feature = "tty")]
 mod scanout;
+mod screencopy;
 mod security;
 mod shell_protocols;
 pub mod state;

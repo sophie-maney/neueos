@@ -453,6 +453,7 @@ impl State {
                 Some(_) => {}
             }
         }
+        self.refresh_capture_sessions();
     }
 
     /// Tell every surface the scale of the output it is (mostly) on: fractional-scale-v1

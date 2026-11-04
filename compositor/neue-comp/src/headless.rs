@@ -7,33 +7,32 @@
 //! clients draw into shm buffers that the compositor tracks without reading, so window
 //! management can be tested anywhere. With it, a GLES renderer on Mesa's software EGL
 //! device draws an output into an offscreen buffer on demand
-//! ([`State::headless_render`]) and reads the pixels back. Either way no linux-dmabuf
-//! global is advertised, so clients always use shm.
+//! ([`State::headless_render`]) and reads the pixels back, and screencopy clients can
+//! capture outputs (ADR 0022). Either way no linux-dmabuf global is advertised, so clients
+//! always use shm.
 //!
 //! A repeating timer stands in for vblank: it sends frame callbacks, so real clients that
 //! wait for `wl_surface.frame` keep drawing, and presentation feedback (no flags: nothing
-//! is really shown). It never renders.
+//! is really shown). It renders nothing itself, but gives waiting screencopy frames a
+//! chance to see damage.
 
 use std::collections::HashMap;
 use std::fmt;
 use std::time::Duration;
 
-use smithay::backend::allocator::Fourcc;
 use smithay::backend::egl::{EGLContext, EGLDevice, EGLDisplay};
-use smithay::backend::renderer::damage::OutputDamageTracker;
-use smithay::backend::renderer::gles::{GlesRenderbuffer, GlesRenderer};
-use smithay::backend::renderer::{Bind, ExportMem, Offscreen};
+use smithay::backend::renderer::gles::GlesRenderer;
 use smithay::desktop::{Space, Window};
 use smithay::output::{Mode, Output, PhysicalProperties, Subpixel};
 use smithay::reexports::calloop::LoopHandle;
 use smithay::reexports::calloop::timer::{TimeoutAction, Timer};
 use smithay::reexports::wayland_protocols::wp::presentation_time::server::wp_presentation_feedback;
-use smithay::utils::{Physical, Rectangle, Size};
+use smithay::utils::{Physical, Rectangle};
 use tracing::info;
 
 use crate::Error;
 use crate::decorations::Chrome;
-use crate::render::CLEAR_COLOR;
+use crate::render::OffscreenOutput;
 use crate::state::{Backend, State};
 
 /// Size of the virtual output the headless backend starts with.
@@ -133,7 +132,7 @@ impl OutputPixels {
 struct HeadlessRenderer {
     renderer: GlesRenderer,
     /// Keyed by output name; made on first render, dropped with the output.
-    targets: HashMap<String, Target>,
+    targets: HashMap<String, OffscreenOutput>,
 }
 
 impl fmt::Debug for HeadlessRenderer {
@@ -143,20 +142,6 @@ impl fmt::Debug for HeadlessRenderer {
             .finish_non_exhaustive()
     }
 }
-
-/// Where one output is drawn.
-struct Target {
-    buffer: GlesRenderbuffer,
-    size: Size<i32, Physical>,
-    damage_tracker: OutputDamageTracker,
-    /// The buffer holds the previous frame (buffer age 1). False until the first render.
-    drawn: bool,
-}
-
-/// Offscreen buffer format. RGBA8 renderbuffers are core GLES 3.
-const TARGET_FORMAT: Fourcc = Fourcc::Abgr8888;
-/// Format of [`OutputPixels::data`]: what `wl_shm` clients (and screencopy) expect.
-const READ_FORMAT: Fourcc = Fourcc::Argb8888;
 
 impl HeadlessRenderer {
     fn new() -> Result<Self, Error> {
@@ -197,47 +182,27 @@ impl HeadlessRenderer {
     ) -> Result<OutputPixels, String> {
         let mode = output.current_mode().ok_or("the output has no mode")?;
         let size = output.current_transform().transform_size(mode.size);
+        let scale = output.current_scale().fractional_scale();
         let renderer = &mut self.renderer;
         let target = match self.targets.remove(&output.name()) {
-            Some(target) if target.size == size => target,
-            _ => Target {
-                buffer: renderer
-                    .create_buffer(TARGET_FORMAT, (size.w, size.h).into())
-                    .map_err(|err| format!("creating the offscreen buffer: {err:?}"))?,
-                size,
-                damage_tracker: OutputDamageTracker::from_output(output),
-                drawn: false,
-            },
+            Some(target) if target.fits(size, scale) => target,
+            _ => OffscreenOutput::new(renderer, size, scale)?,
         };
         let target = self.targets.entry(output.name()).or_insert(target);
-
         let elements = crate::render::output_elements(renderer, space, chrome, output);
-        let mut framebuffer = renderer
-            .bind(&mut target.buffer)
-            .map_err(|err| format!("binding the offscreen buffer: {err:?}"))?;
-        let age = usize::from(target.drawn);
-        let result = target
-            .damage_tracker
-            .render_output(renderer, &mut framebuffer, age, &elements, CLEAR_COLOR)
-            .map_err(|err| format!("rendering: {err:?}"))?;
-        let damage = result.damage.cloned().unwrap_or_default();
-        target.drawn = true;
-
-        let region = Rectangle::from_size((size.w, size.h).into());
-        let mapping = renderer
-            .copy_framebuffer(&framebuffer, region, READ_FORMAT)
-            .map_err(|err| format!("reading the pixels back: {err:?}"))?;
-        let bytes = renderer
-            .map_texture(&mapping)
-            .map_err(|err| format!("mapping the pixels: {err:?}"))?;
-        // Smithay's GLES frame flips y when drawing into an offscreen target, so the rows
-        // read back already start at the top. (`TextureMapping::flipped` says true: it
-        // describes GL's bottom-up convention, not what was drawn. The tests check this.)
+        let damage = target.render(renderer, &elements)?;
         Ok(OutputPixels {
             size: (size.w, size.h),
-            data: bytes.to_vec(),
+            data: target.read_back(renderer)?,
             damage,
         })
+    }
+}
+
+impl HeadlessData {
+    /// The renderer, if [`crate::Options::headless_renderer`] asked for one.
+    pub(crate) fn renderer(&mut self) -> Option<&mut GlesRenderer> {
+        self.renderer.as_mut().map(|r| &mut r.renderer)
     }
 }
 
@@ -351,5 +316,8 @@ fn send_frames(state: &mut State) {
             wp_presentation_feedback::Kind::empty(),
         );
         crate::outputs::send_frames(&state.space, output, time);
+    }
+    for output in state.outputs().cloned().collect::<Vec<_>>() {
+        state.capture_waiting_frames(&output);
     }
 }
