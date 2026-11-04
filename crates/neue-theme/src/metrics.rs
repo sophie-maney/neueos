@@ -41,4 +41,18 @@ pub mod control {
     pub const SEGMENT_MIN_WIDTH: f64 = 40.0;
     /// Minimum width of a bevel or recessed button.
     pub const BEVEL_MIN_WIDTH: f64 = 28.0;
+    /// Height of a slider's hit area (the knob is [`crate::materials::slider::KNOB`]).
+    pub const SLIDER_HEIGHT: f64 = 19.0;
+    /// Default width of a slider.
+    pub const SLIDER_WIDTH: f64 = 120.0;
+    /// Width of a stepper.
+    pub const STEPPER_WIDTH: f64 = 13.0;
+    /// Height of a stepper.
+    pub const STEPPER_HEIGHT: f64 = 22.0;
+    /// Height of a progress bar.
+    pub const PROGRESS_HEIGHT: f64 = 12.0;
+    /// Default width of a progress bar.
+    pub const PROGRESS_WIDTH: f64 = 150.0;
+    /// Side of a spinner.
+    pub const SPINNER_SIZE: f64 = 16.0;
 }

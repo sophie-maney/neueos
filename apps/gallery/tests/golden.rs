@@ -8,7 +8,12 @@
     reason = "test helpers; a panic is a test failure"
 )]
 
-use neue_gallery::specimens::{self, BEVEL_SIZE, PUSH_BUTTON_SIZE, SEGMENTED_SIZE, TOGGLE_SIZE};
+use std::time::Duration;
+
+use neue_gallery::specimens::{
+    self, BEVEL_SIZE, PROGRESS_SIZE, PUSH_BUTTON_SIZE, SEGMENTED_SIZE, SLIDER_SIZE, SPINNER_SIZE,
+    STEPPER_SIZE, TOGGLE_SIZE,
+};
 use neue_kit::testing::{
     self, DISABLED, FOCUSED, Fixture, Goldens, INACTIVE, NORMAL, PRESSED, State,
 };
@@ -70,6 +75,16 @@ fn default_button_graphite() {
     .unwrap();
 }
 
+/// The barber pole a quarter period on (150 ms of its 600 ms).
+const STRIPES_MOVED: State = ("moved", |f: &mut Fixture| {
+    f.advance(Duration::from_millis(150))
+});
+
+/// The spinner three of its twelve steps on (250 ms of its 1 s).
+const SPOKES_TURNED: State = ("turned", |f: &mut Fixture| {
+    f.advance(Duration::from_millis(250))
+});
+
 /// The Specimen widget, painting the HUD and the menu bar through Masonry: opaque and
 /// translucent, light and dark, scale 1 and 2. The materials themselves have their
 /// goldens in neue-paint.
@@ -126,4 +141,16 @@ control_goldens! {
     segmented: "segmented", SEGMENTED_SIZE, &[NORMAL, PRESSED, FOCUSED, DISABLED], specimens::segmented(1);
     segmented_first: "segmented-first", SEGMENTED_SIZE, &[NORMAL, PRESSED], specimens::segmented(0);
     segmented_last: "segmented-last", SEGMENTED_SIZE, &[NORMAL], specimens::segmented(2);
+
+    // The pointer goes down on the middle of the slider: the knob at 0.5 doesn't move.
+    slider: "slider", SLIDER_SIZE, &[NORMAL, PRESSED, FOCUSED, DISABLED], specimens::slider(0.5);
+    slider_min: "slider-min", SLIDER_SIZE, &[NORMAL, FOCUSED], specimens::slider(0.0);
+    slider_max: "slider-max", SLIDER_SIZE, &[NORMAL, FOCUSED], specimens::slider(1.0);
+    // The pointer goes down on the midline: the lower half is held.
+    stepper: "stepper", STEPPER_SIZE, &[NORMAL, PRESSED, FOCUSED, DISABLED], specimens::stepper();
+    progress_empty: "progress-empty", PROGRESS_SIZE, &[NORMAL], specimens::progress_bar(0.0);
+    progress_half: "progress-half", PROGRESS_SIZE, &[NORMAL, DISABLED], specimens::progress_bar(0.5);
+    progress_full: "progress-full", PROGRESS_SIZE, &[NORMAL], specimens::progress_bar(1.0);
+    barber_pole: "barber-pole", PROGRESS_SIZE, &[NORMAL, STRIPES_MOVED, DISABLED], specimens::barber_pole();
+    spinner: "spinner", SPINNER_SIZE, &[NORMAL, SPOKES_TURNED, DISABLED], specimens::spinner();
 }

@@ -48,6 +48,10 @@ pub enum Message {
     Pressed(&'static str),
     /// Radio button `n` of the Buttons page was selected.
     Radio(usize),
+    /// The Values page's slider moved to this value (0 to 1).
+    Slider(f64),
+    /// The Values page's stepper changed to this value.
+    Stepper(f64),
 }
 
 fn appearance_label(theme: Theme) -> String {
@@ -213,6 +217,15 @@ impl Application for Gallery {
                 self.scale.set_label(cx, zoom_label(zoom));
             }
             Message::Pressed(what) => self.status.set_text(cx, format!("Pressed “{what}”")),
+            Message::Slider(value) => {
+                self.handles.slider_progress.set_value(cx, Some(value));
+                self.handles
+                    .slider_value
+                    .set_text(cx, format!("{:.0}%", value * 100.0));
+            }
+            Message::Stepper(value) => {
+                self.handles.stepper_value.set_text(cx, format!("{value}"));
+            }
             Message::Radio(n) => {
                 // The app owns the choice: the others turn off.
                 for (i, radio) in self.handles.radios.iter().enumerate() {

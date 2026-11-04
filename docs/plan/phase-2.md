@@ -134,8 +134,16 @@ the paper and leather materials move to Phase 6/7 (Widgets, Write).
       first springs in use (check mark fade, sliding highlight). Gallery page "Buttons";
       168 goldens (42 states × light/dark × 1x/2x). Radio groups are the app's job for now
       (no arrow keys between radio buttons); segments are not separate AccessKit nodes.
-- [ ] **2.13 Value controls** · Sonnet. Slider, stepper, progress bar with barber pole,
+- [x] **2.13 Value controls** · Sonnet. Slider, stepper, progress bar with barber pole,
       spinner.
+      *Done:* ADR 0041. `neue_paint::materials::{slider, stepper, progress_bar, spinner}`
+      over a shared groove, with palettes in `neue_theme::materials`; neue-kit `Slider`,
+      `Stepper`, `ProgressBar` (determinate on a spring, indeterminate barber pole) and
+      `Spinner`; `Ticker` for ambient animation that stops under reduced motion. Gallery
+      page "Values" (the slider drives a bar and the stepper a label); 88 goldens, passing on
+      macOS and Linux aarch64 (x86_64 not run). New
+      widget types must be added to `theme::default_properties` (ADR 0041 §8). Not yet:
+      slider ticks, vertical slider, stepper hold-to-repeat.
 - [ ] **2.14 Text fields** · Opus. Text, search and secure fields.
       *Accept also:* IME composition works on macOS and in the VM.
 - [ ] **2.15 Scroll view** · Opus. Overlay scrollbars and virtual scrolling (the base for

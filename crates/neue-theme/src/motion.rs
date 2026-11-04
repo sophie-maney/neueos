@@ -23,6 +23,11 @@ pub const NORMAL: Duration = Duration::from_millis(200);
 pub const SLOW: Duration = Duration::from_millis(350);
 /// Period of the default push button's pulse.
 pub const DEFAULT_BUTTON_PULSE: Duration = Duration::from_millis(1400);
+/// Time the barber pole's stripes take to move one stripe period (indeterminate progress
+/// bars).
+pub const BARBER_POLE_PERIOD: Duration = Duration::from_millis(600);
+/// Time the spinner takes for one full turn.
+pub const SPINNER_PERIOD: Duration = Duration::from_millis(1000);
 /// Delay before a tooltip appears.
 pub const TOOLTIP_DELAY: Duration = Duration::from_millis(1000);
 

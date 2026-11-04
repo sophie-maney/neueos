@@ -2,8 +2,8 @@
 
 use neue_kit::tokens::metrics::spacing;
 use neue_kit::{
-    BevelButton, Button, Checkbox, Element, Handle, Label, MaterialTile, Radio, Segmented, Stack,
-    TextStyle,
+    BevelButton, Button, Checkbox, Element, Handle, Label, MaterialTile, ProgressBar, Radio,
+    Segmented, Slider, Spinner, Stack, Stepper, TextStyle,
 };
 
 use crate::Message;
@@ -14,6 +14,10 @@ use crate::specimens;
 #[derive(Debug, Default)]
 pub struct PageHandles {
     pub radios: Vec<Handle<Radio<Message>>>,
+    /// The Values page: what the slider and the stepper drive.
+    pub slider_value: Handle<Label>,
+    pub slider_progress: Handle<ProgressBar>,
+    pub stepper_value: Handle<Label>,
 }
 
 /// A gallery page: its title in the page list, and its content.
@@ -32,6 +36,10 @@ pub const PAGES: &[Page] = &[
     Page {
         title: "Buttons",
         build: buttons,
+    },
+    Page {
+        title: "Values",
+        build: values,
     },
     Page {
         title: "Text",
@@ -187,6 +195,61 @@ fn buttons(handles: &mut PageHandles) -> Element<Message> {
                                 .with(
                                     Segmented::<Message>::new(["Disabled", "Off"]).disabled(true),
                                 ),
+                        )),
+                ),
+        )
+        .into()
+}
+
+fn values(handles: &mut PageHandles) -> Element<Message> {
+    Stack::column()
+        .spacing(spacing::L)
+        .with(heading(
+            "Values",
+            "Drag the slider or use its arrow keys, Home, End and Page Up/Down · Up and Down              step the stepper · stripes and spokes stop under reduced motion",
+        ))
+        .with(
+            Stack::row()
+                .spacing(spacing::L)
+                .with(
+                    Stack::column()
+                        .spacing(spacing::L)
+                        .with(section(
+                            "Slider (drives the bar below)",
+                            Stack::column()
+                                .with(specimens::slider(0.4).on_change(Message::Slider))
+                                .with(Slider::<Message>::new().value(0.7).disabled(true)),
+                        ))
+                        .with(section(
+                            "Stepper",
+                            Stack::row()
+                                .with(specimens::stepper().on_change(Message::Stepper))
+                                .with(Label::new("5").bind(&mut handles.stepper_value))
+                                .with(Stepper::<Message>::new().disabled(true)),
+                        )),
+                )
+                .with(
+                    Stack::column()
+                        .spacing(spacing::L)
+                        .with(section(
+                            "Progress",
+                            Stack::column()
+                                .with(specimens::progress_bar(0.4).bind(&mut handles.slider_progress))
+                                .with(Label::new("40%").bind(&mut handles.slider_value))
+                                .with(specimens::progress_bar(1.0))
+                                .with(ProgressBar::new().value(0.5).disabled(true)),
+                        ))
+                        .with(section(
+                            "Indeterminate (barber pole)",
+                            Stack::column()
+                                .with(specimens::barber_pole())
+                                .with(ProgressBar::new().disabled(true)),
+                        ))
+                        .with(section(
+                            "Spinner",
+                            Stack::row()
+                                .with(specimens::spinner())
+                                .with(Spinner::new().label("Stopped").spinning(false)),
                         )),
                 ),
         )

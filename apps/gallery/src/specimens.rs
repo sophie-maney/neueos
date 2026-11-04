@@ -1,7 +1,8 @@
 //! The widgets the goldens render, shared with the gallery's pages.
 
 use neue_kit::{
-    BevelButton, Button, CheckState, Checkbox, MaterialTile, Radio, Segmented, Specimen,
+    BevelButton, Button, CheckState, Checkbox, MaterialTile, ProgressBar, Radio, Segmented, Slider,
+    Specimen, Spinner, Stepper,
 };
 
 /// Golden window size for one push button (logical pixels): the button with the fixture's
@@ -75,6 +76,43 @@ pub fn recessed_button_on<M: 'static>() -> BevelButton<M> {
 /// A segmented control with `selected` chosen.
 pub fn segmented<M: 'static>(selected: usize) -> Segmented<M> {
     Segmented::new(["One", "Two", "Three"]).selected(selected)
+}
+
+/// Golden window size for the slider (the default width plus the fixture's margin).
+pub const SLIDER_SIZE: (u32, u32) = (150, 40);
+
+/// Golden window size for the stepper.
+pub const STEPPER_SIZE: (u32, u32) = (50, 50);
+
+/// Golden window size for the progress bar.
+pub const PROGRESS_SIZE: (u32, u32) = (180, 40);
+
+/// Golden window size for the spinner.
+pub const SPINNER_SIZE: (u32, u32) = (50, 40);
+
+/// A slider over 0 to 1, at `value`.
+pub fn slider<M: 'static>(value: f64) -> Slider<M> {
+    Slider::new().value(value)
+}
+
+/// A stepper from 0 to 10, at 5.
+pub fn stepper<M: 'static>() -> Stepper<M> {
+    Stepper::new().range(0.0..=10.0).value(5.0)
+}
+
+/// A progress bar filled to `value` (0 to 1).
+pub fn progress_bar(value: f64) -> ProgressBar {
+    ProgressBar::new().value(value)
+}
+
+/// A progress bar of unknown length: the barber pole.
+pub fn barber_pole() -> ProgressBar {
+    ProgressBar::new()
+}
+
+/// A turning spinner.
+pub fn spinner() -> Spinner {
+    Spinner::new()
 }
 
 /// A material over a stand-in for a blurred desktop: opaque, or translucent if
