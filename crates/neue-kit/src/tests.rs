@@ -17,6 +17,7 @@ use neue_platform::{WindowId, WindowSpec};
 use neue_theme::Theme;
 
 mod controls;
+mod values;
 
 use crate::app::{Host, Runner};
 use crate::theme::default_properties;

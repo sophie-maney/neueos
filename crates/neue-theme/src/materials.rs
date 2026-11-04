@@ -1166,3 +1166,137 @@ mod tests {
         );
     }
 }
+
+/// The groove of a slider and the trough of a progress bar: a recessed, light (or dark)
+/// channel with a dark rim and an etched highlight below.
+pub mod groove {
+    use super::CONTRAST_RIM;
+    use crate::{Appearance, Color, Variant, darken, grey, white};
+
+    /// Rim thickness.
+    pub const RIM: f64 = crate::metrics::control::RIM;
+    /// How far the etched highlight sits below the groove.
+    pub const ETCH_OFFSET: f64 = 1.0;
+
+    /// Colours of the groove.
+    #[derive(Clone, Copy, Debug, PartialEq)]
+    pub struct Palette {
+        /// Etched highlight below the groove.
+        pub etch: Color,
+        /// Rim gradient, top and bottom.
+        pub rim: [Color; 2],
+        /// Inside: top and bottom (the top is darker: an inner shadow).
+        pub fill: [Color; 2],
+    }
+
+    impl Palette {
+        /// Colours for `variant`.
+        pub fn new(variant: Variant) -> Self {
+            let p = match variant.appearance {
+                Appearance::Light => Self {
+                    etch: white(0.6),
+                    rim: [grey(0.46), grey(0.62)],
+                    fill: [grey(0.76), grey(0.93)],
+                },
+                Appearance::Dark => Self {
+                    etch: white(0.12),
+                    rim: [grey(0.04), grey(0.10)],
+                    fill: [grey(0.10), grey(0.22)],
+                },
+            };
+            if variant.is_increased_contrast() {
+                Self {
+                    rim: p.rim.map(|c| darken(c, CONTRAST_RIM)),
+                    ..p
+                }
+            } else {
+                p
+            }
+        }
+    }
+}
+
+/// The slider: a groove with a round gel knob.
+pub mod slider {
+    /// Height of the groove.
+    pub const TRACK_HEIGHT: f64 = 5.0;
+    /// Diameter of the knob.
+    pub const KNOB: f64 = 15.0;
+    /// How much a neutral knob darkens while held down (1: not at all).
+    pub const PRESSED_DIM: f32 = 0.86;
+    /// Opacity of a disabled slider.
+    pub const DISABLED_OPACITY: f32 = 0.5;
+}
+
+/// The progress bar: a groove filled with accent gel; indeterminate bars show the barber
+/// pole, diagonal stripes that move.
+pub mod progress {
+    use crate::{Color, white};
+
+    /// Height of the bar.
+    pub const HEIGHT: f64 = crate::metrics::control::PROGRESS_HEIGHT;
+    /// Horizontal distance after which the stripes repeat (a light and a plain stripe).
+    pub const STRIPE_PERIOD: f64 = 20.0;
+    /// The light stripes drawn over the gel.
+    pub const STRIPE: Color = white(0.32);
+    /// Opacity of a disabled bar.
+    pub const DISABLED_OPACITY: f32 = 0.5;
+}
+
+/// The stepper: two small gel halves, with an up arrow over a down arrow.
+pub mod stepper {
+    use crate::{Appearance, Color, Variant, black, grey, white};
+
+    /// Corner radius.
+    pub const RADIUS: f64 = crate::radii::CONTROL;
+    /// Width of the divider between the halves.
+    pub const DIVIDER: f64 = 1.0;
+    /// Width of an arrow.
+    pub const ARROW_WIDTH: f64 = 6.0;
+    /// Height of an arrow.
+    pub const ARROW_HEIGHT: f64 = 4.0;
+    /// How much the half held down darkens (1: not at all).
+    pub const PRESSED_DIM: f32 = 0.86;
+    /// Opacity of a disabled stepper.
+    pub const DISABLED_OPACITY: f32 = 0.5;
+
+    /// The arrows.
+    pub fn arrow(variant: Variant) -> Color {
+        match variant.appearance {
+            Appearance::Light => grey(0.18),
+            Appearance::Dark => white(0.9),
+        }
+    }
+
+    /// The divider between the halves.
+    pub fn divider(variant: Variant) -> Color {
+        match variant.appearance {
+            Appearance::Light => black(0.30),
+            Appearance::Dark => black(0.55),
+        }
+    }
+}
+
+/// The spinner: twelve spokes, the newest dark and the rest fading behind it.
+pub mod spinner {
+    use crate::{Appearance, Color, Variant, black, white};
+
+    /// Number of spokes. The spinner turns in this many steps.
+    pub const SPOKES: usize = 12;
+    /// Opacity of the faintest spoke.
+    pub const MIN_OPACITY: f32 = 0.15;
+    /// Length of a spoke, as a fraction of the radius.
+    pub const SPOKE_LENGTH: f64 = 0.5;
+    /// Width of a spoke, as a fraction of the diameter.
+    pub const SPOKE_WIDTH: f64 = 0.12;
+    /// Opacity of a disabled spinner.
+    pub const DISABLED_OPACITY: f32 = 0.5;
+
+    /// The spokes' colour before fading.
+    pub fn spoke(variant: Variant) -> Color {
+        match variant.appearance {
+            Appearance::Light => black(0.75),
+            Appearance::Dark => white(0.85),
+        }
+    }
+}
