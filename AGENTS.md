@@ -120,8 +120,8 @@ The repo is the memory between threads, not chat history. Before finishing:
   their UI can be iterated on natively.
 
 ## Commands
-> `cargo xtask` lives in `xtask/` (alias in `.cargo/config.toml`). `check`, `golden`,
-> `linux` and `linux-amd64` work; the other subcommands print "not implemented yet" until
+> `cargo xtask` lives in `xtask/` (alias in `.cargo/config.toml`). `check`, `gallery`,
+> `golden`, `linux` and `linux-amd64` work; the other subcommands print "not implemented yet" until
 > their tasks land. `check` lints with `--all-features`. Golden crates are listed in
 > `GOLDEN_CRATES`. Linux-only crates are listed in `LINUX_ONLY_CRATES`
 > (`xtask/src/main.rs`) and skipped by `check` on other hosts. Machine names default to

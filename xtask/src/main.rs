@@ -26,7 +26,7 @@ Commands:
   check                   fmt --check + clippy -D warnings + tests for this host
   linux <cmd...>          run <cmd> in the OrbStack Arch machine (arm64)
   linux-amd64 <cmd...>    run <cmd> in the OrbStack Arch machine (amd64, Rosetta)
-  gallery                 run the widget gallery (not implemented yet)
+  gallery [args...]       run the widget gallery (apps/gallery); args go to the app
   golden [--bless]        check or regenerate golden images
   vm sync|run             sync to the Parallels VM / start a session (not implemented yet)
   package <crate> [--arch aarch64|x86_64|all]
@@ -56,7 +56,8 @@ fn run(args: Vec<String>) -> Result<()> {
         "linux-amd64" => linux(&machine("NEUE_ORB_AMD64", ORB_AMD64_DEFAULT), rest),
         "golden" => golden(rest),
         "package" => package(rest),
-        "gallery" | "vm" | "iso" => {
+        "gallery" => gallery(rest),
+        "vm" | "iso" => {
             println!("xtask {cmd}: not implemented yet");
             Ok(())
         }
@@ -193,7 +194,14 @@ fn masonry_dependents(metadata: &serde_json::Value, root: &Path) -> Vec<String> 
 }
 
 /// Crates with golden-image tests, run by `cargo xtask golden`.
-const GOLDEN_CRATES: &[&str] = &["neue-paint", "neue-comp"];
+const GOLDEN_CRATES: &[&str] = &["neue-paint", "neue-comp", "neue-gallery"];
+
+/// Run the widget gallery, passing `args` through.
+fn gallery(args: &[String]) -> Result<()> {
+    let mut run = cargo();
+    run.args(["run", "-p", "neue-gallery", "--"]).args(args);
+    step("widget gallery", run)
+}
 
 /// Run the golden-image tests. With `--bless`, rewrite the goldens instead of comparing.
 fn golden(args: &[String]) -> Result<()> {
@@ -421,7 +429,7 @@ mod tests {
 
     #[test]
     fn stub_commands_succeed() {
-        assert!(run(vec!["gallery".into()]).is_ok());
+        assert!(run(vec!["iso".into()]).is_ok());
     }
 
     #[test]

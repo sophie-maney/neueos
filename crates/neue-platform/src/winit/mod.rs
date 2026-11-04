@@ -232,7 +232,7 @@ impl Driver<'_> {
         let target = SurfaceTarget::new(gpu, surface, size.width.max(1), size.height.max(1))?;
 
         let (tx, signals) = mpsc::channel();
-        let root = RenderRoot::new(
+        let mut root = RenderRoot::new(
             spec.root,
             move |signal| {
                 // The receiver lives as long as the window; a send error means it's gone.
@@ -247,6 +247,9 @@ impl Driver<'_> {
                 test_font: self.options.font.clone(),
             },
         );
+        if spec.focus_fallback.is_some() && !root.set_focus_fallback(spec.focus_fallback) {
+            tracing::warn!(%id, "focus fallback isn't in the window's tree");
+        }
         tracing::debug!(%id, winit_id = ?handle.id(), ?size, "opened window");
         self.by_winit.insert(handle.id(), id);
         self.shared.windows.insert(

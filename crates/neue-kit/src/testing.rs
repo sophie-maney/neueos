@@ -1,0 +1,200 @@
+//! Widget goldens (feature `testing`, ADR 0037): render a widget alone in a window, in a
+//! state and theme, the way goldens are rendered (`vello_cpu`), and compare against PNGs.
+//!
+//! ```no_run
+//! # use neue_kit::{Button, Theme};
+//! # use neue_kit::testing::{self, Goldens, NORMAL, PRESSED};
+//! // In an integration test, pass `env!("CARGO_TARGET_TMPDIR")` for the failures.
+//! let goldens = Goldens::new(
+//!     concat!(env!("CARGO_MANIFEST_DIR"), "/tests/golden"),
+//!     std::env::temp_dir(),
+//! );
+//! // push-button-{normal,pressed}-{light,dark}@{1,2}x.png
+//! testing::check_states(&goldens, "push-button", (110, 40), Theme::default(),
+//!     &[NORMAL, PRESSED], || Button::<()>::new("Button").into())
+//!     .unwrap();
+//! ```
+//!
+//! Every widget task ships goldens this way: its states × light/dark × scale 1 and 2.
+
+use std::sync::Arc;
+use std::time::Duration;
+
+use masonry_core::core::{NewWidget, TextEvent, WidgetId};
+use masonry_core::dpi::PhysicalSize;
+use masonry_core::kurbo::Axis;
+use masonry_core::peniko::{Blob, Color};
+use masonry_testing::{TestHarness, TestHarnessParams};
+use neue_paint::Pixmap;
+pub use neue_paint::golden::{Goldens, Mismatch};
+use neue_theme::metrics::spacing;
+use neue_theme::{Appearance, Theme};
+
+use crate::element::Element;
+use crate::theme::default_properties;
+use crate::widgets::{RootWidget, StackWidget};
+
+/// Errors from [`Fixture::render`] and [`check_states`].
+#[derive(Debug, thiserror::Error)]
+pub enum Error {
+    #[error("render of {0}×{1} pixels is too large for a pixmap")]
+    TooLarge(u32, u32),
+    #[error("{} of the goldens didn't match:\n{}", .0.len(), list(.0))]
+    Mismatches(Vec<Mismatch>),
+}
+
+fn list(mismatches: &[Mismatch]) -> String {
+    mismatches
+        .iter()
+        .map(|m| format!("  {m}"))
+        .collect::<Vec<_>>()
+        .join("\n")
+}
+
+/// One widget in a window of its own, in the window's background colour, with a small
+/// margin around it. Drive it into a state, then [`render`](Self::render).
+pub struct Fixture {
+    harness: TestHarness<RootWidget>,
+    target: WidgetId,
+}
+
+impl std::fmt::Debug for Fixture {
+    fn fmt(&self, f: &mut std::fmt::Formatter<'_>) -> std::fmt::Result {
+        f.debug_struct("Fixture")
+            .field("target", &self.target)
+            .finish_non_exhaustive()
+    }
+}
+
+impl Fixture {
+    /// `element` at the top left of a `size` (logical pixels) window drawn at `scale`.
+    /// Message handlers are dropped: a fixture renders, it doesn't run an app.
+    pub fn new<M>(
+        element: impl Into<Element<M>>,
+        theme: Theme,
+        scale: f64,
+        size: (u32, u32),
+    ) -> Self {
+        let (widget, _wiring) = element.into().into_parts();
+        let target = widget.id();
+        let mut stack = StackWidget::new(Axis::Vertical, 0.0);
+        stack.padding = spacing::S;
+        stack.push(widget);
+        let root = RootWidget::new(NewWidget::new(stack).erased());
+        #[expect(
+            clippy::cast_possible_truncation,
+            clippy::cast_sign_loss,
+            reason = "small positive window sizes"
+        )]
+        let physical = |v: u32| (f64::from(v) * scale).ceil() as u32;
+        let params = TestHarnessParams::default()
+            .with_size(PhysicalSize::new(physical(size.0), physical(size.1)))
+            .with_scale(scale)
+            .with_padding(0)
+            .with_background(Color::TRANSPARENT);
+        let root = NewWidget::new(root);
+        let root_id = root.id();
+        let mut harness = TestHarness::create_with(default_properties(theme), root, params);
+        harness
+            .render_root()
+            .register_fonts(Blob::new(Arc::new(neue_paint::text::ui_font_data())));
+        harness.set_focus_fallback(Some(root_id));
+        Self { harness, target }
+    }
+
+    /// Puts the pointer over the widget.
+    pub fn hover(&mut self) {
+        self.harness.mouse_move_to(self.target);
+    }
+
+    /// Holds the primary button down over the widget.
+    pub fn press(&mut self) {
+        self.hover();
+        self.harness.mouse_button_press(None);
+    }
+
+    /// Gives the widget keyboard focus, as Tab would.
+    pub fn focus(&mut self) {
+        self.harness.focus_on(Some(self.target));
+    }
+
+    /// Disables (or re-enables) the widget.
+    pub fn set_disabled(&mut self, disabled: bool) {
+        self.harness
+            .edit_widget_with_id(self.target, |mut w| w.ctx.set_disabled(disabled));
+    }
+
+    /// Makes the window active or inactive.
+    pub fn set_window_focused(&mut self, focused: bool) {
+        self.harness
+            .process_text_event(TextEvent::WindowFocusChange(focused));
+    }
+
+    /// Lets animations run for `by`, in one frame.
+    pub fn advance(&mut self, by: Duration) {
+        let ms = u64::try_from(by.as_millis()).unwrap_or(u64::MAX);
+        self.harness.animate_ms(ms);
+    }
+
+    /// The window as premultiplied pixels, as goldens store them.
+    pub fn render(&mut self) -> Result<Pixmap, Error> {
+        let image = self.harness.render();
+        let (width, height) = image.dimensions();
+        let too_large = || Error::TooLarge(width, height);
+        let w = u16::try_from(width).map_err(|_| too_large())?;
+        let h = u16::try_from(height).map_err(|_| too_large())?;
+        neue_paint::golden::pixmap_from_unpremultiplied(w, h, image.into_raw())
+            .ok_or_else(too_large)
+    }
+}
+
+/// A state to render a widget in: its name in golden file names, and what puts the
+/// [`Fixture`] there.
+pub type State = (&'static str, fn(&mut Fixture));
+
+/// At rest.
+pub const NORMAL: State = ("normal", |_| {});
+/// Pointer over it.
+pub const HOVERED: State = ("hovered", Fixture::hover);
+/// Pointer held down over it.
+pub const PRESSED: State = ("pressed", Fixture::press);
+/// Keyboard focus.
+pub const FOCUSED: State = ("focused", Fixture::focus);
+/// Disabled.
+pub const DISABLED: State = ("disabled", |f| f.set_disabled(true));
+/// In an inactive window.
+pub const INACTIVE: State = ("inactive", |f| f.set_window_focused(false));
+
+/// Renders `make()` in every state × light/dark × scale 1 and 2, in a `size` window, and
+/// checks each against the golden `{name}-{state}-{light|dark}@{1|2}x`. `theme` sets
+/// everything but the appearance (accent, contrast, motion). Reports every mismatch, not
+/// only the first; `cargo xtask golden --bless` rewrites them.
+pub fn check_states<M>(
+    goldens: &Goldens,
+    name: &str,
+    size: (u32, u32),
+    theme: Theme,
+    states: &[State],
+    make: impl Fn() -> Element<M>,
+) -> Result<(), Error> {
+    let mut mismatches = Vec::new();
+    for &(state, enter) in states {
+        for (appearance, a) in [(Appearance::Light, "light"), (Appearance::Dark, "dark")] {
+            for scale in [1_u8, 2] {
+                let mut theme = theme;
+                theme.variant.appearance = appearance;
+                let mut fixture = Fixture::new(make(), theme, f64::from(scale), size);
+                enter(&mut fixture);
+                let pixmap = fixture.render()?;
+                if let Err(m) = goldens.check(&format!("{name}-{state}-{a}@{scale}x"), pixmap) {
+                    mismatches.push(m);
+                }
+            }
+        }
+    }
+    if mismatches.is_empty() {
+        Ok(())
+    } else {
+        Err(Error::Mismatches(mismatches))
+    }
+}

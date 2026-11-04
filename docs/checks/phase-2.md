@@ -316,3 +316,45 @@ Expected:
 - Frames have no name yet (ADR 0034).
 
 **6. Done:** give the console back as in `docs/dev-setup.md` §1.3 step 4.
+
+## 5. Checking the widget gallery and the push button (task 2.9)
+Runs under a dev build of neue-comp (`docs/dev-setup.md` §1.3), output at scale 1,
+ydotoold running. `click_at X Y` is the helper from §4. The agent ran every step on
+2026-11-04 and all passed.
+
+**1. Sync, build, start neue-comp and the gallery:**
+```sh
+rsync -az --delete --exclude target --exclude .git ./ neueos-vm:neueos/
+ssh neueos-vm 'cd neueos && cargo build --release -p neue-comp -p neuectl --no-default-features --features tty && cargo build --release -p neue-gallery'
+ssh -t neueos-vm 'sudo systemctl stop greetd; true'
+ssh neueos-vm 'export XDG_RUNTIME_DIR=/run/user/1000 RUST_LOG=info; unset WAYLAND_DISPLAY
+  setsid nohup ~/neueos/target/release/neue-comp --tty >/tmp/comp.log 2>&1 </dev/null &
+  sleep 3; . ~/neueos/docs/vm-env.sh; export WGPU_BACKEND=gl RUST_LOG=info
+  setsid nohup ~/neueos/target/release/neue-gallery >/tmp/gallery.log 2>&1 </dev/null &
+  sleep 4; neuectl windows; grep -E "WARN|ERROR" /tmp/gallery.log; neuectl screenshot /tmp/gal1.png'
+```
+Expected: "Widget Gallery" at 860x480+82+110, no `WARN` or `ERROR`. `gal1.png` shows the
+page list, the switches, and the Push Button page with a blue "OK" default button.
+
+**2. Keyboard: Return, Tab, Space:**
+```sh
+ssh neueos-vm '. ~/neueos/docs/vm-env.sh; export YDOTOOL_SOCKET=/tmp/.ydotool_socket
+  click_at() { ydotool mousemove --absolute -x $(($1 / 2)) -y $(($2 / 2)); sleep 0.2; ydotool mousemove -x 1 -y 0; ydotool click 0xC0; }
+  click_at 600 500; sleep 0.3
+  ydotool key 28:1 28:0; sleep 0.5; neuectl screenshot /tmp/gal2.png
+  ydotool key 15:1 15:0; sleep 0.3; ydotool key 15:1 15:0; sleep 0.3; neuectl screenshot /tmp/gal3.png
+  ydotool key 57:1 57:0; sleep 0.5; neuectl screenshot /tmp/gal4.png'
+scp 'neueos-vm:/tmp/gal*.png' ~/Desktop/neueos-shots/
+```
+Expected: with nothing focused, Return shows `Pressed “OK”` (`gal2.png`). Two Tabs put
+the focus ring on the "Text" page button (`gal3.png`); Space switches to the Text page
+(`gal4.png`).
+
+**3. Switches:** click Appearance (318,141), Accent (438,141) and Zoom (774,141) twice,
+then `neuectl screenshot`. Expected: dark appearance, graphite accent, the page at 2×.
+
+**4. The pulse:** back on the Push Button page, take six screenshots 230 ms apart and
+compare a pixel of the "OK" button's gel: it brightens and fades (the agent measured
+(105,117,134) → (150,158,170) → (117,127,144) with dark graphite at zoom 2×).
+
+**5. Done:** give the console back as in `docs/dev-setup.md` §1.3 step 4.

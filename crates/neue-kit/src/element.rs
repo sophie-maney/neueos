@@ -10,29 +10,31 @@ pub(crate) type Handler<M> = Box<dyn FnMut(ErasedAction) -> Option<M>>;
 /// Handlers keyed by the widget whose actions they map.
 pub(crate) type Handlers<M> = Vec<(WidgetId, Handler<M>)>;
 
-/// A built widget, ready to go into a container or a window, together with the handlers
-/// that turn its (and its children's) actions into messages of type `M`. Every widget
-/// builder converts into one.
+/// A built widget, ready to go into a container or a window, together with its
+/// [`Wiring`]: the handlers that turn its (and its children's) actions into messages of
+/// type `M`, and the default button among them. Every widget builder converts into one.
 pub struct Element<M> {
     widget: NewWidget<dyn Widget>,
-    handlers: Handlers<M>,
+    wiring: Wiring<M>,
 }
 
 impl<M> std::fmt::Debug for Element<M> {
     fn fmt(&self, f: &mut std::fmt::Formatter<'_>) -> std::fmt::Result {
         f.debug_struct("Element")
             .field("widget", &self.widget)
-            .field("handlers", &self.handlers.len())
+            .field("wiring", &self.wiring)
             .finish()
     }
 }
 
 impl<M> Element<M> {
     pub(crate) fn new(widget: NewWidget<dyn Widget>) -> Self {
-        Self {
-            widget,
-            handlers: Vec::new(),
-        }
+        Self::with_wiring(widget, Wiring::default())
+    }
+
+    /// A container `widget` whose children's wiring was gathered into `wiring`.
+    pub(crate) fn with_wiring(widget: NewWidget<dyn Widget>, wiring: Wiring<M>) -> Self {
+        Self { widget, wiring }
     }
 
     /// Maps actions of the widget `id` (this one or a descendant) to messages.
@@ -41,15 +43,57 @@ impl<M> Element<M> {
         id: WidgetId,
         handler: impl FnMut(ErasedAction) -> Option<M> + 'static,
     ) {
-        self.handlers.push((id, Box::new(handler)));
+        self.wiring.handlers.push((id, Box::new(handler)));
     }
 
-    pub(crate) fn extend_handlers(&mut self, handlers: Handlers<M>) {
-        self.handlers.extend(handlers);
+    /// Marks the widget `id` (this one or a descendant) as the default button.
+    pub(crate) fn set_default_button(&mut self, id: WidgetId) {
+        self.wiring.default_button = Some(id);
     }
 
-    pub(crate) fn into_parts(self) -> (NewWidget<dyn Widget>, Handlers<M>) {
-        (self.widget, self.handlers)
+    pub(crate) fn into_parts(self) -> (NewWidget<dyn Widget>, Wiring<M>) {
+        (self.widget, self.wiring)
+    }
+}
+
+/// What an [`Element`] carries besides its widget: message handlers keyed by widget, and
+/// the default button (Return presses it) in its subtree.
+pub(crate) struct Wiring<M> {
+    pub(crate) handlers: Handlers<M>,
+    pub(crate) default_button: Option<WidgetId>,
+}
+
+impl<M> Default for Wiring<M> {
+    fn default() -> Self {
+        Self {
+            handlers: Vec::new(),
+            default_button: None,
+        }
+    }
+}
+
+impl<M> std::fmt::Debug for Wiring<M> {
+    fn fmt(&self, f: &mut std::fmt::Formatter<'_>) -> std::fmt::Result {
+        f.debug_struct("Wiring")
+            .field("handlers", &self.handlers.len())
+            .field("default_button", &self.default_button)
+            .finish()
+    }
+}
+
+impl<M> Wiring<M> {
+    /// Takes over `child`'s wiring and returns its widget, for a container to hold. A
+    /// window has one default button; the first one wins.
+    pub(crate) fn adopt(&mut self, child: Element<M>) -> NewWidget<dyn Widget> {
+        self.handlers.extend(child.wiring.handlers);
+        if let Some(id) = child.wiring.default_button {
+            if self.default_button.is_some() {
+                tracing::warn!(%id, "a second default button in one window is ignored");
+            } else {
+                self.default_button = Some(id);
+            }
+        }
+        child.widget
     }
 }
 

@@ -2484,6 +2484,15 @@ dependencies = [
 ]
 
 [[package]]
+name = "neue-gallery"
+version = "0.0.0"
+dependencies = [
+ "anyhow",
+ "neue-kit",
+ "tracing-subscriber",
+]
+
+[[package]]
 name = "neue-ipc"
 version = "0.0.0"
 dependencies = [

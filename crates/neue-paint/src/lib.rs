@@ -15,6 +15,7 @@
 
 pub mod cpu;
 pub mod demo;
+pub mod golden;
 #[cfg(feature = "gpu")]
 pub mod gpu;
 #[cfg(feature = "imaging")]

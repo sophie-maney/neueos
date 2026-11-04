@@ -10,7 +10,9 @@ const CONTRAST_RIM: f32 = 0.6;
 /// The Aqua gel push button.
 pub mod aqua_button {
     use super::CONTRAST_RIM;
-    use crate::{Accent, Appearance, Color, Variant, black, darken, metrics, radii, rgb, white};
+    use crate::{
+        Accent, Appearance, Color, Variant, black, darken, grey, metrics, mix, radii, rgb, white,
+    };
 
     /// Corner radius of the rim.
     pub const RADIUS: f64 = radii::CONTROL;
@@ -26,6 +28,11 @@ pub mod aqua_button {
     pub const GLOSS_INSET: f64 = 1.0;
     /// Inset of the gloss from the top of the body.
     pub const GLOSS_TOP: f64 = 0.5;
+    /// How far the default button's gel moves toward white at the top of its pulse
+    /// (0: not at all, 1: white).
+    pub const PULSE_LIGHTEN: f32 = 0.3;
+    /// Opacity of a disabled push button.
+    pub const DISABLED_OPACITY: f32 = 0.5;
 
     /// Colours of one variant × state.
     #[derive(Clone, Copy, Debug, PartialEq)]
@@ -143,14 +150,78 @@ pub mod aqua_button {
                     gloss: [white(0.22), white(0.03)],
                 },
             };
+            p.with_contrast(variant)
+        }
+
+        /// A push button that isn't the default button, at rest: neutral gel. Held down,
+        /// every push button takes the accent ([`Palette::new`] with `pressed`).
+        pub fn plain(variant: Variant) -> Self {
+            let p = match variant.appearance {
+                Appearance::Light => Self {
+                    shadow: black(0.28),
+                    etch: white(0.55),
+                    rim: [grey(0.60), grey(0.46)],
+                    gel: [grey(1.0), grey(0.97), grey(0.91), grey(0.98)],
+                    gloss: [white(0.60), white(0.10)],
+                },
+                Appearance::Dark => Self {
+                    shadow: black(0.60),
+                    etch: white(0.07),
+                    rim: [grey(0.10), grey(0.05)],
+                    gel: [grey(0.42), grey(0.36), grey(0.29), grey(0.34)],
+                    gloss: [white(0.25), white(0.04)],
+                },
+            };
+            p.with_contrast(variant)
+        }
+
+        /// This palette at `amount` (0 at rest, 1 at the peak) of the default button's
+        /// pulse: the gel brightens toward white by up to [`PULSE_LIGHTEN`].
+        #[must_use]
+        pub fn pulsed(self, amount: f32) -> Self {
+            let t = amount.clamp(0.0, 1.0) * PULSE_LIGHTEN;
+            Self {
+                gel: self.gel.map(|c| mix(c, white(1.0), t)),
+                ..self
+            }
+        }
+
+        fn with_contrast(self, variant: Variant) -> Self {
             if variant.is_increased_contrast() {
                 Self {
-                    rim: p.rim.map(|c| darken(c, CONTRAST_RIM)),
-                    ..p
+                    rim: self.rim.map(|c| darken(c, CONTRAST_RIM)),
+                    ..self
                 }
             } else {
-                p
+                self
             }
+        }
+    }
+
+    #[cfg(test)]
+    mod tests {
+        use super::*;
+
+        #[test]
+        fn pulse_brightens_only_the_gel() {
+            let rest = Palette::new(Variant::default(), false);
+            assert_eq!(rest.pulsed(0.0), rest);
+            let peak = rest.pulsed(1.0);
+            assert_eq!(peak.rim, rest.rim);
+            for (p, r) in peak.gel.iter().zip(rest.gel) {
+                assert!(p.components[2] >= r.components[2]);
+                assert!(p.components[0] > r.components[0]);
+            }
+            assert_eq!(rest.pulsed(5.0), peak, "amount is clamped");
+        }
+
+        #[test]
+        fn increased_contrast_darkens_plain_rims() {
+            let v = Variant::default();
+            let standard = Palette::plain(v);
+            let increased = Palette::plain(v.with_contrast(crate::Contrast::Increased));
+            assert!(increased.rim[0].components[0] < standard.rim[0].components[0]);
+            assert_eq!(increased.gel, standard.gel);
         }
     }
 }

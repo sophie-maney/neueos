@@ -166,9 +166,21 @@ pub(crate) fn darken(color: Color, factor: f32) -> Color {
     Color::new([r * factor, g * factor, b * factor, a])
 }
 
+/// The colour `t` of the way from `a` to `b` (0: `a`, 1: `b`), alpha included.
+pub(crate) fn mix(a: Color, b: Color, t: f32) -> Color {
+    let (a, b) = (a.components, b.components);
+    Color::new(std::array::from_fn(|i| a[i] + (b[i] - a[i]) * t))
+}
+
 #[cfg(test)]
 mod tests {
     use super::*;
+
+    #[test]
+    fn mix_interpolates_every_component() {
+        let c = mix(rgba(0.0, 1.0, 0.5, 0.0), rgba(1.0, 0.0, 0.5, 1.0), 0.25);
+        assert_eq!(c.components, [0.25, 0.75, 0.5, 0.25]);
+    }
 
     #[test]
     fn appearance_converts_to_the_default_variant() {

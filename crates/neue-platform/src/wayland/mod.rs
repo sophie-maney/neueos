@@ -597,7 +597,7 @@ impl State {
             }
         };
         let (tx, signals) = mpsc::channel();
-        let root = RenderRoot::new(
+        let mut root = RenderRoot::new(
             spec.root,
             move |signal| {
                 // The receiver lives as long as the window; a send error means it's gone.
@@ -613,6 +613,9 @@ impl State {
                 test_font: self.options.font.clone(),
             },
         );
+        if spec.focus_fallback.is_some() && !root.set_focus_fallback(spec.focus_fallback) {
+            tracing::warn!(%id, "focus fallback isn't in the window's tree");
+        }
         let base_root = root.get_layer_root(0).id();
         tracing::debug!(%id, ?size, "opened window");
         self.reg.windows.insert(
