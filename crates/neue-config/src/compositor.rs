@@ -224,6 +224,25 @@ pub struct OutputConfig {
     /// are already laid out, top edges aligned.
     #[serde(deserialize_with = "output_position")]
     pub position: Option<[i32; 2]>,
+    /// Variable refresh rate (FreeSync, VESA Adaptive-Sync): `off` (default), `on`, or
+    /// `fullscreen` (only while a full-screen window covers the output). Ignored, with a
+    /// warning in the log, on displays or drivers that cannot do it.
+    pub adaptive_sync: AdaptiveSync,
+}
+
+/// `[outputs."<name>"] adaptive-sync`: when an output runs at a variable refresh rate.
+#[derive(Debug, Clone, Copy, Default, PartialEq, Eq, Serialize, Deserialize)]
+#[serde(rename_all = "kebab-case")]
+pub enum AdaptiveSync {
+    /// Always the mode's fixed refresh rate.
+    #[default]
+    Off,
+    /// Always variable, where the display supports it.
+    On,
+    /// Variable while a full-screen window (a game, a video) covers the output, fixed
+    /// otherwise. Some displays flicker at low frame rates; this keeps the desktop clear of
+    /// that.
+    Fullscreen,
 }
 
 fn xkb_names<'de, D: Deserializer<'de>>(d: D) -> Result<Vec<String>, D::Error> {
@@ -362,6 +381,7 @@ scroll-factor = 2.5
 [outputs."HDMI-A-1"]
 scale = 1.5
 position = [-1280, 0]
+adaptive-sync = "fullscreen"
 "#,
         )
         .unwrap();
@@ -375,6 +395,10 @@ position = [-1280, 0]
         assert_eq!(c.touchpad, TouchpadConfig::default());
         assert_eq!(c.outputs["HDMI-A-1"].scale, Some(1.5));
         assert_eq!(c.outputs["HDMI-A-1"].position, Some([-1280, 0]));
+        assert_eq!(
+            c.outputs["HDMI-A-1"].adaptive_sync,
+            AdaptiveSync::Fullscreen
+        );
         assert_eq!(c.windows.title_bar_double_click, TitleBarDoubleClick::Zoom);
         assert!(loaded.unknown_keys.is_empty(), "{:?}", loaded.unknown_keys);
     }
@@ -433,6 +457,8 @@ position = [-1280, 0]
             ("[outputs.X]\nscale = 9\n", 2),
             ("[outputs.X]\nposition = [0, 40000]\n", 2),
             ("[outputs.X]\nposition = [0]\n", 2),
+            ("[outputs.X]\nadaptive-sync = \"auto\"\n", 2),
+            ("[outputs.X]\nadaptive-sync = true\n", 2),
             ("[keybindings]\n\"Hyper+Q\" = \"quit\"\n", 2),
             ("[keybindings]\n\"Super+Q\" = 5\n", 2),
         ] {

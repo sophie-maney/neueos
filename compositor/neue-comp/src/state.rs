@@ -95,6 +95,18 @@ impl Backend {
             Self::Tty(data) => data.outputs(),
         }
     }
+
+    /// What `output`'s connector can do for variable refresh, and whether it is on now.
+    pub fn adaptive_sync(&self, output: &Output) -> (crate::vrr::Support, bool) {
+        match self {
+            #[cfg(feature = "tty")]
+            Self::Tty(data) => data.adaptive_sync(output),
+            _ => {
+                let _ = output; // only the tty backend has VRR
+                (crate::vrr::Support::None, false)
+            }
+        }
+    }
 }
 
 /// Everything the compositor knows. One instance, owned by the event loop.

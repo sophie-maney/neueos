@@ -507,3 +507,39 @@ Rebuild and start on the tty as in §4, with
    `progress`), point at an app showing it (Firefox while a page loads): it animates and
    the log keeps counting renders; once the cursor is back to the arrow, it stops.
 Record which of these you ran in the PR.
+
+## 16. Checking direct scanout and adaptive sync (task 1.15c)
+Install once: `sudo pacman -S --needed mpv drm_info`. Steps 1–2 work in the VM; 3–5 need
+an x86_64 PC with a FreeSync / G-Sync Compatible / VESA Adaptive-Sync monitor (usually
+over DisplayPort; HDMI VRR needs HDMI 2.1 and, on AMD, a recent kernel), with VRR (often
+called FreeSync) switched on in the monitor's own menu. Rebuild and start on the tty as in
+§4, with `RUST_LOG=info,neue_comp=debug neue-comp --tty -c foot 2>/tmp/comp.log`.
+1. **Config:** `neuectl outputs` ends each line with `vrr off`. Add
+   `[outputs."NAME"]` with `adaptive-sync = "fullscreen"` to
+   `~/.config/neueos/compositor.toml` (NAME from `neuectl outputs`) and save: the line
+   says `vrr fullscreen` (`vrr fullscreen (unsupported)` in the VM, plus a warning
+   `adaptive sync not applied` in the log). `adaptive-sync = "sometimes"` is rejected
+   with a config error and the old value stays.
+2. **Direct scanout:** `WAYLAND_DEBUG=1 mpv --fs --vo=gpu-next av://lavfi:testsrc 2>&1 |
+   grep -m5 -E 'tranche_flags|presented'`. Once full screen, the feedback shows a
+   `tranche_flags(1)` (scanout) tranche and `presented(…)` events end in flags `15`
+   (`zero_copy` set). The VM's virtio GPU may refuse the plane: then flags stay `7`, which
+   is fine there; note which one you saw. Leave full screen (`f`): flags drop back to `7`
+   and the picture stays right (no black frame, no stale image). Move the pointer over
+   the video: it stays smooth (the cursor has its own plane).
+3. **Scanout on the PC:** repeat step 2 on the x86_64 PC (each GPU you have: AMD, Intel,
+   NVIDIA with the proprietary driver). Flags `15` while full screen; no flicker when
+   entering or leaving full screen, or when a notification or `swaylock` appears over it.
+4. **VRR `fullscreen`:** with `adaptive-sync = "fullscreen"`, `neuectl outputs` shows
+   `vrr fullscreen` on the desktop and `vrr fullscreen (active)` while `mpv --fs` (or a
+   game) is up; the log says `adaptive sync switched`. `sudo drm_info | grep -E
+   'vrr_capable|VRR_ENABLED'` shows `vrr_capable` 1 and `VRR_ENABLED` 1 while full
+   screen, 0 after. With the monitor's refresh-rate overlay on, `mpv --fs
+   --video-sync=audio` of a 24 or 25 fps file shows the rate following the video (48/50
+   Hz or similar) instead of the maximum. If the log instead says `the driver needs a
+   modeset`, note it and try step 5.
+5. **VRR `on`:** with `adaptive-sync = "on"`, `vrr on (active)` all the time (one blank
+   of about a second when it is first applied is expected on drivers that need a
+   modeset); the desktop has no visible flicker when idle (some panels flicker at low
+   rates: if yours does, note it, that is why `fullscreen` exists).
+Record which of these you ran, on which GPU and monitor, in the PR.

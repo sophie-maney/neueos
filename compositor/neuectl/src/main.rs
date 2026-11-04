@@ -9,8 +9,8 @@ use std::path::PathBuf;
 use anyhow::{Context, Result};
 use clap::{Parser, Subcommand};
 use neue_ipc::{
-    ActionInfo, ActionParams, Client, OutputInfo, Topic, VersionInfo, WindowArg, WindowId,
-    WindowInfo,
+    ActionInfo, ActionParams, AdaptiveSyncInfo, AdaptiveSyncMode, Client, OutputInfo, Topic,
+    VersionInfo, WindowArg, WindowId, WindowInfo,
 };
 
 #[derive(Debug, Parser)]
@@ -197,7 +197,7 @@ fn format_outputs(outputs: &[OutputInfo]) -> String {
     let mut text = String::new();
     for o in outputs {
         text.push_str(&format!(
-            "{}  {}x{}@{:.2}Hz  +{}+{}  scale {}  {} {}\n",
+            "{}  {}x{}@{:.2}Hz  +{}+{}  scale {}  {}  {} {}\n",
             o.name,
             o.width,
             o.height,
@@ -205,11 +205,29 @@ fn format_outputs(outputs: &[OutputInfo]) -> String {
             o.x,
             o.y,
             o.scale,
+            format_adaptive_sync(&o.adaptive_sync),
             o.make,
             o.model,
         ));
     }
     text
+}
+
+/// `vrr off`, `vrr on (active)`, `vrr fullscreen (unsupported)`…
+fn format_adaptive_sync(info: &AdaptiveSyncInfo) -> String {
+    let mode = match info.mode {
+        AdaptiveSyncMode::Off => "off",
+        AdaptiveSyncMode::On => "on",
+        AdaptiveSyncMode::Fullscreen => "fullscreen",
+    };
+    let note = if info.active {
+        " (active)"
+    } else if info.mode != AdaptiveSyncMode::Off && !info.supported {
+        " (unsupported)"
+    } else {
+        ""
+    };
+    format!("vrr {mode}{note}")
 }
 
 fn format_actions(actions: &[ActionInfo]) -> String {
@@ -233,6 +251,30 @@ fn format_actions(actions: &[ActionInfo]) -> String {
 #[cfg(test)]
 mod tests {
     use super::*;
+
+    #[test]
+    fn adaptive_sync_reads_naturally() {
+        let info = |mode, supported, active| AdaptiveSyncInfo {
+            mode,
+            supported,
+            active,
+        };
+        let cases = [
+            (info(AdaptiveSyncMode::Off, false, false), "vrr off"),
+            (info(AdaptiveSyncMode::On, true, true), "vrr on (active)"),
+            (
+                info(AdaptiveSyncMode::Fullscreen, true, false),
+                "vrr fullscreen",
+            ),
+            (
+                info(AdaptiveSyncMode::Fullscreen, false, false),
+                "vrr fullscreen (unsupported)",
+            ),
+        ];
+        for (info, text) in cases {
+            assert_eq!(format_adaptive_sync(&info), text);
+        }
+    }
 
     #[test]
     fn cli_definition_is_valid() {
