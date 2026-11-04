@@ -702,3 +702,27 @@ minimum length.
 is a fixed 160 px, so check the column count only if a later task makes it fill its width
 (2.20c's collection view does).
 
+## 16. Checking the collection view (task 2.20c)
+Not run yet. Steps 1 to 3 run in the VM, set up as in `docs/dev-setup.md` §1.3; step 4 is
+on the Mac. The page is "Icons" (page 10). The helpers are those of §8.
+
+**1. Build and open the page:** as §8 step 1 with `NEUE_GALLERY_PAGE=10`, screenshot
+`/tmp/c1.png`. Expected: no `WARN` or `ERROR`; under the icons, two collections side by
+side: 32 px icons (1,000 items, labels like "Documents", "Pictures 7") and 64 px icons
+(12 items), labels under the icons, long labels cut with an ellipsis.
+
+**2. Selection and keys:** click an item, press Right, Down, End, Home; Shift-click
+another item; Cmd- or Ctrl-click one; type "pic"; press Return; double-click an item;
+screenshot after each as `/tmp/c2-N.png`. Expected: the selected item's icon gets a
+rounded grey backdrop and its label a blue pill with white text; arrows move over the grid
+and scroll the selection into view; Shift selects a range in order, Cmd/Ctrl toggles; the
+status line says "N items selected" and `Opened "…"` for Return and a double-click. Click
+on the empty area of a short last row: the selection clears.
+
+**3. Focus, size and scale:** Tab away from the collection: the blue pill turns grey with
+dark text. Narrow and widen the window: the columns change and the items stay centred in
+their cells. Switch to dark and to 2x: all stays sharp.
+
+**4. macOS (owner):** `cargo xtask gallery`, open "Icons" and repeat steps 2 and 3. With
+VoiceOver on (Cmd-F5), move into the collection: it is read as a grid with its row and
+column counts, and each item as a cell with its label and whether it is selected.

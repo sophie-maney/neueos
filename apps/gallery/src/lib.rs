@@ -62,6 +62,9 @@ pub enum Message {
     /// The Sidebar page: the item selected (`None`: nothing) or opened.
     SidebarSelected(Option<u32>),
     SidebarOpened(u32),
+    /// The Icons page: the items selected in a collection; an item opened.
+    CollectionSelected(Vec<u32>),
+    CollectionOpened(u32),
     OpenFile(usize),
     SortFiles(usize, neue_kit::SortOrder),
 }
@@ -317,6 +320,18 @@ impl Application for Gallery {
             }
             Message::SidebarOpened(id) => {
                 let text = format!("Opened “{}”", specimens::item_label(id));
+                self.status.set_text(cx, text);
+            }
+            Message::CollectionSelected(ids) => {
+                let text = match ids.as_slice() {
+                    [] => "Nothing selected".to_owned(),
+                    [id] => format!("Selected “{}”", specimens::collection_label(*id)),
+                    ids => format!("{} items selected", ids.len()),
+                };
+                self.status.set_text(cx, text);
+            }
+            Message::CollectionOpened(id) => {
+                let text = format!("Opened “{}”", specimens::collection_label(id));
                 self.status.set_text(cx, text);
             }
             Message::OpenFile(row) => {

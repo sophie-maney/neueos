@@ -1848,3 +1848,82 @@ pub mod sidebar {
         }
     }
 }
+
+/// Collection views: items of an icon over a label in a grid of cells.
+pub mod collection {
+    use crate::{Appearance, Color, Variant, black, white};
+
+    /// The icon size a collection starts with.
+    pub const ICON_SIZE: f64 = 48.0;
+    /// The smallest and the largest icon size a collection draws.
+    pub const ICON_SIZES: (f64, f64) = (16.0, 128.0);
+    /// Space between a cell's edge and the icon's backdrop, and between the cells'
+    /// contents, at the sides.
+    pub const CELL_INSET: f64 = 8.0;
+    /// Space around an icon, inside its backdrop.
+    pub const ICON_PADDING: f64 = 4.0;
+    /// Space between an icon's backdrop and the label.
+    pub const LABEL_GAP: f64 = 4.0;
+    /// Space between the label's text and the edges of its pill.
+    pub const LABEL_PADDING: f64 = 6.0;
+    /// Height of the label's pill.
+    pub const LABEL_HEIGHT: f64 = 17.0;
+    /// Corner radius of an icon's backdrop.
+    pub const ICON_RADIUS: f64 = crate::radii::PANEL;
+    /// Opacity of an icon in a disabled collection.
+    pub const DISABLED_OPACITY: f32 = 0.5;
+
+    /// Colours of a collection's selection (labels use the semantic colours).
+    #[derive(Clone, Copy, Debug, PartialEq)]
+    pub struct Palette {
+        /// The backdrop of a selected item's icon.
+        pub icon_backdrop: Color,
+        /// The same when the collection doesn't have keyboard focus.
+        pub unfocused_icon_backdrop: Color,
+    }
+
+    impl Palette {
+        /// Colours for `variant`.
+        pub fn new(variant: Variant) -> Self {
+            let contrast = variant.is_increased_contrast();
+            match variant.appearance {
+                Appearance::Light => Self {
+                    icon_backdrop: black(if contrast { 0.22 } else { 0.14 }),
+                    unfocused_icon_backdrop: black(if contrast { 0.14 } else { 0.08 }),
+                },
+                Appearance::Dark => Self {
+                    icon_backdrop: white(if contrast { 0.28 } else { 0.20 }),
+                    unfocused_icon_backdrop: white(if contrast { 0.18 } else { 0.12 }),
+                },
+            }
+        }
+    }
+
+    /// The width and height of a cell for icons `icon_size` wide: the label gets the
+    /// width of the cell less its insets and may be wider than the icon.
+    pub fn cell_size(icon_size: f64) -> (f64, f64) {
+        let icon = icon_size.clamp(ICON_SIZES.0, ICON_SIZES.1);
+        let backdrop = icon + 2.0 * ICON_PADDING;
+        let width = (backdrop + 2.0 * CELL_INSET).max(72.0);
+        let height = CELL_INSET + backdrop + LABEL_GAP + LABEL_HEIGHT + CELL_INSET;
+        (width, height)
+    }
+
+    #[cfg(test)]
+    mod tests {
+        use super::*;
+
+        #[test]
+        fn light_and_dark_differ_and_cells_grow_with_the_icon() {
+            let light = Variant::default();
+            let dark = Variant {
+                appearance: Appearance::Dark,
+                ..light
+            };
+            assert_ne!(Palette::new(light), Palette::new(dark));
+            let (small, large) = (cell_size(32.0), cell_size(64.0));
+            assert!(large.0 > small.0 && large.1 > small.1);
+            assert_eq!(cell_size(1000.0), cell_size(ICON_SIZES.1), "clamped");
+        }
+    }
+}

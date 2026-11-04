@@ -2,10 +2,10 @@
 
 use neue_kit::tokens::Color;
 use neue_kit::{
-    Align, BevelButton, Button, CheckState, Checkbox, Column, ComboBox, ContextMenu, Entry, Glyph,
-    Icon, IconImage, IconPaint, Label, MaterialTile, Menu, MenuItem, Outline, PopUpButton,
-    ProgressBar, PullDownButton, Radio, ScrollAxes, ScrollView, Segmented, Shortcut, Slider,
-    SortOrder, SourceList, Specimen, Spinner, Stack, Stepper, Table, TextField, TextView,
+    Align, BevelButton, Button, CheckState, Checkbox, Collection, Column, ComboBox, ContextMenu,
+    Entry, Glyph, Icon, IconImage, IconPaint, Item, Label, MaterialTile, Menu, MenuItem, Outline,
+    PopUpButton, ProgressBar, PullDownButton, Radio, ScrollAxes, ScrollView, Segmented, Shortcut,
+    Slider, SortOrder, SourceList, Specimen, Spinner, Stack, Stepper, Table, TextField, TextView,
     VectorIcon, VirtualGrid, VirtualList,
 };
 
@@ -615,4 +615,60 @@ pub fn icon_vector<M: 'static>() -> Stack<M> {
         .fold(Stack::row().spacing(8.0), |row, size| {
             row.with(IconImage::new(sample_icon()).size(size).label("Done"))
         })
+}
+
+/// Golden window size for a collection of six items in three columns and two rows, with
+/// the fixture's margin.
+pub const COLLECTION_SIZE: (u32, u32) = (240, 184);
+
+/// The sample collection's items: id, label, glyph. The last label is too long for its cell.
+pub const COLLECTION_ITEMS: [(u32, &str, Glyph); 6] = [
+    (1, "Documents", Glyph::Document),
+    (2, "Pictures", Glyph::Picture),
+    (3, "Music", Glyph::Music),
+    (4, "Starred", Glyph::Star),
+    (5, "Recent", Glyph::Clock),
+    (6, "Quarterly report, final", Glyph::Folder),
+];
+
+/// What the sample collection shows for item `id`: `COLLECTION_ITEMS` for 1 to 6, then
+/// numbered copies of them.
+pub fn collection_item(id: u32) -> Item {
+    let (_, label, glyph) = COLLECTION_ITEMS[(id as usize - 1) % COLLECTION_ITEMS.len()];
+    if id as usize <= COLLECTION_ITEMS.len() {
+        Item::new(label).icon(glyph)
+    } else {
+        Item::new(format!("{label} {id}")).icon(glyph)
+    }
+}
+
+/// The label of the sample collection's item `id`.
+pub fn collection_label(id: u32) -> String {
+    let (_, label, _) = COLLECTION_ITEMS[(id as usize - 1) % COLLECTION_ITEMS.len()];
+    if id as usize <= COLLECTION_ITEMS.len() {
+        label.to_owned()
+    } else {
+        format!("{label} {id}")
+    }
+}
+
+/// A collection of the six sample items, nothing selected.
+pub fn collection<M: 'static>() -> Collection<M, u32> {
+    Collection::new(1..=6, |&id| collection_item(id))
+        .icon_size(32.0)
+        .width(224.0)
+        .height(168.0)
+}
+
+/// The sample collection with Pictures and the item with the long label selected (grey at
+/// rest, the accent with focus).
+pub fn collection_selected<M: 'static>() -> Collection<M, u32> {
+    collection().multiple(true).selected([2, 6])
+}
+
+/// A collection of `count` items with icons `icon_size` wide, for the gallery.
+pub fn collection_many<M: 'static>(count: u32, icon_size: f64) -> Collection<M, u32> {
+    Collection::new(1..=count, |&id| collection_item(id))
+        .icon_size(icon_size)
+        .multiple(true)
 }

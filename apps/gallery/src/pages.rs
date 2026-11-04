@@ -528,7 +528,10 @@ fn icons(_: &mut PageHandles) -> Element<Message> {
             "Icons",
             "Glyphs are drawn in the text colour at any size · a vector icon comes from SVG \
              path data, with colours that follow the text or have their own for light and dark \
-             · switch the appearance and the scale to see them stay sharp",
+             · switch the appearance and the scale to see them stay sharp · in a collection \
+             click, Shift-click and Cmd- or Ctrl-click select · the arrow keys move over the \
+             grid · type a name to jump · Return or double-click opens · resize the window to \
+             change the columns",
         ))
         .with(section(
             "Glyphs, 32 px",
@@ -538,6 +541,30 @@ fn icons(_: &mut PageHandles) -> Element<Message> {
             "A vector icon at 16, 32 and 48 px",
             Stack::column().with(specimens::icon_vector()),
         ))
+        .with(
+            Stack::row()
+                .spacing(spacing::L)
+                .with(section(
+                    "Collection, 32 px icons, 1,000 items",
+                    Stack::column().with(
+                        specimens::collection_many(1000, 32.0)
+                            .on_select(|ids| Message::CollectionSelected(ids.to_vec()))
+                            .on_activate(|&id| Message::CollectionOpened(id))
+                            .width(330.0)
+                            .height(250.0),
+                    ),
+                ))
+                .with(section(
+                    "64 px icons",
+                    Stack::column().with(
+                        specimens::collection_many(12, 64.0)
+                            .on_select(|ids| Message::CollectionSelected(ids.to_vec()))
+                            .on_activate(|&id| Message::CollectionOpened(id))
+                            .width(330.0)
+                            .height(250.0),
+                    ),
+                )),
+        )
         .into()
 }
 

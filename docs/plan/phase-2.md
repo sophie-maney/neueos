@@ -323,8 +323,7 @@ the paper and leather materials move to Phase 6/7 (Widgets, Write).
       Deferred from 2.19: variable row heights, editable cells, column reordering, row drag
       and drop, auto-size on divider double-click, row context menus (beyond wrapping a
       cell in `ContextMenu`).
-- [ ] **2.20 Icon and collection view** · Sonnet. Split into 2.20a to 2.20c; the first task
-      to land is 2.20a.
+- [x] **2.20 Icon and collection view** · Sonnet. Split into 2.20a to 2.20c, all done.
   - [x] **2.20a Icon type** · Sonnet. A general `Icon` in `neue-paint` and `neue-kit`: the
         named glyph set (today's `SourceIcon`, renamed `Glyph`) plus a vector case, SVG path
         data parsed once into vello paths (no new dependency), with paints that follow the
@@ -363,7 +362,7 @@ the paper and leather materials move to Phase 6/7 (Widgets, Write).
         goldens (2.20c adds them). Steps for the VM in `docs/checks/phase-2.md` §15, not
         run. Not yet: AccessKit grid roles, gaps between cells, variable cell sizes,
         horizontal scrolling.
-  - [ ] **2.20c Collection view** · Sonnet (on 2.20a and 2.20b). `Collection<M, Id>` on the
+  - [x] **2.20c Collection view** · Sonnet (on 2.20a and 2.20b). `Collection<M, Id>` on the
         grid: items as an icon over a label, an icon-size option, single or multiple
         selection (click, Shift-click, Cmd/Ctrl-click), key and non-key colours, 2D arrow
         keys, Home/End, type-select, Return or double-click activates. AccessKit
@@ -372,6 +371,21 @@ the paper and leather materials move to Phase 6/7 (Widgets, Write).
         disabled × light/dark × 1×/2×); end-to-end tests for selection and keys; ADR.
         Not in scope: drag and drop, rename, variable item sizes, rubber-band selection,
         sections.
+        *Done:* ADR 0052. `neue_kit::Collection<M, Id>` (`new(ids, |&id| Item)`,
+        `icon_size`, `multiple`, `selected`, `on_select(&[Id])`, `on_activate(&Id)`, `width`,
+        `height`, `disabled`, `bind`; `Handle::{set_items, reload, set_selection, scroll_to,
+        set_icon_size, set_enabled}`) and `Item::new(label).icon(icon)`: a collection body
+        on `RowsWidget` beside the table's, items that draw their icon, selection backdrop
+        and label pill, a long label cut with an ellipsis. Cell size from
+        `neue_theme::materials::collection` (also the palette of the icon backdrop). Click,
+        Shift and Cmd/Ctrl select (in item order), 2D arrows, Home/End, Page keys, Cmd-A,
+        type-select, Return and double-click activate; AccessKit `Grid` with row and
+        column counts and `GridCell` items. 10 end-to-end tests, 1 theme test; 2 new
+        golden sets (`collection`, `collection-selected` × states × light/dark × 1×/2×,
+        16 images; macOS only, Linux aarch64 and x86_64 not run). Gallery "Icons" page: two
+        collections (1,000 items at 32 px, 12 at 64 px) with status messages. Steps for the
+        VM in `docs/checks/phase-2.md` §16, not run. Not yet: the items listed under "Not
+        in scope", gaps between cells, a borderless style, and the VoiceOver check on macOS.
 - [ ] **2.21 Split view and tab view** · Sonnet.
 - [ ] **2.22 Window chrome and unified toolbar** · Opus. ADR: client-side title bars
       (reusing neue-paint's) vs. extending the server-side ones (ADR 0013).

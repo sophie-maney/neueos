@@ -11,9 +11,10 @@
 use std::time::Duration;
 
 use neue_gallery::specimens::{
-    self, BEVEL_SIZE, COMBO_SIZE, FIELD_SIZE, ICONS_SIZE, MENU_SIZE, OUTLINE_SIZE, POPUP_SIZE,
-    PROGRESS_SIZE, PULL_DOWN_SIZE, PUSH_BUTTON_SIZE, SCROLL_SIZE, SEGMENTED_SIZE, SIDEBAR_SIZE,
-    SLIDER_SIZE, SPINNER_SIZE, STEPPER_SIZE, SUBMENU_SIZE, TABLE_SIZE, TEXT_VIEW_SIZE, TOGGLE_SIZE,
+    self, BEVEL_SIZE, COLLECTION_SIZE, COMBO_SIZE, FIELD_SIZE, ICONS_SIZE, MENU_SIZE, OUTLINE_SIZE,
+    POPUP_SIZE, PROGRESS_SIZE, PULL_DOWN_SIZE, PUSH_BUTTON_SIZE, SCROLL_SIZE, SEGMENTED_SIZE,
+    SIDEBAR_SIZE, SLIDER_SIZE, SPINNER_SIZE, STEPPER_SIZE, SUBMENU_SIZE, TABLE_SIZE,
+    TEXT_VIEW_SIZE, TOGGLE_SIZE,
 };
 use neue_kit::testing::{
     self, DISABLED, FOCUSED, Fixture, Goldens, INACTIVE, NORMAL, NavKey, PRESSED, State,
@@ -290,6 +291,11 @@ control_goldens! {
     // follows the text), disabled dimmed.
     icon_glyphs: "icon-glyphs", ICONS_SIZE, &[NORMAL, DISABLED], specimens::icon_glyphs();
     icon_vector: "icon-vector", ICONS_SIZE, &[NORMAL, DISABLED], specimens::icon_vector();
+
+    // A collection of icons over labels (the last label is cut with an ellipsis); two items
+    // selected (grey at rest, the accent with focus); disabled, where the selection hides.
+    collection: "collection", COLLECTION_SIZE, &[NORMAL], specimens::collection();
+    collection_selected: "collection-selected", COLLECTION_SIZE, &[NORMAL, FOCUSED, DISABLED], specimens::collection_selected();
 
     pop_up_button: "pop-up-button", POPUP_SIZE, &[NORMAL, POPUP_PRESSED, OPEN_BY_KEY, FOCUSED, DISABLED], specimens::pop_up_button();
     pull_down_button: "pull-down-button", PULL_DOWN_SIZE, &[NORMAL, PRESSED, OPEN_BY_KEY, FOCUSED, DISABLED], specimens::pull_down_button(|_| ());

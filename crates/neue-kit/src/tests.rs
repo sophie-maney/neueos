@@ -16,6 +16,7 @@ use masonry_testing::{TestHarness, TestHarnessParams};
 use neue_platform::{MenuAddress, WindowId, WindowSpec};
 use neue_theme::Theme;
 
+mod collection;
 mod controls;
 mod editmenu;
 mod fields;

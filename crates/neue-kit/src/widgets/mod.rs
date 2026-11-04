@@ -5,6 +5,7 @@
 
 mod bevel;
 mod button;
+mod collection;
 mod context;
 mod edit_menu;
 mod field;
@@ -40,6 +41,8 @@ use neue_theme::metrics::spacing;
 pub use bevel::BevelButton;
 pub(crate) use bevel::BevelWidget;
 pub(crate) use button::{ButtonWidget, Pressed};
+pub(crate) use collection::CollectionItemWidget;
+pub use collection::{Collection, Item};
 pub use context::ContextMenu;
 pub(crate) use field::FieldWidget;
 pub use field::{ComboBox, TextField};
