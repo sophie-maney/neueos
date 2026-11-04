@@ -805,7 +805,11 @@ impl State {
                 self.open_popup(id, &kind, widget, pos);
             }
             RenderRootSignal::RemoveLayer(layer) => {
-                w.root.remove_layer(layer);
+                // A layer can be removed twice: a menu's submenus go with it (Masonry's
+                // attached layers), and a dismissed popup's nested ones are removed too.
+                if w.root.get_widget(layer).is_some() {
+                    w.root.remove_layer(layer);
+                }
                 if let Some(pi) = w.popups.iter().position(|p| p.root_id == layer) {
                     // Menus nested on this one go with it.
                     let nested = w.take_popups(pi).into_iter().filter(|l| *l != layer);

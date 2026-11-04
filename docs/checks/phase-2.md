@@ -453,3 +453,50 @@ Cmd-Up/Down (text ends), Cmd-A/C/X/V, a triple click (paragraph), that Tab leave
 and the Japanese – Romaji preedit as in §6 step 4 (underlined, candidate window under the
 caret, committed on Return, not before).
 
+
+## 8. Checking menus (task 2.17a)
+Not run yet (the agent had no VM). Steps 1–3 run in the VM, set up as in
+`docs/dev-setup.md` §1.3; step 4 is on the Mac. The gallery's "Menus" page is page 6.
+
+**1. Build and open the page:**
+```sh
+rsync -az --delete --exclude target --exclude .git ./ neueos-vm:neueos/
+ssh neueos-vm 'cd neueos && cargo build --release -p neue-comp -p neuectl --no-default-features --features tty && cargo build --release -p neue-gallery'
+ssh neueos-vm 'export XDG_RUNTIME_DIR=/run/user/1000 RUST_LOG=info; unset WAYLAND_DISPLAY
+  setsid nohup ~/neueos/target/release/neue-comp --tty >/tmp/comp.log 2>&1 </dev/null &
+  sleep 3; . ~/neueos/docs/vm-env.sh; export WGPU_BACKEND=gl RUST_LOG=info NEUE_GALLERY_PAGE=6
+  setsid nohup ~/neueos/target/release/neue-gallery >/tmp/gallery.log 2>&1 </dev/null &
+  sleep 4; neuectl windows; grep -E "WARN|ERROR" /tmp/gallery.log; neuectl screenshot /tmp/m1.png'
+scp 'neueos-vm:/tmp/m*.png' ~/Desktop/neueos-shots/
+```
+Expected: no `WARN` or `ERROR`; `m1.png` shows "Right-click here" and a text field.
+
+**2. Keyboard:** click into the text field (its position is in `m1.png`; `click_at` as in
+§4, with screenshot pixels), then:
+```sh
+ssh neueos-vm '. ~/neueos/docs/vm-env.sh; export YDOTOOL_SOCKET=/tmp/.ydotool_socket
+  ydotool key 42:1 68:1 68:0 42:0; sleep 0.5; neuectl screenshot /tmp/m2.png
+  ydotool key 20:1 20:0; ydotool key 106:1 106:0; sleep 0.5; neuectl screenshot /tmp/m3.png
+  ydotool key 108:1 108:0 28:1 28:0; sleep 0.5; neuectl screenshot /tmp/m4.png
+  grep -E "new Masonry layer|WARN|ERROR" /tmp/gallery.log | tail -5'
+```
+(Shift-F10; T and Right; Down and Return.) Expected: `m2.png` shows the menu at the field's
+middle with Cut highlighted, the field's focus ring gone; `m3.png` shows the Text Size
+submenu to the right of the menu, Small highlighted (a second `new Masonry layer` line:
+it nests on the first popup); `m4.png` shows both menus closed, the status line
+`Pressed “Regular”` and the text field focused again (caret blinking).
+
+**3. Pointer:** with `move_to` and `click_at` as in §4 and positions from `m1.png`,
+right-click "Right-click here" (`ydotool click 0xC1`), take `/tmp/m5.png`, move over
+"Text Size", take `/tmp/m6.png`, click "Large", take `/tmp/m7.png`. Then right-click again
+and click outside the menu, and take `/tmp/m8.png`. Expected: `m5.png` the menu at the
+pointer, nothing highlighted; `m6.png` the submenu open beside it; `m7.png` both closed and
+`Pressed “Large”`; `m8.png` no menu, the status line unchanged. Right-click near the right
+edge of the screen: the menu slides or flips to stay on screen (the submenu flips over its
+parent: a known gap, ADR 0045).
+
+**4. macOS (owner):** `cargo xtask gallery`, open "Menus". Right-click (two-finger click)
+the area: the menu opens at the pointer; press-drag-release onto an item chooses it;
+hovering Text Size opens the submenu; type "w" to jump to Wrap Lines; Escape closes. In the
+text field, Shift-F10 opens the menu and Escape gives focus back to the field. Shortcuts
+show ⌘ here (⌃ on Linux).

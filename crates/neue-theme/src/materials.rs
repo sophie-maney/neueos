@@ -1424,3 +1424,135 @@ pub mod scroller {
         }
     }
 }
+
+/// Menus: context menus and submenus (task 2.17a), later the menu bar's menus and pop-up
+/// buttons' menus. A light (or dark) panel with a soft shadow; the item under the pointer
+/// or the keyboard is an accent band with white text.
+pub mod menu {
+    use crate::{Accent, Appearance, Color, Variant, black, grey, rgb, white};
+
+    /// Corner radius of the panel.
+    pub const RADIUS: f64 = crate::radii::MENU;
+    /// Rim thickness.
+    pub const RIM: f64 = 1.0;
+    /// Space above the first item and below the last.
+    pub const PADDING_Y: f64 = 4.0;
+    /// Height of an item.
+    pub const ITEM_HEIGHT: f64 = 19.0;
+    /// Height of a separator (the line is centred in it).
+    pub const SEPARATOR_HEIGHT: f64 = 10.0;
+    /// Thickness of a separator's line.
+    pub const SEPARATOR_LINE: f64 = 1.0;
+    /// Left edge of an item's label: the column before it holds the check mark.
+    pub const LABEL_INSET: f64 = 20.0;
+    /// Space after the shortcut, or after the label when an item has none.
+    pub const TRAILING_INSET: f64 = 14.0;
+    /// Room for the submenu arrow at the right of an item.
+    pub const ARROW_WIDTH: f64 = 14.0;
+    /// Width and height of the submenu arrow (a triangle pointing right).
+    pub const ARROW_SIZE: f64 = 7.0;
+    /// Smallest gap between a label and its shortcut.
+    pub const SHORTCUT_GAP: f64 = 24.0;
+    /// Side of the box the check mark, mixed dash or radio dot is drawn in.
+    pub const MARK_SIZE: f64 = 9.0;
+    /// Stroke width of the check mark and the dash.
+    pub const MARK_STROKE: f64 = 1.75;
+    /// A menu is never narrower than this.
+    pub const MIN_WIDTH: f64 = 120.0;
+    /// How far a submenu overlaps the menu it opens from (it covers the rim).
+    pub const SUBMENU_OVERLAP: f64 = 2.0;
+    /// How far the drop shadow sits below the panel.
+    pub const SHADOW_OFFSET: f64 = 4.0;
+    /// Blur radius (standard deviation) of the drop shadow.
+    pub const SHADOW_BLUR: f64 = 5.0;
+    /// How far the shadow reaches beyond the panel's sides and top.
+    pub const SHADOW_REACH: f64 = 3.0 * SHADOW_BLUR;
+    /// How far the pointer has to move after a press opened a menu before releasing the
+    /// button chooses the item under it (press, drag, release).
+    pub const DRAG_THRESHOLD: f64 = 4.0;
+
+    /// Colours of a menu.
+    #[derive(Clone, Copy, Debug, PartialEq)]
+    pub struct Palette {
+        /// Drop shadow.
+        pub shadow: Color,
+        /// Body, top and bottom.
+        pub fill: [Color; 2],
+        /// Rim, inside the body's edge.
+        pub rim: Color,
+        /// Item labels and marks.
+        pub label: Color,
+        /// Labels and marks of disabled items.
+        pub disabled_label: Color,
+        /// Shortcuts.
+        pub shortcut: Color,
+        /// Separator lines.
+        pub separator: Color,
+        /// The highlighted item's band, top and bottom.
+        pub highlight: [Color; 2],
+        /// A hairline along the band's top edge.
+        pub highlight_edge: Color,
+        /// Label, shortcut, mark and arrow on the band.
+        pub highlighted_label: Color,
+    }
+
+    impl Palette {
+        /// Colours for `variant`. The highlight follows the accent; increased contrast
+        /// firms up the rim, the separators and the text.
+        pub fn new(variant: Variant) -> Self {
+            let highlight = match (variant.accent, variant.appearance) {
+                (Accent::Blue, Appearance::Light) => [rgb(0.36, 0.53, 0.96), rgb(0.12, 0.34, 0.90)],
+                (Accent::Blue, Appearance::Dark) => [rgb(0.30, 0.47, 0.92), rgb(0.10, 0.29, 0.80)],
+                (Accent::Graphite, Appearance::Light) => [grey(0.58), grey(0.40)],
+                (Accent::Graphite, Appearance::Dark) => [grey(0.52), grey(0.36)],
+            };
+            let p = match variant.appearance {
+                Appearance::Light => Self {
+                    shadow: black(0.38),
+                    fill: [grey(0.985), grey(0.955)],
+                    rim: black(0.18),
+                    label: black(0.88),
+                    disabled_label: black(0.30),
+                    shortcut: black(0.70),
+                    separator: black(0.10),
+                    highlight,
+                    highlight_edge: white(0.18),
+                    highlighted_label: white(1.0),
+                },
+                Appearance::Dark => Self {
+                    shadow: black(0.65),
+                    fill: [grey(0.22), grey(0.18)],
+                    rim: white(0.16),
+                    label: white(0.90),
+                    disabled_label: white(0.32),
+                    shortcut: white(0.70),
+                    separator: white(0.12),
+                    highlight,
+                    highlight_edge: white(0.14),
+                    highlighted_label: white(1.0),
+                },
+            };
+            if !variant.is_increased_contrast() {
+                return p;
+            }
+            match variant.appearance {
+                Appearance::Light => Self {
+                    rim: black(0.55),
+                    label: black(1.0),
+                    disabled_label: black(0.50),
+                    shortcut: black(0.90),
+                    separator: black(0.35),
+                    ..p
+                },
+                Appearance::Dark => Self {
+                    rim: white(0.50),
+                    label: white(1.0),
+                    disabled_label: white(0.55),
+                    shortcut: white(0.90),
+                    separator: white(0.35),
+                    ..p
+                },
+            }
+        }
+    }
+}

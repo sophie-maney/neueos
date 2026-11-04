@@ -49,6 +49,7 @@
 mod anim;
 mod app;
 mod element;
+mod menu;
 mod task;
 #[cfg(feature = "testing")]
 pub mod testing;
@@ -60,12 +61,13 @@ mod tests;
 
 pub use app::{Application, Cx, Error, Settings, Window, run};
 pub use element::{Element, Handle};
+pub use menu::{Menu, MenuItem, MenuToggle, Shortcut};
 pub use neue_platform::WindowId;
 pub use task::{Sender, Task};
 pub use widgets::{
-    Align, BevelButton, Button, CheckState, Checkbox, Label, MaterialTile, ProgressBar, Radio,
-    ScrollAxes, ScrollView, Segmented, Slider, Specimen, Spinner, Stack, Stepper, TextField,
-    TextStyle, TextView, VirtualList, Zoom,
+    Align, BevelButton, Button, CheckState, Checkbox, ContextMenu, Label, MaterialTile,
+    ProgressBar, Radio, ScrollAxes, ScrollView, Segmented, Slider, Specimen, Spinner, Stack,
+    Stepper, TextField, TextStyle, TextView, VirtualList, Zoom,
 };
 
 /// Design tokens (colours, metrics, type scale, motion).

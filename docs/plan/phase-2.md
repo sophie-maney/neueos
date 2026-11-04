@@ -157,7 +157,7 @@ the paper and leather materials move to Phase 6/7 (Widgets, Write).
       gallery page "Fields"; 68 goldens, passing on macOS and Linux aarch64 (x86_64 not
       run). IME: VM check `docs/checks/phase-2.md` §6 (input-method probe); macOS IME
       step for the owner in the same section. Not yet: undo, primary selection (2.28),
-      context menu (2.17).
+      context menu (2.17b).
 - [x] **2.15 Scroll view** · Opus. Overlay scrollbars and virtual scrolling (the base for
       tables and collection views).
       *Done:* ADR 0043. `neue_kit::ScrollView` (`ScrollAxes::{Vertical, Horizontal,
@@ -183,11 +183,37 @@ the paper and leather materials move to Phase 6/7 (Widgets, Write).
       `TEXT_VIEW_HEIGHT`, `TEXT_VIEW_INSET`. Gallery page "Text View"; 48 goldens, passing
       on macOS and Linux aarch64 (x86_64 not run). `Fixture::focus` descends to the first
       focusable widget; `Fixture::select_text` is now Cmd/Ctrl-A. IME in a text view: VM and
-      macOS steps in `docs/checks/phase-2.md` §7, not run. Not yet: undo, context menu (2.17),
+      macOS steps in `docs/checks/phase-2.md` §7, not run. Not yet: undo, context menu (2.17b),
       primary selection (2.28), tab characters, caret moves on Page Up/Down.
-- [ ] **2.17 Menus** · Opus. Menu model, context menus, pop-up and pull-down buttons,
-      combo box; keyboard navigation and type-select.
-- [ ] **2.18 DBusMenu export** · Opus. New `neue-dbus` crate (Linux-only): export the 2.17
+- [x] **2.17a Menus: model and context menus** · Opus. Split from 2.17. The menu model
+      (data for 2.18's DBusMenu export: items, separators, submenus, check and radio
+      states, shortcuts, disabled), the menu layer widget (xdg-popup on Wayland, overlay
+      on macOS), context menus with nested submenus, keyboard navigation, type-select.
+      *Accept:* choosing by click, press-drag-release, keyboard and AccessKit sends the
+      item's message; separators and disabled items are skipped; focus returns on close;
+      gallery page and goldens (states × light/dark × 1×/2×).
+      *Done:* ADR 0045. `neue_kit::{Menu, MenuItem, MenuToggle, Shortcut, ContextMenu}`
+      (`Handle::set_menu`); `widgets/menu.rs` (`MenuWidget` layer, `MenuRowWidget` rows,
+      submenus as attached layers, session state for outside presses and release-to-choose,
+      focus on the highlighted row); tokens `materials::menu`, `TYPE_SELECT_RESET`; paint
+      `neue_paint::materials::{menu_panel, menu_highlight, menu_separator, menu_mark,
+      submenu_arrow}`. `Fixture::{context_click, press_key}`, `testing::NavKey`. Drivers
+      ignore removing a layer twice. Gallery page "Menus"; 12 goldens, passing on macOS
+      and Linux aarch64 (x86_64 not run); 15 end-to-end tests. VM steps in
+      `docs/checks/phase-2.md` §8, not run. Not yet: Wayland submenu flip to the left,
+      keeping overlays inside the window, focus return after a compositor dismissal,
+      submenu delay, tall-menu scrolling, Ctrl-click, animation.
+- [ ] **2.17b Pop-up button, pull-down button, combo box** · Sonnet (the 2.17a pattern).
+      Built on the 2.17a model and `widgets::menu::open`.
+      *Accept:* a pop-up button shows its selected item and opens its menu with that item
+      over the button (Wayland: anchored so the selected row lines up; overlay: same),
+      sends the chosen index, and type-selects while closed; a pull-down button opens
+      a menu of commands under itself with a fixed title; a combo box is a text field with
+      an arrow button whose menu fills the field; Space, Return or Down open them with the
+      keyboard; AccessKit roles (`ComboBox`, `has_popup`, expanded); gallery entries and
+      goldens (normal, pressed/open, focused, disabled × light/dark × 1×/2×). Also the edit
+      context menu (Cut, Copy, Paste, Select All) on text fields and text views.
+- [ ] **2.18 DBusMenu export** · Opus. New `neue-dbus` crate (Linux-only): export the 2.17a
       model as `com.canonical.dbusmenu` and set the KDE appmenu address (ADR 0005).
       *Accept:* a zbus test client reads the layout and fires an action; `gdbus
       introspect` works in the VM.

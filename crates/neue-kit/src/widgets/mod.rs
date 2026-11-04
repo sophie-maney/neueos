@@ -5,8 +5,10 @@
 
 mod bevel;
 mod button;
+mod context;
 mod field;
 mod label;
+mod menu;
 mod progress;
 mod root;
 mod rows;
@@ -31,9 +33,11 @@ use neue_theme::metrics::spacing;
 pub use bevel::BevelButton;
 pub(crate) use bevel::BevelWidget;
 pub(crate) use button::{ButtonWidget, Pressed};
+pub use context::ContextMenu;
 pub(crate) use field::FieldWidget;
 pub use field::TextField;
 pub(crate) use label::LabelWidget;
+pub(crate) use menu::{MenuRowWidget, MenuWidget};
 pub use progress::{ProgressBar, Spinner};
 pub(crate) use progress::{ProgressWidget, SpinnerWidget};
 pub(crate) use root::{RootAction, RootWidget};

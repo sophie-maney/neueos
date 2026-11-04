@@ -1,9 +1,9 @@
 //! The widgets the goldens render, shared with the gallery's pages.
 
 use neue_kit::{
-    BevelButton, Button, CheckState, Checkbox, Label, MaterialTile, ProgressBar, Radio, ScrollAxes,
-    ScrollView, Segmented, Slider, Specimen, Spinner, Stack, Stepper, TextField, TextView,
-    VirtualList,
+    BevelButton, Button, CheckState, Checkbox, ContextMenu, Label, MaterialTile, Menu, MenuItem,
+    ProgressBar, Radio, ScrollAxes, ScrollView, Segmented, Shortcut, Slider, Specimen, Spinner,
+    Stack, Stepper, TextField, TextView, VirtualList,
 };
 
 /// Golden window size for one push button (logical pixels): the button with the fixture's
@@ -232,4 +232,56 @@ pub fn virtual_list<M: 'static>(count: usize) -> VirtualList<M> {
     })
     .width(160.0)
     .height(100.0)
+}
+
+/// Golden window size for an open context menu (logical pixels).
+pub const MENU_SIZE: (u32, u32) = (250, 190);
+
+/// Golden window size for a context menu with its submenu open.
+pub const SUBMENU_SIZE: (u32, u32) = (370, 190);
+
+/// The command-key shortcut for `key`, as the gallery shows it: Cmd on macOS hosts, Ctrl
+/// elsewhere.
+pub fn command(key: &'static str) -> Shortcut {
+    Shortcut::command(key)
+}
+
+/// Ctrl and `key`: the same on every host, so goldens match on macOS and Linux.
+pub fn ctrl(key: &'static str) -> Shortcut {
+    Shortcut::new(key).ctrl()
+}
+
+/// The sample menu: Cut and Copy with shortcuts, a disabled Paste, a separator, a checked
+/// item, a submenu with a radio group, and Delete. `send(label)` is each item's message;
+/// `shortcut` makes the command shortcuts ([`command`] or [`ctrl`]).
+pub fn sample_menu<M: Clone + 'static>(
+    send: impl Fn(&'static str) -> M,
+    shortcut: fn(&'static str) -> Shortcut,
+) -> Menu<M> {
+    let item = |label: &'static str| MenuItem::new(label).on_choose(send(label));
+    Menu::new()
+        .with(item("Cut").shortcut(shortcut("X")))
+        .with(item("Copy").shortcut(shortcut("C")))
+        .with(item("Paste").shortcut(shortcut("V")).disabled(true))
+        .separator()
+        .with(item("Wrap Lines").checked(true))
+        .with(MenuItem::submenu(
+            "Text Size",
+            Menu::new()
+                .with(item("Small").radio(false))
+                .with(item("Regular").radio(true))
+                .with(item("Large").radio(false)),
+        ))
+        .with(item("Delete").shortcut(Shortcut::new("⌫")))
+}
+
+/// A label with the sample menu as its context menu.
+pub fn context_menu<M: Clone + 'static>(
+    send: impl Fn(&'static str) -> M,
+    shortcut: fn(&'static str) -> Shortcut,
+) -> ContextMenu<M> {
+    ContextMenu::new(
+        Label::new("Right-click here").secondary(),
+        sample_menu(send, shortcut),
+    )
 }

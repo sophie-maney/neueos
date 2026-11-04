@@ -322,7 +322,13 @@ impl Driver<'_> {
                 tracing::info!(%id, %widget, "widget selected in the inspector");
             }
             RenderRootSignal::NewLayer(_kind, root, origin) => win.root.add_layer(root, origin),
-            RenderRootSignal::RemoveLayer(root) => win.root.remove_layer(root),
+            // A layer can be removed twice: a menu's submenus go with it (Masonry's
+            // attached layers) and may also be removed on their own.
+            RenderRootSignal::RemoveLayer(root) => {
+                if win.root.get_widget(root).is_some() {
+                    win.root.remove_layer(root);
+                }
+            }
             RenderRootSignal::RepositionLayer(root, origin) => {
                 win.root.reposition_layer(root, origin);
             }

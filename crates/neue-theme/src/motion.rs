@@ -37,6 +37,9 @@ pub const CARET_BLINK_TIMEOUT: Duration = Duration::from_secs(10);
 pub const SCROLLER_HIDE_DELAY: Duration = Duration::from_millis(1000);
 /// Delay before a tooltip appears.
 pub const TOOLTIP_DELAY: Duration = Duration::from_millis(1000);
+/// Type-select in a menu (or list) starts over after this long without a key: typing
+/// "co" quickly finds "Copy", a pause and then "o" finds "Open".
+pub const TYPE_SELECT_RESET: Duration = Duration::from_millis(1000);
 
 /// A damped spring, described by how fast it settles and how much it overshoots.
 #[derive(Clone, Copy, Debug, PartialEq)]

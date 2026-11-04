@@ -18,6 +18,7 @@ use neue_theme::Theme;
 
 mod controls;
 mod fields;
+mod menus;
 mod scroll;
 mod textview;
 mod values;
