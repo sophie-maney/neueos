@@ -140,7 +140,7 @@ Effort: about one day, inside the ADR 0002 budget.
 - **Layer surfaces get no scale.** `refresh_surface_scales`
   (`compositor/neue-comp/src/outputs.rs`) walks windows only, so at scale 1.5 the
   layer-shell surface stays at 1 and is upscaled (blurry). The menu bar and dock (Phase 3)
-  need this. It's a few lines over `layer_map_for_output(..).layers()`.
+  need this. Planned as task 2.27 (`docs/plan/phase-2.md`).
 - **No `zwp_virtual_keyboard_manager_v1`** (ADR 0016 "Not done"). fcitx5 5.1.23 binds
   `zwp_input_method_manager_v2` but never creates an input method without it, so no fcitx5
   engine works under neue-comp today. The Phase 1 check §12 needs a re-run once it lands.

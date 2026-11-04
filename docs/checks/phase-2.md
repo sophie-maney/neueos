@@ -86,7 +86,7 @@ scp 'neueos-vm:/tmp/s*.png' ~/Desktop/neueos-shots/
 Expected: `neuectl outputs` shows `scale 1.5`, and the log has
 `scale changed window=0 scale=1.5`. In `s7.png` the window is 1.5× larger with sharp text
 and button edges. The layer-shell strip is also larger but blurry: neue-comp sends no scale
-to layer surfaces yet (a known gap, `docs/research/masonry-spike.md`).
+to layer surfaces yet (task 2.27). Once 2.27 lands, the strip is sharp too.
 
 **8. Clean up:**
 ```sh
