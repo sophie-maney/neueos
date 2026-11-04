@@ -66,9 +66,10 @@ pub use menu::{Menu, MenuItem, MenuToggle, Shortcut};
 pub use neue_platform::WindowId;
 pub use task::{Sender, Task};
 pub use widgets::{
-    Align, BevelButton, Button, CheckState, Checkbox, ComboBox, ContextMenu, Label, MaterialTile,
-    PopUpButton, ProgressBar, PullDownButton, Radio, ScrollAxes, ScrollView, Segmented, Slider,
-    Specimen, Spinner, Stack, Stepper, TextField, TextStyle, TextView, VirtualList, Zoom,
+    Align, BevelButton, Button, Cell, CheckState, Checkbox, Column, ComboBox, ContextMenu, Label,
+    MaterialTile, PopUpButton, ProgressBar, PullDownButton, Radio, ScrollAxes, ScrollView,
+    Segmented, Slider, SortOrder, Specimen, Spinner, Stack, Stepper, Table, TextField, TextStyle,
+    TextView, VirtualList, Zoom,
 };
 
 /// Design tokens (colours, metrics, type scale, motion).

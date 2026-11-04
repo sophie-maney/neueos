@@ -20,6 +20,7 @@ mod slider;
 mod specimen;
 mod stack;
 mod stepper;
+mod table;
 mod text;
 mod textview;
 mod ticker;
@@ -57,6 +58,10 @@ pub use stack::Align;
 pub(crate) use stack::StackWidget;
 pub use stepper::Stepper;
 pub(crate) use stepper::StepperWidget;
+#[cfg(test)]
+pub(crate) use table::TableRowWidget;
+pub use table::{Cell, Column, SortOrder, Table};
+pub(crate) use table::{CellWidget, ColumnHeaderWidget, HeaderWidget};
 pub use text::TextStyle;
 pub use textview::TextView;
 pub(crate) use textview::TextViewWidget;

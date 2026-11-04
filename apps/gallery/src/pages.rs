@@ -1,9 +1,13 @@
 //! The gallery's pages, one per widget (or family of widgets).
 
 use neue_kit::tokens::metrics::spacing;
+use std::cell::RefCell;
+use std::rc::Rc;
+
 use neue_kit::{
-    BevelButton, Button, Checkbox, ContextMenu, Element, Handle, Label, MaterialTile, PopUpButton,
-    ProgressBar, Radio, Segmented, Slider, Spinner, Stack, Stepper, TextField, TextStyle,
+    Align, BevelButton, Button, Cell, Checkbox, Column, ContextMenu, Element, Handle, Label,
+    MaterialTile, PopUpButton, ProgressBar, Radio, Segmented, Slider, SortOrder, Spinner, Stack,
+    Stepper, Table, TextField, TextStyle,
 };
 
 use crate::Message;
@@ -18,6 +22,33 @@ pub struct PageHandles {
     pub slider_value: Handle<Label>,
     pub slider_progress: Handle<ProgressBar>,
     pub stepper_value: Handle<Label>,
+    /// The Tables page: the files table and the files it shows, in its order.
+    pub files: Rc<RefCell<Vec<specimens::SampleFile>>>,
+    pub files_table: Handle<Table<Message>>,
+}
+
+impl PageHandles {
+    /// Sorts the Tables page's files by `column` and shows them again.
+    pub fn sort_files(&self, cx: &mut neue_kit::Cx<'_, Message>, column: usize, order: SortOrder) {
+        let mut files = self.files.borrow_mut();
+        files.sort_by(|a, b| match column {
+            0 => a.0.to_lowercase().cmp(&b.0.to_lowercase()),
+            1 => a.1.cmp(&b.1),
+            _ => a.2.cmp(b.2).then_with(|| a.0.cmp(b.0)),
+        });
+        if order == SortOrder::Descending {
+            files.reverse();
+        }
+        drop(files);
+        // The rows moved: the old selection would point at other files.
+        self.files_table.set_selection(cx, []);
+        self.files_table.reload(cx);
+    }
+
+    /// The name of the file in row `row` of the Tables page.
+    pub fn file_name(&self, row: usize) -> Option<&'static str> {
+        self.files.borrow().get(row).map(|f| f.0)
+    }
 }
 
 /// A gallery page: its title in the page list, and its content.
@@ -60,6 +91,10 @@ pub const PAGES: &[Page] = &[
     Page {
         title: "Pop-ups",
         build: pop_ups,
+    },
+    Page {
+        title: "Tables",
+        build: tables,
     },
     Page {
         title: "Text",
@@ -364,6 +399,67 @@ fn scrolling(_: &mut PageHandles) -> Element<Message> {
                 .with(section(
                     "Virtual list (1,000,000 rows)",
                     Stack::column().with(specimens::virtual_list(1_000_000)),
+                )),
+        )
+        .into()
+}
+
+fn tables(handles: &mut PageHandles) -> Element<Message> {
+    *handles.files.borrow_mut() = specimens::FILES.to_vec();
+    let files = Rc::clone(&handles.files);
+    let table = Table::new(
+        specimens::file_columns(),
+        specimens::FILES.len(),
+        move |row, column| {
+            files
+                .borrow()
+                .get(row)
+                .map(|file| specimens::file_cell(file, column))
+                .unwrap_or_default()
+        },
+    )
+    .multiple(true)
+    .alternating_rows(true)
+    .sorted(0, SortOrder::Ascending)
+    .on_select(|rows| Message::TableSelection(rows.len()))
+    .on_activate(Message::OpenFile)
+    .on_sort(Message::SortFiles)
+    .width(300.0)
+    .height(200.0)
+    .bind(&mut handles.files_table);
+    let columns = [
+        Column::new("#").width(60.0).align(Align::End),
+        Column::new("Task").width(140.0),
+        Column::new("Done").width(60.0),
+    ];
+    let tasks = Table::new(columns, 10_000, |row, column| -> Cell<Message> {
+        match column {
+            0 => format!("{}", row + 1).into(),
+            1 => format!("Task number {}", row + 1).into(),
+            _ => Cell::element(Checkbox::new("").checked(row % 3 == 0)),
+        }
+    })
+    .on_select(|rows| Message::TableSelection(rows.len()))
+    .width(300.0)
+    .height(200.0);
+    Stack::column()
+        .spacing(spacing::L)
+        .with(heading(
+            "Tables",
+            "Click a row · Shift-click or Shift-arrows extend the selection, Cmd/Ctrl-click \
+             adds a row · type a name to jump · Return or double-click opens · click a title \
+             to sort, again to reverse · drag a divider to resize a column",
+        ))
+        .with(
+            Stack::row()
+                .spacing(spacing::L)
+                .with(section(
+                    "Files (sortable, multiple selection)",
+                    Stack::column().with(table),
+                ))
+                .with(section(
+                    "10,000 rows, element cells",
+                    Stack::column().with(tasks),
                 )),
         )
         .into()
