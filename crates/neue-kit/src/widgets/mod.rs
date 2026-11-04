@@ -3,12 +3,15 @@
 //! A builder turns into an [`Element`] when it goes into a container or a window. Bind a
 //! [`Handle`] to it to change it later from [`crate::Application::update`].
 
+mod bevel;
 mod button;
 mod label;
 mod root;
+mod segmented;
 mod specimen;
 mod stack;
 mod text;
+mod toggle;
 mod zoom;
 
 use masonry_core::core::NewWidget;
@@ -17,13 +20,19 @@ use neue_paint::Backdrop;
 pub use neue_paint::demo::MaterialTile;
 use neue_theme::metrics::spacing;
 
+pub use bevel::BevelButton;
+pub(crate) use bevel::BevelWidget;
 pub(crate) use button::{ButtonWidget, Pressed};
 pub(crate) use label::LabelWidget;
 pub(crate) use root::{RootAction, RootWidget};
+pub use segmented::Segmented;
+pub(crate) use segmented::SegmentedWidget;
 pub(crate) use specimen::SpecimenWidget;
 pub use stack::Align;
 pub(crate) use stack::StackWidget;
 pub use text::TextStyle;
+pub(crate) use toggle::ToggleWidget;
+pub use toggle::{CheckState, Checkbox, Radio};
 pub(crate) use zoom::ZoomWidget;
 
 use crate::Cx;

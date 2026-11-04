@@ -23,6 +23,7 @@ pub struct Gallery {
     page: usize,
     zoom: usize,
     page_buttons: Vec<Handle<Button<Message>>>,
+    handles: pages::PageHandles,
     content: Handle<Stack<Message>>,
     zoomed: Handle<Zoom<Message>>,
     status: Handle<Label>,
@@ -45,6 +46,8 @@ pub enum Message {
     CycleZoom,
     /// A specimen was pressed.
     Pressed(&'static str),
+    /// Radio button `n` of the Buttons page was selected.
+    Radio(usize),
 }
 
 fn appearance_label(theme: Theme) -> String {
@@ -149,7 +152,7 @@ impl Application for Gallery {
                     .bind(&mut self.scale),
             );
         let content = Stack::column()
-            .with((pages::PAGES[self.page].build)())
+            .with((pages::PAGES[self.page].build)(&mut self.handles))
             .bind(&mut self.content);
         let main = Stack::column()
             .padding(spacing::L)
@@ -174,7 +177,8 @@ impl Application for Gallery {
                 }
                 self.page = n;
                 self.content.clear(cx);
-                self.content.push(cx, (pages::PAGES[n].build)());
+                self.content
+                    .push(cx, (pages::PAGES[n].build)(&mut self.handles));
             }
             Message::Page(_) => {}
             Message::ToggleAppearance => {
@@ -209,6 +213,15 @@ impl Application for Gallery {
                 self.scale.set_label(cx, zoom_label(zoom));
             }
             Message::Pressed(what) => self.status.set_text(cx, format!("Pressed “{what}”")),
+            Message::Radio(n) => {
+                // The app owns the choice: the others turn off.
+                for (i, radio) in self.handles.radios.iter().enumerate() {
+                    radio.set_selected(cx, i == n);
+                }
+                if let Some(name) = pages::RADIO_NAMES.get(n) {
+                    self.status.set_text(cx, format!("Pressed “{name}”"));
+                }
+            }
         }
         cx.set_theme(theme);
     }

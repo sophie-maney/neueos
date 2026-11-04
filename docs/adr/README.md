@@ -49,3 +49,4 @@ Don't edit an accepted ADR's decision; supersede it with a new one.
 | [0037](0037-widget-pattern-goldens-default-button.md) | The widget pattern: gallery goldens, window root, default button | Accepted |
 | [0038](0038-ui-font-dejavu-sans.md) | UI font: DejaVu Sans | Accepted |
 | [0039](0039-translucent-materials.md) | Translucent materials: opaque fallback, theme alpha, Specimen widget | Accepted |
+| [0040](0040-button-family-widgets.md) | The button family: checkbox, radio, bevel, recessed, segmented | Accepted |

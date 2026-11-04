@@ -46,12 +46,6 @@
 //! this API, and app crates must not depend on it (ADR 0002 §4, checked by
 //! `cargo xtask check`).
 
-// The first widgets to move on springs land with tasks 2.12 and 2.13 (checkbox,
-// segmented control, slider); until then only the tests use this module.
-#[cfg_attr(
-    not(test),
-    expect(dead_code, reason = "first users land with tasks 2.12–2.13")
-)]
 mod anim;
 mod app;
 mod element;
@@ -68,7 +62,10 @@ pub use app::{Application, Cx, Error, Settings, Window, run};
 pub use element::{Element, Handle};
 pub use neue_platform::WindowId;
 pub use task::{Sender, Task};
-pub use widgets::{Align, Button, Label, MaterialTile, Specimen, Stack, TextStyle, Zoom};
+pub use widgets::{
+    Align, BevelButton, Button, CheckState, Checkbox, Label, MaterialTile, Radio, Segmented,
+    Specimen, Stack, TextStyle, Zoom,
+};
 
 /// Design tokens (colours, metrics, type scale, motion).
 pub use neue_theme as tokens;

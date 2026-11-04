@@ -31,4 +31,14 @@ pub mod control {
     pub const RIM: f64 = 1.0;
     /// Width of the keyboard focus ring.
     pub const FOCUS_RING: f64 = 3.0;
+    /// Side of a checkbox and diameter of a radio button.
+    pub const CHECKBOX_SIZE: f64 = 14.0;
+    /// Gap between a checkbox or radio button and its label.
+    pub const CHECKBOX_GAP: f64 = 6.0;
+    /// Horizontal padding between a segment's edges and its label.
+    pub const SEGMENT_PADDING: f64 = 12.0;
+    /// Minimum width of a segment.
+    pub const SEGMENT_MIN_WIDTH: f64 = 40.0;
+    /// Minimum width of a bevel or recessed button.
+    pub const BEVEL_MIN_WIDTH: f64 = 28.0;
 }
