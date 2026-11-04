@@ -8,7 +8,10 @@ mod harness;
 use std::time::Duration;
 
 use harness::{Server, TestClient, Toplevel};
-use neue_ipc::{ActionParams, Event, OutputInfo, Subscription, Topic, WindowId, WindowInfo};
+use neue_ipc::{
+    ActionParams, AdaptiveSyncInfo, AdaptiveSyncMode, Event, OutputInfo, Subscription, Topic,
+    WindowId, WindowInfo,
+};
 
 /// `HEADLESS-2` at 1.5: 1920×1080 pixels, 1280×720 logical.
 const CONFIG: &str = "[outputs.\"HEADLESS-2\"]\nscale = 1.5\n";
@@ -251,4 +254,37 @@ fn config_reload_moves_and_rescales_outputs() {
     // Onto the moved output: scale 2.
     move_window(&server, id, -900, 0);
     assert_eq!(preferred_scale(&mut client, &window), Some(240));
+}
+
+#[test]
+fn adaptive_sync_setting_is_shown_and_reloads() {
+    let server = two_outputs();
+    let off = AdaptiveSyncInfo::default();
+    assert_eq!(output(&server, "HEADLESS-1").adaptive_sync, off);
+    assert_eq!(output(&server, "HEADLESS-2").adaptive_sync, off);
+
+    let mut events = subscribe(&server, vec![Topic::Outputs, Topic::Config]);
+    server.write_config("[outputs.\"HEADLESS-2\"]\nscale = 1.5\nadaptive-sync = \"fullscreen\"\n");
+    let changed = wait_for(&mut events, |event| match event {
+        Event::OutputChanged(info) => Some(info),
+        Event::ConfigError(info) => panic!("config rejected: {info}"),
+        _ => None,
+    });
+    // Headless outputs cannot do it: the mode is shown, but never active.
+    let fullscreen = AdaptiveSyncInfo {
+        mode: AdaptiveSyncMode::Fullscreen,
+        supported: false,
+        active: false,
+    };
+    assert_eq!(changed.name, "HEADLESS-2");
+    assert_eq!(changed.adaptive_sync, fullscreen);
+    assert_eq!(output(&server, "HEADLESS-1").adaptive_sync, off);
+
+    // A typo is rejected and the old setting stays.
+    server.write_config("[outputs.\"HEADLESS-2\"]\nadaptive-sync = \"always\"\n");
+    wait_for(&mut events, |event| match event {
+        Event::ConfigError(_) => Some(()),
+        _ => None,
+    });
+    assert_eq!(output(&server, "HEADLESS-2").adaptive_sync, fullscreen);
 }

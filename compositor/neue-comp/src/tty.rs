@@ -8,9 +8,11 @@
 //! with its own render and vblank cycle (task 1.7). udev change events on the GPU rescan
 //! the connectors: new ones become outputs, disconnected ones are removed, and a changed
 //! preferred mode (a monitor switch, or a resized VM window) is applied with a modeset.
-//! Direct scanout and VRR are task 1.15c; several GPUs a later task. The pointer (XCursor
-//! theme, task 1.9) is drawn on the cursor plane where the hardware has one (the DRM
-//! compositor falls back to compositing it otherwise).
+//! Several GPUs are a later task. The pointer (XCursor theme, task 1.9) is drawn on the
+//! cursor plane where the hardware has one (the DRM compositor falls back to compositing
+//! it otherwise). A full-screen client buffer can go straight onto the primary plane, and
+//! outputs run at a variable refresh rate when `adaptive-sync` asks for it (task 1.15c,
+//! ADR 0020, `scanout.rs` and `vrr.rs`).
 //!
 //! Outputs are drawn only when something changed (task 1.15b, ADR 0019): each has a
 //! [`Redraw`] that [`State::queue_redraw_all`] and the animated-cursor timer mark, and an
@@ -29,11 +31,10 @@ use neue_config::compositor::{ClickMethod, TouchpadConfig};
 use smithay::backend::allocator::Fourcc;
 use smithay::backend::allocator::format::FormatSet;
 use smithay::backend::allocator::gbm::{GbmAllocator, GbmBufferFlags, GbmDevice};
-use smithay::backend::drm::compositor::FrameFlags;
 use smithay::backend::drm::exporter::gbm::GbmFramebufferExporter;
 use smithay::backend::drm::output::{DrmOutput, DrmOutputManager, DrmOutputRenderElements};
 use smithay::backend::drm::{
-    DrmDevice, DrmDeviceFd, DrmEvent, DrmEventMetadata, DrmEventTime, DrmNode, NodeType,
+    DrmDevice, DrmDeviceFd, DrmEvent, DrmEventMetadata, DrmEventTime, DrmNode, NodeType, VrrSupport,
 };
 use smithay::backend::egl::{EGLContext, EGLDevice, EGLDisplay};
 use smithay::backend::input::InputEvent;
@@ -60,7 +61,7 @@ use smithay::reexports::wayland_protocols::wp::presentation_time::server::wp_pre
 use smithay::reexports::wayland_server::DisplayHandle;
 use smithay::utils::{DeviceFd, IsAlive, Physical, Point, Rectangle, Scale};
 use smithay::wayland::compositor::with_states;
-use smithay::wayland::dmabuf::{DmabufFeedbackBuilder, DmabufGlobal, DmabufState};
+use smithay::wayland::dmabuf::{DmabufGlobal, DmabufState};
 use smithay::wayland::drm_syncobj::{DrmSyncobjState, supports_syncobj_eventfd};
 use smithay::wayland::presentation::Refresh;
 use tracing::{debug, error, info, trace, warn};
@@ -68,15 +69,14 @@ use tracing::{debug, error, info, trace, warn};
 use crate::Error;
 use crate::cursor;
 use crate::redraw::Redraw;
+use crate::scanout::{self, FRAME_FLAGS, OutputFeedback};
 use crate::state::{Backend, State};
+use crate::vrr;
 
 /// Background behind all windows until the desktop picture lands (Phase 3). Same as winit.
 const CLEAR_COLOR: [f32; 4] = [0.18, 0.2, 0.24, 1.0];
 /// Primary plane formats, tried in order. 8-bit only until colour management (PLAN §3.1).
 const COLOR_FORMATS: [Fourcc; 2] = [Fourcc::Argb8888, Fourcc::Abgr8888];
-/// Overlay and primary-plane scanout of client buffers is task 1.15c; until then only the
-/// cursor goes on its own plane and everything else is composited.
-const FRAME_FLAGS: FrameFlags = FrameFlags::ALLOW_CURSOR_PLANE_SCANOUT;
 /// How far (logical pixels) from an output the pointer can be and still have its image
 /// drawn there: more than any cursor is tall.
 const CURSOR_REACH: i32 = 128;
@@ -109,6 +109,14 @@ struct OutputSurface {
     estimated_vblank: Option<RegistrationToken>,
     /// The timer for an animated cursor's next image, while it is armed.
     cursor_timer: Option<RegistrationToken>,
+    /// Per-surface dmabuf feedback for this output (none without a render node).
+    feedback: Option<OutputFeedback>,
+    /// What the connector can do for variable refresh.
+    vrr_support: vrr::Support,
+    /// The CRTC runs at a variable rate (as last set).
+    vrr_active: bool,
+    /// The `adaptive-sync` mode last checked against the connector, to warn once per change.
+    vrr_checked: Option<neue_config::compositor::AdaptiveSync>,
 }
 
 impl OutputSurface {
@@ -145,8 +153,10 @@ pub struct TtyData {
     loop_handle: LoopHandle<'static, State>,
     drm_source: Option<RegistrationToken>,
     udev_source: Option<RegistrationToken>,
-    /// The GPU, to match udev events.
+    /// The GPU's primary node, to match udev events; also the scanout device.
     node: DrmNode,
+    /// The node clients allocate on, for dmabuf feedback.
+    render_node: Option<DrmNode>,
     _dmabuf_global: DmabufGlobal,
     /// `linux-drm-syncobj-v1` (explicit sync), when the GPU supports `syncobj_eventfd`.
     pub(crate) syncobj_state: Option<DrmSyncobjState>,
@@ -198,6 +208,16 @@ impl TtyData {
         if let Err(err) = self.session.change_vt(vt) {
             warn!(vt, %err, "VT switch failed");
         }
+    }
+
+    /// What `output`'s connector can do for variable refresh, and whether it is on now.
+    pub fn adaptive_sync(&self, output: &Output) -> (vrr::Support, bool) {
+        self.surfaces
+            .iter()
+            .find(|s| s.output == *output)
+            .map_or((vrr::Support::None, false), |s| {
+                (s.vrr_support, s.vrr_active)
+            })
     }
 
     fn surface_mut(&mut self, crtc: crtc::Handle) -> Option<&mut OutputSurface> {
@@ -288,8 +308,8 @@ impl TtyData {
         let mut planes = drm
             .planes(&crtc)
             .map_err(|err| format!("querying planes: {err}"))?;
-        // Overlays are for direct scanout (task 1.15c). Not offering them also sidesteps the
-        // known overlay breakage on NVIDIA that anvil works around.
+        // Direct scanout uses the primary plane only (ADR 0020). Not offering overlays also
+        // sidesteps the known overlay breakage on NVIDIA that anvil works around.
         planes.overlay.clear();
 
         let output = create_output(info, drm_mode);
@@ -306,7 +326,27 @@ impl TtyData {
                 &DrmOutputRenderElements::default(),
             )
             .map_err(|err| format!("initialising the DRM output: {err:?}"))?;
-        info!(output = output.name(), ?crtc, mode = ?drm_mode, "connector lit");
+        let (plane_formats, vrr_support) = drm_output.with_compositor(|compositor| {
+            let support = match compositor.vrr_supported(info.handle()) {
+                Ok(VrrSupport::Supported) => vrr::Support::Seamless,
+                Ok(VrrSupport::RequiresModeset) => vrr::Support::NeedsModeset,
+                Ok(VrrSupport::NotSupported) => vrr::Support::None,
+                Err(err) => {
+                    debug!(?err, "querying VRR support failed");
+                    vrr::Support::None
+                }
+            };
+            (compositor.surface().plane_info().formats.clone(), support)
+        });
+        let feedback = self.render_node.and_then(|render_node| {
+            scanout::output_feedback(
+                render_node,
+                self.node,
+                &self.renderer.dmabuf_formats(),
+                &plane_formats,
+            )
+        });
+        info!(output = output.name(), ?crtc, mode = ?drm_mode, vrr = ?vrr_support, "connector lit");
         Ok(OutputSurface {
             output,
             connector: info.handle(),
@@ -314,6 +354,10 @@ impl TtyData {
             redraw: Redraw::new(),
             estimated_vblank: None,
             cursor_timer: None,
+            feedback,
+            vrr_support,
+            vrr_active: false,
+            vrr_checked: None,
         })
     }
 }
@@ -530,6 +574,7 @@ pub fn init(
         drm_source: Some(drm_source),
         udev_source: Some(udev_source),
         node,
+        render_node,
         renderer,
         output_manager,
         surfaces: Vec::new(),
@@ -651,12 +696,7 @@ fn create_dmabuf_global(
     render_node: Option<DrmNode>,
 ) -> DmabufGlobal {
     let formats = renderer.dmabuf_formats();
-    let feedback = render_node.and_then(|node| {
-        DmabufFeedbackBuilder::new(node.dev_id(), formats.clone())
-            .build()
-            .map_err(|err| warn!(?err, "building dmabuf feedback failed"))
-            .ok()
-    });
+    let feedback = render_node.and_then(|node| scanout::render_feedback(node, &formats));
     match feedback {
         Some(feedback) => dmabuf_state.create_global_with_default_feedback::<State>(dh, &feedback),
         None => {
@@ -767,7 +807,11 @@ fn on_vblank(state: &mut State, crtc: crtc::Handle, metadata: Option<DrmEventMet
         .output
         .current_mode()
         .map_or(Refresh::Unknown, |mode| {
-            crate::presentation::refresh_interval(mode.refresh)
+            match crate::presentation::refresh_interval(mode.refresh) {
+                // The mode's rate is the fastest a variable-rate output goes.
+                Refresh::Fixed(interval) if surface.vrr_active => Refresh::Variable(interval),
+                refresh => refresh,
+            }
         });
     match surface.drm_output.frame_submitted() {
         Ok(Some(mut feedback)) => feedback.presented(time, refresh, sequence, flags),
@@ -860,6 +904,56 @@ fn send_frame_callbacks(state: &State, output: &Output) {
     }
 }
 
+/// Set the CRTC's variable refresh to what `mode` asks for (`covered`: a full-screen window
+/// covers the output) from the next frame on. True if that changed it.
+fn update_vrr(
+    surface: &mut OutputSurface,
+    mode: neue_config::compositor::AdaptiveSync,
+    covered: bool,
+) -> bool {
+    if surface.vrr_checked != Some(mode) {
+        surface.vrr_checked = Some(mode);
+        if let Some(reason) = vrr::unmet(mode, surface.vrr_support) {
+            warn!(
+                output = surface.output.name(),
+                ?mode,
+                reason,
+                "adaptive sync not applied"
+            );
+        }
+    }
+    let wanted = vrr::wanted(mode, surface.vrr_support, covered);
+    if wanted == surface.vrr_active {
+        return false;
+    }
+    match surface
+        .drm_output
+        .with_compositor(|compositor| compositor.use_vrr(wanted))
+    {
+        Ok(()) => {
+            info!(
+                output = surface.output.name(),
+                active = wanted,
+                "adaptive sync switched"
+            );
+            surface.vrr_active = wanted;
+            true
+        }
+        Err(err) => {
+            // Treat the connector as unable, so this is not retried every frame.
+            if surface.vrr_support != vrr::Support::None {
+                warn!(
+                    output = surface.output.name(),
+                    ?err,
+                    "switching adaptive sync failed"
+                );
+            }
+            surface.vrr_support = vrr::Support::None;
+            false
+        }
+    }
+}
+
 /// Compose a frame for `crtc` and queue it for its next vblank. Without damage nothing is
 /// queued and the frame callbacks wait for the estimated vblank.
 fn render(state: &mut State, crtc: crtc::Handle) {
@@ -872,6 +966,7 @@ fn render(state: &mut State, crtc: crtc::Handle) {
         cursor_status,
         dnd_icon,
         chrome,
+        config,
         ..
     } = state;
     let Backend::Tty(tty) = backend else { return };
@@ -975,6 +1070,15 @@ fn render(state: &mut State, crtc: crtc::Handle) {
             .map(TtyElement::Output),
     );
 
+    let vrr_mode = config
+        .active
+        .outputs
+        .get(&output.name())
+        .map_or_else(Default::default, |c| c.adaptive_sync);
+    let covered = !crate::lock::with_output_lock(&output, |lock| lock.locked)
+        && crate::fullscreen::fullscreen_window_on(space, &output).is_some();
+    let vrr_changed = update_vrr(surface, vrr_mode, covered);
+
     let rendered =
         match surface
             .drm_output
@@ -988,6 +1092,9 @@ fn render(state: &mut State, crtc: crtc::Handle) {
                     dnd_icon.as_ref(),
                     &result.states,
                 );
+                if let Some(feedback) = &surface.feedback {
+                    scanout::send_feedback(space, &output, &result.states, feedback);
+                }
                 // Feedback goes with the frame only if there is one: without damage the
                 // callbacks wait for a later frame (or are discarded by the next commit).
                 (!result.is_empty)
@@ -1022,6 +1129,9 @@ fn render(state: &mut State, crtc: crtc::Handle) {
     // A real frame: callbacks now, so clients draw the next one while this one scans out.
     if queued {
         send_frame_callbacks(state, &output);
+    }
+    if vrr_changed {
+        state.report_outputs();
     }
     let Some(tty) = self::tty(state) else { return };
     let handle = tty.loop_handle.clone();

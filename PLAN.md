@@ -643,7 +643,7 @@ Decisions to follow: ADR 0001 (Smithay), 0003 (IPC), 0004 (config), 0005 (global
       steps 1–3) and found it fine. **Still to do:** explicit sync on the NVIDIA PC (§13
       step 4). Not done: tearing, explicit sync untested on hardware,
       per-app sandbox policy.
-- [ ] **1.15 Direct scanout and VRR** · Opus. Direct scanout for full-screen surfaces,
+- [x] **1.15 Direct scanout and VRR** · Opus. Direct scanout for full-screen surfaces,
       adaptive sync per output (config), damage review. Split in three (owner agreed);
       several GPUs are not part of it (see the 1.7 notes) and get their own task later.
   - [x] **1.15a Full-screen windows** · Opus. `xdg_toplevel` set/unset fullscreen: the
@@ -675,12 +675,20 @@ Decisions to follow: ADR 0001 (Smithay), 0003 (IPC), 0004 (config), 0005 (global
         Each render logs a `trace` event with running counts. VM check
         (`docs/dev-setup.md` §15) still to do by the owner. Not done: per-output redraw
         requests (all outputs are marked), winit still redraws continuously.
-  - [ ] **1.15c Direct scanout and VRR** · Opus. Primary-plane scanout of full-screen
+  - [x] **1.15c Direct scanout and VRR** · Opus. Primary-plane scanout of full-screen
         surfaces (overlay planes stay off, NVIDIA), scanout tranche in per-surface dmabuf
-        feedback, `[outputs."NAME"] adaptive_sync = "off" | "on" | "fullscreen"` (default
+        feedback, `[outputs."NAME"] adaptive-sync = "off" | "on" | "fullscreen"` (default
         `off`) checked against the connector, shown in `neuectl outputs`.
         *Accept:* config tests headless; scanout and VRR confirmed on real x86_64 hardware
         (owner, steps in `docs/dev-setup.md`); flagged in the PR.
+        *Done:* rules in ADR 0020. `scanout.rs` (frame flags, per-output render and
+        scanout feedback, sent after each render), `vrr.rs` (wanted state from mode,
+        connector support and the full-screen rule; unit tests), staged with `use_vrr` before
+        each tty render; presentation feedback reports a variable refresh while active.
+        `OutputInfo.adaptive_sync { mode, supported, active }` (additive), `neuectl outputs`
+        shows `vrr …`. Config parse tests, a headless reload test, neuectl format test.
+        Hardware check (`docs/dev-setup.md` §16) still to do by the owner. Not done:
+        overlay planes, rotated outputs, tearing, several GPUs.
 - [ ] **1.16 Screencopy** · Sonnet (Opus for the renderer part). ext-image-copy-capture
       (output and toplevel sources), `neuectl screenshot`. First gives the headless backend
       an optional GLES renderer on EGL surfaceless/device (ADR 0006); CI then needs Mesa.

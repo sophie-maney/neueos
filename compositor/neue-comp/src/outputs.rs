@@ -21,6 +21,7 @@
 
 use std::time::Duration;
 
+use neue_config::compositor::AdaptiveSync;
 use neue_ipc::{Event, OutputInfo};
 use smithay::backend::input::InputTime;
 use smithay::desktop::{Space, Window, layer_map_for_output};
@@ -409,6 +410,7 @@ impl State {
             .output_geometry(output)
             .map_or_else(|| output.current_location(), |g| g.loc);
         let props = output.physical_properties();
+        let (support, active) = self.backend.adaptive_sync(output);
         OutputInfo {
             name: output.name(),
             make: props.make,
@@ -419,12 +421,22 @@ impl State {
             height: mode.map_or(0, |m| m.size.h),
             refresh_mhz: mode.map_or(0, |m| m.refresh),
             scale: output.current_scale().fractional_scale(),
+            adaptive_sync: crate::vrr::info(self.adaptive_sync_mode(output), support, active),
         }
+    }
+
+    /// `[outputs."NAME"] adaptive-sync` for `output`.
+    pub fn adaptive_sync_mode(&self, output: &Output) -> AdaptiveSync {
+        self.config
+            .active
+            .outputs
+            .get(&output.name())
+            .map_or_else(AdaptiveSync::default, |config| config.adaptive_sync)
     }
 
     /// Emit `output_added`, `output_changed` and `output_removed` for what differs from the
     /// last report.
-    fn report_outputs(&mut self) {
+    pub(crate) fn report_outputs(&mut self) {
         let current: Vec<OutputInfo> = self.outputs().map(|o| self.output_info(o)).collect();
         let previous = std::mem::replace(&mut self.reported_outputs, current.clone());
         for old in &previous {
@@ -465,7 +477,7 @@ impl State {
 fn send_scale(window: &Window, output: &Output) {
     let scale = output.current_scale();
     window.with_surfaces(|surface, states| {
-        // Buffer transforms only pay off with direct scanout (task 1.15).
+        // Outputs are never rotated yet, so the buffer transform is always normal.
         send_surface_state(surface, states, scale.integer_scale(), Transform::Normal);
         with_fractional_scale(states, |fs| {
             fs.set_preferred_scale(scale.fractional_scale());

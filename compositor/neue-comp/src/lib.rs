@@ -47,12 +47,15 @@ mod presentation;
 mod redraw;
 #[cfg(any(feature = "winit", feature = "tty"))]
 mod render;
+#[cfg(feature = "tty")]
+mod scanout;
 mod security;
 mod shell_protocols;
 pub mod state;
 mod sync;
 #[cfg(feature = "tty")]
 mod tty;
+mod vrr;
 #[cfg(feature = "winit")]
 mod winit;
 pub mod wm;

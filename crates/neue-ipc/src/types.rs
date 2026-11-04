@@ -281,9 +281,34 @@ pub struct OutputInfo {
     /// Current mode in physical pixels.
     pub width: i32,
     pub height: i32,
-    /// Refresh rate in mHz (60 Hz is 60000).
+    /// Refresh rate in mHz (60 Hz is 60000). With adaptive sync active, the highest rate.
     pub refresh_mhz: i32,
     pub scale: f64,
+    /// Variable refresh rate. Missing from compositors before task 1.15c (all `false`, `off`).
+    #[serde(default)]
+    pub adaptive_sync: AdaptiveSyncInfo,
+}
+
+/// An output's variable refresh rate (`[outputs."NAME"] adaptive-sync`).
+#[derive(Debug, Clone, Copy, Default, PartialEq, Eq, Serialize, Deserialize)]
+pub struct AdaptiveSyncInfo {
+    /// What the config asks for.
+    pub mode: AdaptiveSyncMode,
+    /// The display and driver can do it. `fullscreen` also needs them to switch it without
+    /// a modeset; `on` takes one modeset if they cannot.
+    pub supported: bool,
+    /// The output runs at a variable rate right now.
+    pub active: bool,
+}
+
+/// The configured adaptive-sync mode.
+#[derive(Debug, Clone, Copy, Default, PartialEq, Eq, Serialize, Deserialize)]
+#[serde(rename_all = "snake_case")]
+pub enum AdaptiveSyncMode {
+    #[default]
+    Off,
+    On,
+    Fullscreen,
 }
 
 /// Whether and how an action takes a window.
