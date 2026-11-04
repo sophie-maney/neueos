@@ -25,6 +25,7 @@ mod menus;
 mod outline;
 mod popups;
 mod scroll;
+mod source_list;
 mod table;
 mod textview;
 mod values;

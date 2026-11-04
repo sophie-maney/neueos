@@ -265,6 +265,9 @@ pub(crate) enum Frame {
     Well,
     /// A hairline border (a table, ADR 0048), with the focus ring for focus inside it.
     Border,
+    /// A source list's sidebar (ADR 0050): no border and no focus ring, since the selection
+    /// shows the focus; the view itself is no Tab stop.
+    Sidebar,
 }
 
 #[derive(Debug)]
@@ -750,7 +753,7 @@ impl Widget for ScrollWidget {
         // A framed view keeps its content inside the well's or the table's border.
         let clip = match self.frame {
             Frame::Well => text_field_inside(outer.to_rect(), FieldShape::Square).rect(),
-            Frame::Border | Frame::None => inner,
+            Frame::Border | Frame::None | Frame::Sidebar => inner,
         };
         ctx.set_clip_path(clip);
         ctx.set_paint_insets(Insets::uniform(FOCUS_RING));
@@ -848,7 +851,10 @@ impl Widget for ScrollWidget {
         } else {
             ctx.is_focus_target()
         };
-        let ring = focused && ctx.is_window_focused() && !ctx.is_disabled();
+        let ring = focused
+            && self.frame != Frame::Sidebar
+            && ctx.is_window_focused()
+            && !ctx.is_disabled();
         let border = self.frame == Frame::Border;
         if !ring && !border {
             return;

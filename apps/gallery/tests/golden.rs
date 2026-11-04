@@ -12,8 +12,8 @@ use std::time::Duration;
 
 use neue_gallery::specimens::{
     self, BEVEL_SIZE, COMBO_SIZE, FIELD_SIZE, MENU_SIZE, OUTLINE_SIZE, POPUP_SIZE, PROGRESS_SIZE,
-    PULL_DOWN_SIZE, PUSH_BUTTON_SIZE, SCROLL_SIZE, SEGMENTED_SIZE, SLIDER_SIZE, SPINNER_SIZE,
-    STEPPER_SIZE, SUBMENU_SIZE, TABLE_SIZE, TEXT_VIEW_SIZE, TOGGLE_SIZE,
+    PULL_DOWN_SIZE, PUSH_BUTTON_SIZE, SCROLL_SIZE, SEGMENTED_SIZE, SIDEBAR_SIZE, SLIDER_SIZE,
+    SPINNER_SIZE, STEPPER_SIZE, SUBMENU_SIZE, TABLE_SIZE, TEXT_VIEW_SIZE, TOGGLE_SIZE,
 };
 use neue_kit::testing::{
     self, DISABLED, FOCUSED, Fixture, Goldens, INACTIVE, NORMAL, NavKey, PRESSED, State,
@@ -207,6 +207,9 @@ const ROW_PRESSED: State = ("row-pressed", |f: &mut Fixture| f.press_at(0.3, 0.7
 /// The pointer held down on the Kind column's title.
 const HEADER_PRESSED: State = ("header-pressed", |f: &mut Fixture| f.press_at(0.85, 0.07));
 
+/// The pointer over the Favorites group header: its Hide shows.
+const GROUP_HOVERED: State = ("group-hovered", |f: &mut Fixture| f.hover_at(0.5, 0.05));
+
 /// One golden set: `make` in `states`, in a `size` window, under the default theme.
 macro_rules! control_goldens {
     ($($test:ident: $name:literal, $size:expr, $states:expr, $make:expr;)+) => {$(
@@ -275,6 +278,13 @@ control_goldens! {
     outline_expanded: "outline-expanded", OUTLINE_SIZE, &[NORMAL], specimens::outline_expanded();
     outline_nested: "outline-nested", OUTLINE_SIZE, &[NORMAL], specimens::outline_nested();
     outline_selected: "outline-selected", OUTLINE_SIZE, &[NORMAL, FOCUSED], specimens::outline_selected();
+
+    // Groups and items with icons and badges; the pointer over a group; a selected item
+    // (grey at rest, the accent with focus); nested items; a closed group.
+    source_list: "source-list", SIDEBAR_SIZE, &[NORMAL, GROUP_HOVERED, DISABLED], specimens::source_list();
+    source_list_selected: "source-list-selected", SIDEBAR_SIZE, &[NORMAL, FOCUSED], specimens::source_list_selected();
+    source_list_nested: "source-list-nested", SIDEBAR_SIZE, &[NORMAL, FOCUSED], specimens::source_list_nested();
+    source_list_collapsed: "source-list-collapsed", SIDEBAR_SIZE, &[NORMAL], specimens::source_list_collapsed();
 
     pop_up_button: "pop-up-button", POPUP_SIZE, &[NORMAL, POPUP_PRESSED, OPEN_BY_KEY, FOCUSED, DISABLED], specimens::pop_up_button();
     pull_down_button: "pull-down-button", PULL_DOWN_SIZE, &[NORMAL, PRESSED, OPEN_BY_KEY, FOCUSED, DISABLED], specimens::pull_down_button(|_| ());

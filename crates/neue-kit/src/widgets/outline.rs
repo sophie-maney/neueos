@@ -17,6 +17,7 @@ use std::rc::Rc;
 use masonry_core::kurbo::Rect;
 
 use super::scroll::ScrollWidget;
+use super::source_list::{self, Entry};
 use super::table::{Cell, Column, SortOrder, Table};
 use crate::Cx;
 use crate::element::{Element, Handle};
@@ -242,6 +243,14 @@ impl<Id: Clone + Eq + Hash + 'static> Tree<Id> {
         self.reported = ids;
     }
 
+    /// Collapses `ids` before the view is shown.
+    fn collapse_initially(&mut self, ids: impl IntoIterator<Item = Id>) {
+        for id in ids {
+            self.expanded.remove(&id);
+        }
+        self.rows = self.flatten_from(None, 0);
+    }
+
     /// Expands `ids` (those with children) before the view is shown.
     fn expand_initially(&mut self, ids: impl IntoIterator<Item = Id>) {
         self.expanded.extend(ids);
@@ -398,7 +407,7 @@ impl<M: 'static, Id: Clone + Eq + Hash + 'static> Outline<M, Id> {
         children: impl FnMut(Option<&Id>) -> Vec<Id> + 'static,
         cell: impl FnMut(&Id, usize) -> C + 'static,
     ) -> Self {
-        Self::build(columns, Box::new(children), None, cell)
+        Self::build(columns, Box::new(children), None, cell, false)
     }
 
     /// Like [`new`](Self::new), with `expandable(id)` telling whether a node has children,
@@ -414,6 +423,19 @@ impl<M: 'static, Id: Clone + Eq + Hash + 'static> Outline<M, Id> {
             Box::new(children),
             Some(Box::new(expandable)),
             cell,
+            false,
+        )
+    }
+
+    /// A source list's outline (ADR 0050): one column, the sidebar style, each node shown
+    /// as `entry(id)`.
+    pub(super) fn source(children: Children<Id>, mut entry: Box<dyn FnMut(&Id) -> Entry>) -> Self {
+        Self::build(
+            source_list::columns(),
+            children,
+            None,
+            move |id: &Id, _| Cell::<M>::source(entry(id)),
+            true,
         )
     }
 
@@ -422,16 +444,22 @@ impl<M: 'static, Id: Clone + Eq + Hash + 'static> Outline<M, Id> {
         children: Children<Id>,
         expandable: Option<Expandable<Id>>,
         mut cell: impl FnMut(&Id, usize) -> C + 'static,
+        source_list: bool,
     ) -> Self {
         let tree = Rc::new(RefCell::new(Tree::new(children, expandable)));
         let rows = Rc::clone(&tree);
         let len = tree.borrow().rows.len();
-        let table = Table::new(columns, len, move |row, column| -> Cell<M> {
-            match rows.borrow().id_at(row) {
-                Some(id) => cell(id, column).into(),
-                None => Cell::text(""),
-            }
-        });
+        let table = Table::build(
+            columns,
+            len,
+            move |row, column| -> Cell<M> {
+                match rows.borrow().id_at(row) {
+                    Some(id) => cell(id, column).into(),
+                    None => Cell::text(""),
+                }
+            },
+            source_list,
+        );
         let shared: SharedTree = Rc::clone(&tree) as SharedTree;
         table.shared.borrow_mut().outline = Some(shared);
         Self {
@@ -448,6 +476,13 @@ impl<M: 'static, Id: Clone + Eq + Hash + 'static> Outline<M, Id> {
     #[must_use]
     pub fn expanded(self, ids: impl IntoIterator<Item = Id>) -> Self {
         self.tree.borrow_mut().expand_initially(ids);
+        self
+    }
+
+    /// Starts with the nodes `ids` collapsed (those that are expanded by default).
+    #[must_use]
+    pub(super) fn collapsed(self, ids: impl IntoIterator<Item = Id>) -> Self {
+        self.tree.borrow_mut().collapse_initially(ids);
         self
     }
 

@@ -63,13 +63,14 @@ mod tests;
 pub use app::{Application, Cx, Error, Settings, Window, run};
 pub use element::{Element, Handle};
 pub use menu::{Menu, MenuItem, MenuToggle, Shortcut};
+pub use neue_paint::materials::SourceIcon;
 pub use neue_platform::WindowId;
 pub use task::{Sender, Task};
 pub use widgets::{
-    Align, BevelButton, Button, Cell, CheckState, Checkbox, Column, ComboBox, ContextMenu, Label,
-    MaterialTile, Outline, PopUpButton, ProgressBar, PullDownButton, Radio, ScrollAxes, ScrollView,
-    Segmented, Slider, SortOrder, Specimen, Spinner, Stack, Stepper, Table, TextField, TextStyle,
-    TextView, VirtualList, Zoom,
+    Align, BevelButton, Button, Cell, CheckState, Checkbox, Column, ComboBox, ContextMenu, Entry,
+    Label, MaterialTile, Outline, PopUpButton, ProgressBar, PullDownButton, Radio, ScrollAxes,
+    ScrollView, Segmented, Slider, SortOrder, SourceList, Specimen, Spinner, Stack, Stepper, Table,
+    TextField, TextStyle, TextView, VirtualList, Zoom,
 };
 
 /// Design tokens (colours, metrics, type scale, motion).

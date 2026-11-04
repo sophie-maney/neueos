@@ -15,6 +15,7 @@ mod popup;
 mod progress;
 mod scroller;
 mod segmented;
+mod sidebar;
 mod slider;
 mod spinner;
 mod stepper;
@@ -40,6 +41,10 @@ pub use popup::{
 pub use progress::{Progress, progress_bar};
 pub use scroller::{Scroller, scroller, scroller_knob, scroller_travel};
 pub use segmented::{Segmented, segment_edges, segmented, segmented_outline};
+pub use sidebar::{
+    SourceIcon, SourceItem, SourceState, sidebar, source_badge, source_badge_rect,
+    source_group_action, source_group_x, source_icon, source_item, source_list_selection,
+};
 pub use slider::{Slider, slider, slider_knob, slider_value_at};
 pub use spinner::{Spinner, spinner};
 pub use stepper::{Stepper, StepperPart, stepper, stepper_outline, stepper_part_at};

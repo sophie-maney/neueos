@@ -1,10 +1,10 @@
 //! The widgets the goldens render, shared with the gallery's pages.
 
 use neue_kit::{
-    Align, BevelButton, Button, CheckState, Checkbox, Column, ComboBox, ContextMenu, Label,
+    Align, BevelButton, Button, CheckState, Checkbox, Column, ComboBox, ContextMenu, Entry, Label,
     MaterialTile, Menu, MenuItem, Outline, PopUpButton, ProgressBar, PullDownButton, Radio,
-    ScrollAxes, ScrollView, Segmented, Shortcut, Slider, SortOrder, Specimen, Spinner, Stack,
-    Stepper, Table, TextField, TextView, VirtualList,
+    ScrollAxes, ScrollView, Segmented, Shortcut, Slider, SortOrder, SourceIcon, SourceList,
+    Specimen, Spinner, Stack, Stepper, Table, TextField, TextView, VirtualList,
 };
 
 /// Golden window size for one push button (logical pixels): the button with the fixture's
@@ -381,6 +381,85 @@ pub fn outline_nested<M: 'static>() -> Outline<M, u32> {
 /// white with focus).
 pub fn outline_selected<M: 'static>() -> Outline<M, u32> {
     outline_nested().alternating_rows(true).selected([11])
+}
+
+/// Golden window size for a source list: 176 wide and ten rows high, with the fixture's
+/// margin.
+pub const SIDEBAR_SIZE: (u32, u32) = (192, 240);
+
+/// A node of the sample sidebar: id, parent (0 for a group), label, icon, badge.
+pub type SampleItem = (
+    u32,
+    u32,
+    &'static str,
+    Option<SourceIcon>,
+    Option<&'static str>,
+);
+
+/// The sidebars' sample groups (Favorites, Devices) and items.
+pub const ITEMS: [SampleItem; 10] = [
+    (1, 0, "Favorites", None, None),
+    (11, 1, "Documents", Some(SourceIcon::Document), None),
+    (12, 1, "Pictures", Some(SourceIcon::Picture), None),
+    (13, 1, "Music", Some(SourceIcon::Music), None),
+    (131, 13, "Albums", None, None),
+    (132, 13, "Artists", None, None),
+    (14, 1, "Starred", Some(SourceIcon::Star), Some("12")),
+    (2, 0, "Devices", None, None),
+    (21, 2, "Disk", Some(SourceIcon::Folder), None),
+    (22, 2, "Recent", Some(SourceIcon::Clock), Some("3")),
+];
+
+/// The ids of the sidebar nodes inside `parent` (`None`: the groups), in order.
+pub fn item_children(parent: Option<&u32>) -> Vec<u32> {
+    let parent = parent.copied().unwrap_or(0);
+    ITEMS
+        .iter()
+        .filter(|n| n.1 == parent)
+        .map(|n| n.0)
+        .collect()
+}
+
+/// The label of sidebar node `id`.
+pub fn item_label(id: u32) -> &'static str {
+    ITEMS.iter().find(|n| n.0 == id).map_or("", |n| n.2)
+}
+
+/// What a sidebar shows for node `id`.
+pub fn item_entry(id: u32) -> Entry {
+    let Some(&(_, _, label, icon, badge)) = ITEMS.iter().find(|n| n.0 == id) else {
+        return Entry::new("");
+    };
+    let mut entry = Entry::new(label);
+    if let Some(icon) = icon {
+        entry = entry.icon(icon);
+    }
+    if let Some(badge) = badge {
+        entry = entry.badge(badge);
+    }
+    entry
+}
+
+/// A source list of the sample groups, nothing selected.
+pub fn source_list<M: 'static>() -> SourceList<M, u32> {
+    SourceList::new(item_children, |&id| item_entry(id))
+        .width(176.0)
+        .height(224.0)
+}
+
+/// The sample source list with Starred selected (its badge turns white).
+pub fn source_list_selected<M: 'static>() -> SourceList<M, u32> {
+    source_list().selected(14)
+}
+
+/// The sample source list with Music open and the nested item Artists selected.
+pub fn source_list_nested<M: 'static>() -> SourceList<M, u32> {
+    source_list().expanded([13]).selected(132)
+}
+
+/// The sample source list with the Devices group closed.
+pub fn source_list_collapsed<M: 'static>() -> SourceList<M, u32> {
+    source_list().collapsed([2]).selected(12)
 }
 
 /// Golden window size for an open context menu (logical pixels).

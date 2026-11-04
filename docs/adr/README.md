@@ -59,3 +59,4 @@ Don't edit an accepted ADR's decision; supersede it with a new one.
 | [0047](0047-dbusmenu-export.md) | DBusMenu export: the neue-dbus crate and window menu bars | Accepted |
 | [0048](0048-table-view.md) | Table view: header slot, table body on the virtual rows, shared state | Accepted |
 | [0049](0049-outline-view.md) | Outline view: a table over a flattened tree, expansion by id, selection that follows rows | Accepted |
+| [0050](0050-source-list.md) | Source list: an outline style with unselectable group headers, sidebar and selection materials | Accepted |
