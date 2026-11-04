@@ -62,4 +62,9 @@ pub mod control {
     /// Space between a search field's rounded ends and its text (room for the magnifier
     /// on the left and the cancel button on the right).
     pub const SEARCH_FIELD_INSET: f64 = 22.0;
+    /// Width of an overlay scroller across its axis: the strip along a scroll view's edge
+    /// that takes the pointer while the scroller shows.
+    pub const SCROLLER_WIDTH: f64 = 15.0;
+    /// How far one line of a mouse wheel, or an arrow key, scrolls.
+    pub const SCROLL_LINE: f64 = 40.0;
 }

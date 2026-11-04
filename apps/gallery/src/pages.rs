@@ -46,6 +46,10 @@ pub const PAGES: &[Page] = &[
         build: fields,
     },
     Page {
+        title: "Scrolling",
+        build: scrolling,
+    },
+    Page {
         title: "Text",
         build: text,
     },
@@ -292,6 +296,34 @@ fn fields(_: &mut PageHandles) -> Element<Message> {
             "Narrow (scrolls to keep the caret in view)",
             Stack::column().with(TextField::new().width(90.0).text("Longer than the field")),
         ))
+        .into()
+}
+
+fn scrolling(_: &mut PageHandles) -> Element<Message> {
+    Stack::column()
+        .spacing(spacing::L)
+        .with(heading(
+            "Scrolling",
+            "Wheel or swipe over a view · the scrollers fade a second after scrolling stops \
+             · hover one to widen it, drag its knob or press beside it · Tab to a view for \
+             the arrow keys, Page Up/Down, Space, Home and End",
+        ))
+        .with(
+            Stack::row()
+                .spacing(spacing::L)
+                .with(section(
+                    "Scroll view",
+                    Stack::column().with(specimens::scroll_view(40)),
+                ))
+                .with(section(
+                    "Both directions",
+                    Stack::column().with(specimens::scroll_view_both()),
+                ))
+                .with(section(
+                    "Virtual list (1,000,000 rows)",
+                    Stack::column().with(specimens::virtual_list(1_000_000)),
+                )),
+        )
         .into()
 }
 

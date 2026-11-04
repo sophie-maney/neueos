@@ -11,6 +11,7 @@ pub mod hud;
 mod linen;
 pub mod menu_bar;
 mod progress;
+mod scroller;
 mod segmented;
 mod slider;
 mod spinner;
@@ -27,6 +28,7 @@ pub use bevel_button::{
 pub use focus_ring::focus_ring;
 pub use linen::{Linen, fill_linen};
 pub use progress::{Progress, progress_bar};
+pub use scroller::{Scroller, scroller, scroller_knob, scroller_travel};
 pub use segmented::{Segmented, segment_edges, segmented, segmented_outline};
 pub use slider::{Slider, slider, slider_knob, slider_value_at};
 pub use spinner::{Spinner, spinner};
