@@ -44,6 +44,9 @@ pub enum Request {
     /// active, or a `config_error` error naming the file, line and column; the old config
     /// stays active in that case.
     ReloadConfig,
+    /// Capture an output to a PNG file (ADR 0024). Reply: [`ScreenshotInfo`], sent once the
+    /// file is written.
+    Screenshot(ScreenshotParams),
     /// Stop the compositor. Reply: `null`, sent before the compositor exits.
     Quit,
 }
@@ -73,6 +76,33 @@ pub struct ActionParams {
     pub width: Option<i32>,
     #[serde(default, skip_serializing_if = "Option::is_none")]
     pub height: Option<i32>,
+}
+
+/// Parameters of [`Request::Screenshot`].
+#[derive(Debug, Clone, Default, PartialEq, Eq, Serialize, Deserialize)]
+pub struct ScreenshotParams {
+    /// Where to write the PNG: an absolute path, in a directory that exists. An existing
+    /// file is replaced.
+    pub path: String,
+    /// Output to capture by name (see `outputs`). Default: the first output.
+    #[serde(default, skip_serializing_if = "Option::is_none")]
+    pub output: Option<String>,
+    /// Draw the pointer into the capture, if the backend draws one itself (the tty
+    /// backend). Default: no.
+    #[serde(default, skip_serializing_if = "std::ops::Not::not")]
+    pub cursor: bool,
+}
+
+/// Payload of `screenshot`.
+#[derive(Debug, Clone, PartialEq, Eq, Serialize, Deserialize)]
+pub struct ScreenshotInfo {
+    /// The file that was written.
+    pub path: String,
+    /// The output that was captured.
+    pub output: String,
+    /// Size of the image in pixels: the output's mode after its transform.
+    pub width: u32,
+    pub height: u32,
 }
 
 /// Parameters of [`Request::Subscribe`].
@@ -180,6 +210,10 @@ pub enum ErrorCode {
     UnknownWindow,
     /// The action needs a window and none was given or focused.
     NoWindow,
+    /// `screenshot` named an output that does not exist (or there is none).
+    UnknownOutput,
+    /// `screenshot` could not capture or write the image; the message says why.
+    CaptureFailed,
     /// The line exceeded [`crate::MAX_LINE_BYTES`].
     LineTooLong,
     /// `reload-config` found a config file it cannot use; the message has the file, line
@@ -404,6 +438,11 @@ mod tests {
             Request::Version,
             Request::Quit,
             Request::ReloadConfig,
+            Request::Screenshot(ScreenshotParams {
+                path: "/tmp/a.png".into(),
+                output: Some("HEADLESS-1".into()),
+                cursor: true,
+            }),
             Request::Subscribe(SubscribeParams {
                 topics: vec![Topic::Windows],
             }),

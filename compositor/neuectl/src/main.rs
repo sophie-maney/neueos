@@ -9,8 +9,8 @@ use std::path::PathBuf;
 use anyhow::{Context, Result};
 use clap::{Parser, Subcommand};
 use neue_ipc::{
-    ActionInfo, ActionParams, AdaptiveSyncInfo, AdaptiveSyncMode, Client, OutputInfo, Topic,
-    VersionInfo, WindowArg, WindowId, WindowInfo,
+    ActionInfo, ActionParams, AdaptiveSyncInfo, AdaptiveSyncMode, Client, OutputInfo,
+    ScreenshotInfo, ScreenshotParams, Topic, VersionInfo, WindowArg, WindowId, WindowInfo,
 };
 
 #[derive(Debug, Parser)]
@@ -61,6 +61,17 @@ enum Command {
     },
     /// Re-read the config files now; fails with file, line and column if they are invalid.
     ReloadConfig,
+    /// Capture an output to a PNG file.
+    Screenshot {
+        /// File to write (relative paths are taken from the current directory).
+        path: PathBuf,
+        /// Output to capture (see `neuectl outputs`; default: the first).
+        #[arg(long, value_name = "NAME")]
+        output: Option<String>,
+        /// Include the pointer, where the backend draws one itself (the tty backend).
+        #[arg(long)]
+        cursor: bool,
+    },
     /// Stream window and config events until interrupted.
     #[command(alias = "events")]
     Subscribe,
@@ -117,6 +128,25 @@ fn main() -> Result<()> {
             height,
         })?,
         Command::ReloadConfig => client.reload_config()?,
+        Command::Screenshot {
+            path,
+            output,
+            cursor,
+        } => {
+            // The compositor runs elsewhere (another working directory), so it needs an
+            // absolute path.
+            let path = std::path::absolute(&path)
+                .with_context(|| format!("resolving {}", path.display()))?;
+            let info = client.screenshot(ScreenshotParams {
+                path: path
+                    .to_str()
+                    .context("the path is not valid UTF-8")?
+                    .to_owned(),
+                output,
+                cursor,
+            })?;
+            emit(&mut out, cli.json, &info, format_screenshot)?;
+        }
         Command::Quit => client.quit()?,
         Command::Subscribe => {
             for event in client.subscribe(vec![Topic::Windows, Topic::Config, Topic::Outputs])? {
@@ -143,6 +173,13 @@ fn emit<T: serde::Serialize + ?Sized>(
         write!(out, "{}", text(value))?;
     }
     Ok(())
+}
+
+fn format_screenshot(info: &ScreenshotInfo) -> String {
+    format!(
+        "{} ({}, {}x{})\n",
+        info.path, info.output, info.width, info.height
+    )
 }
 
 fn format_version(info: &VersionInfo) -> String {
@@ -333,5 +370,29 @@ mod tests {
                 ..
             }
         ));
+    }
+
+    #[test]
+    fn parses_screenshot_options() {
+        let cli = Cli::try_parse_from([
+            "neuectl",
+            "screenshot",
+            "shot.png",
+            "--output",
+            "DP-1",
+            "--cursor",
+        ])
+        .expect("valid command line");
+        let Command::Screenshot {
+            path,
+            output,
+            cursor,
+        } = cli.command
+        else {
+            panic!("not a screenshot command");
+        };
+        assert_eq!(path, PathBuf::from("shot.png"));
+        assert_eq!(output.as_deref(), Some("DP-1"));
+        assert!(cursor);
     }
 }

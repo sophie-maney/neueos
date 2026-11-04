@@ -9,7 +9,9 @@ use std::os::unix::net::UnixStream;
 use std::time::Duration;
 
 use harness::Server;
-use neue_ipc::{ClientError, ErrorCode, Event, PROTOCOL_VERSION, Topic, WindowArg, WindowId};
+use neue_ipc::{
+    ClientError, ErrorCode, Event, PROTOCOL_VERSION, ScreenshotParams, Topic, WindowArg, WindowId,
+};
 use wayland_protocols::xdg::shell::client::xdg_toplevel;
 
 /// A raw connection for sending hand-written lines.
@@ -305,4 +307,87 @@ fn quit_action_is_equivalent() {
     ipc.action("quit", None).unwrap();
     drop(server);
     assert!(ipc.windows().is_err());
+}
+
+fn screenshot_params(path: &std::path::Path) -> ScreenshotParams {
+    ScreenshotParams {
+        path: path.to_str().unwrap().to_owned(),
+        ..ScreenshotParams::default()
+    }
+}
+
+#[test]
+fn screenshot_errors_have_stable_codes() {
+    let dir = tempfile::tempdir().unwrap();
+    let code = |result: Result<_, ClientError>| match result {
+        Err(ClientError::Remote(body)) => body.code,
+        other => panic!("expected a remote error, got {other:?}"),
+    };
+
+    // Relative paths are refused before anything is drawn.
+    let server = Server::start();
+    let mut ipc = server.ipc();
+    let relative = ScreenshotParams {
+        path: "shot.png".into(),
+        ..ScreenshotParams::default()
+    };
+    assert_eq!(code(ipc.screenshot(relative)), ErrorCode::InvalidParams);
+
+    // Without the headless renderer there is nothing to draw with.
+    let path = dir.path().join("none.png");
+    assert_eq!(
+        code(ipc.screenshot(screenshot_params(&path))),
+        ErrorCode::CaptureFailed
+    );
+    assert!(!path.exists());
+
+    let server = Server::start_rendering();
+    let mut ipc = server.ipc();
+    let unknown = ScreenshotParams {
+        output: Some("NOPE-1".into()),
+        ..screenshot_params(&dir.path().join("nope.png"))
+    };
+    assert_eq!(code(ipc.screenshot(unknown)), ErrorCode::UnknownOutput);
+
+    // A directory that does not exist is a write error, reported after the capture.
+    let missing = dir.path().join("missing/shot.png");
+    assert_eq!(
+        code(ipc.screenshot(screenshot_params(&missing))),
+        ErrorCode::CaptureFailed
+    );
+    // The connection survives.
+    assert_eq!(ipc.version().unwrap().protocol, PROTOCOL_VERSION);
+}
+
+#[test]
+fn screenshot_reply_comes_before_later_requests_on_the_connection() {
+    let server = Server::start_rendering();
+    let dir = tempfile::tempdir().unwrap();
+    let path = dir.path().join("shot.png");
+    let (mut stream, mut reader) = raw(&server);
+    let line = |id: u64, request: serde_json::Value| {
+        format!("{}\n", {
+            let mut object = serde_json::json!({"id": id});
+            object
+                .as_object_mut()
+                .unwrap()
+                .extend(request.as_object().unwrap().clone());
+            object
+        })
+    };
+    let screenshot = serde_json::json!({
+        "request": "screenshot",
+        "params": {"path": path.to_str().unwrap()},
+    });
+    // Both requests in one write: the second must wait for the first's reply.
+    let both = line(1, screenshot) + &line(2, serde_json::json!({"request": "version"}));
+    stream.write_all(both.as_bytes()).unwrap();
+
+    let first = read_json(&mut reader);
+    assert_eq!(first["id"], 1, "{first}");
+    assert_eq!(first["ok"]["output"], neue_comp::HEADLESS_OUTPUT_NAME);
+    assert!(path.exists(), "the file is written before the reply");
+    let second = read_json(&mut reader);
+    assert_eq!(second["id"], 2, "{second}");
+    assert_eq!(second["ok"]["protocol"], PROTOCOL_VERSION);
 }

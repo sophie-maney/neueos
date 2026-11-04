@@ -7,8 +7,10 @@
 //! its write buffer as the socket accepts; the next writable edge continues a partial
 //! write. A peer whose unsent output exceeds [`MAX_LINE_BYTES`] is disconnected.
 //!
-//! Slow work (task 1.16's screenshots) will run on a worker thread and answer through a
-//! calloop channel; nothing in 1.3 needs it.
+//! Slow work runs on a worker thread and answers through a calloop channel: `screenshot`
+//! draws on the event loop (like a screencopy frame) but encodes and writes the PNG on a
+//! thread (ADR 0024). A connection with such a request in flight answers nothing else
+//! until the reply is queued, so replies stay in request order.
 
 use std::collections::{HashMap, HashSet};
 use std::io::{self, Read, Write};
@@ -18,10 +20,11 @@ use std::path::{Path, PathBuf};
 
 use neue_ipc::{
     ActionInfo, ActionParams, ErrorBody, ErrorCode, Event, LineBuffer, MAX_LINE_BYTES, Outcome,
-    OutputInfo, PROTOCOL_VERSION, Reply, Request, Topic, VersionInfo, WindowArg, WindowId,
-    encode_line, parse_request,
+    OutputInfo, PROTOCOL_VERSION, Reply, Request, ScreenshotInfo, ScreenshotParams, Topic,
+    VersionInfo, WindowArg, WindowId, encode_line, parse_request,
 };
 use serde_json::Value;
+use smithay::reexports::calloop::channel::{self, Channel, Sender};
 use smithay::reexports::calloop::generic::Generic;
 use smithay::reexports::calloop::{Interest, LoopHandle, Mode, PostAction, RegistrationToken};
 use tracing::{debug, info, warn};
@@ -105,6 +108,7 @@ const ACTIONS: &[(&str, &str, WindowArg, &[&str])] = &[
 /// One client of the socket.
 #[derive(Debug)]
 struct Connection {
+    id: u64,
     /// Our handle on the socket (a dup of the one inside the event source; both share the
     /// open file description, hence the non-blocking flag).
     stream: UnixStream,
@@ -114,6 +118,16 @@ struct Connection {
     output: Vec<u8>,
     /// Set by `subscribe`: the connection then only receives these topics' events.
     topics: Option<HashSet<Topic>>,
+    /// A request is being answered on a worker thread: don't read further requests yet.
+    waiting: bool,
+}
+
+/// A screenshot a worker thread has finished, back on the event loop.
+#[derive(Debug)]
+struct ScreenshotDone {
+    connection: u64,
+    request: u64,
+    result: Result<ScreenshotInfo, ErrorBody>,
 }
 
 impl Connection {
@@ -150,6 +164,8 @@ pub struct IpcServer {
     next_connection: u64,
     /// The last focus change sent as an event, to suppress duplicates.
     pub(crate) reported_focus: Option<WindowId>,
+    /// Where worker threads report finished screenshots; set by [`IpcServer::listen`].
+    screenshots: Option<Sender<ScreenshotDone>>,
 }
 
 impl IpcServer {
@@ -160,6 +176,7 @@ impl IpcServer {
             connections: HashMap::new(),
             next_connection: 0,
             reported_focus: None,
+            screenshots: None,
         }
     }
 
@@ -194,6 +211,16 @@ impl IpcServer {
             )
             .map_err(|e| e.error)
             .map_err(Error::init("adding the neuectl socket source"))?;
+        let (sender, receiver): (_, Channel<ScreenshotDone>) = channel::channel();
+        self.handle
+            .insert_source(receiver, |event, _, state: &mut State| {
+                if let channel::Event::Msg(done) = event {
+                    state.ipc_screenshot_done(done);
+                }
+            })
+            .map_err(|e| e.error)
+            .map_err(Error::init("adding the screenshot channel"))?;
+        self.screenshots = Some(sender);
         self.path = Some(path.to_owned());
         info!(path = %path.display(), "neuectl socket ready");
         Ok(())
@@ -274,11 +301,13 @@ impl State {
         self.ipc.connections.insert(
             id,
             Connection {
+                id,
                 stream: ours,
                 token,
                 input: LineBuffer::new(),
                 output: Vec::new(),
                 topics: None,
+                waiting: false,
             },
         );
         debug!(id, "neuectl client connected");
@@ -314,52 +343,140 @@ impl State {
                 Err(err) if err.kind() == io::ErrorKind::Interrupted => continue,
                 Err(_) => return false,
             }
-            loop {
-                match conn.input.pop_line() {
-                    Ok(Some(line)) => {
-                        // Event mode carries nothing from the client; discard it.
-                        if conn.topics.is_none() {
-                            let reply = self.ipc_answer(conn, &line);
-                            if !conn.queue(&encode_line(&reply)) {
-                                return false;
-                            }
-                        }
-                    }
-                    Ok(None) => break,
-                    Err(_) => {
-                        let reply = error_reply(
-                            None,
-                            ErrorCode::LineTooLong,
-                            format!("request line exceeds {MAX_LINE_BYTES} bytes"),
-                        );
-                        conn.queue(&encode_line(&reply));
-                        conn.flush();
-                        return false;
-                    }
-                }
+            if !self.ipc_answer_lines(conn) {
+                return false;
             }
         }
     }
 
-    /// Answer one request line.
-    fn ipc_answer(&mut self, conn: &mut Connection, line: &[u8]) -> Reply {
+    /// Answer the complete lines buffered on `conn`, stopping while a request is in flight.
+    /// `false` if the connection must be dropped.
+    fn ipc_answer_lines(&mut self, conn: &mut Connection) -> bool {
+        while !conn.waiting {
+            match conn.input.pop_line() {
+                Ok(Some(line)) => {
+                    // Event mode carries nothing from the client; discard it.
+                    if conn.topics.is_none()
+                        && let Some(reply) = self.ipc_answer(conn, &line)
+                        && !conn.queue(&encode_line(&reply))
+                    {
+                        return false;
+                    }
+                }
+                Ok(None) => break,
+                Err(_) => {
+                    let reply = error_reply(
+                        None,
+                        ErrorCode::LineTooLong,
+                        format!("request line exceeds {MAX_LINE_BYTES} bytes"),
+                    );
+                    conn.queue(&encode_line(&reply));
+                    conn.flush();
+                    return false;
+                }
+            }
+        }
+        true
+    }
+
+    /// Answer one request line. `None` if the reply comes later, from a worker thread
+    /// (the connection is then marked `waiting`).
+    fn ipc_answer(&mut self, conn: &mut Connection, line: &[u8]) -> Option<Reply> {
         let envelope = match parse_request(line) {
             Ok(envelope) => envelope,
-            Err(reply) => return reply,
+            Err(reply) => return Some(reply),
         };
         let outcome = match envelope.request {
             Request::Subscribe(params) => {
                 conn.topics = Some(params.topics.into_iter().collect());
                 Ok(Value::Null)
             }
+            Request::Screenshot(params) => {
+                match self.start_screenshot(conn.id, envelope.id, params) {
+                    Ok(()) => {
+                        conn.waiting = true;
+                        return None;
+                    }
+                    Err(body) => Err(body),
+                }
+            }
             request => self.ipc_request(request),
         };
-        Reply {
+        Some(Reply {
             id: Some(envelope.id),
             outcome: match outcome {
                 Ok(value) => Outcome::Ok(value),
                 Err(body) => Outcome::Error(body),
             },
+        })
+    }
+
+    /// Capture the output now and hand the PNG encoding and file write to a thread, which
+    /// reports through the screenshot channel.
+    fn start_screenshot(
+        &mut self,
+        connection: u64,
+        request: u64,
+        params: ScreenshotParams,
+    ) -> Result<(), ErrorBody> {
+        let path = PathBuf::from(&params.path);
+        if !path.is_absolute() {
+            return Err(ErrorBody::new(
+                ErrorCode::InvalidParams,
+                "`path` must be absolute",
+            ));
+        }
+        let shot = self.capture_output_now(params.output.as_deref(), params.cursor)?;
+        let sender = self.ipc.screenshots.clone().ok_or_else(|| {
+            ErrorBody::new(ErrorCode::Internal, "the screenshot channel is not set up")
+        })?;
+        std::thread::Builder::new()
+            .name("neue-screenshot".into())
+            .spawn(move || {
+                let result = write_png(&path, &shot);
+                // The compositor may have exited meanwhile; nobody is waiting then.
+                let _ = sender.send(ScreenshotDone {
+                    connection,
+                    request,
+                    result,
+                });
+            })
+            .map(drop)
+            .map_err(|err| {
+                ErrorBody::new(
+                    ErrorCode::Internal,
+                    format!("starting the encoder thread: {err}"),
+                )
+            })
+    }
+
+    /// A worker finished a screenshot: queue the reply and resume the connection.
+    fn ipc_screenshot_done(&mut self, done: ScreenshotDone) {
+        let Some(mut conn) = self.ipc.connections.remove(&done.connection) else {
+            return; // the client left
+        };
+        let reply = Reply {
+            id: Some(done.request),
+            outcome: match done.result {
+                Ok(info) => match serde_json::to_value(&info) {
+                    Ok(value) => Outcome::Ok(value),
+                    Err(err) => Outcome::Error(ErrorBody::new(
+                        ErrorCode::Internal,
+                        format!("encoding the reply failed: {err}"),
+                    )),
+                },
+                Err(body) => Outcome::Error(body),
+            },
+        };
+        conn.waiting = false;
+        let alive =
+            conn.queue(&encode_line(&reply)) && self.ipc_answer_lines(&mut conn) && conn.flush();
+        self.queue_redraw_all();
+        if alive {
+            self.ipc.connections.insert(done.connection, conn);
+        } else {
+            debug!(id = done.connection, "neuectl client disconnected");
+            self.ipc.handle.remove(conn.token);
         }
     }
 
@@ -396,7 +513,7 @@ impl State {
                 Ok(Value::Null)
             }
             // Handled by the caller, which owns the connection.
-            Request::Subscribe(_) => Ok(Value::Null),
+            Request::Subscribe(_) | Request::Screenshot(_) => Ok(Value::Null),
         }
     }
 
@@ -524,6 +641,43 @@ impl State {
 /// Whether `name` is an action `neuectl action` (and `[keybindings]`) accepts.
 pub(crate) fn is_action(name: &str) -> bool {
     ACTIONS.iter().any(|&(n, ..)| n == name)
+}
+
+/// Encode `shot` as a PNG and write it to `path`. Runs on a worker thread.
+fn write_png(
+    path: &Path,
+    shot: &crate::screencopy::OutputShot,
+) -> Result<ScreenshotInfo, ErrorBody> {
+    use neue_paint::Pixmap;
+    use neue_paint::color::PremulRgba8;
+
+    let failed = |message: String| ErrorBody::new(ErrorCode::CaptureFailed, message);
+    let too_big = || failed(format!("a {:?} image is too large", shot.size));
+    let (width, height) = (
+        u16::try_from(shot.size.w).map_err(|_| too_big())?,
+        u16::try_from(shot.size.h).map_err(|_| too_big())?,
+    );
+    // ARGB8888 is bytes B, G, R, A; the capture is opaque, so straight and premultiplied
+    // alpha are the same.
+    let mut pixmap = Pixmap::new(width, height);
+    for (pixel, &[b, g, r, a]) in pixmap
+        .data_mut()
+        .iter_mut()
+        .zip(shot.data.as_chunks::<4>().0)
+    {
+        *pixel = PremulRgba8 { r, g, b, a };
+    }
+    let png = pixmap
+        .into_png()
+        .map_err(|err| failed(format!("encoding the PNG: {err}")))?;
+    std::fs::write(path, png)
+        .map_err(|err| failed(format!("writing {}: {err}", path.display())))?;
+    Ok(ScreenshotInfo {
+        path: path.display().to_string(),
+        output: shot.output.clone(),
+        width: u32::from(width),
+        height: u32::from(height),
+    })
 }
 
 /// An action argument that must be present.

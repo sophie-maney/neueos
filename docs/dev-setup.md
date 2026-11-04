@@ -544,3 +544,36 @@ called FreeSync) switched on in the monitor's own menu. Rebuild and start on the
    modeset); the desktop has no visible flicker when idle (some panels flicker at low
    rates: if yours does, note it, that is why `fullscreen` exists).
 Record which of these you ran, on which GPU and monitor, in the PR.
+
+## 17. Checking screenshots and screencopy in the VM (task 1.16d)
+Install once: `sudo pacman -S --needed grim wf-recorder` (grim 1.5 or newer speaks
+`ext-image-copy-capture`; older ones only know wlr-screencopy and fail with "compositor
+doesn't support the screen capture protocol"). Rebuild and start on the tty as in §4, with
+`RUST_LOG=info,neue_comp=debug neue-comp --tty -c foot 2>/tmp/comp.log`, then run these
+from a terminal inside the session (or over ssh with `NEUE_SOCKET` and `WAYLAND_DISPLAY`
+set). View the PNGs by copying them to the Mac (§2.4).
+1. **`neuectl screenshot`:** `neuectl screenshot /tmp/a.png` prints the path, output name
+   and size, and the PNG shows the whole screen with the `foot` window and its title bar.
+   `neuectl --json screenshot b.png` writes `b.png` in the current directory.
+   `neuectl screenshot --output NOPE /tmp/c.png` fails with `unknown_output`, and a path
+   in a directory that does not exist fails with `capture_failed`.
+2. **Cursor:** `neuectl screenshot --cursor /tmp/cursor.png` shows the pointer (move it
+   over the `foot` window first); without `--cursor` it is missing.
+3. **grim, shm:** `grim /tmp/grim.png` matches step 1 (no pointer). `grim -g "$(neuectl
+   --json windows | jq -r '.[0] | "\(.x),\(.y) \(.width)x\(.height)"')" /tmp/win.png`
+   crops to the window.
+4. **grim, cursor:** `grim -c /tmp/grim-cursor.png` shows the pointer exactly as the
+   screen does, including a client's own cursor image (hover a text field in a GTK app)
+   and while dragging a file between windows (the drag icon). This path only exists on
+   the tty backend, which CI cannot run.
+5. **dmabuf:** `wf-recorder -f /tmp/rec.mp4` for a few seconds while moving a window
+   (Ctrl-C to stop), then play `/tmp/rec.mp4`: smooth, correct colours, no stale frames.
+   It uses dmabufs unless you pass `--no-dmabuf`; the first `screencopy session started`
+   line in `/tmp/comp.log` is logged either way, so note whether the recorder reported a
+   dmabuf or an shm capture. If it only works with `--no-dmabuf`, copy the log lines
+   around the failure into the PR: that is the dmabuf blit (ADR 0022) failing on this
+   GPU.
+6. **Mode change:** with `wf-recorder` running, change the output mode (resize the
+   Parallels window, or `neuectl outputs` before and after); the recording continues or
+   ends cleanly, and the compositor does not crash.
+Record which of these you ran, and on which GPU, in the PR.

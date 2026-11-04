@@ -7,7 +7,8 @@ use std::path::{Path, PathBuf};
 use crate::codec::{encode_line, read_line};
 use crate::types::{
     ActionInfo, ActionParams, ErrorBody, Event, Outcome, OutputInfo, Reply, Request,
-    RequestEnvelope, SubscribeParams, Topic, VersionInfo, WindowId, WindowInfo,
+    RequestEnvelope, ScreenshotInfo, ScreenshotParams, SubscribeParams, Topic, VersionInfo,
+    WindowId, WindowInfo,
 };
 
 /// Environment variable that holds the socket path. The compositor sets it for children.
@@ -162,6 +163,11 @@ impl Client {
     /// [`crate::ErrorCode::ConfigError`] means the files were rejected; the old config stays.
     pub fn reload_config(&mut self) -> Result<(), ClientError> {
         self.call(Request::ReloadConfig).map(drop)
+    }
+
+    /// Capture an output to a PNG file at `params.path` and wait until it is written.
+    pub fn screenshot(&mut self, params: ScreenshotParams) -> Result<ScreenshotInfo, ClientError> {
+        self.call_typed(Request::Screenshot(params))
     }
 
     /// Ask the compositor to exit.
