@@ -742,14 +742,17 @@ the toolbar).
       *Fix:* `Gpu` (`neue-platform/src/gpu.rs`) kept one vello_hybrid renderer for every
       surface; on Wayland a menu or popover is its own xdg-popup surface, drawn right
       after the window. Every `SurfaceTarget` now has its own `Renderer` (device and
-      queue stay shared). The exact fault inside vello_gpu is unknown.
+      queue stay shared). The exact fault inside vello_gpu is unknown. A new renderer
+      compiles all of vello_gpu's shaders (about 250 ms on virgl), so closed surfaces hand
+      theirs back to a small pool in `Gpu`, and one spare is built after the first frame.
       *Diverged from the plan:* an offscreen test (a large and a small target in turn
       through one renderer, with no waits) never failed: not on Metal, llvmpipe GL or the
       VM's virgl GL. The bug needs the real surfaces and present. The owner accepted the
       scripted VM check instead: `sweep menu` and `sweep popover` (`docs/vm-env.sh`, 30 s
       each) screenshot in a loop while the pointer sweeps the popup and count see-through
-      shots. Before: menu 42/3015 and 51/2994, popover 15/2827 and 24/2841. After: menu
-      0/1001 and 0/994, popover 0/2801 and 0/2826. Re-run: 4.2, 11.2.
+      shots. Before: menu 42/3015 and 51/2994, popover 15/2827 and 24/2841. After, with
+      the pool: menu 0/2992, popover 0/2858 (without the pool, menus stalled on every open
+      and the menu sweep got only about 1000 shots). Re-run: 4.2, 11.2.
 - [x] **2.31 Menus flipped at a screen edge leave a gap** · Sonnet (follows 2.23a). Steps
       4.7 and 5.5. A context menu flipped to the left of the pointer, or a combo box's
       menu flipped above the field, sits about two shadow widths away from its anchor.
