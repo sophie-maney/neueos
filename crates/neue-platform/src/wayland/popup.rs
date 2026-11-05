@@ -15,6 +15,10 @@
 //!   Their window geometry leaves out the shadow, so the positioner places the popover's
 //!   box itself: with no offset, a flip (which Smithay does without inverting the offset)
 //!   keeps the box flush against the anchor. They grab like menus.
+//!
+//! Menus get the same treatment (task 2.31): the window geometry is the menu's border
+//! box, the shadow around it lies outside, and the positioner has no offset, so a flip on
+//! either axis leaves the menu's visible box touching its anchor.
 
 use masonry_core::core::{LayerType, Widget, WidgetRef};
 use masonry_core::kurbo::{Point, Rect, Vec2};
@@ -66,6 +70,53 @@ impl IRect {
     }
 }
 
+/// How far a popup's surface reaches beyond its window geometry, in whole logical pixels.
+#[derive(Debug, Clone, Copy, PartialEq, Eq)]
+pub(super) struct SurfaceInsets {
+    pub(super) left: i32,
+    pub(super) top: i32,
+    pub(super) right: i32,
+    pub(super) bottom: i32,
+}
+
+impl SurfaceInsets {
+    pub(super) const NONE: Self = Self::uniform(0);
+
+    pub(super) const fn uniform(reach: i32) -> Self {
+        Self {
+            left: reach,
+            top: reach,
+            right: reach,
+            bottom: reach,
+        }
+    }
+
+    /// Whether the surface is more than its window geometry.
+    pub(super) fn any(self) -> bool {
+        self != Self::NONE
+    }
+
+    pub(super) fn horizontal(self) -> i32 {
+        self.left + self.right
+    }
+
+    pub(super) fn vertical(self) -> i32 {
+        self.top + self.bottom
+    }
+
+    /// The insets between `border` and `bbox` (the border box and the painted box of one
+    /// layer): the shadow on each side, never negative.
+    fn between(border: Rect, bbox: Rect) -> Self {
+        let side = |v: f64| v.round().max(0.0) as i32;
+        Self {
+            left: side(border.x0 - bbox.x0),
+            top: side(border.y0 - bbox.y0),
+            right: side(bbox.x1 - border.x1),
+            bottom: side(bbox.y1 - border.y1),
+        }
+    }
+}
+
 /// An xdg-popup's positioner rules, in the parent window's logical coordinates.
 #[derive(Debug, Clone, Copy, PartialEq, Eq)]
 pub(super) struct Placement {
@@ -78,77 +129,80 @@ pub(super) struct Placement {
     pub(super) size: (i32, i32),
     /// Takes an explicit grab (menus). Tooltips don't, and get an empty input region.
     pub(super) grab: bool,
-    /// How far the surface reaches beyond its window geometry on every side (a popover's
-    /// shadow); `size` is the window geometry's. 0: the geometry is the whole surface.
-    pub(super) reach: i32,
+    /// How far the surface reaches beyond its window geometry on each side (the shadow of
+    /// a popover or menu); `size` is the window geometry's. Zero: the geometry is the
+    /// whole surface.
+    pub(super) insets: SurfaceInsets,
     /// A popover: placed by its anchor, so it ignores Masonry moving the layer.
     pub(super) popover: bool,
 }
 
 impl Placement {
-    /// Placement for a layer of `kind` that Masonry put at `pos`, painting `bbox` (both in
-    /// window coordinates). `owner` is the border box of the widget whose bottom-left
-    /// corner is `pos`, if there is one.
-    pub(super) fn new(kind: &LayerType, pos: Point, bbox: Rect, owner: Option<Rect>) -> Self {
-        let size = IRect::covering(bbox);
-        let size = (size.width, size.height);
-        let offset_from = |anchor: (i32, i32)| {
-            (
-                (bbox.x0 - f64::from(anchor.0)).round() as i32,
-                (bbox.y0 - f64::from(anchor.1)).round() as i32,
-            )
+    /// Placement for a layer of `kind` that Masonry put at `pos`, painting `bbox`, its
+    /// root's border box being `border` (all in window coordinates). `owner` is the border
+    /// box of the widget whose bottom-left corner is `pos`, if there is one.
+    pub(super) fn new(
+        kind: &LayerType,
+        pos: Point,
+        bbox: Rect,
+        border: Rect,
+        owner: Option<Rect>,
+    ) -> Self {
+        if let LayerType::Tooltip(_) = kind {
+            let size = IRect::covering(bbox);
+            let anchor_rect = IRect::point(pos);
+            return Self {
+                anchor_rect,
+                anchor: Anchor::TopLeft,
+                gravity: Gravity::BottomRight,
+                constraints: ConstraintAdjustment::FlipY
+                    | ConstraintAdjustment::SlideX
+                    | ConstraintAdjustment::SlideY,
+                offset: (
+                    (bbox.x0 - f64::from(anchor_rect.x)).round() as i32,
+                    (bbox.y0 - f64::from(anchor_rect.y)).round() as i32,
+                ),
+                size: (size.width, size.height),
+                grab: false,
+                insets: SurfaceInsets::NONE,
+                popover: false,
+            };
+        }
+        // A menu: its window geometry is its border box and its shadow lies outside, so the
+        // positioner needs no offset and a flip keeps the box against the anchor.
+        let insets = SurfaceInsets::between(border, bbox);
+        let whole = IRect::covering(bbox);
+        let size = (
+            (whole.width - insets.horizontal()).max(1),
+            (whole.height - insets.vertical()).max(1),
+        );
+        let (anchor_rect, anchor, constraints) = match owner {
+            Some(owner) => (
+                IRect::covering(owner),
+                Anchor::BottomLeft,
+                ConstraintAdjustment::FlipY,
+            ),
+            None => (
+                IRect {
+                    x: pos.x.round() as i32,
+                    y: pos.y.round() as i32,
+                    width: 1,
+                    height: 1,
+                },
+                Anchor::TopLeft,
+                ConstraintAdjustment::FlipX | ConstraintAdjustment::FlipY,
+            ),
         };
-        match (kind, owner) {
-            (LayerType::Tooltip(_), _) => {
-                let anchor_rect = IRect::point(pos);
-                Self {
-                    anchor_rect,
-                    anchor: Anchor::TopLeft,
-                    gravity: Gravity::BottomRight,
-                    constraints: ConstraintAdjustment::FlipY
-                        | ConstraintAdjustment::SlideX
-                        | ConstraintAdjustment::SlideY,
-                    offset: offset_from((anchor_rect.x, anchor_rect.y)),
-                    size,
-                    grab: false,
-                    reach: 0,
-                    popover: false,
-                }
-            }
-            (_, Some(owner)) => {
-                let anchor_rect = IRect::covering(owner);
-                let corner = (anchor_rect.x, anchor_rect.y + anchor_rect.height);
-                Self {
-                    anchor_rect,
-                    anchor: Anchor::BottomLeft,
-                    gravity: Gravity::BottomRight,
-                    constraints: ConstraintAdjustment::FlipY
-                        | ConstraintAdjustment::SlideX
-                        | ConstraintAdjustment::SlideY,
-                    offset: offset_from(corner),
-                    size,
-                    grab: true,
-                    reach: 0,
-                    popover: false,
-                }
-            }
-            (_, None) => {
-                let anchor_rect = IRect::point(pos);
-                Self {
-                    anchor_rect,
-                    anchor: Anchor::TopLeft,
-                    gravity: Gravity::BottomRight,
-                    constraints: ConstraintAdjustment::FlipX
-                        | ConstraintAdjustment::FlipY
-                        | ConstraintAdjustment::SlideX
-                        | ConstraintAdjustment::SlideY,
-                    offset: offset_from((anchor_rect.x, anchor_rect.y)),
-                    size,
-                    grab: true,
-                    reach: 0,
-                    popover: false,
-                }
-            }
+        Self {
+            anchor_rect,
+            anchor,
+            gravity: Gravity::BottomRight,
+            constraints: constraints | ConstraintAdjustment::SlideX | ConstraintAdjustment::SlideY,
+            offset: (0, 0),
+            size,
+            grab: true,
+            insets,
+            popover: false,
         }
     }
 
@@ -179,7 +233,7 @@ impl Placement {
             offset: (0, 0),
             size,
             grab: true,
-            reach,
+            insets: SurfaceInsets::uniform(reach),
             popover: true,
         }
     }
@@ -266,7 +320,7 @@ mod tests {
         assert_eq!((p.anchor, p.gravity), (Anchor::Bottom, Gravity::Bottom));
         assert_eq!(p.size, (200, 120));
         assert_eq!(p.offset, (0, 0));
-        assert_eq!(p.reach, 21);
+        assert_eq!(p.insets, SurfaceInsets::uniform(21));
         assert!(p.grab);
         assert!(p.constraints.contains(ConstraintAdjustment::FlipY));
         assert!(!p.constraints.contains(ConstraintAdjustment::FlipX));
@@ -282,12 +336,63 @@ mod tests {
         assert!(left.constraints.contains(ConstraintAdjustment::FlipX));
     }
 
+    /// A 90×60 menu with 2 px of shadow left, top and right, and 6 below.
+    fn menu_boxes(at: Point) -> (Rect, Rect) {
+        let border = Rect::from_origin_size(at, (90.0, 60.0));
+        let bbox = Rect::new(
+            border.x0 - 2.0,
+            border.y0 - 2.0,
+            border.x1 + 2.0,
+            border.y1 + 6.0,
+        );
+        (bbox, border)
+    }
+
+    /// Where an xdg-positioner puts the window geometry of `p` in a `screen`-sized parent,
+    /// the way the xdg-shell spec says (and Smithay does it): the offset is added after
+    /// anchor and gravity and is *not* inverted by a flip. Only what menus use is modelled.
+    fn resolve(p: &Placement, screen: (i32, i32)) -> IRect {
+        let (w, h) = p.size;
+        let a = p.anchor_rect;
+        let place = |flip_x: bool, flip_y: bool| {
+            let invert = |flip: bool, down_or_right: bool| down_or_right != flip;
+            let x_anchor_right = invert(
+                flip_x,
+                matches!(p.anchor, Anchor::TopRight | Anchor::BottomRight),
+            );
+            let y_anchor_bottom = invert(
+                flip_y,
+                matches!(p.anchor, Anchor::BottomLeft | Anchor::BottomRight),
+            );
+            let x = if x_anchor_right { a.x + a.width } else { a.x };
+            let y = if y_anchor_bottom { a.y + a.height } else { a.y };
+            // Gravity BottomRight: the popup extends right and down, flipped: left and up.
+            let x = if flip_x { x - w } else { x } + p.offset.0;
+            let y = if flip_y { y - h } else { y } + p.offset.1;
+            IRect {
+                x,
+                y,
+                width: w,
+                height: h,
+            }
+        };
+        let off_x = |r: IRect| r.x < 0 || r.x + r.width > screen.0;
+        let off_y = |r: IRect| r.y < 0 || r.y + r.height > screen.1;
+        let mut r = place(false, false);
+        let flip_x = off_x(r) && p.constraints.contains(ConstraintAdjustment::FlipX);
+        let flip_y = off_y(r) && p.constraints.contains(ConstraintAdjustment::FlipY);
+        if flip_x || flip_y {
+            r = place(flip_x, flip_y);
+        }
+        r
+    }
+
     #[test]
-    fn menu_under_a_widget_anchors_to_it_and_flips_above() {
+    fn menu_under_a_widget_has_its_geometry_without_the_shadow() {
         let owner = Rect::new(150.0, 160.0, 240.0, 184.0);
         let pos = Point::new(150.0, 184.0);
-        let bbox = Rect::new(148.0, 184.0, 238.5, 274.0);
-        let p = Placement::new(&MENU, pos, bbox, Some(owner));
+        let (bbox, border) = menu_boxes(pos);
+        let p = Placement::new(&MENU, pos, bbox, border, Some(owner));
         assert_eq!(
             p.anchor_rect,
             IRect {
@@ -303,24 +408,70 @@ mod tests {
         );
         assert!(p.constraints.contains(ConstraintAdjustment::FlipY));
         assert!(!p.constraints.contains(ConstraintAdjustment::FlipX));
-        // The shadow inset to the left survives as an offset; the size covers the bbox.
-        assert_eq!(p.offset, (-2, 0));
-        assert_eq!(p.size, (91, 90));
+        assert_eq!(p.offset, (0, 0));
+        assert_eq!(
+            p.insets,
+            SurfaceInsets {
+                left: 2,
+                top: 2,
+                right: 2,
+                bottom: 6
+            }
+        );
+        // The geometry is the border box; the surface covers the paint.
+        assert_eq!(p.size, (90, 60));
         assert!(p.grab);
     }
 
     #[test]
-    fn menu_at_a_point_flips_on_both_axes() {
+    fn menu_under_a_widget_flipped_above_touches_it() {
+        let owner = Rect::new(150.0, 160.0, 240.0, 184.0);
+        let pos = Point::new(150.0, 184.0);
+        let (bbox, border) = menu_boxes(pos);
+        let p = Placement::new(&MENU, pos, bbox, border, Some(owner));
+        // Room below: the menu's box starts at the owner's bottom edge.
+        let below = resolve(&p, (800, 600));
+        assert_eq!((below.x, below.y), (150, 184));
+        // No room below: it sits right above the owner, its bottom edge on the owner's top.
+        let above = resolve(&p, (800, 230));
+        assert_eq!((above.x, above.y + above.height), (150, 160));
+    }
+
+    #[test]
+    fn context_menu_flipped_on_each_axis_touches_the_pointer() {
+        let pos = Point::new(300.0, 200.0);
+        let (bbox, border) = menu_boxes(pos);
+        let p = Placement::new(&MENU, pos, bbox, border, None);
+        assert_eq!(p.offset, (0, 0));
+        // The 1×1 anchor is the pixel under the pointer: a flip puts the box against its
+        // far edge, so the box touches the anchor with no gap.
+        let (ax0, ay0) = (p.anchor_rect.x, p.anchor_rect.y);
+        let (ax1, ay1) = (ax0 + p.anchor_rect.width, ay0 + p.anchor_rect.height);
+        // Room on both sides: the box's top-left corner is at the pointer.
+        let free = resolve(&p, (800, 600));
+        assert_eq!((free.x, free.y), (ax0, ay0));
+        // Flipped left: the box's right edge is on the anchor's right edge.
+        let left = resolve(&p, (350, 600));
+        assert_eq!((left.x + left.width, left.y), (ax1, ay0));
+        // Flipped up: the box's bottom edge is on the anchor's bottom edge.
+        let up = resolve(&p, (800, 240));
+        assert_eq!((up.x, up.y + up.height), (ax0, ay1));
+        // Flipped on both.
+        let both = resolve(&p, (350, 240));
+        assert_eq!((both.x + both.width, both.y + both.height), (ax1, ay1));
+    }
+
+    #[test]
+    fn menu_at_a_fractional_point_anchors_to_the_nearest_pixel() {
         let pos = Point::new(20.4, 30.6);
-        let bbox = Rect::from_origin_size(pos, (100.0, 50.0));
-        let p = Placement::new(&MENU, pos, bbox, None);
-        assert_eq!(p.anchor_rect, IRect::point(pos));
-        assert_eq!((p.anchor_rect.x, p.anchor_rect.y), (20, 30));
+        let (bbox, border) = menu_boxes(pos);
+        let p = Placement::new(&MENU, pos, bbox, border, None);
+        assert_eq!((p.anchor_rect.x, p.anchor_rect.y), (20, 31));
+        assert_eq!((p.anchor_rect.width, p.anchor_rect.height), (1, 1));
         assert!(
             p.constraints
                 .contains(ConstraintAdjustment::FlipX | ConstraintAdjustment::FlipY)
         );
-        assert_eq!(p.offset, (0, 1));
         assert!(p.grab);
     }
 
@@ -329,7 +480,7 @@ mod tests {
         let pos = Point::new(10.0, 10.0);
         let bbox = Rect::from_origin_size(pos, (60.0, 20.0));
         let owner = Some(Rect::new(10.0, 0.0, 50.0, 10.0));
-        let p = Placement::new(&LayerType::Tooltip("hi".into()), pos, bbox, owner);
+        let p = Placement::new(&LayerType::Tooltip("hi".into()), pos, bbox, bbox, owner);
         assert!(!p.grab);
         assert_eq!(p.anchor, Anchor::TopLeft);
         assert_eq!(p.anchor_rect.width, 1);
@@ -338,7 +489,8 @@ mod tests {
     #[test]
     fn moving_keeps_everything_but_the_anchor() {
         let pos = Point::new(5.0, 5.0);
-        let p = Placement::new(&MENU, pos, Rect::from_origin_size(pos, (10.0, 10.0)), None);
+        let bbox = Rect::from_origin_size(pos, (10.0, 10.0));
+        let p = Placement::new(&MENU, pos, bbox, bbox, None);
         let moved = p.moved(Vec2::new(30.0, -4.0));
         assert_eq!((moved.anchor_rect.x, moved.anchor_rect.y), (35, 1));
         assert_eq!(
