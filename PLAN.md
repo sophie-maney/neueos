@@ -439,7 +439,9 @@ polkit agent, `neue-settingsd`, the portal backend v0, Preferences v0, packages 
 `neueos-desktop`, and an x86_64 dev ISO with a CLI installer. Super acts as ⌘ (Q1). Tasks:
 [`docs/plan/phase-3.md`](docs/plan/phase-3.md). Owner checks are collected in one runbook
 at the end of the phase (3.29), which also carries Phase 2's exit check (2.26); fixes from
-it are numbered from 3.31.
+it are numbered from 3.31. The shell skeleton (3.2) is split into shell surfaces in
+neue-platform and neue-kit (3.2a), the shell and its menu bar (3.2b) and the desktop
+background (3.2c).
 - **Exit:** log in from the greeter on your PC and use neueOS as the daily desktop.
 
 ### Phase 4: Overview and Spaces (L)
