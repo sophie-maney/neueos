@@ -21,6 +21,7 @@ mod chrome;
 mod collection;
 mod colors;
 mod controls;
+mod dates;
 mod editmenu;
 mod fields;
 mod grid;

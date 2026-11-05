@@ -48,6 +48,7 @@
 
 mod anim;
 mod app;
+mod date;
 mod element;
 mod menu;
 mod menubar;
@@ -61,6 +62,7 @@ mod widgets;
 mod tests;
 
 pub use app::{Application, Cx, Error, Settings, Window, run};
+pub use date::Date;
 pub use element::{Element, Handle};
 pub use menu::{Menu, MenuItem, MenuToggle, Shortcut};
 pub use neue_paint::icon::{Glyph, Icon, IconError, IconPaint, VectorIcon};
@@ -68,12 +70,12 @@ pub use neue_paint::materials::{DividerStyle, Edge};
 pub use neue_platform::WindowId;
 pub use task::{Sender, Task};
 pub use widgets::{
-    Align, BevelButton, Button, Cell, CheckState, Checkbox, Collection, ColorWell, Column,
-    ComboBox, ContextMenu, DisplayMode, Entry, IconImage, Item, Label, MaterialTile, Outline, Pane,
-    PathControl, PopUpButton, Popover, ProgressBar, PullDownButton, Radio, ScrollAxes, ScrollView,
-    Segmented, Sheet, Slider, SortOrder, SourceList, Specimen, Spinner, SplitView, Stack, Stepper,
-    TabView, Table, TextField, TextStyle, TextView, Toolbar, ToolbarButton, VirtualGrid,
-    VirtualList, Zoom,
+    Align, BevelButton, Button, CalendarPicker, Cell, CheckState, Checkbox, Collection, ColorWell,
+    Column, ComboBox, ContextMenu, DatePicker, DisplayMode, Entry, IconImage, Item, Label,
+    MaterialTile, Outline, Pane, PathControl, PopUpButton, Popover, ProgressBar, PullDownButton,
+    Radio, ScrollAxes, ScrollView, Segmented, Sheet, Slider, SortOrder, SourceList, Specimen,
+    Spinner, SplitView, Stack, Stepper, TabView, Table, TextField, TextStyle, TextView, Toolbar,
+    ToolbarButton, VirtualGrid, VirtualList, Zoom,
 };
 
 /// Design tokens (colours, metrics, type scale, motion).

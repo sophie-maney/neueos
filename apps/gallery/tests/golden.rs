@@ -11,11 +11,11 @@
 use std::time::Duration;
 
 use neue_gallery::specimens::{
-    self, BEVEL_SIZE, CHROME_SIZE, COLLECTION_SIZE, COLOR_PANEL_SIZE, COLOR_WELL_SIZE, COMBO_SIZE,
-    FIELD_SIZE, ICONS_SIZE, MENU_SIZE, OUTLINE_SIZE, PATH_SIZE, POPOVER_SIZE, POPUP_SIZE,
-    PROGRESS_SIZE, PULL_DOWN_SIZE, PUSH_BUTTON_SIZE, SCROLL_SIZE, SEGMENTED_SIZE, SIDEBAR_SIZE,
-    SLIDER_SIZE, SPINNER_SIZE, SPLIT_SIZE, STEPPER_SIZE, SUBMENU_SIZE, TABLE_SIZE, TABS_SIZE,
-    TEXT_VIEW_SIZE, TOGGLE_SIZE,
+    self, BEVEL_SIZE, CALENDAR_SIZE, CHROME_SIZE, COLLECTION_SIZE, COLOR_PANEL_SIZE,
+    COLOR_WELL_SIZE, COMBO_SIZE, DATE_SIZE, FIELD_SIZE, ICONS_SIZE, MENU_SIZE, OUTLINE_SIZE,
+    PATH_SIZE, POPOVER_SIZE, POPUP_SIZE, PROGRESS_SIZE, PULL_DOWN_SIZE, PUSH_BUTTON_SIZE,
+    SCROLL_SIZE, SEGMENTED_SIZE, SIDEBAR_SIZE, SLIDER_SIZE, SPINNER_SIZE, SPLIT_SIZE, STEPPER_SIZE,
+    SUBMENU_SIZE, TABLE_SIZE, TABS_SIZE, TEXT_VIEW_SIZE, TOGGLE_SIZE,
 };
 use neue_kit::testing::{
     self, DISABLED, FOCUSED, Fixture, Goldens, INACTIVE, NORMAL, NavKey, PRESSED, State,
@@ -218,6 +218,13 @@ const PATH_HOVERED: State = ("hovered", |f: &mut Fixture| f.hover_at(0.6, 0.5));
 /// The pointer held down on the path control's middle segment.
 const PATH_PRESSED: State = ("pressed", |f: &mut Fixture| f.press_at(0.6, 0.5));
 
+/// The pointer held down on the date picker's stepper, on its upper half.
+const DATE_STEPPER_PRESSED: State = ("stepper-pressed", |f: &mut Fixture| f.press_at(0.97, 0.25));
+/// The pointer over a day of the calendar (17 November).
+const CALENDAR_HOVERED: State = ("hovered", |f: &mut Fixture| f.hover_at(0.233, 0.682));
+/// The pointer held down on the calendar's next-month button.
+const CALENDAR_NEXT_PRESSED: State = ("next-pressed", |f: &mut Fixture| f.press_at(0.917, 0.108));
+
 /// One golden set: `make` in `states`, in a `size` window, under the default theme.
 macro_rules! control_goldens {
     ($($test:ident: $name:literal, $size:expr, $states:expr, $make:expr;)+) => {$(
@@ -252,6 +259,8 @@ control_goldens! {
     segmented_first: "segmented-first", SEGMENTED_SIZE, &[NORMAL, PRESSED], specimens::segmented(0);
     segmented_last: "segmented-last", SEGMENTED_SIZE, &[NORMAL], specimens::segmented(2);
     path_control: "path-control", PATH_SIZE, &[NORMAL, PATH_HOVERED, PATH_PRESSED, FOCUSED, DISABLED], specimens::path_control();
+    date_picker: "date-picker", DATE_SIZE, &[NORMAL, DATE_STEPPER_PRESSED, FOCUSED, DISABLED], specimens::date_picker();
+    calendar: "calendar", CALENDAR_SIZE, &[NORMAL, CALENDAR_HOVERED, CALENDAR_NEXT_PRESSED, FOCUSED, DISABLED], specimens::calendar();
     color_well: "color-well", COLOR_WELL_SIZE, &[NORMAL, PRESSED, FOCUSED, DISABLED], specimens::color_well();
 
     // The pointer goes down on the middle of the slider: the knob at 0.5 doesn't move.
