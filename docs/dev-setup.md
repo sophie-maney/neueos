@@ -138,23 +138,36 @@ ssh neueos-vm '. ~/neueos/docs/vm-env.sh; neuectl reload-config'
 ---
 
 ## 2. Writing manual check steps (for agents)
-When a task needs the owner to check something in the VM or on the PC, write the steps into
-`docs/checks/phase-N.md` as `## <n>. Checking <what> (task X.Y)`. Follow
-`docs/checks/phase-1.md` §17 onward as the model:
-- **Everything runs from the Mac over ssh**, from the repo root, as single-quoted
-  `ssh neueos-vm '…'` commands that work from fish, zsh and bash. Commands that need sudo use
-  `ssh -t`. The only exception is input that needs a person (typing at the console, unplugging
-  a monitor), which is said explicitly.
-- **Numbered steps, each with a code block and an "Expected:" line** that says exactly what
-  output or picture means pass. Steps never say "check that it works".
-- **First step installs packages once; the next one builds and starts.** Reuse §1.3 and
-  §1.4 by reference ("start as in dev-setup §1.3") instead of copying them, unless the
-  task needs different flags.
-- Source `docs/vm-env.sh` in every command that talks to the session. Add helpers there
-  rather than inline `jq` pipelines.
-- Prefer `neuectl` and screenshots copied to the Mac over "look at the screen".
-- Mark steps that need real hardware, and end with "Record which steps you ran, and the
-  results, in the PR."
+The owner runs these by hand, often many tasks in one sitting, so every step must be
+executable as written, without opening another document.
+
+**Where.** A task's check goes into `docs/checks/phase-N.md` as `## <n>. Checking <what>
+(task X.Y)`. When a phase has several unrun checks, collect them into one runbook,
+`docs/checks/phase-N-owner.md` (model: `docs/checks/phase-2-owner.md`): one setup part,
+then one part per gallery page or app, then all macOS steps together, then a "Report
+back" list. The task's own section then points to the runbook's step numbers.
+
+**Steps.**
+- Number every step (`5.3`) and give it one action and an **Expected:** that says exactly
+  what output or picture means pass. Never "check that it works".
+- Mark each step **Run** (a command block, pasted into the Mac terminal from the repo
+  root) or **Do** (by hand in the Parallels window or on the Mac).
+- **Self-contained:** no "as §8 step 1", no "positions from `t1.png`", no "the helpers of
+  §4". Repeat the command, or put it in `docs/vm-env.sh` as a named helper and call that.
+  Within a runbook, "repeat 6.2 to 6.5" is fine.
+- Commands are single-quoted `ssh neueos-vm '…'`, working from fish, zsh and bash; sudo
+  needs `ssh -t`. Source `docs/vm-env.sh` in every command that talks to the session.
+- **Pointer and keyboard input that a person does is done by hand** in the Parallels
+  window ("click Pictures", "press Shift-Home"), not with ydotool and screen coordinates.
+  Use ydotool only for what a Mac keyboard or trackpad can't send (a middle click), with
+  a `sleep` so the owner can place the pointer first. Name the Mac keys (Fn-Left for
+  Home, Option for Alt, Ctrl not Cmd).
+- Use `neuectl` helpers (`wins`, `child_check`, `win_id`) for anything the eye can't
+  judge exactly (geometry, parent, state, log lines).
+- Mark steps that need real hardware.
+- Say when to report: **STOP AND REPORT** where the owner can't go on, **Note** where an
+  observation is needed even on a pass; everything else is collected and sent once at the
+  end.
 
 ---
 
