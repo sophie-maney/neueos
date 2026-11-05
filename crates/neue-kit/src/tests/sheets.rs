@@ -21,6 +21,8 @@ enum Msg {
     WindowDefault,
     /// Script: the app closes the sheet.
     Close,
+    /// Script: the app switches to the dark theme.
+    Dark,
 }
 
 const WINDOW: (u32, u32) = (480, 320);
@@ -68,6 +70,10 @@ impl Application for Sheets {
                 );
             }
             Msg::Close => cx.close_sheet(window),
+            Msg::Dark => cx.set_theme(Theme {
+                variant: neue_theme::Variant::new(neue_theme::Appearance::Dark),
+                ..cx.theme()
+            }),
             _ => {}
         }
         self.log.push(message);
@@ -333,4 +339,40 @@ fn closing_the_window_closes_its_sheet() {
     let parent = parent(&runner);
     runner.close_requested(&mut host, parent);
     assert!(host.windows.is_empty());
+}
+
+/// The colour at the middle of the top of `window`'s content, inside the sheet's panel.
+fn panel_pixel(host: &mut FakeHost, window: WindowId) -> [u8; 4] {
+    let harness = host.windows.get_mut(&window).expect("an open window");
+    let image = harness.render();
+    image.get_pixel(SHEET.0 / 2, 4).0
+}
+
+#[test]
+fn a_sheet_window_opened_in_dark_paints_dark() {
+    // The driver started in light; the app switches before it shows the sheet.
+    let (mut runner, mut host) = setup(false, true);
+    show(&mut runner, &mut host);
+    let sheet = sheet_window(&runner, &host);
+    let light = panel_pixel(&mut host, sheet);
+    runner.send(&mut host, Msg::Close);
+    deliver(&mut runner, &mut host);
+
+    runner.send(&mut host, Msg::Dark);
+    show(&mut runner, &mut host);
+    let sheet = sheet_window(&runner, &host);
+    let dark = panel_pixel(&mut host, sheet);
+    assert!(dark[0] < light[0], "{light:?} → {dark:?}");
+}
+
+#[test]
+fn a_sheet_window_follows_a_theme_switch_while_open() {
+    let (mut runner, mut host) = setup(false, true);
+    show(&mut runner, &mut host);
+    let sheet = sheet_window(&runner, &host);
+    let light = panel_pixel(&mut host, sheet);
+    runner.send(&mut host, Msg::Dark);
+    deliver(&mut runner, &mut host);
+    let dark = panel_pixel(&mut host, sheet);
+    assert!(dark[0] < light[0], "{light:?} → {dark:?}");
 }

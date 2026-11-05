@@ -251,7 +251,12 @@ impl KeyboardHandler for State {
         self.input.kb_focus = Some(id);
         // Focus moving between a window and its own popups isn't a window focus change:
         // Masonry's menus close when their window loses focus.
-        if self.input.kb_pending_leave.take() != Some(id) {
+        if self.input.kb_pending_leave == Some(id) {
+            self.input.kb_pending_leave = None;
+        } else {
+            // Another window's leave is reported now: it isn't focused any more. (Taking it
+            // out first would drop it, and a window the keyboard moved from, such as the
+            // parent of a HUD window, would stay focused for good.)
             self.flush_focus_leave();
             if let Some(w) = self.reg.windows.get_mut(&id) {
                 w.root.handle_text_event(TextEvent::WindowFocusChange(true));

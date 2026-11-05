@@ -645,7 +645,10 @@ impl State {
                 let _ = tx.send(signal);
             },
             RenderRootOptions {
-                default_properties: Arc::clone(&self.options.default_properties),
+                default_properties: spec
+                    .default_properties
+                    .clone()
+                    .unwrap_or_else(|| Arc::clone(&self.options.default_properties)),
                 use_system_fonts: false,
                 size_policy: WindowSizePolicy::User,
                 // Until the compositor configures the window and tells us its scale.

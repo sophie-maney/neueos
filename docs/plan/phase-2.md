@@ -801,7 +801,7 @@ the toolbar).
       drawn across the arrow's base; it is now cut out there (all four arrow sides). The
       old goldens show the line; the colour panel's goldens changed the same way.
       **Not yet checked in the VM:** re-run 5.10, 9.2, 11.2 (look at 1.5× too).
-- [ ] **2.33 Sheet theme and HUD parent focus** · Sonnet. Both in the kit runner.
+- [x] **2.33 Sheet theme and HUD parent focus** · Sonnet. Both in the kit runner.
       - Step 11.13: a sheet opened in Dark draws light. The sheet window doesn't take the
         app's current theme (check both opening while Dark and switching while open).
       - Step 11.16: with the Inspector open, focusing foot leaves the gallery's title bar
@@ -811,6 +811,14 @@ the toolbar).
       *Accept:* end-to-end tests on the fake host: a sheet opened in Dark paints with the
       dark variant and follows a switch; parent's chrome inactive once neither the parent
       nor its HUD has the keyboard. Re-run: 11.13, 11.16.
+      **Done (ADR 0063).** *Sheet:* the driver gave every window its start-up theme, so any
+      window opened after a switch was stale (open ones already followed). `WindowSpec` now
+      has `default_properties`, which the kit sets from the current theme. *HUD:* the cause
+      was not the runner: the Wayland driver's `enter` dropped the previous window's pending
+      keyboard leave, so the parent never lost focus in the first place (`seat.rs`). Fixed
+      there; the runner's `set_keep_active` logic was right and its test stands. Tests: a
+      sheet opened in Dark paints dark, and follows a switch while open. **Not yet checked
+      in the VM:** re-run 11.13, 11.16.
 - [ ] **2.34 Collection view after scrolling, and the Icons page layout** · Sonnet.
       - Step 8.6: after scrolling either collection, rows that come into view have a grey
         background; a click repaints them correctly until the next scroll. The background
