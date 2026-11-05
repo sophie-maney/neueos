@@ -875,3 +875,37 @@ moves the window and does not resize it.
 
 **3. No edges when they don't apply:** zoom the window (green light): the pointer 2 px
 outside it does nothing. Open `foot` and check its edges still work (compositor bar).
+
+## 22. Checking popovers (task 2.23a)
+Not run yet. Steps 1 to 4 run in the VM, set up as in `docs/dev-setup.md` §1.3; step 5 is
+on the Mac. The page is "Popovers" (page 13). The helpers are those of §8 (`click_at`)
+and §19 (`move_to`).
+
+**1. Build and open the page:** as §8 step 1 with `NEUE_GALLERY_PAGE=13`, screenshot
+`/tmp/p1.png`. Expected: no `WARN` or `ERROR`; four buttons: Below, Above, Left, Right.
+
+**2. Each side:** click "Below", screenshot `/tmp/p2.png`, press Escape
+(`ydotool key 1:1 1:0`); repeat with "Above" (`/tmp/p3.png`), "Left" (`/tmp/p4.png`)
+and "Right" (`/tmp/p5.png`). Expected: a light panel ("Popover", a line of text, Done)
+on that side of its button, its arrow touching the button's middle and its shadow
+outside it; after each Escape the panel is gone and the status line reads "Popover
+closed". `RUST_LOG=neue_platform=debug` in `/tmp/gallery.log` shows "popup configured"
+with a position, not "painting the layer inline".
+
+**3. Closing:** click "Below" then somewhere on the page background: it closes ("Popover
+closed"). Click "Below", then "Below" again: it closes and does not reopen. Click
+"Below", then Done: it closes and the status reads "Popover done". Click "Below", press
+Tab (`ydotool key 15:1 15:0`), screenshot `/tmp/p6.png`. Expected: the focus ring on
+Done in `p6.png`.
+
+**4. Flip at the screen edge:** move the gallery window so that the "Above" button is
+within 60 px of the top of the screen (drag its title bar up), click "Above", screenshot
+`/tmp/p7.png`. Expected: the popover is below the button instead, its arrow on its top
+side pointing at the button. Repeat with the window dragged to the left edge and "Left":
+the popover is on the right. Switch to dark (the toolbar's appearance switch) and
+reopen one: the panel is dark.
+
+**5. macOS (owner):** `cargo xtask gallery`, page "Popovers" (click it in the list). Each
+button shows its popover on its side; Escape, a click outside, the button again and Done
+close it. With VoiceOver on (Cmd-F5), opening one moves VoiceOver into a dialog, and
+VO-Right reaches "Popover", the text and Done.

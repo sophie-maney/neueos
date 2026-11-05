@@ -34,7 +34,7 @@ use neue_theme::{Appearance, Theme};
 use crate::app::Window;
 use crate::element::Element;
 use crate::theme::default_properties;
-use crate::widgets::{RootWidget, StackWidget};
+use crate::widgets::{Popover, RootWidget, StackWidget, popover};
 
 /// Errors from [`Fixture::render`] and [`check_states`].
 #[derive(Debug, thiserror::Error)]
@@ -192,15 +192,20 @@ impl Fixture {
     /// Gives the widget keyboard focus, as Tab would: to the widget itself, or if that
     /// takes no focus (a text view's scroll view), to the first widget inside that does.
     pub fn focus(&mut self) {
-        fn first_focusable(widget: WidgetRef<'_, dyn Widget>) -> Option<WidgetId> {
-            if widget.accepts_focus() {
-                return Some(widget.id());
-            }
-            widget.children().into_iter().find_map(first_focusable)
-        }
         let target =
             first_focusable(self.harness.get_widget_with_id(self.target)).unwrap_or(self.target);
         self.harness.focus_on(Some(target));
+    }
+
+    /// Shows `popover` next to the widget, or to the first widget in it that takes focus
+    /// (a button in a container), as [`Cx::show_popover`](crate::Cx::show_popover) would.
+    /// Its messages go nowhere.
+    pub fn show_popover<M: Clone + 'static>(&mut self, popover: Popover<M>) {
+        let anchor =
+            first_focusable(self.harness.get_widget_with_id(self.target)).unwrap_or(self.target);
+        let (widget, _wiring) = popover.into_parts();
+        self.harness
+            .edit_widget_with_id(anchor, |mut owner| popover::show(&mut owner, widget));
     }
 
     /// Disables (or re-enables) the widget.
@@ -272,6 +277,14 @@ impl Fixture {
         neue_paint::golden::pixmap_from_unpremultiplied(w, h, image.into_raw())
             .ok_or_else(too_large)
     }
+}
+
+/// `widget`, or the first widget in it, depth first, that takes focus.
+fn first_focusable(widget: WidgetRef<'_, dyn Widget>) -> Option<WidgetId> {
+    if widget.accepts_focus() {
+        return Some(widget.id());
+    }
+    widget.children().into_iter().find_map(first_focusable)
 }
 
 /// Keys [`Fixture::press_key`] presses.

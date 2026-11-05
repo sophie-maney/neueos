@@ -86,8 +86,8 @@ use wayland_protocols_plasma::appmenu::client::{
 use crate::app::{DriverWindow, Registry};
 use crate::gpu::{Gpu, GpuError, SurfaceTarget};
 use crate::{
-    Anchor, App, Ctx, Decorations, LayerKeyboard, LayerSpec, MenuAddress, Options, ShellLayer,
-    Waker, WindowId, WindowKind, WindowSpec,
+    Anchor, App, Ctx, Decorations, LayerKeyboard, LayerSpec, MenuAddress, Options, PopoverAnchor,
+    ShellLayer, Waker, WindowId, WindowKind, WindowSpec,
 };
 use access::{Access, AccessEvent};
 use clipboard::Clipboard;
@@ -389,7 +389,8 @@ struct PopupLayer {
     placement: Placement,
     /// Where Masonry asked for the layer, in window coordinates.
     requested: Point,
-    /// Popup top-left in window (logical) coordinates, as configured by the compositor.
+    /// Popup surface's top-left in window (logical) coordinates, as configured by the
+    /// compositor.
     origin: Point,
     /// Masonry's layer position minus its bounding-box origin.
     layer_offset: Vec2,
@@ -453,7 +454,17 @@ impl Win {
     fn parent_origin(&self, parent: Option<WidgetId>) -> Vec2 {
         parent
             .and_then(|parent| self.popups.iter().find(|p| p.root_id == parent))
-            .map_or(Vec2::ZERO, |p| p.origin.to_vec2())
+            .map_or(Vec2::ZERO, |p| p.origin.to_vec2() + p.geometry())
+    }
+}
+
+impl PopupLayer {
+    /// Where the popup's window geometry starts within its surface (a popover's shadow
+    /// lies outside it): what the compositor positions, and what popups nested on this one
+    /// are placed relative to.
+    fn geometry(&self) -> Vec2 {
+        let r = f64::from(self.placement.reach);
+        Vec2::new(r, r)
     }
 }
 
@@ -921,8 +932,17 @@ impl State {
             .get_widget(layer)
             .map(|r| r.ctx().bounding_box())
             .unwrap_or_else(|| Rect::from_origin_size(pos, (1.0, 1.0)));
-        let owner = popup::owner_rect(w.root.get_layer_root(0), pos);
-        let placement = Placement::new(kind, pos, bbox, owner);
+        let popover = w
+            .root
+            .get_widget(layer)
+            .and_then(|root| root.get_prop::<PopoverAnchor>().0);
+        let placement = match popover {
+            Some(request) => Placement::popover(request, bbox),
+            None => {
+                let owner = popup::owner_rect(w.root.get_layer_root(0), pos);
+                Placement::new(kind, pos, bbox, owner)
+            }
+        };
         // A menu opened from a menu nests on it: a grab must come from the topmost grabbing
         // popup. Everything else hangs off the window.
         let parent = placement
@@ -982,8 +1002,21 @@ impl State {
                 Err(err) => tracing::debug!(%err, "no wl_region for the tooltip"),
             }
         }
+        let reach = placement.reach;
+        if reach > 0 {
+            // The shadow is outside the window geometry: the compositor places the box.
+            popup.xdg_surface().set_window_geometry(
+                reach,
+                reach,
+                placement.size.0,
+                placement.size.1,
+            );
+        }
         let mut surf = Surf::new(&self.g, &qh, wl, wgpu_surface, false);
-        surf.size = (placement.size.0 as u32, placement.size.1 as u32);
+        surf.size = (
+            (placement.size.0 + 2 * reach) as u32,
+            (placement.size.1 + 2 * reach) as u32,
+        );
         surf.int_scale = w.surf.int_scale;
         popup.wl_surface().commit();
         w.popups.push(PopupLayer {
@@ -1009,6 +1042,10 @@ impl State {
         };
         let parent_origin = w.parent_origin(w.popups[pi].parent);
         let p = &mut w.popups[pi];
+        if p.placement.popover {
+            // Placed by its anchor; the compositor's configure moves the layer.
+            return;
+        }
         p.placement = p.placement.moved(pos - p.requested);
         p.requested = pos;
         if p.popup.xdg_popup().version() < 3 {

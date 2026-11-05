@@ -15,6 +15,7 @@ use wayland_client::protocol::{wl_output, wl_surface};
 use wayland_client::{Connection, QueueHandle};
 
 use super::{AppEvent, State, input};
+use crate::PopoverLanded;
 use crate::app::Host as _;
 
 impl CompositorHandler for State {
@@ -206,17 +207,29 @@ impl PopupHandler for State {
             height = config.height,
             "popup configured"
         );
-        // The position is relative to the parent: the window, or the menu it nests on.
-        let origin = origin + w.parent_origin(w.popups[pi].parent);
+        // The position is of the window geometry, relative to the parent's: the window, or
+        // the menu it nests on.
+        let origin = origin + w.parent_origin(w.popups[pi].parent) - w.popups[pi].geometry();
         let p = &mut w.popups[pi];
-        if origin != p.origin {
+        let popover = p.placement.popover;
+        if origin != p.origin || popover {
             // The compositor flipped or slid the popup: move the Masonry layer to match.
+            // A popover is told where it landed, to point its arrow at its anchor.
             p.origin = origin;
             let (root_id, at) = (p.root_id, origin + p.layer_offset);
             w.root.reposition_layer(root_id, at);
+            if popover && w.root.get_widget(root_id).is_some() {
+                w.root.edit_widget(root_id, |mut root| {
+                    root.insert_prop(PopoverLanded(Some(at)));
+                });
+            }
         }
         let p = &mut w.popups[pi];
-        p.surf.size = (config.width.max(1) as u32, config.height.max(1) as u32);
+        let reach = 2 * p.placement.reach.max(0);
+        p.surf.size = (
+            (config.width + reach).max(1) as u32,
+            (config.height + reach).max(1) as u32,
+        );
         p.surf.apply(gpu, w.scale, fractional);
         p.configured = true;
         // Drawn by the next `draw_dirty`, whether or not the window's frame is pending.

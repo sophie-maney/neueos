@@ -4,12 +4,12 @@ use neue_kit::tokens::metrics::spacing;
 use std::cell::RefCell;
 use std::rc::Rc;
 
-use neue_kit::DisplayMode;
 use neue_kit::{
     Align, BevelButton, Button, Cell, Checkbox, Column, ContextMenu, DividerStyle, Element, Handle,
     Label, MaterialTile, Pane, PopUpButton, ProgressBar, Radio, Segmented, Slider, SortOrder,
     Spinner, SplitView, Stack, Stepper, TabView, Table, TextField, TextStyle, Toolbar,
 };
+use neue_kit::{DisplayMode, Edge, Popover};
 
 use crate::Message;
 use crate::specimens;
@@ -28,6 +28,10 @@ pub struct PageHandles {
     pub files_table: Handle<Table<Message>>,
     /// The Toolbar page: the toolbar whose display mode the segmented control changes.
     pub toolbar: Handle<Toolbar<Message>>,
+    /// The Popovers page: the buttons that show one on each side, and which one has its
+    /// popover open.
+    pub popover_anchors: Vec<Handle<Button<Message>>>,
+    pub popover_open: Option<usize>,
 }
 
 impl PageHandles {
@@ -46,6 +50,33 @@ impl PageHandles {
         // The rows moved: the old selection would point at other files.
         self.files_table.set_selection(cx, []);
         self.files_table.reload(cx);
+    }
+
+    /// Shows the Popovers page's popover on the side of button `n`.
+    pub fn show_popover(&mut self, cx: &mut neue_kit::Cx<'_, Message>, n: usize) {
+        let (Some(anchor), Some(&(_, edge))) = (self.popover_anchors.get(n), POPOVER_SIDES.get(n))
+        else {
+            return;
+        };
+        let content = specimens::popover_content(Some(Message::PopoverDone));
+        cx.show_popover(
+            anchor,
+            Popover::new(content)
+                .edge(edge)
+                .on_close(Message::PopoverClosed),
+        );
+        self.popover_open = Some(n);
+    }
+
+    /// Closes the Popovers page's open popover.
+    pub fn close_popover(&mut self, cx: &mut neue_kit::Cx<'_, Message>) {
+        if let Some(anchor) = self
+            .popover_open
+            .take()
+            .and_then(|n| self.popover_anchors.get(n))
+        {
+            cx.close_popover(anchor);
+        }
     }
 
     /// The name of the file in row `row` of the Tables page.
@@ -114,6 +145,10 @@ pub const PAGES: &[Page] = &[
     Page {
         title: "Toolbar",
         build: toolbar,
+    },
+    Page {
+        title: "Popovers",
+        build: popovers,
     },
     Page {
         title: "Text",
@@ -690,6 +725,42 @@ fn toolbar(handles: &mut PageHandles) -> Element<Message> {
                 .with(specimens::toolbar_items::<Message>(DisplayMode::IconOnly))
                 .with(specimens::toolbar_items::<Message>(DisplayMode::TextOnly)),
         )
+        .into()
+}
+
+/// The Popovers page's buttons: their labels and the side their popover asks for.
+pub const POPOVER_SIDES: [(&str, Edge); 4] = [
+    ("Below", Edge::Bottom),
+    ("Above", Edge::Top),
+    ("Left", Edge::Left),
+    ("Right", Edge::Right),
+];
+
+fn popovers(handles: &mut PageHandles) -> Element<Message> {
+    handles.popover_anchors = vec![Handle::default(); POPOVER_SIDES.len()];
+    handles.popover_open = None;
+    let mut row = Stack::row();
+    for (n, ((label, _), handle)) in POPOVER_SIDES
+        .iter()
+        .zip(&mut handles.popover_anchors)
+        .enumerate()
+    {
+        row = row.with(
+            Button::new(*label)
+                .on_press(Message::ShowPopover(n))
+                .bind(handle),
+        );
+    }
+    Stack::column()
+        .spacing(spacing::L)
+        .with(heading(
+            "Popovers",
+            "Press a button to show a popover on that side of it (the compositor may flip it \
+             to the other side near a screen edge; its arrow follows) · Tab moves into it · \
+             Escape, a press outside it, or its button again closes it · Done closes it from \
+             the app",
+        ))
+        .with(section("Show a popover", row))
         .into()
 }
 

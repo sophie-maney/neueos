@@ -10,6 +10,7 @@ use neue_kit::{
 };
 use neue_kit::{DisplayMode, Toolbar, ToolbarButton};
 use neue_kit::{DividerStyle, Pane, SplitView, TabView, Window};
+use neue_kit::{Edge, Popover, TextStyle};
 
 /// Golden window size for one push button (logical pixels): the button with the fixture's
 /// margin, room for its focus ring.
@@ -781,4 +782,42 @@ pub fn toolbar_items<M: Clone + 'static>(mode: DisplayMode) -> Toolbar<M> {
 /// A window with a unified title bar and a toolbar of every kind of item.
 pub fn window_toolbar_items<M: Clone + 'static>(mode: DisplayMode) -> Window<M> {
     Window::new("Documents", TOOLBAR_ITEMS_SIZE, pane_label("Content")).toolbar(toolbar_items(mode))
+}
+
+/// Room around [`popover_anchor`]'s button: enough for a popover on any side.
+const POPOVER_ROOM: f64 = 150.0;
+
+/// Golden window size for a button with a popover on one of its sides: the button in the
+/// middle, with [`POPOVER_ROOM`] around it.
+pub const POPOVER_SIZE: (u32, u32) = (386, 338);
+
+/// What the gallery's popovers show: a title, a line of text and a button sending `done`.
+pub fn popover_content<M: Clone + 'static>(done: Option<M>) -> Stack<M> {
+    let button = Button::new("Done");
+    let button = match done {
+        Some(message) => button.on_press(message),
+        None => button,
+    };
+    Stack::column()
+        .spacing(6.0)
+        .with(Label::new("Popover").style(TextStyle::Headline))
+        .with(
+            Label::new("Points at its button")
+                .style(TextStyle::Small)
+                .secondary(),
+        )
+        .with(button)
+}
+
+/// A popover of [`popover_content`] on side `edge` of its anchor.
+pub fn popover<M: Clone + 'static>(edge: Edge) -> Popover<M> {
+    Popover::new(popover_content(None)).edge(edge)
+}
+
+/// A button with room around it for a popover on any side (in a [`POPOVER_SIZE`]
+/// window).
+pub fn popover_anchor<M: Clone + 'static>() -> Stack<M> {
+    Stack::column()
+        .padding(POPOVER_ROOM)
+        .with(Button::new("Show"))
 }

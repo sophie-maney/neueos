@@ -12,15 +12,15 @@ use std::time::Duration;
 
 use neue_gallery::specimens::{
     self, BEVEL_SIZE, CHROME_SIZE, COLLECTION_SIZE, COMBO_SIZE, FIELD_SIZE, ICONS_SIZE, MENU_SIZE,
-    OUTLINE_SIZE, POPUP_SIZE, PROGRESS_SIZE, PULL_DOWN_SIZE, PUSH_BUTTON_SIZE, SCROLL_SIZE,
-    SEGMENTED_SIZE, SIDEBAR_SIZE, SLIDER_SIZE, SPINNER_SIZE, SPLIT_SIZE, STEPPER_SIZE,
+    OUTLINE_SIZE, POPOVER_SIZE, POPUP_SIZE, PROGRESS_SIZE, PULL_DOWN_SIZE, PUSH_BUTTON_SIZE,
+    SCROLL_SIZE, SEGMENTED_SIZE, SIDEBAR_SIZE, SLIDER_SIZE, SPINNER_SIZE, SPLIT_SIZE, STEPPER_SIZE,
     SUBMENU_SIZE, TABLE_SIZE, TABS_SIZE, TEXT_VIEW_SIZE, TOGGLE_SIZE,
 };
 use neue_kit::testing::{
     self, DISABLED, FOCUSED, Fixture, Goldens, INACTIVE, NORMAL, NavKey, PRESSED, State,
 };
 use neue_kit::tokens::motion::DEFAULT_BUTTON_PULSE;
-use neue_kit::{Accent, DisplayMode, DividerStyle, Element, MaterialTile, Theme, Variant};
+use neue_kit::{Accent, DisplayMode, DividerStyle, Edge, Element, MaterialTile, Theme, Variant};
 
 fn goldens() -> Goldens {
     Goldens::new(
@@ -408,6 +408,33 @@ fn toolbar_items_text_only() {
         Theme::default(),
         &[NORMAL],
         || specimens::window_toolbar_items::<()>(DisplayMode::TextOnly),
+    )
+    .unwrap();
+}
+
+// Popovers (task 2.23a): one on each side of its button, the arrow pointing at it.
+const POPOVER_BOTTOM: State = ("bottom", |f: &mut Fixture| {
+    f.show_popover(specimens::popover::<()>(Edge::Bottom));
+});
+const POPOVER_TOP: State = ("top", |f: &mut Fixture| {
+    f.show_popover(specimens::popover::<()>(Edge::Top));
+});
+const POPOVER_LEFT: State = ("left", |f: &mut Fixture| {
+    f.show_popover(specimens::popover::<()>(Edge::Left));
+});
+const POPOVER_RIGHT: State = ("right", |f: &mut Fixture| {
+    f.show_popover(specimens::popover::<()>(Edge::Right));
+});
+
+#[test]
+fn popover() {
+    testing::check_states(
+        &goldens(),
+        "popover",
+        POPOVER_SIZE,
+        Theme::default(),
+        &[POPOVER_BOTTOM, POPOVER_TOP, POPOVER_LEFT, POPOVER_RIGHT],
+        || specimens::popover_anchor::<()>().into(),
     )
     .unwrap();
 }

@@ -9,11 +9,18 @@
 //!   Menus grab the seat: keyboard focus, and the compositor dismisses them on an outside
 //!   click;
 //! - **tooltips** anchor to the point, flip above it, never grab and let the pointer
-//!   through.
+//!   through;
+//! - **popovers** (a [`PopoverAnchor`] on the layer's root, task 2.23a) go on the side of
+//!   their anchor they ask for, centred on it, and flip to the other side or slide along.
+//!   Their window geometry leaves out the shadow, so the positioner places the popover's
+//!   box itself: with no offset, a flip (which Smithay does without inverting the offset)
+//!   keeps the box flush against the anchor. They grab like menus.
 
 use masonry_core::core::{LayerType, Widget, WidgetRef};
 use masonry_core::kurbo::{Point, Rect, Vec2};
 use smithay_client_toolkit::error::GlobalError;
+
+use crate::{PopoverRequest, Side};
 use smithay_client_toolkit::shell::xdg::{XdgPositioner, XdgShell};
 use wayland_client::Proxy as _;
 use wayland_protocols::xdg::shell::client::xdg_positioner::{
@@ -71,6 +78,11 @@ pub(super) struct Placement {
     pub(super) size: (i32, i32),
     /// Takes an explicit grab (menus). Tooltips don't, and get an empty input region.
     pub(super) grab: bool,
+    /// How far the surface reaches beyond its window geometry on every side (a popover's
+    /// shadow); `size` is the window geometry's. 0: the geometry is the whole surface.
+    pub(super) reach: i32,
+    /// A popover: placed by its anchor, so it ignores Masonry moving the layer.
+    pub(super) popover: bool,
 }
 
 impl Placement {
@@ -99,6 +111,8 @@ impl Placement {
                     offset: offset_from((anchor_rect.x, anchor_rect.y)),
                     size,
                     grab: false,
+                    reach: 0,
+                    popover: false,
                 }
             }
             (_, Some(owner)) => {
@@ -114,6 +128,8 @@ impl Placement {
                     offset: offset_from(corner),
                     size,
                     grab: true,
+                    reach: 0,
+                    popover: false,
                 }
             }
             (_, None) => {
@@ -129,8 +145,42 @@ impl Placement {
                     offset: offset_from((anchor_rect.x, anchor_rect.y)),
                     size,
                     grab: true,
+                    reach: 0,
+                    popover: false,
                 }
             }
+        }
+    }
+
+    /// Placement for a popover painting `bbox` (window coordinates): its box is `bbox`
+    /// less the request's reach on every side.
+    pub(super) fn popover(request: PopoverRequest, bbox: Rect) -> Self {
+        #[expect(
+            clippy::cast_possible_truncation,
+            reason = "a shadow reaches a few dozen pixels"
+        )]
+        let reach = request.reach.round() as i32;
+        let whole = IRect::covering(bbox);
+        let size = (
+            (whole.width - 2 * reach).max(1),
+            (whole.height - 2 * reach).max(1),
+        );
+        let (anchor, gravity, constraints) = match request.side {
+            Side::Bottom => (Anchor::Bottom, Gravity::Bottom, ConstraintAdjustment::FlipY),
+            Side::Top => (Anchor::Top, Gravity::Top, ConstraintAdjustment::FlipY),
+            Side::Right => (Anchor::Right, Gravity::Right, ConstraintAdjustment::FlipX),
+            Side::Left => (Anchor::Left, Gravity::Left, ConstraintAdjustment::FlipX),
+        };
+        Self {
+            anchor_rect: IRect::covering(request.anchor),
+            anchor,
+            gravity,
+            constraints: constraints | ConstraintAdjustment::SlideX | ConstraintAdjustment::SlideY,
+            offset: (0, 0),
+            size,
+            grab: true,
+            reach,
+            popover: true,
         }
     }
 
@@ -193,6 +243,44 @@ mod tests {
     use super::*;
 
     const MENU: LayerType = LayerType::Other;
+
+    #[test]
+    fn a_popover_places_its_box_on_its_side_of_the_anchor() {
+        let request = PopoverRequest {
+            anchor: Rect::new(100.0, 50.0, 160.0, 73.0),
+            side: Side::Bottom,
+            reach: 21.0,
+        };
+        // A 200×120 box with its shadow around it.
+        let bbox = Rect::new(0.0, 0.0, 242.0, 162.0);
+        let p = Placement::popover(request, bbox);
+        assert_eq!(
+            p.anchor_rect,
+            IRect {
+                x: 100,
+                y: 50,
+                width: 60,
+                height: 23
+            }
+        );
+        assert_eq!((p.anchor, p.gravity), (Anchor::Bottom, Gravity::Bottom));
+        assert_eq!(p.size, (200, 120));
+        assert_eq!(p.offset, (0, 0));
+        assert_eq!(p.reach, 21);
+        assert!(p.grab);
+        assert!(p.constraints.contains(ConstraintAdjustment::FlipY));
+        assert!(!p.constraints.contains(ConstraintAdjustment::FlipX));
+
+        let left = Placement::popover(
+            PopoverRequest {
+                side: Side::Left,
+                ..request
+            },
+            bbox,
+        );
+        assert_eq!((left.anchor, left.gravity), (Anchor::Left, Gravity::Left));
+        assert!(left.constraints.contains(ConstraintAdjustment::FlipX));
+    }
 
     #[test]
     fn menu_under_a_widget_anchors_to_it_and_flips_above() {

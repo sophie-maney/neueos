@@ -509,7 +509,7 @@ the paper and leather materials move to Phase 6/7 (Widgets, Write).
         extends past their window geometry (shadows), which the surface hides.
 - [ ] **2.23 Sheet, popover, HUD panel**. Sheets map to xdg-dialog; popovers are
       xdg-popups with an arrow. Split into four PRs:
-  - [ ] **2.23a Popover** · Opus. Material `neue_paint::materials::popover` (rounded
+  - [x] **2.23a Popover** · Opus. Material `neue_paint::materials::popover` (rounded
         panel with an arrow on any edge, light and dark, tokens) and a `Popover` element
         anchored to a widget, opened as a Masonry layer (an xdg-popup on Wayland). The
         positioner prefers one edge and lets the compositor flip; the arrow's side and
@@ -518,6 +518,26 @@ the paper and leather materials move to Phase 6/7 (Widgets, Write).
         `Dialog` role.
         *Accept:* tests for placement and arrow side (including a flip), keys and
         dismissal; goldens (4 arrow edges × light/dark × 1×/2×); a gallery page; ADR.
+        *Done:* ADR 0056. `Cx::show_popover(&anchor, Popover::new(content).edge(..)
+        .on_close(..))` and `Cx::close_popover`; `Edge` re-exported. The popover is a layer
+        attached to the anchor widget. Its root carries `neue_platform::PopoverAnchor`
+        (anchor rectangle grown by the gap, side, shadow reach); the Wayland driver places
+        the box with the window geometry excluding the shadow and a positioner without an
+        offset (Smithay doesn't invert offsets on a flip), then sets `PopoverLanded` after
+        each configure so the arrow follows a flip or slide. On winit and in tests the
+        popover centres itself on the side it asked for. Escape, a press outside (unless
+        focus is in a menu opened from it), the window losing focus, a pointer cancel and
+        the anchor pressed again close it and send `on_close`; focus goes into it on
+        opening and back afterwards. Material `neue_paint::materials::popover` (+ geometry
+        helpers), tokens `neue_theme::materials::popover`. 12 end-to-end tests
+        (`src/tests/popovers.rs`), 5 material unit tests, a placement unit test in the
+        Wayland driver; 16 goldens `popover-{bottom,top,left,right}-…` (pass on macOS and Linux aarch64);
+        gallery page "Popovers" (page 13); `testing::Fixture::show_popover`. The fake
+        host's `deliver` now handles signals from the app's edits, as drivers do. Checked:
+        `cargo xtask check` on macOS and Linux aarch64; x86_64 not run. VM steps in
+        `docs/checks/phase-2.md` §22, not run. Not yet: Tab trapped inside the popover,
+        following the anchor when the window re-lays out, flipping inside the window on
+        macOS, an arrow shadow.
   - [ ] **2.23b Sheet (kit)** · Opus. `Sheet`: a modal panel with no title bar, the sheet
         material (window background, inner shadow at the top), default and cancel buttons
         (Return, Esc). On Wayland a modal xdg-dialog child window; on macOS (winit) an
