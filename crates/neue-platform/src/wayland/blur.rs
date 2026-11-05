@@ -91,6 +91,17 @@ impl WindowBlur {
 
     /// Blurs the whole window of logical `size` (applies on the next commit).
     pub(super) fn set_size(&self, compositor: &CompositorState, size: (u32, u32)) {
+        self.set_region(compositor, (0, 0), size);
+    }
+
+    /// Blurs the `size` box whose top-left is at `origin` in the surface, corners cut
+    /// round (applies on the next commit).
+    pub(super) fn set_region(
+        &self,
+        compositor: &CompositorState,
+        origin: (i32, i32),
+        size: (u32, u32),
+    ) {
         let region = match Region::new(compositor) {
             Ok(region) => region,
             Err(err) => {
@@ -99,12 +110,14 @@ impl WindowBlur {
             }
         };
         for (x, y, w, h) in region_rects(size, self.corner_radius) {
-            region.add(x, y, w, h);
+            region.add(origin.0 + x, origin.1 + y, w, h);
         }
         self.effect.set_blur_region(Some(region.wl_region()));
     }
+}
 
-    pub(super) fn destroy(self) {
+impl Drop for WindowBlur {
+    fn drop(&mut self) {
         self.effect.destroy();
     }
 }

@@ -458,3 +458,45 @@ fn the_app_can_replace_the_menu() {
     click_item(&mut runner, &mut host, "Other");
     assert_eq!(runner.app().log, [Msg::Other]);
 }
+
+/// The menu on a host that offers blur (or not), opened.
+fn opened_with_blur(blur: bool) -> (Runner<Menus>, FakeHost) {
+    let mut runner = Runner::new(Menus::default(), Settings::default());
+    let mut host = FakeHost {
+        blur,
+        ..FakeHost::default()
+    };
+    runner.start(&mut host, Arc::new(|| {}));
+    let _ = host.only().render();
+    open(&mut runner, &mut host);
+    (runner, host)
+}
+
+#[test]
+fn a_menu_asks_for_a_blur_behind_its_panel_and_turns_translucent_when_it_is_offered() {
+    use neue_platform::{PopupBlur, PopupBlurRequest};
+
+    let (_runner, mut host) = opened_with_blur(true);
+    // The first layer is the window's own; the menu is the next.
+    let request = host
+        .only()
+        .render_root()
+        .get_layer_root(1)
+        .get_prop::<PopupBlur>()
+        .0;
+    assert_eq!(
+        request,
+        Some(PopupBlurRequest {
+            radius: neue_theme::materials::menu::RADIUS,
+            arrow: 0.0
+        })
+    );
+    let bounds = find(&mut host, Role::Menu, None)[0].bounds;
+    let at = (bounds.x1 as u32 - 6, bounds.y0 as u32 + 6);
+    let translucent = host.only().render().get_pixel(at.0, at.1).0;
+
+    let (_runner, mut host) = opened_with_blur(false);
+    let opaque = host.only().render().get_pixel(at.0, at.1).0;
+    // The harness paints over a backdrop of its own, so the two tints differ in colour.
+    assert_ne!(translucent, opaque, "the panel draws the translucent tint");
+}

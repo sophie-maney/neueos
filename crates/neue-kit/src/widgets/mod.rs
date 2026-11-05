@@ -340,9 +340,9 @@ impl<M> Handle<Button<M>> {
     }
 }
 
-/// One of the translucent materials (menu bar, dock shelf, HUD panel) drawn over a
-/// stand-in for a blurred desktop, in the app's theme. For the gallery's Materials page:
-/// apps get materials through the widgets that use them.
+/// One of the translucent materials (menu bar, dock shelf, HUD panel, menu, popover, sheet)
+/// drawn over a stand-in for a blurred desktop, in the app's theme. For the gallery's
+/// Materials page: apps get materials through the widgets that use them.
 #[derive(Debug)]
 pub struct Specimen {
     inner: NewWidget<SpecimenWidget>,

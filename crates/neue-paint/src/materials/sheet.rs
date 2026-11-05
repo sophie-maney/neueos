@@ -12,13 +12,13 @@ use neue_theme::materials::sheet::{
 use vello_common::kurbo::{Point, Rect, Shape, Size, Vec2};
 use vello_common::peniko::Gradient;
 
-use crate::Variant;
 use crate::scene::Scene;
+use crate::{Backdrop, Variant};
 
 /// Draw a sheet of `size` at the origin (logical pixels): body, the title bar's shadow
-/// along the top, and the rim.
-pub fn sheet(scene: &mut Scene, size: Size, variant: impl Into<Variant>) {
-    let p = Palette::new(variant.into());
+/// along the top, and the rim. The body is translucent on [`Backdrop::Translucent`].
+pub fn sheet(scene: &mut Scene, size: Size, variant: impl Into<Variant>, backdrop: Backdrop) {
+    let p = Palette::new(variant.into(), backdrop);
     let body = Rect::from_origin_size(Point::ORIGIN, size);
     scene.fill(&body, p.fill);
 
@@ -43,7 +43,7 @@ pub fn sheet(scene: &mut Scene, size: Size, variant: impl Into<Variant>) {
 /// Draw the drop shadow of a sheet of `size` at the origin: beside and below it, reaching
 /// [`SHADOW_REACH`] out, never above its top edge (that is the title bar) nor under it.
 pub fn sheet_shadow(scene: &mut Scene, size: Size, variant: impl Into<Variant>) {
-    let p = Palette::new(variant.into());
+    let p = Palette::new(variant.into(), Backdrop::Opaque);
     let body = Rect::from_origin_size(Point::ORIGIN, size);
     let mut frame = Rect::new(
         -SHADOW_REACH,
@@ -73,7 +73,12 @@ mod tests {
         for appearance in [Appearance::Light, Appearance::Dark] {
             let mut scene = Scene::new(300.0, 200.0);
             sheet_shadow(&mut scene, Size::new(200.0, 120.0), appearance);
-            sheet(&mut scene, Size::new(200.0, 120.0), appearance);
+            sheet(
+                &mut scene,
+                Size::new(200.0, 120.0),
+                appearance,
+                Backdrop::Opaque,
+            );
             assert_eq!(scene.open_layers(), 0);
         }
     }
@@ -81,7 +86,12 @@ mod tests {
     #[test]
     fn an_empty_sheet_draws_without_panicking() {
         let mut scene = Scene::new(10.0, 10.0);
-        sheet(&mut scene, Size::ZERO, Appearance::Light);
+        sheet(
+            &mut scene,
+            Size::ZERO,
+            Appearance::Light,
+            Backdrop::Translucent,
+        );
         sheet_shadow(&mut scene, Size::ZERO, Appearance::Dark);
         assert_eq!(scene.open_layers(), 0);
     }

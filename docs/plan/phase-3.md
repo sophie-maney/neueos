@@ -159,7 +159,7 @@ their goldens and the gallery's "Shell" page run on macOS.
       *Owner:* the menu bar over the wallpaper and the gallery's Popovers page HUD
       (`Show HUD`) over a busy window: translucent with a blur, light and dark, square
       bar and rounded HUD corners, nothing blurred under Increased contrast.
-- [ ] **3.5b Translucent menus and popovers** · Sonnet. After 3.5. A `Backdrop`
+- [x] **3.5b Translucent menus and popovers** · Sonnet. After 3.5. A `Backdrop`
       parameter and translucent palettes for `menu_panel`, `popover` and `sheet`
       (neue-theme, neue-paint, goldens for both variants, light and dark, 1x and 2x);
       xdg-popups for menus and popovers ask for blur with their corner radius (the arrow
@@ -167,6 +167,25 @@ their goldens and the gallery's "Shell" page run on macOS.
       coloured window.
       *Accept:* new goldens, existing goldens unchanged; a VM screenshot of a gallery
       menu over a coloured window.
+      *Owner:* a gallery context menu (Menus page) and a popover (Popovers page) over a
+      coloured window: translucent with a blur, light and dark, rounded corners, the
+      popover's arrow sharp and not blurred (also when the compositor flips it), nothing
+      blurred under Increased contrast.
+      *Done:* ADR 0073. `neue-theme`/`neue-paint`: `menu`, `popover` and `sheet` palettes
+      and `menu_panel`, `popover`, `sheet` take a `Backdrop` (opaque is the old colour);
+      `MaterialTile` gains `Menu`, `Popover`, `Sheet`. `neue-platform`: `PopupBlur`
+      property, `Placement::blur_box`, popup effect objects with a region set on open and
+      on every configure. `neue-kit`: `BackdropProp` default property (set from
+      `Cx::has_blur`), menus and popovers carry `PopupBlur`. The gallery's Materials page
+      shows the three tiles. Scope cut: sheets get the palette and goldens only; the kit's
+      in-window sheet stays opaque (nothing blurs behind it). Tests: 36 neue-paint and 24
+      gallery Specimen goldens (new; existing unchanged), 2 `blur_box` unit tests, 2 kit
+      tests (menu and popover ask for blur and paint translucent), palette tests.
+      `cargo xtask check` passes on macOS and in the OrbStack machine. Not done: the VM
+      screenshot. Clicks and keys did not reach the gallery in the VM (also with an
+      unmodified `main` build, as in 3.5), so no menu could be opened there; and no
+      headless compositor test opens a popup, so the popup effect object reaching the
+      compositor is untested end to end. Both are on the *Owner:* line.
 - [ ] **3.6 `neue-settingsd` v0** · Opus. The settings service (PLAN.md §3.4) on
       tokio + zbus, ADR for the interface: `org.neueos.Settings1` with typed keys from the
       `neue-config` schema (get, set, a changed signal), writing the compositor config

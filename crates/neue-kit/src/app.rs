@@ -7,7 +7,9 @@ use std::future::Future;
 use std::sync::Arc;
 
 use masonry_core::app::RenderRoot;
-use masonry_core::core::{ErasedAction, FromDynWidget, NewWidget, Widget, WidgetId, WidgetMut};
+use masonry_core::core::{
+    DefaultProperties, ErasedAction, FromDynWidget, NewWidget, Widget, WidgetId, WidgetMut,
+};
 use masonry_core::peniko::{Blob, Color};
 use neue_platform::desktop::{OutputEvent, OutputInfo, ShellEvent, ShellRequest};
 use neue_platform::{Blur, Decorations, LayerSpec, MenuAddress, WindowId, WindowKind, WindowSpec};
@@ -462,8 +464,7 @@ impl<M> Cx<'_, M> {
         spec.parent = window.parent;
         spec.modal = window.modal;
         spec.blur = blur;
-        spec.default_properties =
-            Some(Arc::new(theme::default_properties(self.kit.settings.theme)));
+        spec.default_properties = Some(self.default_properties(self.kit.settings.theme));
         if let Some(layer) = window.layer {
             spec.kind = WindowKind::Layer(layer);
             spec.background = Color::TRANSPARENT;
@@ -505,6 +506,18 @@ impl<M> Cx<'_, M> {
         } else {
             Backdrop::Opaque
         }
+    }
+
+    /// The widgets' default properties for `theme`. Menus and popovers paint translucent
+    /// when the compositor blurs behind popups (their layers ask for it, see
+    /// [`neue_platform::PopupBlur`]), else opaque.
+    fn default_properties(&self, theme: Theme) -> Arc<DefaultProperties> {
+        let backdrop = if self.has_blur() {
+            Backdrop::Translucent
+        } else {
+            Backdrop::Opaque
+        };
+        Arc::new(theme::default_properties_on(theme, backdrop))
     }
 
     /// What to ask the driver for a window that wants blur behind it: nothing unless the
@@ -585,8 +598,7 @@ impl<M> Cx<'_, M> {
             spec.app_id = self.kit.settings.app_id.clone();
             spec.parent = Some(window);
             spec.modal = true;
-            spec.default_properties =
-                Some(Arc::new(theme::default_properties(self.kit.settings.theme)));
+            spec.default_properties = Some(self.default_properties(self.kit.settings.theme));
             // No title bar: the sheet hangs from its parent's.
             spec.decorations = Decorations::Client;
             spec.background = self.kit.settings.theme.colors().window_background;
@@ -715,7 +727,7 @@ impl<M> Cx<'_, M> {
             return;
         }
         self.kit.settings.theme = theme;
-        let props = Arc::new(theme::default_properties(theme));
+        let props = self.default_properties(theme);
         for window in self.host.windows() {
             if let Some(root) = self.host.render_root(window) {
                 root.set_default_properties(Arc::clone(&props));

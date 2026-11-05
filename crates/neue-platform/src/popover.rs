@@ -57,3 +57,28 @@ impl Property for PopoverLanded {
         &DEFAULT
     }
 }
+
+/// What a popup layer (a menu, a popover) asks of the driver for the blur behind it
+/// (task 3.5b, ADR 0073).
+#[derive(Clone, Copy, Debug, PartialEq)]
+pub struct PopupBlurRequest {
+    /// Corner radius of the panel.
+    pub radius: f64,
+    /// Depth of the arrow strip along the panel's side facing the anchor, which stays out
+    /// of the blurred region. Zero for a menu.
+    pub arrow: f64,
+}
+
+/// On a popup layer's root: the panel's material is translucent when the compositor blurs
+/// behind it. The blurred region is the layer's box (its border box, not the shadow around
+/// it, less the arrow strip). `None` (the default): no blur is asked for. Ignored by
+/// drivers without blur.
+#[derive(Clone, Copy, Debug, Default, PartialEq)]
+pub struct PopupBlur(pub Option<PopupBlurRequest>);
+
+impl Property for PopupBlur {
+    fn static_default() -> &'static Self {
+        static DEFAULT: PopupBlur = PopupBlur(None);
+        &DEFAULT
+    }
+}

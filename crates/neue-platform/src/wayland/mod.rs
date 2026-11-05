@@ -95,7 +95,7 @@ use crate::app::{DriverWindow, Registry};
 use crate::gpu::{Gpu, GpuError, SurfaceTarget};
 use crate::{
     Anchor, App, Blur, ChromeHeight, Ctx, Decorations, LayerKeyboard, LayerSpec, MenuAddress,
-    Options, PopoverAnchor, ShellLayer, Waker, WindowId, WindowKind, WindowSpec,
+    Options, PopoverAnchor, PopupBlur, ShellLayer, Waker, WindowId, WindowKind, WindowSpec,
 };
 use access::{Access, AccessEvent};
 use clipboard::Clipboard;
@@ -413,9 +413,18 @@ enum Shell {
     Layer(LayerSurface),
 }
 
+/// The blur behind a popup's panel (task 3.5b).
+struct PopupBlurState {
+    effect: blur::WindowBlur,
+    /// Depth of the popover arrow strip left out of the region; zero for menus.
+    arrow: f64,
+}
+
 /// A Masonry layer shown as an xdg-popup.
 struct PopupLayer {
-    // Field order is drop order: the surface's wgpu target before the popup's wl_surface.
+    // Field order is drop order: the blur effect and the surface's wgpu target before the
+    // popup's wl_surface.
+    blur: Option<PopupBlurState>,
     surf: Surf,
     /// Owns the xdg_popup and its wl_surface: dropping it destroys both.
     popup: Popup,
@@ -543,9 +552,7 @@ impl Drop for Win {
         if let Some(window) = self.neue_window.take() {
             window.destroy();
         }
-        if let Some(blur) = self.blur.take() {
-            blur.destroy();
-        }
+        drop(self.blur.take());
     }
 }
 
@@ -1040,6 +1047,10 @@ impl State {
             .root
             .get_widget(layer)
             .and_then(|root| root.get_prop::<PopoverAnchor>().0);
+        let blur_request = w
+            .root
+            .get_widget(layer)
+            .and_then(|root| root.get_prop::<PopupBlur>().0);
         let border = w.root.get_widget(layer).map_or(bbox, |r| {
             r.ctx()
                 .window_transform()
@@ -1121,6 +1132,17 @@ impl State {
                 placement.size.1,
             );
         }
+        // A translucent panel asks for a blur behind its box, when the compositor offers one.
+        let blur = blur_request.and_then(|request| {
+            let effect = self.g.blur.as_ref()?.effect(&wl, &qh)?;
+            let effect = blur::WindowBlur::new(effect, request.radius);
+            let (origin, size) = placement.blur_box(bbox.origin(), placement.size, request.arrow);
+            effect.set_region(&self.g.compositor, origin, size);
+            Some(PopupBlurState {
+                effect,
+                arrow: request.arrow,
+            })
+        });
         let mut surf = Surf::new(&self.g, &qh, wl, wgpu_surface, false);
         surf.size = (
             (placement.size.0 + insets.horizontal()) as u32,
@@ -1129,6 +1151,7 @@ impl State {
         surf.int_scale = w.surf.int_scale;
         popup.wl_surface().commit();
         w.popups.push(PopupLayer {
+            blur,
             surf,
             popup,
             root_id: layer,

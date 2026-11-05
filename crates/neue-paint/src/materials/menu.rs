@@ -13,8 +13,8 @@ use vello_common::kurbo::{
 };
 use vello_common::peniko::{Color, Gradient};
 
-use crate::Variant;
 use crate::scene::Scene;
+use crate::{Backdrop, Variant};
 
 pub use neue_theme::materials::menu::SHADOW_REACH;
 
@@ -43,9 +43,10 @@ pub fn menu_outline(rect: Rect) -> RoundedRect {
 }
 
 /// Draw a menu panel filling `rect` (logical pixels): shadow, body and rim. The shadow
-/// reaches [`SHADOW_REACH`] beyond the sides and top and a little more below.
-pub fn menu_panel(scene: &mut Scene, rect: Rect, variant: impl Into<Variant>) {
-    let p = Palette::new(variant.into());
+/// reaches [`SHADOW_REACH`] beyond the sides and top and a little more below. The body is
+/// translucent on [`Backdrop::Translucent`], for the compositor to blur behind it.
+pub fn menu_panel(scene: &mut Scene, rect: Rect, variant: impl Into<Variant>, backdrop: Backdrop) {
+    let p = Palette::new(variant.into(), backdrop);
     let outline = menu_outline(rect);
 
     // The shadow falls outside the panel only, so a translucent body (Phase 3) stays
@@ -73,7 +74,7 @@ pub fn menu_panel(scene: &mut Scene, rect: Rect, variant: impl Into<Variant>) {
 
 /// Draw the highlighted item's band filling `rect`.
 pub fn menu_highlight(scene: &mut Scene, rect: Rect, variant: impl Into<Variant>) {
-    let p = Palette::new(variant.into());
+    let p = Palette::new(variant.into(), Backdrop::Opaque);
     scene.fill(&rect, vertical(rect, p.highlight[0], p.highlight[1]));
     scene.fill(
         &Rect::new(rect.x0, rect.y0, rect.x1, rect.y0 + 1.0),
@@ -83,7 +84,7 @@ pub fn menu_highlight(scene: &mut Scene, rect: Rect, variant: impl Into<Variant>
 
 /// Draw a separator's line, centred across `rect` (a whole separator row).
 pub fn menu_separator(scene: &mut Scene, rect: Rect, variant: impl Into<Variant>) {
-    let p = Palette::new(variant.into());
+    let p = Palette::new(variant.into(), Backdrop::Opaque);
     let y = (rect.center().y - SEPARATOR_LINE / 2.0).round();
     scene.fill(
         &Rect::new(rect.x0, y, rect.x1, y + SEPARATOR_LINE),
@@ -145,6 +146,7 @@ mod tests {
             &mut scene,
             Rect::new(20.0, 20.0, 180.0, 180.0),
             Appearance::Light,
+            Backdrop::Translucent,
         );
         assert_eq!(scene.open_layers(), 0);
     }

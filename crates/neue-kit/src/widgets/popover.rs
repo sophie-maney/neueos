@@ -30,11 +30,13 @@ use masonry_core::layout::{LayoutSize, LenDef, LenReq, Length};
 use neue_paint::Scene;
 use neue_paint::imaging::ImagingReplayer;
 use neue_paint::materials::{Edge, popover, popover_body, popover_landing, popover_origin};
-use neue_platform::{PopoverAnchor, PopoverLanded, PopoverRequest, Side};
-use neue_theme::materials::popover::{ARROW_HEIGHT, GAP, PADDING, SHADOW_REACH};
+use neue_platform::{
+    PopoverAnchor, PopoverLanded, PopoverRequest, PopupBlur, PopupBlurRequest, Side,
+};
+use neue_theme::materials::popover::{ARROW_HEIGHT, GAP, PADDING, RADIUS, SHADOW_REACH};
 
 use crate::element::{Element, Wiring};
-use crate::theme::ThemeProp;
+use crate::theme::{BackdropProp, ThemeProp};
 
 /// A panel of content shown next to a widget, with an arrow pointing at it. Show it with
 /// [`Cx::show_popover`](crate::Cx::show_popover), anchored to a widget you hold a
@@ -141,7 +143,13 @@ pub(crate) fn show(owner: &mut WidgetMut<'_, dyn Widget>, mut popover: NewWidget
         side: side(w.edge),
         reach: SHADOW_REACH,
     };
-    let popover = popover.with_props(PopoverAnchor(Some(request)));
+    // The panel is translucent over a blur when the compositor offers one; the arrow stays
+    // out of the blurred region.
+    let blur = PopupBlur(Some(PopupBlurRequest {
+        radius: RADIUS,
+        arrow: ARROW_HEIGHT,
+    }));
+    let popover = popover.with_props((PopoverAnchor(Some(request)), blur));
     ctx.create_attached_layer(LayerType::Other, popover, origin);
 }
 
@@ -313,6 +321,7 @@ impl Layer for PopoverWidget {
 }
 
 impl UsesProperty<ThemeProp> for PopoverWidget {}
+impl UsesProperty<BackdropProp> for PopoverWidget {}
 impl UsesProperty<PopoverLanded> for PopoverWidget {}
 
 impl Widget for PopoverWidget {
@@ -361,7 +370,9 @@ impl Widget for PopoverWidget {
     }
 
     fn property_changed(&mut self, ctx: &mut UpdateCtx<'_>, property_type: TypeId) {
-        if property_type == TypeId::of::<ThemeProp>() {
+        if property_type == TypeId::of::<ThemeProp>()
+            || property_type == TypeId::of::<BackdropProp>()
+        {
             ctx.request_paint_only();
         } else if property_type == TypeId::of::<PopoverLanded>() {
             ctx.request_layout();
@@ -422,10 +433,18 @@ impl Widget for PopoverWidget {
         painter: &mut Painter<'_>,
     ) {
         let ThemeProp(theme) = *props.get::<ThemeProp>(ctx.property_cache());
+        let BackdropProp(backdrop) = *props.get::<BackdropProp>(ctx.property_cache());
         let size = ctx.content_box().size();
         let mut scene = Scene::new(size.width, size.height);
         let (edge, at) = self.placed;
-        popover(&mut scene, size, edge.opposite(), at, theme.variant);
+        popover(
+            &mut scene,
+            size,
+            edge.opposite(),
+            at,
+            theme.variant,
+            backdrop,
+        );
         self.replayer.replay(&scene, ctx.scale_factor(), painter);
     }
 

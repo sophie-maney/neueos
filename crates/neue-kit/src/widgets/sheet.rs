@@ -24,9 +24,9 @@ use masonry_core::core::{
 use masonry_core::imaging::Painter;
 use masonry_core::kurbo::{Axis, Insets, Point, Size};
 use masonry_core::layout::{LayoutSize, LenDef, LenReq, Length, SizeDef};
-use neue_paint::Scene;
 use neue_paint::imaging::ImagingReplayer;
 use neue_paint::materials::{sheet, sheet_shadow};
+use neue_paint::{Backdrop, Scene};
 use neue_theme::materials::sheet::{BUTTON_GAP, BUTTON_ROW_GAP, PADDING, SHADOW_REACH};
 
 use crate::element::{Element, Handle, Wiring};
@@ -368,7 +368,7 @@ impl Widget for SheetWidget {
         if self.attached {
             sheet_shadow(&mut scene, size, theme.variant);
         }
-        sheet(&mut scene, size, theme.variant);
+        sheet(&mut scene, size, theme.variant, Backdrop::Opaque);
         self.replayer.replay(&scene, ctx.scale_factor(), painter);
     }
 
