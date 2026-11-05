@@ -287,10 +287,12 @@ fn forward(
 
 /// The bar's titles for `titles` of generation `generation`: `message(event)` for each
 /// item chosen and each title opened or closed. Separators and items without a menu at the
-/// top level are left out (the bar has no room for buttons).
+/// top level are left out (the bar has no room for buttons). `super_as_ctrl`: the app gets
+/// Super as Control, so its Control shortcuts show as ⌘ ([`shortcut`]).
 pub fn bar_titles<M: Clone + 'static>(
     titles: &[MenuNode],
     generation: u64,
+    super_as_ctrl: bool,
     message: impl Fn(MenuEvent) -> M + Clone + 'static,
 ) -> Vec<MenuTitle<M>> {
     let event = |id, event| MenuEvent {
@@ -302,9 +304,12 @@ pub fn bar_titles<M: Clone + 'static>(
         .iter()
         .filter(|t| t.kind == NodeKind::Item && !t.children.is_empty())
         .map(|t| {
-            MenuTitle::new(t.label.clone(), menu(&t.children, generation, &message))
-                .on_open(message(event(t.id, ItemEvent::Opened)))
-                .on_close(message(event(t.id, ItemEvent::Closed)))
+            MenuTitle::new(
+                t.label.clone(),
+                menu(&t.children, generation, super_as_ctrl, &message),
+            )
+            .on_open(message(event(t.id, ItemEvent::Opened)))
+            .on_close(message(event(t.id, ItemEvent::Closed)))
         })
         .collect()
 }
@@ -314,15 +319,17 @@ pub fn bar_titles<M: Clone + 'static>(
 pub fn app_menu<M: 'static>(
     items: &[MenuNode],
     generation: u64,
+    super_as_ctrl: bool,
     message: impl Fn(MenuEvent) -> M + Clone + 'static,
 ) -> Menu<M> {
-    menu(items, generation, &message)
+    menu(items, generation, super_as_ctrl, &message)
 }
 
 /// A kit menu for `items`.
 fn menu<M: 'static>(
     items: &[MenuNode],
     generation: u64,
+    super_as_ctrl: bool,
     message: &(impl Fn(MenuEvent) -> M + Clone + 'static),
 ) -> Menu<M> {
     items.iter().fold(Menu::new(), |built, node| {
@@ -342,7 +349,7 @@ fn menu<M: 'static>(
         } else {
             MenuItem::submenu(
                 node.label.clone(),
-                menu(&node.children, generation, message),
+                menu(&node.children, generation, super_as_ctrl, message),
             )
         };
         let item = match node.toggle {
@@ -354,7 +361,7 @@ fn menu<M: 'static>(
             }),
             Toggle::Radio(state) => item.radio(state == ToggleState::On),
         };
-        let item = match shortcut(&node.shortcut) {
+        let item = match shortcut(&node.shortcut, super_as_ctrl) {
             Some(keys) => item.shortcut(keys),
             None => item,
         };
@@ -363,17 +370,21 @@ fn menu<M: 'static>(
     })
 }
 
-/// A DBusMenu shortcut (`["Control", "Shift", "S"]`) as the kit shows it.
-fn shortcut(keys: &[String]) -> Option<Shortcut> {
+/// A DBusMenu shortcut (`["Control", "Shift", "S"]`) as the kit shows it. With
+/// `super_as_ctrl` (the compositor sends the app Control for Super, ADR 0079) Control is
+/// the key the user types as ⌘, so it shows as ⌘ (ADR 0081); a Super in the same
+/// shortcut is the same key and shows once.
+fn shortcut(keys: &[String], super_as_ctrl: bool) -> Option<Shortcut> {
     let (key, modifiers) = keys.split_last()?;
-    let mut shortcut = if modifiers.iter().any(|m| m == "Super") {
+    let command = |m: &String| m == "Super" || (super_as_ctrl && m == "Control");
+    let mut shortcut = if modifiers.iter().any(command) {
         Shortcut::command(key.clone())
     } else {
         Shortcut::new(key.clone())
     };
     for modifier in modifiers {
         shortcut = match modifier.as_str() {
-            "Control" => shortcut.ctrl(),
+            "Control" if !super_as_ctrl => shortcut.ctrl(),
             "Alt" => shortcut.alt(),
             "Shift" => shortcut.shift(),
             _ => shortcut,
@@ -404,9 +415,9 @@ mod tests {
 
     #[test]
     fn titles_are_the_top_level_menus() {
-        let titles = bar_titles(&tree(), 3, |e| e);
+        let titles = bar_titles(&tree(), 3, false, |e| e);
         assert_eq!(titles.len(), 2);
-        let file = menu(&tree()[0].children, 3, &|e| e);
+        let file = menu(&tree()[0].children, 3, false, &|e| e);
         let save = &file.items()[0];
         assert_eq!(save.label(), "Save");
         assert_eq!(
@@ -414,7 +425,7 @@ mod tests {
             Some(&Shortcut::new("S").ctrl().shift())
         );
         assert!(file.items()[1].is_separator());
-        let view = menu(&tree()[1].children, 3, &|e| e);
+        let view = menu(&tree()[1].children, 3, false, &|e| e);
         assert_eq!(
             view.items()[0].toggle(),
             neue_kit::MenuToggle::Check(CheckState::On)
@@ -424,11 +435,48 @@ mod tests {
 
     #[test]
     fn shortcuts_map_modifiers() {
-        assert_eq!(shortcut(&[]), None);
-        assert_eq!(shortcut(&["F5".into()]), Some(Shortcut::new("F5")));
+        assert_eq!(shortcut(&[], false), None);
+        assert_eq!(shortcut(&["F5".into()], false), Some(Shortcut::new("F5")));
         assert_eq!(
-            shortcut(&["Super".into(), "Alt".into(), "Q".into()]),
+            shortcut(&["Super".into(), "Alt".into(), "Q".into()], false),
             Some(Shortcut::command("Q").alt())
+        );
+        assert_eq!(
+            shortcut(&["Control".into(), "Shift".into(), "S".into()], false),
+            Some(Shortcut::new("S").ctrl().shift())
+        );
+    }
+
+    #[test]
+    fn control_shows_as_command_where_super_is_sent_as_control() {
+        let keys = |names: &[&str]| names.iter().map(|n| (*n).into()).collect::<Vec<String>>();
+        assert_eq!(
+            shortcut(&keys(&["Control", "C"]), true),
+            Some(Shortcut::command("C"))
+        );
+        assert_eq!(
+            shortcut(&keys(&["Control", "Shift", "S"]), true),
+            Some(Shortcut::command("S").shift())
+        );
+        // Super and Control are the same key to such an app: one ⌘.
+        assert_eq!(
+            shortcut(&keys(&["Super", "Control", "Q"]), true),
+            Some(Shortcut::command("Q"))
+        );
+        // Others are untouched.
+        assert_eq!(
+            shortcut(&keys(&["Alt", "F4"]), true),
+            Some(Shortcut::new("F4").alt())
+        );
+        assert_eq!(shortcut(&keys(&["F5"]), true), Some(Shortcut::new("F5")));
+    }
+
+    #[test]
+    fn the_menu_shows_command_for_remapped_apps() {
+        let save = menu(&tree()[0].children, 3, true, &|e| e);
+        assert_eq!(
+            save.items()[0].shortcut_keys(),
+            Some(&Shortcut::command("S").shift())
         );
     }
 

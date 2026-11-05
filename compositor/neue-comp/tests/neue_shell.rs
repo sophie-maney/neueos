@@ -8,7 +8,7 @@ mod harness;
 use std::time::{Duration, Instant};
 
 use harness::{Anchor, KeyboardInteractivity, Layer, Server, ShellMenu, TestClient};
-use neue_ipc::WindowInfo;
+use neue_ipc::{Event, Topic, WindowInfo};
 use neue_protocols::neue_shell::client::neue_shell_manager_v1::{KeyState, Modifiers, SystemKey};
 use smithay::backend::input::{InputTime, KeyState as Key};
 use smithay::desktop::layer_map_for_output;
@@ -242,6 +242,112 @@ fn attention_menus_and_icons_are_passed_on() {
     shell.shell_toplevel(&icon.identifier).activate();
     shell.roundtrip();
     assert_eq!(shell.shell_windows()[0].state, 0);
+}
+
+#[test]
+fn command_key_says_whether_super_reaches_the_app_as_ctrl() {
+    let server = Server::start();
+    // A third-party app, a terminal (exempt) and a kit app (it binds neue_window_manager_v1).
+    let mut firefox = server.connect();
+    let _firefox = firefox.create_toplevel("Firefox", "firefox", (200, 100));
+    let mut foot = server.connect();
+    let _foot = foot.create_toplevel("Foot", "foot", (200, 100));
+    let mut kit = server.connect();
+    let kit_window = kit.create_toplevel("Kit", "org.neueos.Gallery", (200, 100));
+    let _chrome = kit.neue_window(&kit_window.surface);
+    kit.roundtrip();
+
+    let mut shell = shell(&server);
+    let ctrl = |shell: &TestClient| -> Vec<(String, Option<bool>)> {
+        shell
+            .shell_windows()
+            .into_iter()
+            .map(|w| (w.title, w.super_as_ctrl))
+            .collect()
+    };
+    // In the first batch, before `done`.
+    assert_eq!(
+        ctrl(&shell),
+        [
+            ("Firefox".into(), Some(true)),
+            ("Foot".into(), Some(false)),
+            ("Kit".into(), Some(false)),
+        ]
+    );
+    let events = &shell.shell_windows()[0].events;
+    let at = |name| events.iter().position(|e| *e == name).unwrap();
+    assert!(at("command_key") < at("done"));
+
+    // A window announced later is told in its first batch too.
+    let mut gedit = server.connect();
+    let _gedit = gedit.create_toplevel("Gedit", "org.gnome.gedit", (200, 100));
+    shell.roundtrip();
+    assert_eq!(shell.shell_windows()[3].super_as_ctrl, Some(true));
+}
+
+#[test]
+fn command_key_follows_the_app_id_and_the_config() {
+    let server = Server::start();
+    let mut app = server.connect();
+    let window = app.create_toplevel("App", "firefox", (200, 100));
+    let mut shell = shell(&server);
+    // Writes `compositor.toml` and waits for the compositor to apply it.
+    let reload = |server: &Server, text: &str| {
+        let mut events = server.ipc().subscribe(vec![Topic::Config]).unwrap();
+        events
+            .set_read_timeout(Some(Duration::from_secs(10)))
+            .unwrap();
+        server.write_config(text);
+        let event = events.next_event().unwrap().expect("connection closed");
+        assert!(matches!(event, Event::ConfigReloaded { .. }), "{event:?}");
+    };
+    let events = |shell: &TestClient| {
+        shell.shell_windows()[0]
+            .events
+            .iter()
+            .filter(|e| **e == "command_key")
+            .count()
+    };
+    assert_eq!(shell.shell_windows()[0].super_as_ctrl, Some(true));
+    assert_eq!(events(&shell), 1);
+
+    // Nothing changed: nothing sent.
+    window.surface.commit();
+    app.roundtrip();
+    shell.roundtrip();
+    assert_eq!(events(&shell), 1);
+
+    // The app id becomes a terminal's.
+    window.toplevel.set_app_id("foot".into());
+    window.surface.commit();
+    app.roundtrip();
+    shell.roundtrip();
+    assert_eq!(shell.shell_windows()[0].super_as_ctrl, Some(false));
+    assert_eq!(events(&shell), 2);
+
+    // Turning the remap off changes it for every window, but only those it changes.
+    reload(&server, "[super-as-command]\nenabled = false\n");
+    shell.roundtrip();
+    assert_eq!(events(&shell), 2, "foot was already Super");
+    window.toplevel.set_app_id("firefox".into());
+    window.surface.commit();
+    app.roundtrip();
+    shell.roundtrip();
+    assert_eq!(shell.shell_windows()[0].super_as_ctrl, Some(false));
+    reload(&server, "[super-as-command]\nenabled = true\n");
+    shell.roundtrip();
+    assert_eq!(shell.shell_windows()[0].super_as_ctrl, Some(true));
+}
+
+#[test]
+fn an_older_shell_is_not_sent_command_key() {
+    let server = Server::start();
+    let mut app = server.connect();
+    let _window = app.create_toplevel("App", "firefox", (200, 100));
+    let mut shell = server.connect_shell();
+    shell.bind_neue_shell_at(2);
+    assert_eq!(shell.shell_windows().len(), 1);
+    assert_eq!(shell.shell_windows()[0].super_as_ctrl, None);
 }
 
 #[test]

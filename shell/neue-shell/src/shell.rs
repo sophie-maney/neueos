@@ -89,6 +89,9 @@ struct GlobalMenu {
     pending: Option<Menus>,
     /// One of the app's menus is up.
     open: bool,
+    /// The active window's app gets Super as Control: its Control shortcuts show as ⌘
+    /// (`command_key`, ADR 0081).
+    super_as_ctrl: bool,
 }
 
 impl GlobalMenu {
@@ -137,7 +140,12 @@ impl Shell {
     /// The bar's titles for the app's menus being shown.
     fn app_titles(&self) -> Vec<neue_kit::desktop::MenuTitle<Message>> {
         self.global_menu.shown.as_ref().map_or_else(Vec::new, |m| {
-            global_menu::bar_titles(&m.titles, m.generation, Message::AppMenu)
+            global_menu::bar_titles(
+                &m.titles,
+                m.generation,
+                self.global_menu.super_as_ctrl,
+                Message::AppMenu,
+            )
         })
     }
 
@@ -147,7 +155,12 @@ impl Shell {
             .shown
             .as_ref()
             .map_or_else(neue_kit::Menu::new, |m| {
-                global_menu::app_menu(&m.app_menu, m.generation, Message::AppMenu)
+                global_menu::app_menu(
+                    &m.app_menu,
+                    m.generation,
+                    self.global_menu.super_as_ctrl,
+                    Message::AppMenu,
+                )
             })
     }
 
@@ -171,6 +184,14 @@ impl Shell {
 
     /// Follows the active window's menus.
     fn follow_menus(&mut self, cx: &mut Cx<'_, Message>) {
+        let super_as_ctrl = self.windows.active().is_some_and(|w| w.super_as_ctrl);
+        if super_as_ctrl != self.global_menu.super_as_ctrl {
+            self.global_menu.super_as_ctrl = super_as_ctrl;
+            // Show the same menus with the other key; after the open menu if one is up.
+            if let Some(menus) = self.global_menu.shown.clone() {
+                self.show_menus(cx, menus);
+            }
+        }
         let address = self.windows.active().and_then(|w| Address::of(&w.menu));
         if address == self.global_menu.following {
             return;

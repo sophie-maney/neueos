@@ -69,6 +69,10 @@ pub struct Toplevel {
     pub minimized: bool,
     /// It asked for focus it wasn't given (the dock bounces its icon).
     pub attention: bool,
+    /// Super reaches the window's app as Control (ADR 0079), so its Control shortcuts are
+    /// what the user types with ⌘ (`command_key`, ADR 0081). False for apps that take
+    /// Super themselves, and with a compositor that doesn't say.
+    pub super_as_ctrl: bool,
     /// Where the window's app exports its menus, for the global menu (ADR 0005).
     pub menu: ToplevelMenu,
 }

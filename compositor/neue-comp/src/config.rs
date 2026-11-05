@@ -313,6 +313,7 @@ impl State {
 
         self.config.bindings = bindings;
         self.config.active = new;
+        self.shell_command_keys_changed();
         #[cfg(feature = "tty")]
         if touchpad_changed && let crate::state::Backend::Tty(tty) = &mut self.backend {
             tty.configure_touchpads(&self.config.active.touchpad);

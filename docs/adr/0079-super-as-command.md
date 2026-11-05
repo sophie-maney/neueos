@@ -47,7 +47,7 @@ third-party menus).
   compositor binding on Super still wins (Super+Q quits the session by default; a
   later task may move session actions to keep Super+Q for apps).
 - Ctrl stays Ctrl: a third-party app still gets real Ctrl chords from the Ctrl keys.
-- The shell does not yet know which apps are remapped; 3.10c adds that to `neue_shell_v1`
-  so the menu bar can show their Ctrl shortcuts with ⌘.
+- The shell learns which apps are remapped from `neue_shell_toplevel_v1.command_key`
+  (ADR 0081), so the menu bar shows their Ctrl shortcuts with ⌘.
 - Super+arrow becomes Ctrl+arrow in remapped apps (word moves in GTK), not the Mac's
   line ends.
