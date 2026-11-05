@@ -82,6 +82,17 @@ pub struct WindowSpec {
     /// that lays it out. The Wayland driver tells the compositor (`neue_window_v1`), which
     /// hangs sheets under it (ADR 0064). `None` for a window without chrome of its own.
     pub chrome_height: Option<ChromeHeight>,
+    /// Ask the compositor to blur what is behind the window (task 3.5, ADR 0072). Ignored
+    /// without [`Ctx::has_blur`]. The window should then paint a translucent material.
+    pub blur: Option<Blur>,
+}
+
+/// A request to blur the background behind a whole window.
+#[derive(Clone, Copy, Debug, Default, PartialEq)]
+pub struct Blur {
+    /// Radius of the window's rounded corners in logical pixels; the blur stays inside
+    /// them. 0: a plain rectangle.
+    pub corner_radius: f64,
 }
 
 impl WindowSpec {
@@ -101,6 +112,7 @@ impl WindowSpec {
             focus_fallback: None,
             default_properties: None,
             chrome_height: None,
+            blur: None,
         }
     }
 }
@@ -416,6 +428,13 @@ impl<'a> Ctx<'a> {
         self.host.has_shell()
     }
 
+    /// Whether the compositor blurs what is behind surfaces that ask (`ext-background-effect-v1`
+    /// with the blur capability): translucent materials can then draw their translucent
+    /// tint. Always false on the winit driver. Known when [`App::on_start`] runs.
+    pub fn has_blur(&self) -> bool {
+        self.host.has_blur()
+    }
+
     /// Sends a request to the compositor over `neue_shell_v1`, after the callback returns.
     /// Dropped (with a debug log) without the protocol.
     pub fn shell(&mut self, request: ShellRequest) {
@@ -436,6 +455,7 @@ pub(crate) trait Host {
     fn set_primary_selection(&mut self, text: String);
     fn outputs(&self) -> Vec<OutputInfo>;
     fn has_shell(&self) -> bool;
+    fn has_blur(&self) -> bool;
     fn shell(&mut self, request: ShellRequest);
 }
 
@@ -453,6 +473,9 @@ pub(crate) struct Registry<W> {
     pub(crate) outputs: Vec<OutputInfo>,
     /// Whether `neue_shell_manager_v1` is bound; set by the driver.
     pub(crate) has_shell: bool,
+    /// Whether the compositor offers blur; set by the driver, which may change it while
+    /// running.
+    pub(crate) blur: Arc<AtomicBool>,
     /// Queued by [`Ctx::shell`]; the driver sends them after the callback.
     pub(crate) shell_requests: Vec<ShellRequest>,
     next_id: u64,
@@ -471,6 +494,7 @@ impl<W> Registry<W> {
             primary_selection: None,
             outputs: Vec::new(),
             has_shell: false,
+            blur: Arc::new(AtomicBool::new(false)),
             shell_requests: Vec::new(),
             next_id: 0,
             exit: false,
@@ -546,6 +570,10 @@ impl<W: DriverWindow> Host for Registry<W> {
 
     fn has_shell(&self) -> bool {
         self.has_shell
+    }
+
+    fn has_blur(&self) -> bool {
+        self.blur.load(Ordering::Relaxed)
     }
 
     fn shell(&mut self, request: ShellRequest) {

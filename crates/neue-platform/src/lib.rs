@@ -32,8 +32,8 @@ pub mod wayland;
 pub mod winit;
 
 pub use app::{
-    Anchor, App, ChromeHeight, Ctx, Decorations, LayerKeyboard, LayerSpec, Margin, MenuAddress,
-    ShellLayer, Waker, WindowId, WindowKind, WindowSpec,
+    Anchor, App, Blur, ChromeHeight, Ctx, Decorations, LayerKeyboard, LayerSpec, Margin,
+    MenuAddress, ShellLayer, Waker, WindowId, WindowKind, WindowSpec,
 };
 pub use popover::{PopoverAnchor, PopoverLanded, PopoverRequest, Side};
 #[cfg(target_os = "linux")]

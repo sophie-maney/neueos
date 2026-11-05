@@ -8,6 +8,7 @@
 mod harness;
 
 use std::sync::Arc;
+use std::sync::atomic::{AtomicBool, Ordering};
 use std::sync::mpsc;
 use std::time::{Duration, Instant};
 
@@ -16,7 +17,9 @@ use masonry::core::{ErasedAction, NewWidget, WidgetId};
 use masonry::peniko::{Blob, Color};
 use masonry::widgets::Label;
 use neue_comp::{HEADLESS_OUTPUT_NAME, WindowInfo};
-use neue_platform::{App, Ctx, Options, WindowId, WindowSpec};
+use neue_platform::{App, Blur, Ctx, Options, WindowId, WindowSpec};
+use smithay::wayland::background_effect::BackgroundEffectSurfaceCachedState;
+use smithay::wayland::compositor::RectangleKind;
 use wayland_client::Connection;
 
 const APP_ID: &str = "org.neueos.PlatformTest";
@@ -109,4 +112,81 @@ fn driver_maps_draws_and_closes_a_window() {
     wait_for("the window to unmap", || {
         our_window(&server).is_none().then_some(())
     });
+}
+
+/// Opens a window that asks for blur with 8 px rounded corners, and records whether the
+/// compositor offered blur when the app started.
+struct BlurApp(Arc<AtomicBool>);
+
+impl App for BlurApp {
+    fn on_start(&mut self, cx: &mut Ctx<'_>) {
+        self.0.store(cx.has_blur(), Ordering::Relaxed);
+        let root = NewWidget::new(Label::new("neue-platform")).erased();
+        cx.open_window(WindowSpec {
+            app_id: APP_ID.into(),
+            background: Color::TRANSPARENT,
+            blur: Some(Blur { corner_radius: 8.0 }),
+            ..WindowSpec::new("Blur test", (320, 200), root)
+        });
+    }
+
+    fn on_action(&mut self, _: &mut Ctx<'_>, _: WindowId, _: WidgetId, _: ErasedAction) {}
+}
+
+/// The window's blur region as the compositor holds it: whether each of the given points
+/// (surface-local) is inside, and the covered area.
+fn blur_region(
+    server: &Server,
+    info: &WindowInfo,
+    probes: [(i32, i32); 3],
+) -> Option<([bool; 3], i32)> {
+    let id = info.id;
+    server.with_state(move |state| {
+        let window = state.window_by_id(id)?;
+        let mut found = None;
+        window.with_surfaces(|_, data| {
+            let mut cached = data
+                .cached_state
+                .get::<BackgroundEffectSurfaceCachedState>();
+            let Some(region) = cached.current().blur_region.clone() else {
+                return;
+            };
+            // Only additions: the driver sends no subtractions.
+            let inside = |x: i32, y: i32| {
+                region
+                    .rects
+                    .iter()
+                    .any(|(kind, r)| matches!(kind, RectangleKind::Add) && r.contains((x, y)))
+            };
+            let area = region.rects.iter().map(|(_, r)| r.size.w * r.size.h).sum();
+            found = Some((probes.map(|(x, y)| inside(x, y)), area));
+        });
+        found
+    })
+}
+
+#[test]
+fn driver_blurs_behind_a_window_that_asks_inside_its_rounded_corners() {
+    let server = Server::start_rendering();
+    let stream = server.connect_raw();
+    let offered = Arc::new(AtomicBool::new(false));
+    let seen = offered.clone();
+    std::thread::spawn(move || {
+        if let Ok(conn) = Connection::from_socket(stream) {
+            let _ =
+                neue_platform::wayland::run_with_connection(conn, &mut BlurApp(seen), options());
+        }
+    });
+
+    let window = wait_for("the window to map", || our_window(&server));
+    assert!(
+        offered.load(Ordering::Relaxed),
+        "the compositor offers blur when the app starts"
+    );
+    // The middle and the corner (0, 0): out; the left edge's middle: in.
+    let (inside, area) = wait_for("the blur region", || {
+        blur_region(&server, &window, [(160, 100), (0, 0), (0, 100)])
+    });
+    assert_eq!(inside, [true, false, true]);
+    assert!(area > 0 && area < 320 * 200, "rounded: {area} px");
 }

@@ -145,6 +145,8 @@ pub(crate) struct Chrome {
     /// Paint the focused look even when the window isn't focused: a HUD window that belongs
     /// to this one has the keyboard.
     keep_active: bool,
+    /// What the HUD material draws: translucent when the compositor blurs behind the window.
+    backdrop: Backdrop,
     /// Height of the bar, from the last layout.
     height: f64,
     /// The pointer is over the traffic lights.
@@ -181,6 +183,7 @@ impl Chrome {
                 })
                 .collect(),
             keep_active: false,
+            backdrop: Backdrop::Opaque,
             height: kind.title_height(),
             hover: false,
             pressed: None,
@@ -188,6 +191,13 @@ impl Chrome {
             #[cfg(test)]
             requests: Vec::new(),
         }
+    }
+
+    /// A HUD paints `backdrop` (the translucent tint when the compositor blurs behind it).
+    #[must_use]
+    pub(crate) fn with_backdrop(mut self, backdrop: Backdrop) -> Self {
+        self.backdrop = backdrop;
+        self
     }
 
     pub(crate) fn is_hud(&self) -> bool {
@@ -425,15 +435,15 @@ impl Chrome {
         painter.pop_clip();
     }
 
-    /// The HUD panel over the whole window, its close button and its title. There is no
-    /// blur behind a kit window yet, so the panel is the opaque tint.
+    /// The HUD panel over the whole window, its close button and its title: the
+    /// translucent tint with a blur behind it, else the opaque one (ADR 0039).
     fn paint_hud(&mut self, painter: &mut Painter<'_>, theme: Theme, size: Size, scale: f64) {
         let mut scene = Scene::new(size.width.max(1.0), size.height.max(1.0));
         hud(
             &mut scene,
             Rect::new(0.0, 0.0, size.width, size.height),
             theme.variant,
-            Backdrop::Opaque,
+            self.backdrop,
         );
         hud_close_button(
             &mut scene,
@@ -445,7 +455,7 @@ impl Chrome {
         );
         self.replayer.replay(&scene, scale, painter);
 
-        let palette = HudPalette::new(theme.variant, Backdrop::Opaque);
+        let palette = HudPalette::new(theme.variant, self.backdrop);
         let room = (size.width - 2.0 * HUD_TITLE_INSET).max(0.0);
         let x = HUD_TITLE_INSET + (room - self.title.width()).max(0.0) / 2.0;
         let top = HUD_TITLE_BASELINE - self.title.baseline();

@@ -2,7 +2,7 @@
 //! extra, put together in a [`MenuBar`]. Portable: the shell builds one per output, and the
 //! gallery's Shell page and the goldens build the same.
 
-use neue_kit::desktop::{MenuBar, MenuTitle};
+use neue_kit::desktop::{Backdrop, MenuBar, MenuTitle};
 use neue_kit::{Handle, Menu, MenuItem};
 
 /// What the logo menu offers.
@@ -78,13 +78,16 @@ pub struct BarContent {
 }
 
 /// A menu bar showing `content`, its logo menu sending `message(command)`; `handles` are
-/// pointed at the parts that change.
+/// pointed at the parts that change. `backdrop` is translucent when the compositor blurs
+/// behind the bar (task 3.5).
 pub fn menu_bar<M: 'static>(
     content: &BarContent,
     message: impl Fn(SystemCommand) -> M + Clone + 'static,
     handles: &mut BarHandles<M>,
+    backdrop: Backdrop,
 ) -> MenuBar<M> {
     MenuBar::new()
+        .backdrop(backdrop)
         .with(MenuTitle::logo(LOGO_NAME, logo_menu(message)))
         // The app's own menus come with the global menu (task 3.7).
         .with(

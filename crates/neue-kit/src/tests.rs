@@ -80,6 +80,9 @@ struct FakeHost {
     outputs: Vec<neue_platform::desktop::OutputInfo>,
     /// Whether it offers the shell protocol, and the shell requests sent.
     shell: bool,
+    /// Whether it offers blur, and each window's blur request.
+    blur: bool,
+    blurs: BTreeMap<WindowId, neue_platform::Blur>,
     shell_requests: Vec<neue_platform::desktop::ShellRequest>,
 }
 
@@ -117,6 +120,9 @@ impl Host for FakeHost {
         self.dialogs
             .insert(id, (spec.parent, spec.modal, (spec.width, spec.height)));
         self.kinds.insert(id, spec.kind);
+        if let Some(blur) = spec.blur {
+            self.blurs.insert(id, blur);
+        }
         id
     }
     fn close_window(&mut self, window: WindowId) {
@@ -149,6 +155,9 @@ impl Host for FakeHost {
     }
     fn has_shell(&self) -> bool {
         self.shell
+    }
+    fn has_blur(&self) -> bool {
+        self.blur
     }
     fn shell(&mut self, request: neue_platform::desktop::ShellRequest) {
         if self.shell {

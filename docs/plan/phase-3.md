@@ -136,7 +136,7 @@ their goldens and the gallery's "Shell" page run on macOS.
       over foot on the tty backend, 0 CPU ticks in 10 s idle with it open.
       `cargo run -p neue-comp --example blur-demo [W H]` makes a blurred window. Not done:
       real hardware.
-- [ ] **3.5 Backdrop blur: clients** · Sonnet. After 3.4. `neue-platform`'s Wayland
+- [x] **3.5 Backdrop blur: clients** · Sonnet. After 3.4. `neue-platform`'s Wayland
       driver asks for blur on surfaces whose root material is translucent (menus,
       popovers, HUD panels, the menu bar), and translucent materials (ADR 0039) switch
       from the opaque tinted fallback to translucent when the compositor offers blur. The
@@ -144,6 +144,29 @@ their goldens and the gallery's "Shell" page run on macOS.
       *Accept:* existing goldens unchanged; new goldens of the translucent variants; a VM
       screenshot of a gallery menu over a coloured window.
       *Owner:* the menu bar and a menu over a busy window look right, light and dark.
+      *Done:* ADR 0072. Scope cut with the owner: menus, popovers and sheets have no
+      translucent variant yet, so only the menu bar and HUD panels go translucent (the
+      popups stay opaque; follow-up 3.5b below). `neue-platform`: `Ctx::has_blur`,
+      `WindowSpec::blur` (`Blur { corner_radius }`), `wayland/blur.rs` (manager,
+      capabilities, rounded region). `neue-kit`: `Window::blur_behind`, `Cx::has_blur`,
+      `Cx::backdrop`; HUD chrome paints the translucent tint. The shell's bar asks for
+      blur. Tests: 4 region unit tests, 3 kit tests (HUD, bar), 1 headless integration
+      test (`tests/platform.rs`: the compositor receives a rounded region). Existing
+      goldens unchanged. VM: log shows blur offered and the bar's layer surface opened
+      blurred, screenshot of the bar over the wallpaper. Not done: a HUD in the VM
+      (the click helper didn't hit the gallery's Show HUD button), a coloured window
+      behind the bar, real hardware.
+      *Owner:* the menu bar over the wallpaper and the gallery's Popovers page HUD
+      (`Show HUD`) over a busy window: translucent with a blur, light and dark, square
+      bar and rounded HUD corners, nothing blurred under Increased contrast.
+- [ ] **3.5b Translucent menus and popovers** · Sonnet. After 3.5. A `Backdrop`
+      parameter and translucent palettes for `menu_panel`, `popover` and `sheet`
+      (neue-theme, neue-paint, goldens for both variants, light and dark, 1x and 2x);
+      xdg-popups for menus and popovers ask for blur with their corner radius (the arrow
+      of a popover stays out of the region); the gallery's Menus page shows it over a
+      coloured window.
+      *Accept:* new goldens, existing goldens unchanged; a VM screenshot of a gallery
+      menu over a coloured window.
 - [ ] **3.6 `neue-settingsd` v0** · Opus. The settings service (PLAN.md §3.4) on
       tokio + zbus, ADR for the interface: `org.neueos.Settings1` with typed keys from the
       `neue-config` schema (get, set, a changed signal), writing the compositor config

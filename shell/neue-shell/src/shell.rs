@@ -136,7 +136,7 @@ impl Shell {
             return;
         }
         let mut handles = BarHandles::default();
-        let root = bar::menu_bar(&self.content, Message::System, &mut handles);
+        let root = bar::menu_bar(&self.content, Message::System, &mut handles, cx.backdrop());
         let height = neue_kit::tokens::materials::menu_bar::HEIGHT;
         #[expect(clippy::cast_possible_truncation, reason = "the bar's 22 px height")]
         let layer = LayerSpec {
@@ -148,7 +148,10 @@ impl Shell {
             ..LayerSpec::new(NAMESPACE, Anchor::TOP_EDGE)
         };
         #[expect(clippy::cast_possible_truncation, reason = "the bar's 22 px height")]
-        let window = neue_kit::Window::new("Menu Bar", (0, height as u32), root).layer(layer);
+        // Translucent over a blur when the compositor offers one, else the opaque tint.
+        let window = neue_kit::Window::new("Menu Bar", (0, height as u32), root)
+            .layer(layer)
+            .blur_behind();
         let window = cx.open_window(window);
         self.bars.insert(output, Bar { window, handles });
         // Delivered after the driver has created the window.
