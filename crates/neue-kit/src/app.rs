@@ -382,6 +382,8 @@ impl<M> Cx<'_, M> {
             .unwrap_or_else(|| self.kit.settings.app_id.clone());
         spec.parent = window.parent;
         spec.modal = window.modal;
+        spec.default_properties =
+            Some(Arc::new(theme::default_properties(self.kit.settings.theme)));
         if kind.is_some() {
             // The chrome's top corners are rounded (a HUD's all of them); the root paints
             // everything else.
@@ -475,6 +477,8 @@ impl<M> Cx<'_, M> {
             spec.app_id = self.kit.settings.app_id.clone();
             spec.parent = Some(window);
             spec.modal = true;
+            spec.default_properties =
+                Some(Arc::new(theme::default_properties(self.kit.settings.theme)));
             // No title bar: the sheet hangs from its parent's.
             spec.decorations = Decorations::Client;
             spec.background = self.kit.settings.theme.colors().window_background;

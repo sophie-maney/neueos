@@ -357,7 +357,17 @@ fn the_barber_pole_and_the_spinner_animate_until_stopped() {
 
 #[test]
 fn reduced_motion_stops_the_ambient_animation() {
-    let mut runner = Runner::new(Values::default(), Settings::default());
+    let theme = Theme {
+        reduced_motion: true,
+        ..Theme::default()
+    };
+    let mut runner = Runner::new(
+        Values::default(),
+        Settings {
+            theme,
+            ..Settings::default()
+        },
+    );
     let mut host = FakeHost {
         theme: Theme {
             reduced_motion: true,

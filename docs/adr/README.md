@@ -72,3 +72,4 @@ Don't edit an accepted ADR's decision; supersede it with a new one.
 | [0060](0060-path-control.md) | Path control: one leaf widget that collapses its middle into an ellipsis; the popup style is a pop-up button over the reversed path | Accepted |
 | [0061](0061-color-well.md) | Colour well: a bevel-button swatch that opens a popover panel built from kit widgets; the panel keeps the colour as HSB and reports to the well | Accepted |
 | [0062](0062-date-picker.md) | Date picker: a kit civil-date type and two leaf widgets (textual field, calendar), each with its own builder and handle | Accepted |
+| [0063](0063-window-theme-and-focus-leave.md) | A window carries its own theme properties; the Wayland driver never drops a keyboard leave | Accepted |

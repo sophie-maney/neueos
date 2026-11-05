@@ -9,7 +9,7 @@ use std::sync::Arc;
 use std::sync::atomic::{AtomicBool, Ordering};
 
 use masonry_core::app::RenderRoot;
-use masonry_core::core::{ErasedAction, NewWidget, Widget, WidgetId};
+use masonry_core::core::{DefaultProperties, ErasedAction, NewWidget, Widget, WidgetId};
 use masonry_core::peniko::Color;
 
 /// Identifies a window for the lifetime of the driver. Never reused.
@@ -72,6 +72,10 @@ pub struct WindowSpec {
     /// (`RenderRoot::set_focus_fallback`). neue-kit points it at its window root, which
     /// turns Return into a press of the default button.
     pub focus_fallback: Option<WidgetId>,
+    /// The widgets' default properties (the theme) for this window. `None` takes
+    /// [`crate::Options::default_properties`], which is fixed when the driver starts: a
+    /// window opened after the app switched themes would otherwise open in the old one.
+    pub default_properties: Option<Arc<DefaultProperties>>,
 }
 
 impl WindowSpec {
@@ -89,6 +93,7 @@ impl WindowSpec {
             parent: None,
             modal: false,
             focus_fallback: None,
+            default_properties: None,
         }
     }
 }

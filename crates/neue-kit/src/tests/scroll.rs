@@ -223,7 +223,17 @@ fn scrollers_show_while_scrolling_then_fade() {
 
 #[test]
 fn reduced_motion_hides_scrollers_without_a_fade() {
-    let mut runner = Runner::new(Scrolling::default(), Settings::default());
+    let theme = Theme {
+        reduced_motion: true,
+        ..Theme::default()
+    };
+    let mut runner = Runner::new(
+        Scrolling::default(),
+        Settings {
+            theme,
+            ..Settings::default()
+        },
+    );
     let mut host = FakeHost {
         theme: Theme {
             reduced_motion: true,

@@ -83,8 +83,14 @@ impl Host for FakeHost {
             root.align = crate::Align::Fill;
         }
         root.push(spec.root);
+        // The driver's own theme is the one it started with; a window carries its own.
+        let properties = match spec.default_properties {
+            Some(props) => Arc::try_unwrap(props)
+                .unwrap_or_else(|_| unreachable!("the runner makes one per window")),
+            None => default_properties(self.theme),
+        };
         let mut harness = TestHarness::create_with(
-            default_properties(self.theme),
+            properties,
             NewWidget::new(root),
             TestHarnessParams::default().with_size((spec.width, spec.height)),
         );
