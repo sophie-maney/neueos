@@ -17,7 +17,10 @@ use crate::menu::Menu;
 use crate::menubar::MenuBars;
 use crate::task::{Mailbox, Sender, Task};
 use crate::theme;
-use crate::widgets::{ButtonWidget, Chrome, Pressed, Rewired, RootAction, RootWidget, RowsWidget};
+use crate::widgets::{
+    self, ButtonWidget, Chrome, Popover, PopoverWidget, Pressed, Rewired, RootAction, RootWidget,
+    RowsWidget,
+};
 
 /// An app: its state is the model, [`Application::Message`] is everything that can happen
 /// to it, and [`Application::update`] is the only place the state changes.
@@ -350,6 +353,65 @@ impl<M> Cx<'_, M> {
     /// Queues `message` for `update`, after the messages already queued.
     pub fn send(&mut self, message: M) {
         self.kit.queue.push_back(message);
+    }
+
+    /// Shows `popover` next to `anchor`'s widget, replacing one already shown there.
+    ///
+    /// A popover closes when the anchor is pressed again: if the last press outside it was
+    /// on the anchor (a button that shows it, pressed again), this closes it, sending its
+    /// `on_close`, instead of showing a new one.
+    pub fn show_popover<W>(&mut self, anchor: &Handle<W>, popover: Popover<M>)
+    where
+        M: Clone + 'static,
+    {
+        let (Some(id), Some(window)) = (anchor.id(), self.window_of(anchor)) else {
+            return;
+        };
+        // Forget the handlers of popovers that closed.
+        self.prune_handlers(window);
+        let Some(root) = self.host.render_root(window) else {
+            return;
+        };
+        if let Some(open) = Self::shown_popover(root, id) {
+            let toggled = root.edit_widget(open, |mut p| {
+                let mut p = p.downcast::<PopoverWidget>();
+                PopoverWidget::take_anchor_press(&mut p).then(|| PopoverWidget::close(&mut p, true))
+            });
+            if let Some(focus) = toggled {
+                if focus.is_some() {
+                    root.focus_on(focus);
+                }
+                return;
+            }
+        }
+        let (widget, wiring) = popover.into_parts();
+        root.edit_widget(id, |mut owner| widgets::popover::show(&mut owner, widget));
+        self.register_wiring(window, wiring);
+    }
+
+    /// Closes the popover shown next to `anchor`'s widget, if there is one. Its `on_close`
+    /// is not sent.
+    pub fn close_popover<W>(&mut self, anchor: &Handle<W>) {
+        let (Some(id), Some(window)) = (anchor.id(), self.window_of(anchor)) else {
+            return;
+        };
+        let Some(root) = self.host.render_root(window) else {
+            return;
+        };
+        if let Some(open) = Self::shown_popover(root, id) {
+            let focus = root.edit_widget(open, |mut p| {
+                PopoverWidget::close(&mut p.downcast::<PopoverWidget>(), false)
+            });
+            if focus.is_some() {
+                root.focus_on(focus);
+            }
+        }
+    }
+
+    /// The popover open on the widget `owner`, if it is in the tree.
+    fn shown_popover(root: &mut RenderRoot, owner: WidgetId) -> Option<WidgetId> {
+        let open = root.edit_widget(owner, |w| widgets::popover::shown(&w))?;
+        root.has_widget(open).then_some(open)
     }
 
     /// The open window `handle`'s widget is in.

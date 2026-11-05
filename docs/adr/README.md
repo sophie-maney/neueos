@@ -65,3 +65,4 @@ Don't edit an accepted ADR's decision; supersede it with a new one.
 | [0053](0053-split-view.md) | Split view: one widget owns panes and dividers, lengths as state, a divider moves a pair, collapse | Accepted |
 | [0054](0054-tab-view.md) | Tab view: one widget owns strip, box and stashed panels, synthetic tab nodes, Ctrl-Tab from inside | Accepted |
 | [0055](0055-client-side-window-chrome.md) | Client-side chrome for kit windows; one window-chrome material of any height, the server-side bar its 22 px case | Accepted |
+| [0056](0056-popovers.md) | Popovers: a kit layer that tells the Wayland driver its anchor through Masonry properties; window geometry instead of a positioner offset | Accepted |

@@ -28,6 +28,7 @@ mod icons;
 mod menubar;
 mod menus;
 mod outline;
+mod popovers;
 mod popups;
 mod scroll;
 mod source_list;
@@ -124,6 +125,11 @@ fn start<A: Application>(app: A) -> (Runner<A>, FakeHost, Arc<AtomicUsize>) {
 /// Hands every action the harnesses emitted to the runner, as the drivers' `pump` does.
 fn deliver<A: Application>(runner: &mut Runner<A>, host: &mut FakeHost) {
     loop {
+        // Signals from the app's edits (a popover's new layer), as a driver handles them
+        // after each callback.
+        for harness in host.windows.values_mut() {
+            harness.edit_root_widget(|_| ());
+        }
         let action = host
             .windows
             .iter_mut()

@@ -71,6 +71,11 @@ pub enum Message {
     TabSelected(usize),
     /// The Toolbar page: display mode `n` of [`pages::DISPLAY_MODES`] was chosen.
     ToolbarMode(usize),
+    /// The Popovers page: show button `n`'s popover; its Done button; it closed by
+    /// itself.
+    ShowPopover(usize),
+    PopoverDone,
+    PopoverClosed,
     OpenFile(usize),
     SortFiles(usize, neue_kit::SortOrder),
 }
@@ -346,6 +351,15 @@ impl Application for Gallery {
                 if let Some(&mode) = pages::DISPLAY_MODES.get(n) {
                     self.handles.toolbar.set_display_mode(cx, mode);
                 }
+            }
+            Message::ShowPopover(n) => self.handles.show_popover(cx, n),
+            Message::PopoverDone => {
+                self.handles.close_popover(cx);
+                self.status.set_text(cx, "Popover done");
+            }
+            Message::PopoverClosed => {
+                self.handles.popover_open = None;
+                self.status.set_text(cx, "Popover closed");
             }
             Message::TabSelected(tab) => {
                 self.status.set_text(cx, format!("Tab {}", tab + 1));

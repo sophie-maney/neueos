@@ -1658,6 +1658,79 @@ pub mod menu {
     }
 }
 
+/// Popovers (task 2.23a): a rounded panel with an arrow pointing at the control it opened
+/// from, a soft drop shadow and a thin rim. Light in the light appearance, dark in the dark
+/// one; content draws in the window's usual colours.
+pub mod popover {
+    use crate::{Appearance, Color, Variant, black, grey, white};
+
+    /// Corner radius of the panel.
+    pub const RADIUS: f64 = crate::radii::MENU;
+    /// Rim thickness.
+    pub const RIM: f64 = 1.0;
+    /// Width of the arrow's base.
+    pub const ARROW_WIDTH: f64 = 22.0;
+    /// How far the arrow's tip stands out from the panel.
+    pub const ARROW_HEIGHT: f64 = 11.0;
+    /// Space between the panel's edge and its content.
+    pub const PADDING: f64 = crate::metrics::spacing::M;
+    /// Space between the arrow's tip and the control it points at.
+    pub const GAP: f64 = 1.0;
+    /// How far the drop shadow sits below the panel.
+    pub const SHADOW_OFFSET: f64 = 3.0;
+    /// Blur radius (standard deviation) of the drop shadow.
+    pub const SHADOW_BLUR: f64 = 6.0;
+    /// Room the shadow needs around the popover, the same on every side so that a
+    /// popover flipped to the other side of its control keeps its arrow on the control.
+    pub const SHADOW_REACH: f64 = 3.0 * SHADOW_BLUR + SHADOW_OFFSET;
+
+    /// Colours of a popover.
+    #[derive(Clone, Copy, Debug, PartialEq)]
+    pub struct Palette {
+        /// Drop shadow.
+        pub shadow: Color,
+        /// Body, top and bottom.
+        pub fill: [Color; 2],
+        /// Rim, inside the outline.
+        pub rim: Color,
+        /// A light line just inside the rim along the top.
+        pub highlight: Color,
+    }
+
+    impl Palette {
+        /// Colours for `variant`; increased contrast firms up the rim.
+        pub fn new(variant: Variant) -> Self {
+            let p = match variant.appearance {
+                Appearance::Light => Self {
+                    shadow: black(0.40),
+                    fill: [grey(0.975), grey(0.925)],
+                    rim: black(0.22),
+                    highlight: white(0.85),
+                },
+                Appearance::Dark => Self {
+                    shadow: black(0.70),
+                    fill: [grey(0.215), grey(0.165)],
+                    rim: white(0.17),
+                    highlight: white(0.08),
+                },
+            };
+            if !variant.is_increased_contrast() {
+                return p;
+            }
+            match variant.appearance {
+                Appearance::Light => Self {
+                    rim: black(0.60),
+                    ..p
+                },
+                Appearance::Dark => Self {
+                    rim: white(0.55),
+                    ..p
+                },
+            }
+        }
+    }
+}
+
 /// Tables (task 2.19a) and outline views (2.19b): a header bar of column titles over rows of one height, in a scroll
 /// view with a hairline border. Row stripes and the selection use the semantic colours
 /// ([`crate::colors::SemanticColors::alternate_row`], `selection`, `unfocused_selection`).

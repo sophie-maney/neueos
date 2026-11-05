@@ -21,6 +21,7 @@ use masonry_core::peniko::Blob;
 
 mod app;
 mod gpu;
+mod popover;
 #[cfg(target_os = "linux")]
 pub mod wayland;
 #[cfg(target_os = "macos")]
@@ -30,6 +31,7 @@ pub use app::{
     Anchor, App, Ctx, Decorations, LayerKeyboard, LayerSpec, Margin, MenuAddress, ShellLayer,
     Waker, WindowId, WindowKind, WindowSpec,
 };
+pub use popover::{PopoverAnchor, PopoverLanded, PopoverRequest, Side};
 #[cfg(target_os = "linux")]
 pub use wayland::{Error, run};
 #[cfg(target_os = "macos")]

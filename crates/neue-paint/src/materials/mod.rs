@@ -11,6 +11,7 @@ pub mod hud;
 mod linen;
 mod menu;
 pub mod menu_bar;
+mod popover;
 mod popup;
 mod progress;
 mod scroller;
@@ -36,6 +37,9 @@ pub use focus_ring::focus_ring;
 pub use linen::{Linen, fill_linen};
 pub use menu::{
     MenuMark, menu_highlight, menu_mark, menu_outline, menu_panel, menu_separator, submenu_arrow,
+};
+pub use popover::{
+    Edge, popover, popover_body, popover_landing, popover_origin, popover_outline, popover_size,
 };
 pub use popup::{
     PopUpButton, PopUpKind, combo_arrow, combo_arrow_rect, popup_button, popup_button_outline,

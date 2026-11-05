@@ -64,15 +64,15 @@ pub use app::{Application, Cx, Error, Settings, Window, run};
 pub use element::{Element, Handle};
 pub use menu::{Menu, MenuItem, MenuToggle, Shortcut};
 pub use neue_paint::icon::{Glyph, Icon, IconError, IconPaint, VectorIcon};
-pub use neue_paint::materials::DividerStyle;
+pub use neue_paint::materials::{DividerStyle, Edge};
 pub use neue_platform::WindowId;
 pub use task::{Sender, Task};
 pub use widgets::{
     Align, BevelButton, Button, Cell, CheckState, Checkbox, Collection, Column, ComboBox,
     ContextMenu, DisplayMode, Entry, IconImage, Item, Label, MaterialTile, Outline, Pane,
-    PopUpButton, ProgressBar, PullDownButton, Radio, ScrollAxes, ScrollView, Segmented, Slider,
-    SortOrder, SourceList, Specimen, Spinner, SplitView, Stack, Stepper, TabView, Table, TextField,
-    TextStyle, TextView, Toolbar, ToolbarButton, VirtualGrid, VirtualList, Zoom,
+    PopUpButton, Popover, ProgressBar, PullDownButton, Radio, ScrollAxes, ScrollView, Segmented,
+    Slider, SortOrder, SourceList, Specimen, Spinner, SplitView, Stack, Stepper, TabView, Table,
+    TextField, TextStyle, TextView, Toolbar, ToolbarButton, VirtualGrid, VirtualList, Zoom,
 };
 
 /// Design tokens (colours, metrics, type scale, motion).
