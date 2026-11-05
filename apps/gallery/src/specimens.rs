@@ -4,9 +4,9 @@ use neue_kit::tokens::Color;
 use neue_kit::{
     Align, BevelButton, Button, CheckState, Checkbox, Collection, Column, ComboBox, ContextMenu,
     Entry, Glyph, Icon, IconImage, IconPaint, Item, Label, MaterialTile, Menu, MenuItem, Outline,
-    PopUpButton, ProgressBar, PullDownButton, Radio, ScrollAxes, ScrollView, Segmented, Shortcut,
-    Slider, SortOrder, SourceList, Specimen, Spinner, Stack, Stepper, Table, TextField, TextView,
-    VectorIcon, VirtualGrid, VirtualList,
+    PathControl, PopUpButton, ProgressBar, PullDownButton, Radio, ScrollAxes, ScrollView,
+    Segmented, Shortcut, Slider, SortOrder, SourceList, Specimen, Spinner, Stack, Stepper, Table,
+    TextField, TextView, VectorIcon, VirtualGrid, VirtualList,
 };
 use neue_kit::{DisplayMode, Toolbar, ToolbarButton};
 use neue_kit::{DividerStyle, Pane, SplitView, TabView, Window};
@@ -869,4 +869,15 @@ pub fn hud_window<M: 'static>() -> Window<M> {
 /// A window with a title bar for [`sheet`] to hang from.
 pub fn sheet_parent<M: 'static>() -> Window<M> {
     Window::new("Notes", SHEET_PARENT_SIZE, pane_label("Content")).chrome()
+}
+
+/// Golden window size for the path control.
+pub const PATH_SIZE: (u32, u32) = (250, 40);
+
+/// The levels of the path control's specimen, root first.
+pub const PATH: [&str; 3] = ["Macintosh HD", "Users", "sophie"];
+
+/// A path control of [`PATH`].
+pub fn path_control<M: 'static>() -> PathControl<M> {
+    PathControl::new(PATH)
 }

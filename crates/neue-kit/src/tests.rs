@@ -29,6 +29,7 @@ mod icons;
 mod menubar;
 mod menus;
 mod outline;
+mod paths;
 mod popovers;
 mod popups;
 mod scroll;

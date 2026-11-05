@@ -11,6 +11,7 @@ pub mod hud;
 mod linen;
 mod menu;
 pub mod menu_bar;
+mod path_control;
 mod popover;
 mod popup;
 mod progress;
@@ -39,6 +40,7 @@ pub use linen::{Linen, fill_linen};
 pub use menu::{
     MenuMark, menu_highlight, menu_mark, menu_outline, menu_panel, menu_separator, submenu_arrow,
 };
+pub use path_control::{PathControl, path_control, path_segment_rects};
 pub use popover::{
     Edge, popover, popover_body, popover_landing, popover_origin, popover_outline, popover_size,
 };

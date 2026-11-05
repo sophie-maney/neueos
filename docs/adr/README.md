@@ -69,3 +69,4 @@ Don't edit an accepted ADR's decision; supersede it with a new one.
 | [0057](0057-sheets.md) | Sheets: one kit widget; a modal child window on Wayland, drawn in the parent with a scrim on macOS; the sheet owns Return, Escape and Tab | Accepted |
 | [0058](0058-sheet-placement.md) | Sheet placement in neue-comp: modal dialogs with a parent hang from its chrome and follow it | Accepted |
 | [0059](0059-hud-windows.md) | HUD windows: a third kind of kit chrome over the HUD material; a parent keeps its focused look while its HUD window has the keyboard | Accepted |
+| [0060](0060-path-control.md) | Path control: one leaf widget that collapses its middle into an ellipsis; the popup style is a pop-up button over the reversed path | Accepted |

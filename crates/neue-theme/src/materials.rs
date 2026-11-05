@@ -606,6 +606,61 @@ pub mod segmented {
     pub const SELECTED_LABEL: Color = white(1.0);
 }
 
+/// The path control (standard style): a row of text segments separated by chevrons. A
+/// segment under the pointer gets a soft rounded fill.
+pub mod path_control {
+    use crate::{Appearance, Color, Variant, black, white};
+
+    /// Corner radius of a segment's hover and pressed fill.
+    pub const RADIUS: f64 = crate::radii::CONTROL - 1.0;
+    /// Horizontal padding between a segment's fill and its text.
+    pub const SEGMENT_PADDING: f64 = 6.0;
+    /// Width of the slot between two segments that holds the chevron.
+    pub const CHEVRON_SLOT: f64 = 12.0;
+    /// Width of the chevron.
+    pub const CHEVRON_WIDTH: f64 = 4.0;
+    /// Height of the chevron.
+    pub const CHEVRON_HEIGHT: f64 = 8.0;
+    /// Stroke width of the chevron.
+    pub const CHEVRON_STROKE: f64 = 1.5;
+    /// Vertical space between a segment's fill and the control's top and bottom edges.
+    pub const SEGMENT_INSET: f64 = 2.0;
+    /// Opacity of a disabled control.
+    pub const DISABLED_OPACITY: f32 = 0.5;
+
+    /// The chevron between two segments.
+    pub fn chevron(variant: Variant) -> Color {
+        let c = match variant.appearance {
+            Appearance::Light => black(0.45),
+            Appearance::Dark => white(0.55),
+        };
+        if variant.is_increased_contrast() {
+            match variant.appearance {
+                Appearance::Light => black(0.7),
+                Appearance::Dark => white(0.8),
+            }
+        } else {
+            c
+        }
+    }
+
+    /// The fill of the segment under the pointer.
+    pub fn hover_fill(variant: Variant) -> Color {
+        match variant.appearance {
+            Appearance::Light => black(0.08),
+            Appearance::Dark => white(0.12),
+        }
+    }
+
+    /// The fill of the segment held down.
+    pub fn pressed_fill(variant: Variant) -> Color {
+        match variant.appearance {
+            Appearance::Light => black(0.18),
+            Appearance::Dark => white(0.24),
+        }
+    }
+}
+
 /// Procedural linen.
 pub mod linen {
     use crate::{Appearance, Variant};

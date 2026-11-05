@@ -12,9 +12,9 @@ use std::time::Duration;
 
 use neue_gallery::specimens::{
     self, BEVEL_SIZE, CHROME_SIZE, COLLECTION_SIZE, COMBO_SIZE, FIELD_SIZE, ICONS_SIZE, MENU_SIZE,
-    OUTLINE_SIZE, POPOVER_SIZE, POPUP_SIZE, PROGRESS_SIZE, PULL_DOWN_SIZE, PUSH_BUTTON_SIZE,
-    SCROLL_SIZE, SEGMENTED_SIZE, SIDEBAR_SIZE, SLIDER_SIZE, SPINNER_SIZE, SPLIT_SIZE, STEPPER_SIZE,
-    SUBMENU_SIZE, TABLE_SIZE, TABS_SIZE, TEXT_VIEW_SIZE, TOGGLE_SIZE,
+    OUTLINE_SIZE, PATH_SIZE, POPOVER_SIZE, POPUP_SIZE, PROGRESS_SIZE, PULL_DOWN_SIZE,
+    PUSH_BUTTON_SIZE, SCROLL_SIZE, SEGMENTED_SIZE, SIDEBAR_SIZE, SLIDER_SIZE, SPINNER_SIZE,
+    SPLIT_SIZE, STEPPER_SIZE, SUBMENU_SIZE, TABLE_SIZE, TABS_SIZE, TEXT_VIEW_SIZE, TOGGLE_SIZE,
 };
 use neue_kit::testing::{
     self, DISABLED, FOCUSED, Fixture, Goldens, INACTIVE, NORMAL, NavKey, PRESSED, State,
@@ -211,6 +211,12 @@ const HEADER_PRESSED: State = ("header-pressed", |f: &mut Fixture| f.press_at(0.
 /// The pointer over the Favorites group header: its Hide shows.
 const GROUP_HOVERED: State = ("group-hovered", |f: &mut Fixture| f.hover_at(0.5, 0.05));
 
+/// The pointer over the path control's middle segment, "Users" (the window's centre falls
+/// in the gap between segments).
+const PATH_HOVERED: State = ("hovered", |f: &mut Fixture| f.hover_at(0.6, 0.5));
+/// The pointer held down on the path control's middle segment.
+const PATH_PRESSED: State = ("pressed", |f: &mut Fixture| f.press_at(0.6, 0.5));
+
 /// One golden set: `make` in `states`, in a `size` window, under the default theme.
 macro_rules! control_goldens {
     ($($test:ident: $name:literal, $size:expr, $states:expr, $make:expr;)+) => {$(
@@ -244,6 +250,7 @@ control_goldens! {
     segmented: "segmented", SEGMENTED_SIZE, &[NORMAL, PRESSED, FOCUSED, DISABLED], specimens::segmented(1);
     segmented_first: "segmented-first", SEGMENTED_SIZE, &[NORMAL, PRESSED], specimens::segmented(0);
     segmented_last: "segmented-last", SEGMENTED_SIZE, &[NORMAL], specimens::segmented(2);
+    path_control: "path-control", PATH_SIZE, &[NORMAL, PATH_HOVERED, PATH_PRESSED, FOCUSED, DISABLED], specimens::path_control();
 
     // The pointer goes down on the middle of the slider: the knob at 0.5 doesn't move.
     slider: "slider", SLIDER_SIZE, &[NORMAL, PRESSED, FOCUSED, DISABLED], specimens::slider(0.5);

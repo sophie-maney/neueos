@@ -599,7 +599,45 @@ the paper and leather materials move to Phase 6/7 (Widgets, Write).
         xtask check` on macOS, the HUD goldens on Linux aarch64; x86_64 not run. VM steps in
         `docs/checks/phase-2.md` §25, not run. Not yet: dark controls in a HUD, translucency
         (needs the blur protocol), a shadow (compositor shadows), a title-changing API.
-- [ ] **2.24 Colour well, date picker, path control** · Sonnet.
+- [ ] **2.24 Colour well, date picker, path control** · Sonnet. Split into three PRs
+      (a and c are independent; b needs the popover from 2.23a). Decisions: the colour
+      panel is a popover, not a HUD window (HUDs have no dark controls yet); dates use a
+      small internal civil-date type, no new dependency.
+  - [x] **2.24a Path control** · Sonnet. Standard style (breadcrumb row with icon,
+        segments, chevron separators, collapses with an ellipsis when too narrow) and popup
+        style (a button that opens a menu of the ancestors). `on_select(index)` message;
+        hover and pressed states; Left/Right and Return from the keyboard. Bevel tokens from
+        `neue-theme`.
+        *Accept:* end-to-end tests (select, collapse, keys); goldens (states × light/dark ×
+        1×/2×); AccessKit group with button children; a gallery entry.
+        *Done:* ADR 0060. `PathControl::new(segments).on_select(|i| ..)` (index in the
+        path, 0 the root) and `PathControl::popup(segments, make)`, a `PopUpButton` over the
+        reversed path. One leaf widget: hover and pressed fills, chevrons, a focus ring on
+        one segment; Left/Right move it, Return/Space choose; too narrow, the segments after
+        the first collapse into a non-interactive ellipsis. Handle: `set_segments`,
+        `set_enabled`. Material `neue_paint::materials::path_control`, tokens
+        `neue_theme::materials::path_control`. 10 end-to-end tests (`src/tests/paths.rs`),
+        4 collapse and 3 material unit tests; 20 goldens `path-control-{normal,hovered,
+        pressed,focused,disabled}-…`; shown on the gallery's Pop-ups page. Checked: `cargo
+        xtask check` on macOS; Linux and x86_64 not run. VM steps in
+        `docs/checks/phase-2.md` §26, not run. Not yet: segment icons, assistive technology
+        clicking a segment other than the focused one (Masonry doesn't say which child node
+        an action was for), a menu on the ellipsis, a golden for the collapsed row (test
+        windows keep their content's width).
+  - [ ] **2.24b Colour well** · Sonnet. A swatch button with a bevelled border. Click opens
+        a `Popover` colour panel: hue/saturation area, brightness and opacity sliders, hex
+        field (reuse `Slider` and the text field). `on_change(Color)` message, continuous
+        while dragging; the swatch shows opacity over a checkerboard.
+        *Accept:* tests (open, drag, hex entry, Esc closes); HSB↔sRGB round-trip unit
+        tests; goldens (well states, panel, light/dark, 1×/2×); AccessKit value as hex;
+        a gallery entry.
+  - [ ] **2.24c Date picker** · Sonnet. Textual style (day/month/year segments, stepper
+        arrows, Up/Down changes the focused segment) and graphical calendar style (month
+        grid, previous/next month, today, selected day). Internal civil-date type; week
+        starts on Monday (locale later). `on_change(Date)` message.
+        *Accept:* date-math unit tests (month lengths, leap years); end-to-end tests
+        (segment editing, month navigation, keys); goldens; AccessKit grid with cells; a
+        gallery entry.
 - [ ] **2.25 `docs/design/` specs** · Sonnet. Token reference, materials spec, motion
       spec.
 - [ ] **2.26 Exit check** · Sonnet, plus owner VM steps. Screenshot every gallery page
