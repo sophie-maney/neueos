@@ -463,8 +463,8 @@ impl PopupLayer {
     /// lies outside it): what the compositor positions, and what popups nested on this one
     /// are placed relative to.
     fn geometry(&self) -> Vec2 {
-        let r = f64::from(self.placement.reach);
-        Vec2::new(r, r)
+        let i = self.placement.insets;
+        Vec2::new(f64::from(i.left), f64::from(i.top))
     }
 }
 
@@ -940,11 +940,16 @@ impl State {
             .root
             .get_widget(layer)
             .and_then(|root| root.get_prop::<PopoverAnchor>().0);
+        let border = w.root.get_widget(layer).map_or(bbox, |r| {
+            r.ctx()
+                .window_transform()
+                .transform_rect_bbox(r.ctx().border_box())
+        });
         let placement = match popover {
             Some(request) => Placement::popover(request, bbox),
             None => {
                 let owner = popup::owner_rect(w.root.get_layer_root(0), pos);
-                Placement::new(kind, pos, bbox, owner)
+                Placement::new(kind, pos, bbox, border, owner)
             }
         };
         // A menu opened from a menu nests on it: a grab must come from the topmost grabbing
@@ -1006,20 +1011,20 @@ impl State {
                 Err(err) => tracing::debug!(%err, "no wl_region for the tooltip"),
             }
         }
-        let reach = placement.reach;
-        if reach > 0 {
+        let insets = placement.insets;
+        if insets.any() {
             // The shadow is outside the window geometry: the compositor places the box.
             popup.xdg_surface().set_window_geometry(
-                reach,
-                reach,
+                insets.left,
+                insets.top,
                 placement.size.0,
                 placement.size.1,
             );
         }
         let mut surf = Surf::new(&self.g, &qh, wl, wgpu_surface, false);
         surf.size = (
-            (placement.size.0 + 2 * reach) as u32,
-            (placement.size.1 + 2 * reach) as u32,
+            (placement.size.0 + insets.horizontal()) as u32,
+            (placement.size.1 + insets.vertical()) as u32,
         );
         surf.int_scale = w.surf.int_scale;
         popup.wl_surface().commit();

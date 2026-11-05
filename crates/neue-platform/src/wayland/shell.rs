@@ -225,10 +225,10 @@ impl PopupHandler for State {
             }
         }
         let p = &mut w.popups[pi];
-        let reach = 2 * p.placement.reach.max(0);
+        let insets = p.placement.insets;
         p.surf.size = (
-            (config.width + reach).max(1) as u32,
-            (config.height + reach).max(1) as u32,
+            (config.width + insets.horizontal()).max(1) as u32,
+            (config.height + insets.vertical()).max(1) as u32,
         );
         p.surf.apply(gpu, w.scale, fractional);
         p.configured = true;

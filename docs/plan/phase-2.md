@@ -757,7 +757,7 @@ the toolbar).
       *Accept:* the test fails before the fix and passes after; a one-minute recording of
       menu and popover hovering in the VM has no dip in mean brightness (`ffmpeg -vf
       signalstats`). Re-run: 4.2, 11.2.
-- [ ] **2.31 Menus flipped at a screen edge leave a gap** · Sonnet (follows 2.23a). Steps
+- [x] **2.31 Menus flipped at a screen edge leave a gap** · Sonnet (follows 2.23a). Steps
       4.7 and 5.5. A context menu flipped to the left of the pointer, or a combo box's
       menu flipped above the field, sits about two shadow widths away from its anchor.
       Cause: menu placements in `neue-platform/src/wayland/popup.rs` hide the shadow
@@ -768,6 +768,11 @@ the toolbar).
       top of the screen no longer lines up) goes with it.
       *Accept:* headless positioner tests (`popup.rs`) for a menu flipped on each axis, its
       visible box touching the anchor; in the VM, 4.7 and 5.5 show no gap.
+      *Done:* `Placement::new` takes the layer root's border box; the window geometry is
+      that box, `reach` became per-side `SurfaceInsets` (a menu's shadow is lower than it
+      is wide), and menus have no positioner offset. Point-anchored menus round the point
+      instead of flooring it. Tests model the positioner's flip. **Not yet checked in the
+      VM:** re-run 4.7, 5.5, and look at 5.3's known gap.
 - [ ] **2.32 Widget fixes: path control keys, thin divider, popover arrow** · Sonnet.
       - Step 5.10: Tab gives the path control focus on "Macintosh HD", not "sophie", and
         Left does nothing; after clicking "sophie", Left works. Find what moves the focused
