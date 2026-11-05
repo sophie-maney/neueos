@@ -11,13 +11,13 @@ use wgpu::util::{TextureBlitter, TextureBlitterBuilder};
 #[error("{0}")]
 pub(crate) struct GpuError(pub(crate) String);
 
-/// Adapter, device and the Masonry renderer, shared by every surface.
+/// Adapter and device, shared by every surface. Each surface has its own renderer
+/// ([`SurfaceTarget`]).
 pub(crate) struct Gpu {
     pub(crate) instance: wgpu::Instance,
     adapter: wgpu::Adapter,
     device: wgpu::Device,
     queue: wgpu::Queue,
-    renderer: Renderer,
 }
 
 impl std::fmt::Debug for Gpu {
@@ -54,7 +54,6 @@ impl Gpu {
             adapter,
             device,
             queue,
-            renderer: Renderer::new(),
         })
     }
 
@@ -62,8 +61,8 @@ impl Gpu {
     /// present (winit wants `Window::pre_present_notify` there). Returns whether the frame
     /// was presented (Wayland: whether the surface was committed).
     pub(crate) fn render(
-        &mut self,
-        target: &SurfaceTarget,
+        &self,
+        target: &mut SurfaceTarget,
         frame: PreparedFrame<'_>,
         pre_present: impl FnOnce(),
     ) -> bool {
@@ -99,7 +98,7 @@ impl Gpu {
             texture: &target.texture,
             view: &target.view,
         };
-        if let Err(err) = self.renderer.render_to_texture(render_target, frame) {
+        if let Err(err) = target.renderer.render_to_texture(render_target, frame) {
             tracing::error!(%err, "rendering Masonry content failed");
             return false;
         }
@@ -121,9 +120,17 @@ impl Gpu {
     }
 }
 
-/// A configured wgpu surface plus its offscreen target. Recreated on every resize.
+/// A configured wgpu surface plus its offscreen target and its own renderer.
+///
+/// One renderer per surface, not one per device: vello_gpu's renderer keeps per-target
+/// state (glyph atlas, paint and strip uploads, the viewport size) between frames. On
+/// Wayland a window and its menu or popover are separate surfaces drawn in turn, and with
+/// a shared renderer the window's frame sometimes drew from state the popup's frame had
+/// just left: the window went see-through with atlas pixels in its top-left corner, in
+/// the VM's virgl GL (task 2.30).
 pub(crate) struct SurfaceTarget {
     surface: wgpu::Surface<'static>,
+    renderer: Renderer,
     texture: wgpu::Texture,
     view: wgpu::TextureView,
     blitter: TextureBlitter,
@@ -209,6 +216,7 @@ impl SurfaceTarget {
         let (texture, view) = offscreen(&gpu.device, width, height);
         Ok(Self {
             surface,
+            renderer: Renderer::new(),
             texture,
             view,
             blitter,

@@ -351,7 +351,9 @@ impl Surf {
     /// caller checks [`Surf::ready`] first, so the GL or Vulkan swapchain's own wait for
     /// the previous frame is already over.
     fn present(&mut self, gpu: &mut Gpu, qh: &QueueHandle<State>, frame: PreparedFrame<'_>) {
-        let Some(target) = &self.target else { return };
+        let Some(target) = &mut self.target else {
+            return;
+        };
         self.wl.frame(qh, FrameCallbackData(self.wl.clone()));
         self.frame_pending = true;
         self.stale = false;
