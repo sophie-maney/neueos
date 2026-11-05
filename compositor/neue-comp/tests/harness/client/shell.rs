@@ -22,6 +22,9 @@ use wayland_protocols::ext::session_lock::v1::client::{
     ext_session_lock_surface_v1::{self, ExtSessionLockSurfaceV1},
     ext_session_lock_v1::{self, ExtSessionLockV1},
 };
+use wayland_protocols::wp::fractional_scale::v1::client::wp_fractional_scale_v1::{
+    self, WpFractionalScaleV1,
+};
 use wayland_protocols::wp::idle_inhibit::zv1::client::{
     zwp_idle_inhibit_manager_v1::ZwpIdleInhibitManagerV1, zwp_idle_inhibitor_v1::ZwpIdleInhibitorV1,
 };
@@ -73,6 +76,9 @@ pub struct LayerEvents {
     /// Size of the last configure.
     pub size: (u32, u32),
     pub closed: bool,
+    /// The last `wp_fractional_scale_v1.preferred_scale`, in 120ths (see
+    /// [`TestClient::track_layer_scale`]).
+    pub preferred_scale: Option<u32>,
 }
 
 /// A session lock the client asked for.
@@ -232,6 +238,17 @@ impl TestClient {
         }
         layer.size = size;
         layer.surface.commit();
+        self.roundtrip();
+    }
+
+    /// Start receiving `layer`'s preferred fractional scale
+    /// ([`LayerEvents::preferred_scale`]).
+    pub fn track_layer_scale(&mut self, layer: &LayerHandle) {
+        self.fractional_scale.get_fractional_scale(
+            &layer.surface,
+            &self.qh,
+            LayerScale(layer.index),
+        );
         self.roundtrip();
     }
 
@@ -719,3 +736,21 @@ delegate_noop!(ClientData: XdgDialogV1);
 delegate_noop!(ClientData: XdgToplevelIconV1);
 delegate_noop!(ClientData: XdgSystemBellV1);
 delegate_noop!(ClientData: ZwpKeyboardShortcutsInhibitManagerV1);
+
+/// User data of a `wp_fractional_scale_v1` on a layer surface: the layer's index.
+pub(super) struct LayerScale(pub usize);
+
+impl Dispatch<WpFractionalScaleV1, LayerScale> for ClientData {
+    fn event(
+        data: &mut Self,
+        _: &WpFractionalScaleV1,
+        event: wp_fractional_scale_v1::Event,
+        index: &LayerScale,
+        _: &Connection,
+        _: &QueueHandle<Self>,
+    ) {
+        if let wp_fractional_scale_v1::Event::PreferredScale { scale } = event {
+            data.shell.layers[index.0].preferred_scale = Some(scale);
+        }
+    }
+}

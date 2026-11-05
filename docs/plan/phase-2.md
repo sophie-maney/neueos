@@ -686,7 +686,7 @@ the paper and leather materials move to Phase 6/7 (Widgets, Write).
 - [ ] **2.26 Exit check** · Sonnet, plus owner VM steps. Screenshot every gallery page
       with `neuectl` in the VM, compare with macOS and the goldens, fix drift, tick
       Phase 2.
-- [ ] **2.27 neue-comp: scale for layer surfaces** · Sonnet. Found in 2.2:
+- [x] **2.27 neue-comp: scale for layer surfaces** · Sonnet. Found in 2.2:
       `State::refresh_surface_scales` (`compositor/neue-comp/src/outputs.rs`) sends
       `wp_fractional_scale_v1.preferred_scale` and `wl_surface.preferred_buffer_scale`
       to windows only, so layer surfaces stay at scale 1 and are upscaled (blurry) on a
@@ -699,6 +699,11 @@ the paper and leather materials move to Phase 6/7 (Widgets, Write).
       layer surface on a 1.5 output gets `preferred_scale` 180, and 240 after a config
       reload to 2; in the VM, `docs/checks/phase-2.md` §3 step 6 shows the demo's
       layer-shell strip sharp. Order: any time, but before 2.5's VM check.
+      *Done:* `refresh_surface_scales` also walks each output's layer map and sends the
+      scale with `LayerSurface::with_surfaces` (popups and subsurfaces included); the
+      test client got `track_layer_scale`. Test: `layer_surfaces_take_their_outputs_scale`
+      in `tests/outputs.rs` (180, then 240 after reload). Headless only; the VM check
+      (strip sharp at 1.5×) is still the owner's.
 - [ ] **2.28 Primary selection from text fields** · Sonnet. Found in 2.14: the Wayland
       driver pastes the primary selection but never owns it. Add a platform call to set
       the primary selection (`Ctx`, no-op on winit), a runner hook, and have

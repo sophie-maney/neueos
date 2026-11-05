@@ -10,6 +10,7 @@
 //! - **Scale:** `[outputs."NAME"] scale`, else 1. Surfaces get the preferred scale of the
 //!   output they overlap most (fractional-scale-v1, and `wl_surface.preferred_buffer_scale`
 //!   rounded up), refreshed once per loop iteration ([`State::refresh_surface_scales`]).
+//!   Layer surfaces get the scale of the output they are on (task 2.27).
 //! - **Hotplug:** a removed output's windows move to the first remaining output at the same
 //!   offset, clamped into its work area; zoomed windows are refitted when their output
 //!   changes size, full-screen ones follow theirs or move to the first output (ADR 0018);
@@ -24,12 +25,13 @@ use std::time::Duration;
 use neue_config::compositor::AdaptiveSync;
 use neue_ipc::{Event, OutputInfo};
 use smithay::backend::input::InputTime;
-use smithay::desktop::{Space, Window, layer_map_for_output};
+use smithay::desktop::{LayerSurface, Space, Window, layer_map_for_output};
 use smithay::output::{Output, Scale};
 use smithay::reexports::calloop::timer::{TimeoutAction, Timer};
 use smithay::reexports::wayland_server::backend::GlobalId;
+use smithay::reexports::wayland_server::protocol::wl_surface::WlSurface;
 use smithay::utils::{Logical, Point, Rectangle, Transform};
-use smithay::wayland::compositor::send_surface_state;
+use smithay::wayland::compositor::{SurfaceData, send_surface_state};
 use smithay::wayland::fractional_scale::with_fractional_scale;
 use tracing::{info, warn};
 
@@ -471,18 +473,32 @@ impl State {
                 send_scale(window, output);
             }
         }
+        // Layer surfaces (and their popups and subsurfaces) take their own output's scale.
+        for output in self.outputs() {
+            for layer in layer_map_for_output(output).layers() {
+                send_layer_scale(layer, output);
+            }
+        }
     }
 }
 
 /// Send `output`'s scale to every surface of `window`.
 fn send_scale(window: &Window, output: &Output) {
     let scale = output.current_scale();
-    window.with_surfaces(|surface, states| {
-        // Outputs are never rotated yet, so the buffer transform is always normal.
-        send_surface_state(surface, states, scale.integer_scale(), Transform::Normal);
-        with_fractional_scale(states, |fs| {
-            fs.set_preferred_scale(scale.fractional_scale());
-        });
+    window.with_surfaces(|surface, states| send_surface_scale(surface, states, &scale));
+}
+
+/// Send `output`'s scale to every surface of `layer`.
+fn send_layer_scale(layer: &LayerSurface, output: &Output) {
+    let scale = output.current_scale();
+    layer.with_surfaces(|surface, states| send_surface_scale(surface, states, &scale));
+}
+
+fn send_surface_scale(surface: &WlSurface, states: &SurfaceData, scale: &Scale) {
+    // Outputs are never rotated yet, so the buffer transform is always normal.
+    send_surface_state(surface, states, scale.integer_scale(), Transform::Normal);
+    with_fractional_scale(states, |fs| {
+        fs.set_preferred_scale(scale.fractional_scale());
     });
 }
 

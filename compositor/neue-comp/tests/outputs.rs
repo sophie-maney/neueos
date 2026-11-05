@@ -7,7 +7,7 @@ mod harness;
 
 use std::time::Duration;
 
-use harness::{Server, TestClient, Toplevel};
+use harness::{Anchor, Layer, Server, TestClient, Toplevel};
 use neue_ipc::{
     ActionParams, AdaptiveSyncInfo, AdaptiveSyncMode, Event, OutputInfo, Subscription, Topic,
     WindowId, WindowInfo,
@@ -254,6 +254,29 @@ fn config_reload_moves_and_rescales_outputs() {
     // Onto the moved output: scale 2.
     move_window(&server, id, -900, 0);
     assert_eq!(preferred_scale(&mut client, &window), Some(240));
+}
+
+#[test]
+fn layer_surfaces_take_their_outputs_scale() {
+    let server = Server::start_with_config(Some("[outputs.\"HEADLESS-1\"]\nscale = 1.5\n"));
+    let mut client = server.connect();
+    let strip = client.create_layer_surface(Layer::Top, "strip", (1280, 30), |surface| {
+        surface.set_size(0, 30);
+        surface.set_anchor(Anchor::Top | Anchor::Left | Anchor::Right);
+    });
+    client.track_layer_scale(&strip);
+    client.roundtrip();
+    assert_eq!(client.layer_events(&strip).preferred_scale, Some(180));
+
+    let mut events = subscribe(&server, vec![Topic::Outputs, Topic::Config]);
+    server.write_config("[outputs.\"HEADLESS-1\"]\nscale = 2\n");
+    wait_for(&mut events, |event| match event {
+        Event::ConfigReloaded { .. } => Some(()),
+        Event::ConfigError(info) => panic!("config rejected: {info}"),
+        _ => None,
+    });
+    client.roundtrip();
+    assert_eq!(client.layer_events(&strip).preferred_scale, Some(240));
 }
 
 #[test]
