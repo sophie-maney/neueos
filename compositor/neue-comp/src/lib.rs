@@ -11,6 +11,7 @@
 //! - `presentation`, `sync`, `security`: presentation-time and tearing hints, explicit
 //!   and implicit buffer sync, sandboxed clients (ADR 0017).
 //! - `input`: input dispatch, focus on click, compositor key bindings.
+//! - `command_key`: Super as ⌘, Super+key reaching third-party apps as Ctrl+key (ADR 0079).
 //! - [`placement`]: where new windows go (a cascading stack).
 //! - [`decorations`]: server-side title bars (xdg-decoration, KDE server-decoration).
 //! - `render`: the render elements of an output (windows, title bars, layers).
@@ -33,6 +34,7 @@
 
 mod appmenu;
 mod blur;
+mod command_key;
 pub mod config;
 #[cfg(feature = "tty")]
 mod cursor;

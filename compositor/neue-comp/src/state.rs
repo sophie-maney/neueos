@@ -6,6 +6,7 @@ use std::collections::HashMap;
 use std::ffi::OsString;
 use std::os::unix::net::UnixStream;
 use std::sync::Arc;
+use std::sync::atomic::AtomicBool;
 use std::time::Instant;
 
 use neue_ipc::{OutputInfo, WindowId, WindowInfo};
@@ -60,6 +61,7 @@ use tracing::warn;
 
 use crate::Error;
 use crate::appmenu::AppmenuState;
+use crate::command_key::ModMasks;
 use crate::config::ConfigRuntime;
 use crate::decorations::Chrome;
 use crate::ipc::IpcServer;
@@ -239,6 +241,8 @@ pub struct State {
     pub seat_state: SeatState<State>,
     pub seat: Seat<State>,
     pub keyboard: KeyboardHandle<State>,
+    /// Where Super and Control are in the keymap, for Super as ⌘ (`command_key.rs`).
+    pub command_key_masks: ModMasks,
     pub pointer: PointerHandle<State>,
     /// What the pointer looks like: what the focused client asked for (a named shape or a
     /// surface), or a shape the compositor chose (a resize grab). Drawn by the tty backend;
@@ -436,6 +440,7 @@ impl State {
             seat_state,
             seat,
             keyboard,
+            command_key_masks: ModMasks::default(),
             pointer,
             cursor_status: CursorImageStatus::default_named(),
             cursor_override: None,
@@ -481,14 +486,14 @@ impl State {
 
     /// The id of the window with keyboard focus.
     pub fn focused_window_id(&self) -> Option<WindowId> {
-        let focus = self.keyboard.current_focus()?;
+        let focus = self.keyboard_focus()?;
         self.window_for_surface(&focus)
             .and_then(|w| self.window_id(&w))
     }
 
     /// The windows: minimised ones first, then mapped ones bottom to top.
     pub fn windows(&self) -> Vec<WindowInfo> {
-        let focus = self.keyboard.current_focus();
+        let focus = self.keyboard_focus();
         self.all_windows()
             .filter_map(|window| self.window_info(window, focus.as_ref()))
             .collect()
@@ -560,6 +565,11 @@ impl State {
     }
 
     /// The mapped or minimised window whose toplevel is `surface`.
+    /// The surface with keyboard focus.
+    pub fn keyboard_focus(&self) -> Option<WlSurface> {
+        self.keyboard.current_focus().map(|focus| focus.0)
+    }
+
     pub fn window_for_surface(&self, surface: &WlSurface) -> Option<Window> {
         self.all_windows()
             .find(|w| w.toplevel().is_some_and(|t| t.wl_surface() == surface))
@@ -592,6 +602,9 @@ pub struct ClientState {
     pub security_context: Option<SecurityContext>,
     /// The shell (`neue_shell.rs`): the only client that sees `neue_shell_manager_v1`.
     pub shell: bool,
+    /// It bound `neue_window_manager_v1`: a neue-kit app, which takes Super itself
+    /// (`command_key.rs`).
+    pub native_keys: AtomicBool,
 }
 
 impl ClientData for ClientState {

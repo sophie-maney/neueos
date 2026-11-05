@@ -410,7 +410,7 @@ fn the_input_method_popup_belongs_to_the_focused_window() {
 
     let _popup = ime.input_method_popup((120, 40));
     let (count, is_ime) = server.with_state(|s| {
-        let parent = s.keyboard.current_focus().unwrap();
+        let parent = s.keyboard_focus().unwrap();
         let popups: Vec<_> = PopupManager::popups_for_surface(&parent).collect();
         (
             popups.len(),

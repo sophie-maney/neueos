@@ -29,7 +29,7 @@ use toml::{Table, Value};
 
 pub use appearance::AppearanceConfig;
 pub use chord::{Chord, ChordError};
-pub use compositor::{CompositorConfig, TitleBarDoubleClick, WindowsConfig};
+pub use compositor::{CompositorConfig, SuperAsCommandConfig, TitleBarDoubleClick, WindowsConfig};
 pub use shell::{DesktopConfig, PictureFit, ShellConfig};
 
 /// Directory name inside each config root.

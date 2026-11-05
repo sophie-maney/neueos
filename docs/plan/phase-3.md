@@ -220,7 +220,7 @@ their goldens and the gallery's "Shell" page run on macOS.
       brings the registrar and the menus back. Items acting is covered by kit and
       `neue-dbus` tests; not clicked in the VM, because ydotool input didn't reach the
       session in that run (not even Tab in the gallery), so it is on the *Owner:* line.
-      Icons are parsed but not drawn; Super shows as the kit's command key until 3.10.
+      Icons are parsed but not drawn; Super shows as the kit's command key until 3.10c.
 - [x] **3.7b Global menu A: menu-bar navigation** · Opus. After 3.7a. Hover-switching
       between open menus, Left/Right across the bar's menus, Escape, and a shortcut to
       focus the menu bar: a `neue_shell_v1` event (`focus_menu_bar`, version bump) sent by
@@ -254,20 +254,45 @@ their goldens and the gallery's "Shell" page run on macOS.
       after all (ADR 0025 §7 amended). Icons and section headers are not shown.
       *Owner:* Nautilus/gedit-style GNOME apps on the PC; a Flatpak GTK app (its bus name is
       the sandbox's own).
-- [ ] **3.9 Fallback menu and menu search** · Sonnet. After 3.7b and 3.10. ADR 0005 §4:
+- [ ] **3.9 Fallback menu and menu search** · Sonnet. After 3.7b and 3.10c. ADR 0005 §4:
       App, File, Edit, Window and Help for windows with no menu address. Edit items send
       key chords through `neue-shell-v1`; Window items run compositor actions; New Window
       uses the entry's `new-window` action (3.3) or is disabled. Help's search field finds
       items in the current menus, whatever their source.
       *Accept:* in the VM, Copy and Paste from the fallback menu work in foot and Firefox;
       menu search finds and runs an item in the gallery.
-- [ ] **3.10 Super as ⌘** · Opus. PLAN.md Q1, decided yes on 2026-11-05. The compositor
-      remaps Super+key chords to Ctrl+key for third-party apps, except an exceptions list
-      in config (terminals by default), and leaves them alone for neue-kit apps, which
-      take Super themselves. Menus show shortcuts with ⌘. ADR.
+- **3.10 Super as ⌘**, split into three PRs (2026-11-06: about 30 files across six crates
+  and a protocol change were too many for one). PLAN.md Q1, decided yes on 2026-11-05.
+- [x] **3.10a Super as ⌘ A: compositor remap** · Opus. The compositor remaps Super+key
+      chords to Ctrl+key for third-party apps by rewriting the modifiers it sends them, except
+      an exceptions list in `compositor.toml` (terminals by default) and clients that bound
+      `neue_window_manager_v1` or `neue_shell_v1` (neue-kit apps, which take Super
+      themselves). No remap while a client inhibits shortcuts. ADR.
       *Accept:* headless tests: Super+C reaches a scripted client as Ctrl+C, an exempt app
-      gets Super+C, compositor bindings still win; in the VM, Super+C/Super+V copy and
-      paste in Firefox and the gallery, and foot gets Ctrl-Shift-C semantics unchanged.
+      gets Super+C, a kit client gets Super+C, compositor bindings still win; in the VM,
+      Super+C/Super+V copy and paste in Firefox, and foot gets Ctrl-Shift-C semantics
+      unchanged.
+      *Done (ADR 0079):* `KeyFocus` in `command_key.rs` rewrites Super to Control in the
+      modifiers sent to remapped clients; settings in `[super-as-command]` (`enabled`,
+      `exceptions`). In the VM, Firefox: Super+L focuses the address bar, Super+A and
+      Super+C copy (read back with `wl-paste`), Super+V pastes; foot: Super+C does not
+      interrupt `sleep`, Ctrl+C does, Ctrl+Shift+V pastes. The gallery's Super+C/V moved to
+      3.10b (the kit still takes Ctrl as its command key). Known gap: the default Super+Q
+      binding quits the session, so ⌘Q never reaches apps.
+      *Owner:* on the PC, Super+C/V in a GTK app (gedit) and a Qt app (KWrite); Super+C in
+      an X11 app through xwayland-satellite.
+- [ ] **3.10b Super as ⌘ B: the kit's command key** · Sonnet. After 3.10a. neue-kit's
+      command key is Super (META) on Linux as on macOS: text fields, text views, tables,
+      Super+V paste in neue-platform's clipboard driver; kit menus draw ⌘. ADR 0042 amended.
+      *Accept:* kit tests with META as the command key on every host; in the VM, Super+C and
+      Super+V copy and paste in the gallery, and its menus show ⌘.
+- [ ] **3.10c Super as ⌘ C: ⌘ in third-party menus** · Sonnet. After 3.10a. A
+      `neue_shell_toplevel_v1` event (manager version 3) telling the shell whether Super
+      reaches the window's app as Ctrl; neue-platform passes it on in `Toplevel`, and the
+      shell's global menu shows those apps' Control shortcuts with ⌘. ADR for the protocol
+      change.
+      *Accept:* a headless test of the event (exempt and remapped apps); shell unit tests of
+      the mapping; in the VM, Firefox's menus show ⌘C and foot's do not.
 - [ ] **3.11 Menu extras: battery and Bluetooth** · Sonnet. After 3.2b. zbus proxies for
       UPower and BlueZ (not `bluer`, which links libdbus). Battery: icon with charge and
       state, menu with percentage and time left, hidden without a battery. Bluetooth:

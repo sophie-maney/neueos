@@ -187,6 +187,7 @@ impl State {
         // Errors are already logged and emitted by the reloads.
         let _ = self.reload_appearance();
         let _ = self.reload_compositor();
+        self.refresh_command_key_masks();
         if let Err(err) = self.watch_config() {
             warn!(%err, "not watching the config files: changes need `neuectl reload-config`");
         }
@@ -307,6 +308,7 @@ impl State {
             // Both fit in i32: validated to at most 5000 and 200.
             self.keyboard
                 .change_repeat_info(keyboard.repeat_rate as i32, keyboard.repeat_delay as i32);
+            self.refresh_command_key_masks();
         }
 
         self.config.bindings = bindings;

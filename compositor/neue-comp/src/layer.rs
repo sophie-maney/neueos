@@ -30,6 +30,7 @@ use smithay::wayland::shell::wlr_layer::{
 use smithay::wayland::shell::xdg::PopupSurface;
 use tracing::{debug, warn};
 
+use crate::command_key::KeyFocus;
 use crate::state::State;
 
 /// Layers drawn above windows, topmost first.
@@ -75,7 +76,7 @@ impl WlrLayerShellHandler for State {
     }
 
     fn layer_destroyed(&mut self, surface: WlrLayerSurface) {
-        let was_focused = self.keyboard.current_focus().as_ref() == Some(surface.wl_surface());
+        let was_focused = self.keyboard_focus().as_ref() == Some(surface.wl_surface());
         for output in self.outputs().cloned().collect::<Vec<_>>() {
             let mut map = layer_map_for_output(&output);
             let layer = map
@@ -171,7 +172,11 @@ impl State {
             window.set_activated(false);
         }
         let keyboard = self.keyboard.clone();
-        keyboard.set_focus(self, Some(surface.clone()), SERIAL_COUNTER.next_serial());
+        keyboard.set_focus(
+            self,
+            Some(KeyFocus(surface.clone())),
+            SERIAL_COUNTER.next_serial(),
+        );
         self.send_pending_configures();
     }
 
@@ -214,12 +219,12 @@ impl State {
             return;
         }
         if let Some(exclusive) = self.exclusive_layer_surface() {
-            if self.keyboard.current_focus().as_ref() != Some(&exclusive) {
+            if self.keyboard_focus().as_ref() != Some(&exclusive) {
                 self.focus_layer(&exclusive);
             }
         } else if lost_focus {
             self.focus_topmost();
-        } else if let Some(focus) = self.keyboard.current_focus()
+        } else if let Some(focus) = self.keyboard_focus()
             && let Some((layer, _)) = self.layer_for_surface(&focus)
             && !layer.can_receive_keyboard_focus()
         {
@@ -257,8 +262,12 @@ impl State {
         if self.is_locked() {
             return;
         }
-        let grabbed_root = self.keyboard.grab_start_data().and_then(|d| d.focus);
-        let Some(root) = grabbed_root.or_else(|| self.keyboard.current_focus()) else {
+        let grabbed_root = self
+            .keyboard
+            .grab_start_data()
+            .and_then(|d| d.focus)
+            .map(|focus| focus.0);
+        let Some(root) = grabbed_root.or_else(|| self.keyboard_focus()) else {
             return;
         };
         let Some((layer, _)) = self.layer_for_surface(&root) else {

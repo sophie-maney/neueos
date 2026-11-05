@@ -101,7 +101,7 @@ impl KeyboardShortcutsInhibitHandler for State {
     /// Accept at once when the surface has the keyboard, as the protocol allows; otherwise
     /// it is activated when it gets it (see [`State::update_shortcut_inhibitor`]).
     fn new_inhibitor(&mut self, inhibitor: KeyboardShortcutsInhibitor) {
-        if self.keyboard.current_focus().as_ref() == Some(inhibitor.wl_surface()) {
+        if self.keyboard_focus().as_ref() == Some(inhibitor.wl_surface()) {
             inhibitor.activate();
             self.active_inhibitor = Some(inhibitor);
         }

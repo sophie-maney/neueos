@@ -21,6 +21,7 @@ use smithay::wayland::session_lock::{
 };
 use tracing::{debug, info};
 
+use crate::command_key::KeyFocus;
 use crate::state::State;
 
 /// What an output shows while the session is locked. Kept in the output's user data.
@@ -130,7 +131,7 @@ impl SessionLockHandler for State {
         self.session_lock.owner = Some(confirmation.ext_session_lock().clone());
         self.session_lock.locked = true;
         if first {
-            self.session_lock.focus_before = self.keyboard.current_focus();
+            self.session_lock.focus_before = self.keyboard_focus();
         }
         for output in self.outputs().cloned().collect::<Vec<_>>() {
             with_output_lock(&output, |lock| lock.locked = true);
@@ -197,11 +198,11 @@ impl SessionLockHandler for State {
         with_output_lock(&output, |lock| lock.surface = Some(surface.clone()));
         Self::size_lock_surface(&surface, &output);
         // The first lock surface gets the keyboard; later ones when they are clicked.
-        if self.keyboard.current_focus().is_none() {
+        if self.keyboard_focus().is_none() {
             let keyboard = self.keyboard.clone();
             keyboard.set_focus(
                 self,
-                Some(surface.wl_surface().clone()),
+                Some(KeyFocus(surface.wl_surface().clone())),
                 SERIAL_COUNTER.next_serial(),
             );
         }
@@ -231,9 +232,9 @@ impl State {
         let Some((surface, _)) = self.lock_surface_under(location) else {
             return;
         };
-        if self.keyboard.current_focus().as_ref() != Some(&surface) {
+        if self.keyboard_focus().as_ref() != Some(&surface) {
             let keyboard = self.keyboard.clone();
-            keyboard.set_focus(self, Some(surface), SERIAL_COUNTER.next_serial());
+            keyboard.set_focus(self, Some(KeyFocus(surface)), SERIAL_COUNTER.next_serial());
         }
     }
 }

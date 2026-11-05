@@ -21,7 +21,7 @@ use smithay::reexports::wayland_server::{
 use smithay::wayland::compositor::{Cacheable, with_states};
 use smithay::wayland::{Dispatch2, GlobalDispatch2};
 
-use crate::state::State;
+use crate::state::{ClientState, State};
 
 /// Version of `neue_window_manager_v1` we implement.
 const VERSION: u32 = 1;
@@ -91,10 +91,15 @@ impl GlobalDispatch2<NeueWindowManagerV1, State> for WindowGlobal {
         &self,
         _state: &mut State,
         _dh: &DisplayHandle,
-        _client: &Client,
+        client: &Client,
         resource: New<NeueWindowManagerV1>,
         data_init: &mut DataInit<'_, State>,
     ) {
+        // Every neue-kit app binds this when it starts: it takes Super itself, so Super
+        // as ⌘ leaves its keys alone (`command_key.rs`).
+        if let Some(data) = client.get_data::<ClientState>() {
+            data.native_keys.store(true, Ordering::Relaxed);
+        }
         data_init.init(resource, WindowGlobal);
     }
 }
