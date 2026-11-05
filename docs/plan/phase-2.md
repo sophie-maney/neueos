@@ -672,8 +672,17 @@ the paper and leather materials move to Phase 6/7 (Widgets, Write).
         steps in `docs/checks/phase-2.md` §28, not run. Not yet: locale (names, order, first
         weekday), minimum and maximum dates, a time of day, local-zone today, repeat while
         the stepper is held, the selection drawn unfocused in an inactive window.
-- [ ] **2.25 `docs/design/` specs** · Sonnet. Token reference, materials spec, motion
-      spec.
+- [x] **2.25 `docs/design/` specs** · Sonnet. Token reference, materials spec, motion
+      spec. Done: `docs/design/README.md` (index, aims, rules for touching the look),
+      `tokens.md` (variants, semantic colours with hex for light, dark, graphite and
+      increased contrast, spacing, control sizes, radii, type scale), `materials.md` (the
+      principles, the gel recipe, translucency and `Backdrop`, a recipe per material, how to
+      add one), `motion.md` (spring presets with computed settle times and overshoot, fixed
+      durations, ambient loops, reduced motion, rules). Values were read from `neue-theme`
+      and checked against the code; `neue-theme`'s crate doc now points here. Docs only; no
+      ADR needed. Found: `FAST`, `NORMAL`, `SLOW`, `TOOLTIP_DELAY`, `GENTLE` and `BOUNCY`
+      have no users yet. Not yet: golden thumbnails in the docs, a per-material table of
+      every palette value (the code's doc comments are the reference for those).
 - [ ] **2.26 Exit check** · Sonnet, plus owner VM steps. Screenshot every gallery page
       with `neuectl` in the VM, compare with macOS and the goldens, fix drift, tick
       Phase 2.
