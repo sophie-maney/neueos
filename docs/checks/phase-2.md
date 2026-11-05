@@ -909,3 +909,36 @@ reopen one: the panel is dark.
 button shows its popover on its side; Escape, a click outside, the button again and Done
 close it. With VoiceOver on (Cmd-F5), opening one moves VoiceOver into a dialog, and
 VO-Right reaches "Popover", the text and Done.
+
+## 23. Checking sheets (task 2.23b)
+Not run yet. Steps 1 to 4 run in the VM, set up as in `docs/dev-setup.md` §1.3; step 5 is
+on the Mac. The button is on the "Popovers" page (page 13), under "Sheets". The helpers
+are those of §8 (`click_at`) and §19 (`move_to`). Until task 2.23c the compositor places
+the sheet's window like any new toplevel, not under the gallery's title bar.
+
+**1. Build and open the page:** as §8 step 1 with `NEUE_GALLERY_PAGE=13`. Then
+`neuectl windows --json > /tmp/s0.json`. Expected: no `WARN` or `ERROR`; a "Save…" button
+under "Show a sheet"; one gallery window.
+
+**2. Open it:** click "Save…", then `neuectl windows --json > /tmp/s1.json` and
+`neuectl screenshot /tmp/s1.png`. Expected: a second window from the gallery, with no
+title bar (no server-side bar in `s1.png`): "Save changes to “Notes”?", a line of text,
+Cancel and a pulsing blue Save in its bottom right corner, a darker band fading down its
+top edge. `/tmp/gallery.log` has no "no xdg-dialog" warning.
+
+**3. Keys and the parent:** press Return (`ydotool key 28:1 28:0`): the sheet closes and
+the status line reads "Sheet: saved". Open it again and press Escape
+(`ydotool key 1:1 1:0`): "Sheet: cancelled". Open it again, press Tab three times
+(`ydotool key 15:1 15:0`) and screenshot `/tmp/s2.png` after each: the focus ring moves
+Cancel → Save → Cancel, never into the gallery window. Click a control in the gallery
+window (a sidebar page): nothing happens; Escape closes the sheet, and the click works
+again.
+
+**4. Dark:** switch to dark (the toolbar's appearance switch), open the sheet, screenshot
+`/tmp/s3.png`: the sheet is dark, its text light.
+
+**5. macOS (owner):** `cargo xtask gallery`, page "Popovers", "Save…". Expected: the sheet
+appears inside the gallery window, centred, its top edge under the toolbar, with a shadow
+beside and below it; clicks on the page under it do nothing; Return, Escape and Tab behave
+as in step 3; the toolbar's buttons still work (known, ADR 0057). With VoiceOver on
+(Cmd-F5), opening it moves VoiceOver into a dialog named "Save".

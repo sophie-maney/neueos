@@ -34,7 +34,7 @@ use neue_theme::{Appearance, Theme};
 use crate::app::Window;
 use crate::element::Element;
 use crate::theme::default_properties;
-use crate::widgets::{Popover, RootWidget, StackWidget, popover};
+use crate::widgets::{Popover, RootWidget, Sheet, StackWidget, popover};
 
 /// Errors from [`Fixture::render`] and [`check_states`].
 #[derive(Debug, thiserror::Error)]
@@ -187,6 +187,22 @@ impl Fixture {
     pub fn scroll(&mut self, dx: f64, dy: f64) {
         self.hover_at(0.5, 0.5);
         self.harness.mouse_wheel(Vec2::new(dx, dy));
+    }
+
+    /// A sheet as a window of its own (as on Wayland), drawn at `scale`.
+    pub fn sheet<M: Clone + 'static>(sheet: Sheet<M>, theme: Theme, scale: f64) -> Self {
+        crate::menu::command_is_ctrl_here();
+        let parts = sheet.into_parts();
+        let root = RootWidget::new(parts.widget.erased());
+        Self::with_root(root, None, theme, scale, parts.size)
+    }
+
+    /// Shows `sheet` drawn in the fixture's window (as on macOS), as
+    /// [`Cx::show_sheet`](crate::Cx::show_sheet) would. Its messages go nowhere.
+    pub fn show_sheet<M: Clone + 'static>(&mut self, sheet: Sheet<M>) {
+        let parts = sheet.into_parts();
+        self.harness
+            .edit_root_widget(|mut root| RootWidget::attach_sheet(&mut root, Some(parts.widget)));
     }
 
     /// Gives the widget keyboard focus, as Tab would: to the widget itself, or if that
@@ -347,6 +363,20 @@ pub fn check_window_states<M>(
 ) -> Result<(), Error> {
     check(goldens, name, theme, states, |theme, scale| {
         Fixture::window(make(), theme, scale)
+    })
+}
+
+/// [`check_states`] for a sheet as a window of its own ([`Fixture::sheet`]), at its own
+/// size.
+pub fn check_sheet_states<M: Clone + 'static>(
+    goldens: &Goldens,
+    name: &str,
+    theme: Theme,
+    states: &[State],
+    make: impl Fn() -> Sheet<M>,
+) -> Result<(), Error> {
+    check(goldens, name, theme, states, |theme, scale| {
+        Fixture::sheet(make(), theme, scale)
     })
 }
 

@@ -19,7 +19,7 @@ use crate::task::{Mailbox, Sender, Task};
 use crate::theme;
 use crate::widgets::{
     self, ButtonWidget, Chrome, Popover, PopoverWidget, Pressed, Rewired, RootAction, RootWidget,
-    RowsWidget,
+    RowsWidget, Sheet, SheetButtons, SheetKey,
 };
 
 /// An app: its state is the model, [`Application::Message`] is everything that can happen
@@ -202,6 +202,9 @@ pub(crate) trait Host {
     fn windows(&self) -> Vec<WindowId>;
     fn exit(&mut self);
     fn set_menu_address(&mut self, window: WindowId, address: Option<MenuAddress>);
+    /// Whether modal child windows exist ([`neue_platform::Ctx::has_modal_windows`]):
+    /// sheets open as windows of their own, or else inside their parent.
+    fn has_modal_windows(&self) -> bool;
 }
 
 impl Host for neue_platform::Ctx<'_> {
@@ -223,6 +226,22 @@ impl Host for neue_platform::Ctx<'_> {
     fn set_menu_address(&mut self, window: WindowId, address: Option<MenuAddress>) {
         neue_platform::Ctx::set_menu_address(self, window, address);
     }
+    fn has_modal_windows(&self) -> bool {
+        neue_platform::Ctx::has_modal_windows(self)
+    }
+}
+
+/// A sheet open on a window.
+#[derive(Debug)]
+struct OpenSheet {
+    /// The sheet's widget.
+    widget: WidgetId,
+    /// Its own window, where modal windows exist; `None` when the parent draws it.
+    window: Option<WindowId>,
+    /// The buttons Return and Escape press.
+    keys: SheetButtons,
+    /// What had keyboard focus in the parent when it opened (drawn in the parent only).
+    return_focus: Option<WidgetId>,
 }
 
 /// neue-kit's side of the app: message handlers, the message queue and the mailbox.
@@ -232,6 +251,10 @@ pub(crate) struct Kit<M> {
     handlers: HashMap<WidgetId, (WindowId, Handler<M>)>,
     /// Each window's default button, which Return presses.
     defaults: HashMap<WindowId, WidgetId>,
+    /// Each window's root widget.
+    roots: HashMap<WindowId, WidgetId>,
+    /// Open sheets, by the window they are on.
+    sheets: HashMap<WindowId, OpenSheet>,
     /// Messages for `update`, in order.
     queue: VecDeque<M>,
     mailbox: Mailbox<M>,
@@ -297,6 +320,7 @@ impl<M> Cx<'_, M> {
             spec.background = self.kit.settings.theme.colors().window_background;
         }
         let id = self.host.open_window(spec);
+        self.kit.roots.insert(id, root_id);
         self.register_wiring(id, wiring);
         if let Some(wiring) = toolbar_wiring {
             self.register_wiring(id, wiring);
@@ -312,12 +336,136 @@ impl<M> Cx<'_, M> {
         self.kit.menu_bars.set(self.host, window, menu);
     }
 
-    /// Closes `window`. Unknown or closed ids are ignored.
+    /// Closes `window`, and a sheet open on it. Unknown or closed ids are ignored. Closing a
+    /// sheet's own window closes the sheet ([`Cx::close_sheet`]).
     pub fn close_window(&mut self, window: WindowId) {
+        if let Some(parent) = self.sheet_parent(window) {
+            return self.close_sheet(parent);
+        }
+        self.close_sheet(window);
+        self.forget_window(window);
+    }
+
+    /// Closes `window` and forgets everything about it.
+    fn forget_window(&mut self, window: WindowId) {
         self.host.close_window(window);
         self.kit.menu_bars.remove(window);
         self.kit.handlers.retain(|_, (w, _)| *w != window);
         self.kit.defaults.remove(&window);
+        self.kit.roots.remove(&window);
+    }
+
+    /// Shows `sheet` on `window`, replacing a sheet already open there (without sending its
+    /// messages). `window` must be open: a window opened in the same callback isn't yet.
+    ///
+    /// The window takes no pointer input while the sheet is open, and keyboard focus stays
+    /// in the sheet. Where the platform has modal windows (Wayland), the sheet is a modal
+    /// window of its own that the compositor attaches to `window`; elsewhere (macOS)
+    /// `window` draws it over its content, under its title bar and toolbar.
+    pub fn show_sheet(&mut self, window: WindowId, sheet: Sheet<M>)
+    where
+        M: Clone + 'static,
+    {
+        let Some(&root_id) = self.kit.roots.get(&window) else {
+            tracing::warn!(%window, "show_sheet on a window that isn't open");
+            return;
+        };
+        if self.host.render_root(window).is_none() {
+            tracing::warn!(%window, "show_sheet on a window that isn't open yet");
+            return;
+        }
+        self.close_sheet(window);
+        let parts = sheet.into_parts();
+        let widget = parts.widget.id();
+        if self.host.has_modal_windows() {
+            let root = NewWidget::new(RootWidget::new(parts.widget.erased()));
+            let sheet_root = root.id();
+            let mut spec = WindowSpec::new(parts.title, parts.size, root.erased());
+            spec.focus_fallback = Some(widget);
+            spec.app_id = self.kit.settings.app_id.clone();
+            spec.parent = Some(window);
+            spec.modal = true;
+            // No title bar: the sheet hangs from its parent's.
+            spec.decorations = Decorations::Client;
+            spec.background = self.kit.settings.theme.colors().window_background;
+            let own = self.host.open_window(spec);
+            self.kit.roots.insert(own, sheet_root);
+            self.register_wiring(own, parts.wiring);
+            if let Some(root) = self.host.render_root(window) {
+                root.edit_widget(root_id, |mut r| {
+                    RootWidget::attach_sheet(&mut r.downcast(), None);
+                });
+            }
+            self.kit.sheets.insert(
+                window,
+                OpenSheet {
+                    widget,
+                    window: Some(own),
+                    keys: parts.keys,
+                    return_focus: None,
+                },
+            );
+        } else {
+            let default = self.kit.defaults.get(&window).copied();
+            let Some(root) = self.host.render_root(window) else {
+                return;
+            };
+            let return_focus = root.focused_widget();
+            root.edit_widget(root_id, |mut r| {
+                RootWidget::attach_sheet(&mut r.downcast(), Some(parts.widget));
+            });
+            root.set_focus_fallback(Some(widget));
+            root.focus_on(Some(widget));
+            // The window's default button rests while the sheet's is in charge.
+            set_default_look(root, default, false);
+            self.register_wiring(window, parts.wiring);
+            self.kit.sheets.insert(
+                window,
+                OpenSheet {
+                    widget,
+                    window: None,
+                    keys: parts.keys,
+                    return_focus,
+                },
+            );
+        }
+    }
+
+    /// Closes the sheet open on `window`, if there is one, without sending its messages.
+    /// Keyboard focus goes back to where it was in `window`.
+    pub fn close_sheet(&mut self, window: WindowId) {
+        let Some(open) = self.kit.sheets.remove(&window) else {
+            return;
+        };
+        if let Some(own) = open.window {
+            self.forget_window(own);
+        }
+        let (Some(&root_id), default) = (
+            self.kit.roots.get(&window),
+            self.kit.defaults.get(&window).copied(),
+        ) else {
+            return;
+        };
+        let Some(root) = self.host.render_root(window) else {
+            return;
+        };
+        if root.has_widget(root_id) {
+            root.edit_widget(root_id, |mut r| RootWidget::detach_sheet(&mut r.downcast()));
+        }
+        if open.window.is_none() {
+            root.set_focus_fallback(Some(root_id));
+            root.focus_on(open.return_focus.filter(|&id| root.has_widget(id)));
+            set_default_look(root, default, true);
+            self.prune_handlers(window);
+        }
+    }
+
+    /// The window a sheet with its own window `window` is on.
+    fn sheet_parent(&self, window: WindowId) -> Option<WindowId> {
+        self.kit
+            .sheets
+            .iter()
+            .find_map(|(&parent, open)| (open.window == Some(window)).then_some(parent))
     }
 
     /// Open windows, in no particular order.
@@ -473,6 +621,38 @@ impl<M> Cx<'_, M> {
     }
 }
 
+/// Gives `button` (a window's default button) its default look, or takes it away while a
+/// sheet's default button is in charge.
+fn set_default_look(root: &mut RenderRoot, button: Option<WidgetId>, is_default: bool) {
+    if let Some(id) = button.filter(|&id| root.has_widget(id)) {
+        root.edit_widget(id, |mut b| {
+            ButtonWidget::edit_default(&mut b.downcast(), is_default);
+        });
+    }
+}
+
+/// Moves keyboard focus to the next (`forward`) or previous control in the sheet `sheet`,
+/// wrapping around: Tab never leaves a sheet.
+fn cycle_focus(root: &mut RenderRoot, sheet: WidgetId, forward: bool) {
+    let Some(widget) = root.get_widget(sheet) else {
+        return;
+    };
+    let stops = widgets::focusable(widget);
+    let (Some(&first), Some(&last)) = (stops.first(), stops.last()) else {
+        return;
+    };
+    let at = root
+        .focused_widget()
+        .and_then(|f| stops.iter().position(|&s| s == f));
+    let next = match (at, forward) {
+        (None, true) => first,
+        (None, false) => last,
+        (Some(i), true) => stops.get(i + 1).copied().unwrap_or(first),
+        (Some(i), false) => i.checked_sub(1).map_or(last, |i| stops[i]),
+    };
+    root.focus_on(Some(next));
+}
+
 impl<M: Send + 'static> Cx<'_, M> {
     /// A sender for other threads (or async runtimes) to send messages with.
     pub fn sender(&self) -> Sender<M> {
@@ -530,6 +710,8 @@ impl<A: Application> Runner<A> {
             settings,
             handlers: HashMap::new(),
             defaults: HashMap::new(),
+            roots: HashMap::new(),
+            sheets: HashMap::new(),
             queue: VecDeque::new(),
             mailbox: Mailbox::new(wake.clone()),
             menu_bars: MenuBars::new(wake),
@@ -553,6 +735,10 @@ impl<A: Application> Runner<A> {
             Ok(root) => return self.root_action(host, window, *root),
             Err(action) => action,
         };
+        let action = match action.downcast::<SheetKey>() {
+            Ok(key) => return self.sheet_key(host, window, widget, *key),
+            Err(action) => action,
+        };
         if action.is::<Rewired>() {
             return self.rewire(host, window, widget);
         }
@@ -570,35 +756,76 @@ impl<A: Application> Runner<A> {
     /// Handles a window root's action: Return presses the default button, window focus
     /// changes its look, and the chrome's close button asks the app to close the window.
     fn root_action(&mut self, host: &mut dyn Host, window: WindowId, action: RootAction) {
-        if action == RootAction::Close {
-            return self.close_requested(host, window);
-        }
         let Some(kit) = &mut self.kit else { return };
-        let Some(&id) = kit.defaults.get(&window) else {
-            return;
-        };
-        let Some(root) = host.render_root(window) else {
-            return;
-        };
         match action {
+            RootAction::Close => self.close_requested(host, window),
+            // While a sheet is open, Return is the sheet's.
+            RootAction::DefaultKey if kit.sheets.contains_key(&window) => {}
             RootAction::DefaultKey => {
-                let enabled = root
-                    .get_widget(id)
-                    .is_some_and(|button| !button.ctx().is_disabled());
-                let handler = kit.handlers.get_mut(&id);
-                if let (true, Some((_, handler))) = (enabled, handler)
-                    && let Some(message) = handler(Box::new(Pressed))
-                {
-                    kit.queue.push_back(message);
+                if let Some(&id) = kit.defaults.get(&window) {
+                    self.press(host, window, id);
                 }
-                self.drain(host);
             }
-            RootAction::Close => {}
             RootAction::WindowFocus(_) => {
-                if root.has_widget(id) {
-                    root.edit_widget(id, |mut button| {
-                        ButtonWidget::edit_window_focus(&mut button.downcast());
-                    });
+                // The window's default button, and that of a sheet drawn in it or that is
+                // this window.
+                let sheet = kit.sheets.iter().find_map(|(&parent, open)| {
+                    (open.window.unwrap_or(parent) == window).then_some(open.keys.default)
+                });
+                let buttons = kit.defaults.get(&window).copied().into_iter();
+                let Some(root) = host.render_root(window) else {
+                    return;
+                };
+                for id in buttons.chain(sheet.flatten()) {
+                    if root.has_widget(id) {
+                        root.edit_widget(id, |mut button| {
+                            ButtonWidget::edit_window_focus(&mut button.downcast());
+                        });
+                    }
+                }
+            }
+        }
+    }
+
+    /// Presses the button `id` in `window` as Return presses a default button: if it is
+    /// enabled, its message goes to `update`.
+    fn press(&mut self, host: &mut dyn Host, window: WindowId, id: WidgetId) {
+        let Some(kit) = &mut self.kit else { return };
+        let enabled = host
+            .render_root(window)
+            .and_then(|root| root.get_widget(id))
+            .is_some_and(|button| !button.ctx().is_disabled());
+        if enabled
+            && let Some((_, handler)) = kit.handlers.get_mut(&id)
+            && let Some(message) = handler(Box::new(Pressed))
+        {
+            kit.queue.push_back(message);
+        }
+        self.drain(host);
+    }
+
+    /// Handles a sheet's key: Return and Escape press its default and cancel buttons, Tab
+    /// cycles focus inside it.
+    fn sheet_key(&mut self, host: &mut dyn Host, window: WindowId, sheet: WidgetId, key: SheetKey) {
+        let Some(kit) = &mut self.kit else { return };
+        let Some(open) = kit.sheets.values().find(|open| open.widget == sheet) else {
+            return;
+        };
+        let keys = open.keys;
+        match key {
+            SheetKey::Default => {
+                if let Some(id) = keys.default {
+                    self.press(host, window, id);
+                }
+            }
+            SheetKey::Cancel => {
+                if let Some(id) = keys.cancel {
+                    self.press(host, window, id);
+                }
+            }
+            SheetKey::Tab { forward } => {
+                if let Some(root) = host.render_root(window) {
+                    cycle_focus(root, sheet, forward);
                 }
             }
         }
@@ -630,6 +857,13 @@ impl<A: Application> Runner<A> {
 
     pub(crate) fn close_requested(&mut self, host: &mut dyn Host, window: WindowId) {
         let Some(kit) = &mut self.kit else { return };
+        // A sheet's own window (the compositor asked): that's Escape, not the app's call.
+        if let Some(open) = kit.sheets.values().find(|open| open.window == Some(window)) {
+            if let Some(cancel) = open.keys.cancel {
+                self.press(host, window, cancel);
+            }
+            return;
+        }
         self.app.close_requested(&mut Cx { host, kit }, window);
         self.drain(host);
     }

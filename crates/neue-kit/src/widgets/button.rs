@@ -88,6 +88,17 @@ impl ButtonWidget {
         }
     }
 
+    /// Gives it the default look and pulse, or takes them away (while a sheet's default
+    /// button is in charge of Return).
+    pub(crate) fn edit_default(this: &mut WidgetMut<'_, Self>, is_default: bool) {
+        if this.widget.is_default == is_default {
+            return;
+        }
+        this.widget.is_default = is_default;
+        this.ctx.request_render();
+        this.widget.start_pulse(&mut this.ctx);
+    }
+
     /// The window gained or lost focus: the default look and the pulse follow it.
     pub(crate) fn edit_window_focus(this: &mut WidgetMut<'_, Self>) {
         this.ctx.request_render();

@@ -31,6 +31,7 @@ mod outline;
 mod popovers;
 mod popups;
 mod scroll;
+mod sheets;
 mod source_list;
 mod split;
 mod table;
@@ -44,6 +45,9 @@ use crate::theme::default_properties;
 use crate::widgets::{ButtonWidget, LabelWidget, StackWidget};
 use crate::{Application, Button, Cx, Handle, Label, Settings, Stack, Task, Window, Zoom};
 
+/// A window's parent, whether it is modal, and its size.
+type DialogSpec = (Option<WindowId>, bool, (u32, u32));
+
 /// Windows as harnesses; the root of each is a stack holding the window's root widget.
 #[derive(Default)]
 struct FakeHost {
@@ -56,6 +60,10 @@ struct FakeHost {
     menu_addresses: BTreeMap<WindowId, MenuAddress>,
     /// Each window's root widget (its focus fallback), decorations and background.
     specs: BTreeMap<WindowId, (Option<WidgetId>, Decorations, Color)>,
+    /// Each window's parent and whether it is modal, and its size.
+    dialogs: BTreeMap<WindowId, DialogSpec>,
+    /// Sheets open as windows of their own, as on Wayland.
+    modal_windows: bool,
 }
 
 impl Host for FakeHost {
@@ -78,6 +86,8 @@ impl Host for FakeHost {
         self.windows.insert(id, harness);
         self.specs
             .insert(id, (spec.focus_fallback, spec.decorations, spec.background));
+        self.dialogs
+            .insert(id, (spec.parent, spec.modal, (spec.width, spec.height)));
         id
     }
     fn close_window(&mut self, window: WindowId) {
@@ -97,6 +107,9 @@ impl Host for FakeHost {
             Some(address) => self.menu_addresses.insert(window, address),
             None => self.menu_addresses.remove(&window),
         };
+    }
+    fn has_modal_windows(&self) -> bool {
+        self.modal_windows
     }
 }
 

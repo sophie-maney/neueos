@@ -76,6 +76,10 @@ pub enum Message {
     ShowPopover(usize),
     PopoverDone,
     PopoverClosed,
+    /// The Popovers page: show the sheet; its Save and Cancel buttons.
+    ShowSheet,
+    SheetSave,
+    SheetCancel,
     OpenFile(usize),
     SortFiles(usize, neue_kit::SortOrder),
 }
@@ -356,6 +360,25 @@ impl Application for Gallery {
             Message::PopoverDone => {
                 self.handles.close_popover(cx);
                 self.status.set_text(cx, "Popover done");
+            }
+            Message::ShowSheet => {
+                if let Some(window) = self.window {
+                    cx.show_sheet(
+                        window,
+                        specimens::sheet(Message::SheetSave, Message::SheetCancel),
+                    );
+                }
+            }
+            Message::SheetSave | Message::SheetCancel => {
+                if let Some(window) = self.window {
+                    cx.close_sheet(window);
+                }
+                let what = if matches!(message, Message::SheetSave) {
+                    "Sheet: saved"
+                } else {
+                    "Sheet: cancelled"
+                };
+                self.status.set_text(cx, what);
             }
             Message::PopoverClosed => {
                 self.handles.popover_open = None;

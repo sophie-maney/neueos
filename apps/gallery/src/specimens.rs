@@ -10,7 +10,7 @@ use neue_kit::{
 };
 use neue_kit::{DisplayMode, Toolbar, ToolbarButton};
 use neue_kit::{DividerStyle, Pane, SplitView, TabView, Window};
-use neue_kit::{Edge, Popover, TextStyle};
+use neue_kit::{Edge, Popover, Sheet, TextStyle};
 
 /// Golden window size for one push button (logical pixels): the button with the fixture's
 /// margin, room for its focus ring.
@@ -820,4 +820,33 @@ pub fn popover_anchor<M: Clone + 'static>() -> Stack<M> {
     Stack::column()
         .padding(POPOVER_ROOM)
         .with(Button::new("Show"))
+}
+
+/// Size of the gallery's sheet.
+pub const SHEET_SIZE: (u32, u32) = (320, 128);
+
+/// Golden window size for a window with the gallery's sheet drawn in it, under its title
+/// bar.
+pub const SHEET_PARENT_SIZE: (u32, u32) = (420, 220);
+
+/// The gallery's sheet: a question and a line of text, with Save (Return) and Cancel
+/// (Escape).
+pub fn sheet<M: Clone + 'static>(save: M, cancel: M) -> Sheet<M> {
+    let content = Stack::column()
+        .spacing(6.0)
+        .with(Label::new("Save changes to “Notes”?").style(TextStyle::Headline))
+        .with(
+            Label::new("Your changes are lost if you don’t save them.")
+                .style(TextStyle::Small)
+                .secondary(),
+        );
+    Sheet::new(SHEET_SIZE, content)
+        .title("Save")
+        .default_button("Save", save)
+        .cancel_button("Cancel", cancel)
+}
+
+/// A window with a title bar for [`sheet`] to hang from.
+pub fn sheet_parent<M: 'static>() -> Window<M> {
+    Window::new("Notes", SHEET_PARENT_SIZE, pane_label("Content")).chrome()
 }

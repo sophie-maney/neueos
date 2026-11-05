@@ -761,6 +761,16 @@ fn popovers(handles: &mut PageHandles) -> Element<Message> {
              the app",
         ))
         .with(section("Show a popover", row))
+        .with(heading(
+            "Sheets",
+            "A modal panel that comes out from under the window's title bar: the window takes \
+             no clicks while it is open · Return presses Save, Escape Cancel · Tab stays \
+             inside it",
+        ))
+        .with(section(
+            "Show a sheet",
+            Stack::row().with(Button::new("Save…").on_press(Message::ShowSheet)),
+        ))
         .into()
 }
 

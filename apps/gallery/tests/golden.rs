@@ -438,3 +438,33 @@ fn popover() {
     )
     .unwrap();
 }
+
+// Sheets (task 2.23b): drawn in their window under its title bar (macOS), and as a window
+// of their own (Wayland).
+const SHEET_ATTACHED: State = ("attached", |f: &mut Fixture| {
+    f.show_sheet(specimens::sheet((), ()));
+});
+
+#[test]
+fn sheet_attached() {
+    testing::check_window_states(
+        &goldens(),
+        "sheet",
+        Theme::default(),
+        &[SHEET_ATTACHED],
+        specimens::sheet_parent::<()>,
+    )
+    .unwrap();
+}
+
+#[test]
+fn sheet_window() {
+    testing::check_sheet_states(
+        &goldens(),
+        "sheet",
+        Theme::default(),
+        &[("window", |_| {})],
+        || specimens::sheet((), ()),
+    )
+    .unwrap();
+}

@@ -8,8 +8,9 @@ use crate::widgets::{
     BevelWidget, ButtonWidget, CellWidget, CollectionItemWidget, ColumnHeaderWidget, FieldWidget,
     HeaderWidget, IconWidget, LabelWidget, MenuRowWidget, MenuWidget, PopoverWidget,
     ProgressWidget, RootWidget, RowsWidget, ScrollWidget, ScrollerWidget, SegmentedWidget,
-    SeparatorWidget, SliderWidget, SpecimenWidget, SpinnerWidget, SplitWidget, StackWidget,
-    StepperWidget, TabViewWidget, TextViewWidget, ToggleWidget, ToolbarButtonWidget, ToolbarWidget,
+    SeparatorWidget, SheetWidget, SliderWidget, SpecimenWidget, SpinnerWidget, SplitWidget,
+    StackWidget, StepperWidget, TabViewWidget, TextViewWidget, ToggleWidget, ToolbarButtonWidget,
+    ToolbarWidget,
 };
 
 /// The app's [`Theme`], as a default property of every neue-kit widget.
@@ -34,6 +35,7 @@ pub(crate) fn default_properties(theme: Theme) -> DefaultProperties {
     props.insert::<IconWidget, _>(ThemeProp(theme));
     props.insert::<MenuWidget, _>(ThemeProp(theme));
     props.insert::<PopoverWidget, _>(ThemeProp(theme));
+    props.insert::<SheetWidget, _>(ThemeProp(theme));
     props.insert::<MenuRowWidget, _>(ThemeProp(theme));
     props.insert::<ButtonWidget, _>(ThemeProp(theme));
     props.insert::<BevelWidget, _>(ThemeProp(theme));
