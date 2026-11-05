@@ -321,6 +321,55 @@ fn interactive_move_follows_the_pointer() {
 }
 
 #[test]
+fn a_click_on_a_zoomed_window_leaves_it_zoomed_and_a_drag_unzooms_it() {
+    let server = Server::start();
+    let mut client = server.connect();
+    let mut t = client.create_toplevel("Doc", APP, (300, 200));
+    action(&server, "zoom-window", window(&server, "Doc").id);
+    client.ack_and_commit(&mut t);
+    let zoomed = window(&server, "Doc");
+    assert!(zoomed.zoomed);
+
+    // A click on the toolbar asks for a move (the client can't tell a click from a drag
+    // yet); the pointer wobbles less than the drag threshold before the release.
+    let serial = press_on(&server, &mut client, &zoomed);
+    t.toplevel._move(&client.seat, serial);
+    client.roundtrip();
+    pointer_to(&server, (zoomed.x + 11, zoomed.y + 11));
+    button(&server, ButtonState::Released);
+    client.roundtrip();
+    let after = window(&server, "Doc");
+    assert!(after.zoomed, "{after:?}");
+    assert_eq!(
+        (after.x, after.y, after.width, after.height),
+        (zoomed.x, zoomed.y, zoomed.width, zoomed.height)
+    );
+    assert!(
+        client
+            .events(&t)
+            .states
+            .contains(&xdg_toplevel::State::Maximized)
+    );
+
+    // A drag past the threshold unzooms it and moves it with the pointer.
+    let serial = press_on(&server, &mut client, &zoomed);
+    t.toplevel._move(&client.seat, serial);
+    client.roundtrip();
+    pointer_to(&server, (zoomed.x + 10 + 40, zoomed.y + 10 + 60));
+    let during = window(&server, "Doc");
+    assert!(!during.zoomed, "{during:?}");
+    assert_eq!(during.y, zoomed.y + 60);
+    button(&server, ButtonState::Released);
+    client.roundtrip();
+    assert!(
+        !client
+            .events(&t)
+            .states
+            .contains(&xdg_toplevel::State::Maximized)
+    );
+}
+
+#[test]
 fn interactive_resize_from_the_top_left_keeps_the_bottom_right() {
     let server = Server::start();
     let mut client = server.connect();

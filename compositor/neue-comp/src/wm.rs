@@ -6,12 +6,13 @@
 //!   with it, so children always stay above their parent.
 //! - **Sheets:** a modal dialog hangs from its parent's chrome and follows it (`sheets.rs`).
 //! - **Focus:** pressing a button on a window raises and focuses it; new windows are
-//!   focused when they map. When the focused window goes away, focus moves to its parent,
+//!   focused when they map. A window with a sheet open passes the keyboard to the sheet. When the focused window goes away, focus moves to its parent,
 //!   else the topmost window of the same client, else the topmost window.
 //! - **Minimise** hides a window and its children; they keep their position and come back
 //!   together. Minimised windows are never focused or under the pointer.
 //! - **Zoom** is the OS X name for the green button; on Wayland it is the `maximized`
-//!   state, filling the work area. Dragging a zoomed window unzooms it.
+//!   state, filling the work area. Dragging a zoomed window unzooms it, once the pointer
+//!   has travelled the drag threshold (a click leaves it zoomed).
 //! - **Full screen** is in `fullscreen.rs` (ADR 0018).
 //! - **xdg-activation** only grants focus to tokens made by the focused client (see
 //!   `handlers.rs`); a refused request marks the window as demanding attention.
@@ -204,19 +205,48 @@ impl State {
         }
     }
 
+    /// Where keyboard focus meant for `window` goes: its topmost sheet (a modal child),
+    /// that sheet's topmost sheet, and so on; `window` itself when it has none. A window
+    /// with a sheet open takes no keyboard input of its own (task 2.36).
+    pub(crate) fn modal_focus_target(&self, window: &Window) -> Window {
+        let mut target = window.clone();
+        // Parent loops are a protocol error, but don't spin if a client manages one.
+        for _ in 0..self.space.elements().count() {
+            let sheet = self
+                .children(&target)
+                .into_iter()
+                .rev()
+                .find(|c| self.is_sheet(c));
+            match sheet {
+                Some(sheet) => target = sheet,
+                None => break,
+            }
+        }
+        target
+    }
+
     /// Raise `window`, give it keyboard focus and mark it activated (and every other
-    /// window deactivated). A minimised window is restored first.
+    /// window deactivated). A minimised window is restored first. If `window` has a sheet
+    /// open, the sheet gets the keyboard and the activated state instead
+    /// ([`Self::modal_focus_target`]); pointer input to `window` is unchanged.
     pub fn focus_window(&mut self, window: &Window) {
         if self.is_minimized(window) {
             self.restore_minimized(window);
         }
         self.raise_window(window);
+        let target = self.modal_focus_target(window);
+        if &target != window {
+            // As `raise_element(.., true)` does for `window`, and as when the sheet mapped.
+            for w in self.space.elements() {
+                w.set_activated(w == &target);
+            }
+        }
         // A locked session or an exclusive layer surface (a launcher) keeps the keyboard.
         if self.is_locked() || self.exclusive_layer_surface().is_some() {
             return;
         }
         let serial = SERIAL_COUNTER.next_serial();
-        let surface = window.toplevel().map(|t| t.wl_surface().clone());
+        let surface = target.toplevel().map(|t| t.wl_surface().clone());
         let keyboard = self.keyboard.clone();
         keyboard.set_focus(self, surface, serial);
         let was_asking = Self::with_wm_data(window, |d| std::mem::take(&mut d.demands_attention));
@@ -568,9 +598,9 @@ impl State {
         focus.id().same_client_as(&surface.id()).then_some(start)
     }
 
-    /// `xdg_toplevel.move`: drag the window with the pointer. A zoomed window is unzoomed
-    /// first, keeping the pointer at the same relative spot of its title bar. Refused
-    /// while full screen.
+    /// `xdg_toplevel.move`: drag the window with the pointer, once it has travelled the
+    /// drag threshold; a zoomed window is unzoomed then (see [`MoveGrab`]), so a click
+    /// leaves it zoomed. Refused while full screen and for a sheet.
     pub(crate) fn start_move(&mut self, surface: &WlSurface, seat: &Seat<State>, serial: Serial) {
         let Some(start_data) = self.check_grab(seat, surface, serial) else {
             return;
@@ -578,16 +608,19 @@ impl State {
         let Some(window) = self.window_for_surface(surface) else {
             return;
         };
-        let Some(initial_location) = self.begin_move(&window, start_data.location) else {
+        if !self.can_move(&window) {
             return;
-        };
-        let grab = MoveGrab {
-            start_data,
-            window,
-            initial_location,
-        };
+        }
+        let grab = MoveGrab::new(start_data, window);
         let pointer = self.pointer.clone();
         pointer.set_grab(self, grab, serial, Focus::Clear);
+    }
+
+    /// Whether `window` may be dragged: it is mapped, not full screen and not a sheet.
+    fn can_move(&self, window: &Window) -> bool {
+        !Self::is_fullscreen(window)
+            && !self.is_sheet(window)
+            && self.space.element_geometry(window).is_some()
     }
 
     /// Get `window` ready to be dragged with the pointer at `pointer`: a zoomed window is
@@ -599,7 +632,7 @@ impl State {
         window: &Window,
         pointer: Point<f64, Logical>,
     ) -> Option<Point<i32, Logical>> {
-        if Self::is_fullscreen(window) || self.is_sheet(window) {
+        if !self.can_move(window) {
             return None;
         }
         let mut geo = self.space.element_geometry(window)?;

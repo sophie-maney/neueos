@@ -11,6 +11,7 @@ use neue_comp::decorations::TITLE_BAR_HEIGHT;
 use neue_ipc::{ActionParams, Event, Topic, WindowId, WindowInfo};
 use smithay::backend::input::{ButtonState, InputTime};
 use smithay::utils::Point;
+use wayland_protocols::xdg::shell::client::xdg_toplevel;
 
 const BTN_LEFT: u32 = 0x110;
 const APP: &str = "org.neueos.Test";
@@ -279,6 +280,68 @@ fn a_sheet_that_follows_a_drag_is_reported_once_it_ends() {
         panic!("expected one change for the sheet, got {sheet_changes:?}");
     };
     assert_eq!((last.x, last.y), (start.x + 60 + 200, start.y + 30));
+}
+
+#[test]
+fn a_window_with_a_sheet_passes_the_keyboard_to_it() {
+    let server = Server::start();
+    let mut client = server.connect();
+    let parent = client.create_toplevel("Doc", APP, (600, 400));
+    let setup = client.modal_of(&parent);
+    let sheet = client.create_toplevel_with("Sheet", APP, (200, 100), setup);
+    let mut other_client = server.connect();
+    other_client.create_toplevel("Other", "org.neueos.Other", (100, 100));
+    let focused = |server: &Server| {
+        windows(server)
+            .into_iter()
+            .filter(|w| w.focused)
+            .map(|w| w.title.unwrap_or_default())
+            .collect::<Vec<_>>()
+    };
+    assert_eq!(focused(&server), ["Other"]);
+
+    // A click on the parent, away from the sheet: the pair comes up and the sheet gets
+    // the keyboard and the activated state; the parent doesn't.
+    let p = window(&server, "Doc");
+    pointer_to(&server, (p.x + 5, p.y + p.height - 5));
+    button(&server, ButtonState::Pressed);
+    button(&server, ButtonState::Released);
+    client.roundtrip();
+    assert_eq!(titles(&server), ["Other", "Doc", "Sheet"]);
+    assert_eq!(focused(&server), ["Sheet"]);
+    let activated = |t| {
+        client
+            .events(t)
+            .states
+            .contains(&xdg_toplevel::State::Activated)
+    };
+    assert!(activated(&sheet) && !activated(&parent));
+
+    // Focusing the parent by other means does the same.
+    server
+        .ipc()
+        .action("focus-window", Some(window(&server, "Other").id))
+        .unwrap();
+    assert_eq!(focused(&server), ["Other"]);
+    server.ipc().action("focus-window", Some(p.id)).unwrap();
+    assert_eq!(focused(&server), ["Sheet"]);
+
+    // A sheet on the sheet takes it from there; when it closes, the keyboard goes back
+    // to the first sheet, not to the window under both.
+    let setup = client.modal_of(&sheet);
+    let inner = client.create_toplevel_with("Inner", APP, (100, 50), setup);
+    server
+        .ipc()
+        .action("focus-window", Some(window(&server, "Other").id))
+        .unwrap();
+    server.ipc().action("focus-window", Some(p.id)).unwrap();
+    assert_eq!(focused(&server), ["Inner"]);
+    client.destroy_toplevel(inner);
+    assert_eq!(focused(&server), ["Sheet"]);
+
+    // Once the sheet is gone the parent takes the keyboard itself again.
+    client.destroy_toplevel(sheet);
+    assert_eq!(focused(&server), ["Doc"]);
 }
 
 /// Press inside `info` and return the serial its client saw, for move/resize.
