@@ -221,24 +221,59 @@ pub fn size_limits(surface: &WlSurface) -> (Size<i32, Logical>, Size<i32, Logica
 /// The left button, from `linux/input-event-codes.h`.
 pub(crate) const BTN_LEFT: u32 = 0x110;
 
-/// Dragging a window by its title bar.
+/// How far (logical pixels) the pointer must travel with the button down on a title bar
+/// before it is a drag and not a click.
+const DRAG_THRESHOLD: f64 = 3.0;
+
+/// Dragging a window with the pointer: by our title bar ([`TitleBarGrab`]) or for a
+/// client's `xdg_toplevel.move`. The move only begins once the pointer has travelled
+/// [`DRAG_THRESHOLD`] (task 2.36): until then nothing happens to the window, so a click
+/// (or the first click of a double click) on a zoomed window's toolbar leaves it zoomed.
 pub struct MoveGrab {
     pub start_data: GrabStartData<State>,
     pub window: Window,
-    pub initial_location: Point<i32, Logical>,
+    /// Where the window's geometry started, once the move began ([`State::begin_move`]).
+    initial_location: Option<Point<i32, Logical>>,
 }
 
 impl MoveGrab {
-    /// Put the window where a pointer at `pointer` drags it.
-    fn drag_to(&self, state: &mut State, pointer: Point<f64, Logical>) {
+    /// A press at `start_data.location` that may become a move of `window`.
+    pub fn new(start_data: GrabStartData<State>, window: Window) -> Self {
+        Self {
+            start_data,
+            window,
+            initial_location: None,
+        }
+    }
+
+    /// Whether the pointer has travelled far enough for the window to move.
+    pub fn started(&self) -> bool {
+        self.initial_location.is_some()
+    }
+
+    /// The pointer is at `pointer`: begin the move once it is past the threshold, then
+    /// put the window where the pointer drags it.
+    fn track(&mut self, state: &mut State, pointer: Point<f64, Logical>) {
+        if self.initial_location.is_none() {
+            let d = pointer - self.start_data.location;
+            if d.x.hypot(d.y) < DRAG_THRESHOLD {
+                return;
+            }
+            self.initial_location = state.begin_move(&self.window, self.start_data.location);
+        }
+        let Some(initial) = self.initial_location else {
+            return;
+        };
         let delta = pointer - self.start_data.location;
-        let location = (self.initial_location.to_f64() + delta).to_i32_round();
+        let location = (initial.to_f64() + delta).to_i32_round();
         state.move_window_to(&self.window, location);
     }
 
-    /// The grab ended: the window's changes are reported again.
+    /// The grab ended: a window that moved is reported again.
     fn finish(&self, state: &mut State) {
-        state.grab_ended(&self.window);
+        if self.started() {
+            state.grab_ended(&self.window);
+        }
     }
 }
 
@@ -252,7 +287,7 @@ impl PointerGrab<State> for MoveGrab {
     ) {
         // No client has pointer focus during the grab.
         handle.motion(state, None, event);
-        self.drag_to(state, event.location);
+        self.track(state, event.location);
     }
 
     fn button(
@@ -278,18 +313,11 @@ impl PointerGrab<State> for MoveGrab {
     forward_grab_events!();
 }
 
-/// How far (logical pixels) the pointer must travel with the button down on a title bar
-/// before it is a drag and not a click.
-const DRAG_THRESHOLD: f64 = 3.0;
-
 /// A press on a server-side title bar (task 1.11). It becomes a window move once the
 /// pointer has travelled [`DRAG_THRESHOLD`]; released before that, it is a click, and two
 /// clicks in a row are a double click ([`State::title_bar_clicked`]).
 pub struct TitleBarGrab {
-    pub start_data: GrabStartData<State>,
-    pub window: Window,
-    /// The move, once the press turned into a drag.
-    pub moving: Option<MoveGrab>,
+    pub moving: MoveGrab,
 }
 
 impl PointerGrab<State> for TitleBarGrab {
@@ -301,22 +329,7 @@ impl PointerGrab<State> for TitleBarGrab {
         event: &MotionEvent,
     ) {
         handle.motion(state, None, event);
-        if self.moving.is_none() {
-            let d = event.location - self.start_data.location;
-            if d.x.hypot(d.y) < DRAG_THRESHOLD {
-                return;
-            }
-            self.moving = state
-                .begin_move(&self.window, self.start_data.location)
-                .map(|initial_location| MoveGrab {
-                    start_data: self.start_data.clone(),
-                    window: self.window.clone(),
-                    initial_location,
-                });
-        }
-        if let Some(moving) = &self.moving {
-            moving.drag_to(state, event.location);
-        }
+        self.moving.track(state, event.location);
     }
 
     fn button(
@@ -329,21 +342,19 @@ impl PointerGrab<State> for TitleBarGrab {
         if !handle.current_pressed().contains(&BTN_LEFT) {
             let pos = handle.current_location();
             handle.unset_grab(self, state, event.serial, event.time, true);
-            if self.moving.is_none() && event.button == BTN_LEFT {
-                state.title_bar_clicked(&self.window, event.time.millis());
+            if !self.moving.started() && event.button == BTN_LEFT {
+                state.title_bar_clicked(&self.moving.window, event.time.millis());
             }
             state.update_chrome_hover(pos);
         }
     }
 
     fn start_data(&self) -> &GrabStartData<State> {
-        &self.start_data
+        &self.moving.start_data
     }
 
     fn unset(&mut self, state: &mut State) {
-        if let Some(moving) = &self.moving {
-            moving.finish(state);
-        }
+        self.moving.finish(state);
     }
 
     forward_grab_events!();

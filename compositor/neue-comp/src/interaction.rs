@@ -14,7 +14,7 @@ use smithay::input::pointer::{Focus, GrabStartData};
 use smithay::utils::{Logical, Point, Rectangle, Serial};
 
 use crate::decorations::{Hover, TITLE_BAR_HEIGHT, frame_geometry, has_title_bar};
-use crate::grabs::{Edges, ResizeGrab, TitleBarGrab, TrafficLightGrab, size_limits};
+use crate::grabs::{Edges, MoveGrab, ResizeGrab, TitleBarGrab, TrafficLightGrab, size_limits};
 use crate::state::State;
 
 /// How far outside a window's frame its resize edges reach, in logical pixels. They are
@@ -209,9 +209,7 @@ impl State {
             }
             ChromeHit::TitleBar => {
                 let grab = TitleBarGrab {
-                    start_data,
-                    window,
-                    moving: None,
+                    moving: MoveGrab::new(start_data, window),
                 };
                 pointer.set_grab(self, grab, serial, Focus::Clear);
             }

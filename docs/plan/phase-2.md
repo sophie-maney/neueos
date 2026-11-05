@@ -864,7 +864,7 @@ the toolbar).
       chrome height into a shared `neue_platform::ChromeHeight` (`WindowSpec::
       chrome_height`); the Wayland driver sends it after `redraw`, before the commit,
       when it changed. `child_check` now prints `below-top=N`. VM steps not yet re-run.
-- [ ] **2.36 neue-comp: modal keyboard focus, and no unzoom on a click** · Opus.
+- [x] **2.36 neue-comp: modal keyboard focus, and no unzoom on a click** · Opus.
       - Step 11.9: clicking the gallery while its sheet is open gives the gallery the
         keyboard (Tab then rings its buttons and Escape no longer reaches the sheet). A
         window with a modal child should pass keyboard focus to that child (its topmost
@@ -879,6 +879,17 @@ the toolbar).
       *Accept:* headless tests: a click on a parent with a modal child leaves the keyboard
       on the child; a move request on a zoomed window released without moving keeps it
       zoomed, and a drag past the threshold unzooms it. Re-run: 11.9, 12.4, 12.5.
+      *Done:* `State::focus_window` sends the keyboard and the activated state to
+      `State::modal_focus_target` (the topmost sheet, recursively); recorded in ADR 0058.
+      `MoveGrab` now waits for `DRAG_THRESHOLD` before `begin_move` (so before unzooming
+      and marking the window grabbed), for client moves and, through `TitleBarGrab`, for
+      our bar; `start_move` still refuses full screen windows and sheets up front
+      (`State::can_move`). A client move of an unzoomed window now also starts after
+      3 px (it then catches up with the pointer). Tests: `tests/sheets.rs`
+      `a_window_with_a_sheet_passes_the_keyboard_to_it`, `tests/wm.rs`
+      `a_click_on_a_zoomed_window_leaves_it_zoomed_and_a_drag_unzooms_it`, both failing
+      before the change. Checked: `cargo xtask check` on Linux aarch64; macOS has nothing
+      to build; x86_64 not run. VM steps 11.9, 12.4, 12.5 not yet re-run.
 - [ ] **2.37 macOS: zoom stretches the content instead of laying it out** · Opus (hard
       debugging). Step 16.2. The green light or a double-click on the bar fills the
       screen, but the content is scaled up (an old-size frame stretched), not laid out at

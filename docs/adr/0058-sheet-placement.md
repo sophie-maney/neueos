@@ -43,3 +43,9 @@ outputs going away, a minimised family coming back.
   room below its parent.
 - Task 2.35 (ADR 0064): a parent that announces its chrome height through
   `neue_window_v1` gets its sheets under that line instead of at the top of its geometry.
+- Task 2.36: **keyboard modality.** Focusing a window that has a sheet open (a click on
+  it, `focus-window`, xdg-activation, coming back from minimised) gives the keyboard and
+  the activated state to its topmost sheet, following sheets on sheets
+  (`State::modal_focus_target`). Pointer input to the parent is unchanged: the kit's
+  scrim blocks it. When a sheet closes, focus falls back to its parent and so to the
+  parent's next sheet, if any.
