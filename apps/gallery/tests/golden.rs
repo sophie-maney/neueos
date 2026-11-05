@@ -14,8 +14,9 @@ use neue_gallery::specimens::{
     self, BEVEL_SIZE, CALENDAR_SIZE, CHROME_SIZE, COLLECTION_SIZE, COLOR_PANEL_SIZE,
     COLOR_WELL_SIZE, COMBO_SIZE, DATE_SIZE, FIELD_SIZE, ICONS_SIZE, MENU_SIZE, OUTLINE_SIZE,
     PATH_SIZE, POPOVER_SIZE, POPUP_SIZE, PROGRESS_SIZE, PULL_DOWN_SIZE, PUSH_BUTTON_SIZE,
-    SCROLL_SIZE, SEGMENTED_SIZE, SHELL_BAR_SIZE, SIDEBAR_SIZE, SLIDER_SIZE, SPINNER_SIZE,
-    SPLIT_SIZE, STEPPER_SIZE, SUBMENU_SIZE, TABLE_SIZE, TABS_SIZE, TEXT_VIEW_SIZE, TOGGLE_SIZE,
+    SCROLL_SIZE, SEGMENTED_SIZE, SHELL_BAR_SIZE, SHELL_DESKTOP_SIZE, SIDEBAR_SIZE, SLIDER_SIZE,
+    SPINNER_SIZE, SPLIT_SIZE, STEPPER_SIZE, SUBMENU_SIZE, TABLE_SIZE, TABS_SIZE, TEXT_VIEW_SIZE,
+    TOGGLE_SIZE,
 };
 use neue_kit::testing::{
     self, DISABLED, FOCUSED, Fixture, Goldens, INACTIVE, NORMAL, NavKey, PRESSED, State,
@@ -348,6 +349,12 @@ control_goldens! {
     // The shell's menu bar (3.2b): the logo, the active app's name in bold and the clock;
     // the logo's menu and the clock's menu open, their titles highlighted.
     shell_bar: "shell-bar", SHELL_BAR_SIZE, &[NORMAL, LOGO_OPEN, CLOCK_OPEN], specimens::shell_bar("Gallery", |_| ());
+
+    // The desktop background (3.2c): the built-in picture, and a photo filling the output
+    // (cut off at the sides) and fitting inside it (black bars).
+    shell_desktop: "shell-desktop", SHELL_DESKTOP_SIZE, &[NORMAL], specimens::shell_desktop();
+    shell_desktop_fill: "shell-desktop-fill", SHELL_DESKTOP_SIZE, &[NORMAL], specimens::shell_desktop_photo(neue_kit::desktop::Fit::Fill);
+    shell_desktop_fit: "shell-desktop-fit", SHELL_DESKTOP_SIZE, &[NORMAL], specimens::shell_desktop_photo(neue_kit::desktop::Fit::Fit);
 
     context_menu: "context-menu", MENU_SIZE, &[MENU_OPEN, MENU_HIGHLIGHTED], specimens::context_menu(|_| (), specimens::ctrl);
     context_submenu: "context-menu", SUBMENU_SIZE, &[MENU_SUBMENU], specimens::context_menu(|_| (), specimens::ctrl);

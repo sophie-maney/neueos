@@ -76,6 +76,12 @@ zbus = { version = "5.19", default-features = false, features = ["async-io", "bl
 # tzdb; MIT OR Unlicense.
 jiff = "0.2"
 
+# Desktop picture decoders (neue-shell, task 3.2c, ADR 0069). Pure Rust; `png` is MIT OR
+# Apache-2.0 and already in the tree (through vello's glifo), `zune-jpeg` is MIT OR
+# Apache-2.0 OR Zlib. 3.3's icon loading shares `png`.
+png = "0.18"
+zune-jpeg = { version = "0.5", default-features = false, features = ["std"] }
+
 # Configuration (neue-config, ADR 0004). `toml` is MIT OR Apache-2.0.
 toml = "1"
 

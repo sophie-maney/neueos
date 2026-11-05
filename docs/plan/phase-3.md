@@ -48,7 +48,7 @@ their goldens and the gallery's "Shell" page run on macOS.
       (at once after 10 s of life, else 250 ms doubling to 30 s); only that client sees the
       global. `neuectl` unchanged. 3.2b adds `--shell /usr/bin/neue-shell` to
       `neue-comp.service`.
-- [ ] **3.2 `neue-shell` skeleton, menu bar and desktop background**, split into 3.2a–c
+- [x] **3.2 `neue-shell` skeleton, menu bar and desktop background**, split into 3.2a–c
       (the platform had no per-output layers and no way for the shell to use 3.1's
       protocol on its one connection).
 - [x] **3.2a Shell surfaces in platform and kit** · Opus. `neue-platform` tells the app
@@ -87,12 +87,21 @@ their goldens and the gallery's "Shell" page run on macOS.
       gained a `neue-shell` package. VM (arm64): name follows focus and survives a shell
       restart, clock ticks, `pkill neue-shell` → bar back within 1 s, About opens, Log Out
       ends the compositor; Lock (no lock screen until 3.18), Restart and Shut Down not run.
-- [ ] **3.2c Desktop background** · Sonnet. After 3.2b. A `background` layer surface per
+- [x] **3.2c Desktop background** · Sonnet. After 3.2b. A `background` layer surface per
       output with a procedural default picture (light and dark) and an optional image
       from `neue-config`. The image decoder needs an ADR and a licence check (shared with
       3.3's `png`/`resvg`).
       *Accept:* goldens of the default picture; a VM screenshot with and without a
       configured image.
+      *Done:* ADR 0069. `neue_kit::desktop::Desktop`, `neue_paint::materials::desktop`
+      (default picture, `Picture`, `Fit`), `neue_config::ShellConfig` (`shell.toml`,
+      `[desktop] picture` and `fit`), `neue_shell::picture` (PNG and JPEG). Goldens
+      `shell-desktop*` (default, fill, fit). The config is read at start; live reload comes
+      with Preferences (3.24). VM (arm64): default picture behind the bar, a JPEG with `fit`
+      (black bars) and a PNG with `fill`, a missing file warns and falls back to the
+      built-in picture, all by screenshot after `pkill neue-shell`.
+      *Owner:* the background on the PC at native scale and on a second display; a real
+      photo (JPEG) looks sharp, and every `fit` value does what it says.
 - [ ] **3.3 `neue-desktop` v0** · Sonnet. New portable crate: desktop entries (parsing,
       localisation, `Actions` including `new-window`, `NoDisplay`, `OnlyShowIn`), matching
       an app id to its entry (`StartupWMClass`, Flatpak ids, the file name), icon theme

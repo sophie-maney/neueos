@@ -6,6 +6,7 @@ mod aqua_button;
 mod bevel_button;
 mod color_well;
 mod date_picker;
+pub mod desktop;
 pub mod dock_shelf;
 mod focus_ring;
 mod groove;

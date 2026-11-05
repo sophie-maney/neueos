@@ -10,6 +10,7 @@ mod collection;
 mod color;
 mod context;
 mod date;
+mod desktop;
 mod edit_menu;
 mod field;
 mod icon;
@@ -46,6 +47,7 @@ use masonry_core::kurbo::Axis;
 use neue_paint::Backdrop;
 pub use neue_paint::demo::MaterialTile;
 use neue_paint::icon::Icon;
+use neue_paint::materials::desktop::{Fit, Picture};
 use neue_theme::metrics::spacing;
 
 pub use bevel::BevelButton;
@@ -61,6 +63,7 @@ pub(crate) use color::{ColorWellWidget, HsAreaWidget};
 pub use context::ContextMenu;
 pub use date::{CalendarPicker, DatePicker};
 pub(crate) use date::{CalendarWidget, DateFieldWidget};
+pub(crate) use desktop::DesktopWidget;
 pub use field::{ComboBox, TextField};
 pub(crate) use field::{FieldAction, FieldWidget};
 pub(crate) use icon::IconWidget;
@@ -364,6 +367,72 @@ impl Specimen {
 impl<M> From<Specimen> for Element<M> {
     fn from(specimen: Specimen) -> Self {
         Element::new(specimen.inner.erased())
+    }
+}
+
+/// The desktop's background: fills its surface with the default picture, or with a photo
+/// the shell decoded, placed by a [`Fit`]. For the shell's `background` layer surfaces.
+#[derive(Debug)]
+pub struct Desktop {
+    inner: NewWidget<DesktopWidget>,
+}
+
+impl Desktop {
+    /// The default picture.
+    pub fn new() -> Self {
+        Self {
+            inner: NewWidget::new(DesktopWidget::new(desktop::Content::Default)),
+        }
+    }
+
+    /// A photo instead of the default picture.
+    #[must_use]
+    pub fn photo(mut self, picture: Picture, fit: Fit) -> Self {
+        self.inner.widget.content = desktop::Content::Photo(picture, fit);
+        self
+    }
+
+    /// Asks for this size in logical pixels (the gallery's specimens; a layer surface is
+    /// sized by the compositor).
+    #[must_use]
+    pub fn size(mut self, width: f64, height: f64) -> Self {
+        self.inner.widget.size = Some((width, height));
+        self
+    }
+
+    /// Points `handle` at this background.
+    #[must_use]
+    pub fn bind(self, handle: &mut Handle<Self>) -> Self {
+        *handle = Handle::new(self.inner.id());
+        self
+    }
+}
+
+impl Default for Desktop {
+    fn default() -> Self {
+        Self::new()
+    }
+}
+
+impl<M> From<Desktop> for Element<M> {
+    fn from(desktop: Desktop) -> Self {
+        Element::new(desktop.inner.erased())
+    }
+}
+
+impl Handle<Desktop> {
+    /// Shows a photo placed by `fit`.
+    pub fn set_photo<M>(&self, cx: &mut Cx<'_, M>, picture: Picture, fit: Fit) {
+        cx.edit::<DesktopWidget, _>(self, |mut desktop| {
+            DesktopWidget::edit_content(&mut desktop, desktop::Content::Photo(picture, fit));
+        });
+    }
+
+    /// Shows the default picture.
+    pub fn set_default<M>(&self, cx: &mut Cx<'_, M>) {
+        cx.edit::<DesktopWidget, _>(self, |mut desktop| {
+            DesktopWidget::edit_content(&mut desktop, desktop::Content::Default);
+        });
     }
 }
 

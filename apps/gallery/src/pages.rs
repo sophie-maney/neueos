@@ -165,7 +165,7 @@ pub const PAGES: &[Page] = &[
 ];
 
 /// The shell's pieces (task 3.2b): the menu bar with its logo menu, the active app's name
-/// and the clock extra.
+/// and the clock extra; and the desktop picture (3.2c).
 fn shell(_: &mut PageHandles) -> Element<Message> {
     let send = |command: neue_shell::bar::SystemCommand| {
         Message::Pressed(match command {
@@ -195,6 +195,13 @@ fn shell(_: &mut PageHandles) -> Element<Message> {
                 neue_shell::windows::DESKTOP_NAME,
                 send,
             )),
+        ))
+        .with(section(
+            "Desktop picture: built-in, and a photo filling and fitting the output",
+            Stack::row()
+                .with(specimens::shell_desktop())
+                .with(specimens::shell_desktop_photo(neue_kit::desktop::Fit::Fill))
+                .with(specimens::shell_desktop_photo(neue_kit::desktop::Fit::Fit)),
         ))
         .into()
 }

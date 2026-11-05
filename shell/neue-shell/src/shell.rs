@@ -6,16 +6,20 @@ use std::collections::BTreeMap;
 use anyhow::Context as _;
 use neue_dbus::login::Login;
 use neue_kit::desktop::{
-    Anchor, LayerKeyboard, LayerSpec, OutputEvent, OutputId, ShellEvent, ShellRequest,
+    Anchor, Desktop, Fit, LayerKeyboard, LayerSpec, OutputEvent, OutputId, Picture, ShellEvent,
+    ShellLayer, ShellRequest,
 };
-use neue_kit::{Application, Cx, Settings, WindowId};
+use neue_kit::{Application, Cx, Handle, Settings, WindowId};
 use neue_shell::about::About;
 use neue_shell::bar::{self, BarContent, BarHandles, SystemCommand};
 use neue_shell::clock;
+use neue_shell::picture;
 use neue_shell::windows::Windows;
 
 /// The bar's layer-shell namespace.
 const NAMESPACE: &str = "neue-menubar";
+/// The background's layer-shell namespace.
+const BACKGROUND_NAMESPACE: &str = "neue-desktop";
 
 #[derive(Debug, Clone)]
 enum Message {
@@ -27,6 +31,8 @@ enum Message {
     System(SystemCommand),
     /// A logind call finished.
     Login(Result<(), String>),
+    /// The configured picture was decoded, or why not.
+    Picture(Result<(Picture, Fit), String>),
 }
 
 struct Bar {
@@ -34,8 +40,17 @@ struct Bar {
     handles: BarHandles<Message>,
 }
 
+struct Background {
+    window: WindowId,
+    desktop: Handle<Desktop>,
+}
+
 struct Shell {
     bars: BTreeMap<OutputId, Bar>,
+    backgrounds: BTreeMap<OutputId, Background>,
+    /// The configured picture once decoded; until then (and when there is none, or it
+    /// can't be loaded) the built-in one.
+    photo: Option<(Picture, Fit)>,
     windows: Windows,
     /// What every bar shows.
     content: BarContent,
@@ -48,6 +63,8 @@ impl Shell {
         let windows = Windows::default();
         Self {
             bars: BTreeMap::new(),
+            backgrounds: BTreeMap::new(),
+            photo: None,
             content: BarContent {
                 app_name: windows.active_app_name(),
                 time: clock::time_text(now),
@@ -56,6 +73,62 @@ impl Shell {
             windows,
             about: None,
         }
+    }
+
+    fn open_background(&mut self, cx: &mut Cx<'_, Message>, output: OutputId) {
+        if self.backgrounds.contains_key(&output) {
+            return;
+        }
+        let mut handle = Handle::default();
+        let mut desktop = Desktop::new().bind(&mut handle);
+        if let Some((picture, fit)) = &self.photo {
+            desktop = desktop.photo(picture.clone(), *fit);
+        }
+        let layer = LayerSpec {
+            layer: ShellLayer::Background,
+            // Under the bar and the windows, over the whole output whatever other
+            // surfaces reserve.
+            exclusive_zone: -1,
+            keyboard: LayerKeyboard::None,
+            output: Some(output),
+            ..LayerSpec::new(BACKGROUND_NAMESPACE, Anchor::ALL)
+        };
+        let window = neue_kit::Window::new("Desktop", (0, 0), desktop).layer(layer);
+        let window = cx.open_window(window);
+        self.backgrounds.insert(
+            output,
+            Background {
+                window,
+                desktop: handle,
+            },
+        );
+    }
+
+    /// Starts decoding the picture `shell.toml` asks for, if any.
+    fn load_picture(&self, cx: &mut Cx<'_, Message>) {
+        let loaded = match neue_config::load::<neue_config::ShellConfig>(
+            &neue_config::Layers::standard(),
+        ) {
+            Ok(loaded) => loaded,
+            Err(error) => {
+                tracing::warn!(%error, "shell.toml is invalid: using the built-in desktop picture");
+                return;
+            }
+        };
+        for key in &loaded.unknown_keys {
+            tracing::warn!(key, "unknown key in shell.toml");
+        }
+        let home = std::env::var_os("HOME").map(std::path::PathBuf::from);
+        let Some(wanted) = picture::wanted(&loaded.config.desktop, home.as_deref()) else {
+            return;
+        };
+        cx.spawn(move |_| {
+            Message::Picture(
+                picture::load(&wanted.path)
+                    .map(|picture| (picture, wanted.fit))
+                    .map_err(|error| error.to_string()),
+            )
+        });
     }
 
     fn open_bar(&mut self, cx: &mut Cx<'_, Message>, output: OutputId) {
@@ -156,8 +229,10 @@ impl Application for Shell {
             tracing::warn!("the compositor doesn't offer neue_shell_v1: no window list");
         }
         for output in cx.outputs() {
+            self.open_background(cx, output.id);
             self.open_bar(cx, output.id);
         }
+        self.load_picture(cx);
         self.tick(cx);
     }
 
@@ -168,15 +243,30 @@ impl Application for Shell {
             Message::System(command) => self.system(cx, command),
             Message::Login(Ok(())) => {}
             Message::Login(Err(error)) => tracing::warn!(%error, "logind call failed"),
+            Message::Picture(Ok((picture, fit))) => {
+                for background in self.backgrounds.values() {
+                    background.desktop.set_photo(cx, picture.clone(), fit);
+                }
+                self.photo = Some((picture, fit));
+            }
+            Message::Picture(Err(error)) => {
+                tracing::warn!(%error, "can't load the desktop picture: using the built-in one");
+            }
         }
     }
 
     fn output(&mut self, cx: &mut Cx<'_, Message>, event: OutputEvent) {
         match event {
-            OutputEvent::Added(info) => self.open_bar(cx, info.id),
+            OutputEvent::Added(info) => {
+                self.open_background(cx, info.id);
+                self.open_bar(cx, info.id);
+            }
             // The layer surface follows the output's size on its own.
             OutputEvent::Changed(_) => {}
             OutputEvent::Removed(id) => {
+                if let Some(background) = self.backgrounds.remove(&id) {
+                    cx.close_window(background.window);
+                }
                 if let Some(bar) = self.bars.remove(&id) {
                     cx.close_window(bar.window);
                 }

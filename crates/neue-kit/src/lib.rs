@@ -82,7 +82,8 @@ pub use widgets::{
 /// ([`Window::layer`]), outputs ([`Application::output`]) and the compositor's window list
 /// and window requests ([`Application::shell`], [`Cx::shell`]).
 pub mod desktop {
-    pub use crate::widgets::{MenuBar, MenuTitle};
+    pub use crate::widgets::{Desktop, MenuBar, MenuTitle};
+    pub use neue_paint::materials::desktop::{Fit, Picture};
     pub use neue_platform::desktop::*;
     pub use neue_platform::{Anchor, LayerKeyboard, LayerSpec, Margin, ShellLayer};
     pub use neue_theme::Backdrop;

@@ -1368,6 +1368,74 @@ pub mod hud {
     }
 }
 
+/// The desktop's default picture (task 3.2c): a sky, a sun (or moon) and three ranges of
+/// rolling hills, all vector so it is sharp at any size and scale.
+pub mod desktop {
+    use crate::{Appearance, Color, Variant, rgb};
+
+    /// Where the glow sits, as fractions of the picture's width and height.
+    pub const GLOW_CENTER: (f64, f64) = (0.72, 0.42);
+    /// The glow's radius, as a fraction of the picture's width.
+    pub const GLOW_RADIUS: f64 = 0.38;
+    /// Each range of hills, back to front: the height of its ridge at five evenly spaced
+    /// points from the left edge to the right edge, as a fraction of the picture's height
+    /// from the top. A smooth curve runs through them.
+    pub const HILLS: [[f64; 5]; 3] = [
+        [0.62, 0.54, 0.60, 0.50, 0.58],
+        [0.74, 0.80, 0.70, 0.76, 0.72],
+        [0.90, 0.84, 0.92, 0.86, 0.90],
+    ];
+
+    /// Colours of the picture.
+    #[derive(Clone, Copy, Debug, PartialEq)]
+    pub struct Palette {
+        /// Sky gradient from the top to the horizon.
+        pub sky: [Color; 3],
+        /// The sun's (or moon's) glow; fades to transparent at its edge.
+        pub glow: Color,
+        /// Each range of hills, back to front, fading into the sky with distance.
+        pub hills: [Color; 3],
+        /// What shows beside a picture that doesn't fill the screen.
+        pub letterbox: Color,
+    }
+
+    impl Palette {
+        /// Colours for `variant`. The accent doesn't tint the desktop.
+        pub fn new(variant: Variant) -> Self {
+            match variant.appearance {
+                Appearance::Light => Self {
+                    sky: [
+                        rgb(0.36, 0.58, 0.84),
+                        rgb(0.62, 0.78, 0.93),
+                        rgb(0.97, 0.89, 0.78),
+                    ],
+                    glow: rgb(1.0, 0.95, 0.80),
+                    hills: [
+                        rgb(0.45, 0.62, 0.76),
+                        rgb(0.30, 0.47, 0.60),
+                        rgb(0.17, 0.31, 0.42),
+                    ],
+                    letterbox: rgb(0.0, 0.0, 0.0),
+                },
+                Appearance::Dark => Self {
+                    sky: [
+                        rgb(0.05, 0.07, 0.17),
+                        rgb(0.14, 0.15, 0.32),
+                        rgb(0.40, 0.29, 0.45),
+                    ],
+                    glow: rgb(0.78, 0.80, 0.98),
+                    hills: [
+                        rgb(0.22, 0.22, 0.40),
+                        rgb(0.12, 0.13, 0.27),
+                        rgb(0.05, 0.06, 0.15),
+                    ],
+                    letterbox: rgb(0.0, 0.0, 0.0),
+                },
+            }
+        }
+    }
+}
+
 #[cfg(test)]
 mod tests {
     use super::title_bar::{BarPalette, Light, LightPalette, LightState};

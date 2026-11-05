@@ -2693,10 +2693,14 @@ version = "0.0.0"
 dependencies = [
  "anyhow",
  "jiff",
+ "neue-config",
  "neue-dbus",
  "neue-kit",
+ "png",
+ "thiserror 2.0.21",
  "tracing",
  "tracing-subscriber",
+ "zune-jpeg",
 ]
 
 [[package]]
