@@ -28,7 +28,7 @@ pub(super) fn draw(
     variant: Variant,
     disabled: bool,
 ) {
-    let dim = disabled && icon.vector().is_some();
+    let dim = disabled && icon.has_own_colors();
     if dim {
         scene.push_opacity(0.5);
     }
