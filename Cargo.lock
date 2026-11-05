@@ -2700,6 +2700,25 @@ dependencies = [
 ]
 
 [[package]]
+name = "neue-settingsd"
+version = "0.0.0"
+dependencies = [
+ "anyhow",
+ "futures-util",
+ "neue-config",
+ "rustix 1.1.6",
+ "serde",
+ "tempfile",
+ "thiserror 2.0.21",
+ "tokio",
+ "toml",
+ "toml_edit",
+ "tracing",
+ "tracing-subscriber",
+ "zbus",
+]
+
+[[package]]
 name = "neue-shell"
 version = "0.0.0"
 dependencies = [
@@ -4507,6 +4526,7 @@ dependencies = [
  "indexmap",
  "toml_datetime",
  "toml_parser",
+ "toml_writer",
  "winnow",
 ]
 

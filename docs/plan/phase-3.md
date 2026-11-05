@@ -186,7 +186,7 @@ their goldens and the gallery's "Shell" page run on macOS.
       unmodified `main` build, as in 3.5), so no menu could be opened there; and no
       headless compositor test opens a popup, so the popup effect object reaching the
       compositor is untested end to end. Both are on the *Owner:* line.
-- [ ] **3.6 `neue-settingsd` v0** · Opus. The settings service (PLAN.md §3.4) on
+- [x] **3.6 `neue-settingsd` v0** · Opus. The settings service (PLAN.md §3.4) on
       tokio + zbus, ADR for the interface: `org.neueos.Settings1` with typed keys from the
       `neue-config` schema (get, set, a changed signal), writing the compositor config
       (hot-reloaded already), GTK `settings.ini` (colour scheme, fonts, cursor) and dconf
@@ -195,6 +195,12 @@ their goldens and the gallery's "Shell" page run on macOS.
       *Accept:* unit tests on macOS; in the VM, setting dark mode through `busctl` changes
       the compositor config, `settings.ini` and `gsettings get
       org.gnome.desktop.interface color-scheme`.
+      *Done (ADR 0074):* dark mode lives in the new `appearance.toml` (read by everyone),
+      not `compositor.toml`; compositor keys are set the same way and hot-reload. Keys
+      are the schema's own dotted paths; `Changed(a{sv}, as)` also follows hand edits. The
+      mock is `Store::in_memory()`; the D-Bus client for apps comes with 3.24. Not yet:
+      the compositor's title bars, the shell and the cursor don't read
+      `appearance.toml` (follow-up), the session doesn't start the service (3.27).
 
 ## B. Menu bar
 - [ ] **3.7 Global menu A: registrar and DBusMenu** · Opus. After 3.2b. In `neue-dbus`

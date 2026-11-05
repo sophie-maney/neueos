@@ -1,0 +1,35 @@
+[package]
+name = "neue-settingsd"
+description = "neueOS's settings service: org.neueos.Settings1 over the neue-config files, GTK settings.ini and dconf"
+version.workspace = true
+edition.workspace = true
+rust-version.workspace = true
+license.workspace = true
+repository.workspace = true
+publish.workspace = true
+
+# The library (the key store over the TOML files, the in-memory mock, the GTK and dconf
+# encoders) is portable, so its tests and Preferences run on macOS. The D-Bus service is
+# Linux-only: on other hosts the binary only says so (AGENTS.md platform matrix).
+[dependencies]
+anyhow.workspace = true
+neue-config.workspace = true
+tempfile.workspace = true
+thiserror.workspace = true
+toml.workspace = true
+toml_edit.workspace = true
+tracing.workspace = true
+tracing-subscriber.workspace = true
+
+[target.'cfg(target_os = "linux")'.dependencies]
+rustix.workspace = true
+tokio.workspace = true
+zbus.workspace = true
+
+[target.'cfg(target_os = "linux")'.dev-dependencies]
+futures-util.workspace = true
+serde.workspace = true
+zbus = { workspace = true, features = ["p2p"] }
+
+[lints]
+workspace = true

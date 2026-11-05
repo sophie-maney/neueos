@@ -15,6 +15,7 @@
 //! a key that is only accepted through `#[serde(alias)]` is reported as unknown. Add an
 //! alias-aware check here before using the first alias.
 
+pub mod appearance;
 mod chord;
 pub mod compositor;
 pub mod shell;
@@ -26,6 +27,7 @@ use serde::Serialize;
 use serde::de::DeserializeOwned;
 use toml::{Table, Value};
 
+pub use appearance::AppearanceConfig;
 pub use chord::{Chord, ChordError};
 pub use compositor::{CompositorConfig, TitleBarDoubleClick, WindowsConfig};
 pub use shell::{DesktopConfig, PictureFit, ShellConfig};
@@ -162,18 +164,52 @@ fn line_and_column(text: &str, offset: usize) -> (usize, usize) {
 
 /// Load `T` from every layer and merge them.
 pub fn load<T: ConfigFile>(layers: &Layers) -> Result<Loaded<T>, ConfigError> {
+    load_layers(layers, None)
+}
+
+/// Like [`load`], but the user layer is `user` instead of the user's file (`None`: no user
+/// file). `neue-settingsd` checks an edit with it before writing the file, and its
+/// in-memory store keeps the user layer in memory. Without directories, `user` is the only
+/// layer.
+pub fn load_with_user<T: ConfigFile>(
+    layers: &Layers,
+    user: Option<&str>,
+) -> Result<Loaded<T>, ConfigError> {
+    load_layers(layers, Some(user))
+}
+
+/// [`load`], with the user layer's text given (`Some`) or read from its file (`None`).
+fn load_layers<T: ConfigFile>(
+    layers: &Layers,
+    user: Option<Option<&str>>,
+) -> Result<Loaded<T>, ConfigError> {
     // The defaults are the lowest layer, so tables with default entries (keybindings) merge
     // with the files instead of being replaced by them.
     let mut merged = Table::try_from(T::default()).map_err(|err| {
         ConfigError::in_file(T::FILE_NAME, format!("encoding the defaults: {err}"))
     })?;
     let mut input = Table::new();
-    for dir in layers.dirs() {
+    let dirs = layers.dirs();
+    let (files, user_path) = match user {
+        // The given text replaces the last directory's file, or is the only layer.
+        Some(_) => match dirs.split_last() {
+            Some((user_dir, rest)) => (rest, user_dir.join(T::FILE_NAME)),
+            None => (dirs, PathBuf::from(T::FILE_NAME)),
+        },
+        None => (dirs, PathBuf::new()),
+    };
+    let given = user.flatten().map(|text| (user_path, text.to_owned()));
+    let read = files.iter().map(|dir| {
         let path = dir.join(T::FILE_NAME);
-        let text = match std::fs::read_to_string(&path) {
-            Ok(text) => text,
-            Err(err) if err.kind() == std::io::ErrorKind::NotFound => continue,
-            Err(err) => return Err(ConfigError::in_file(path, err.to_string())),
+        match std::fs::read_to_string(&path) {
+            Ok(text) => Ok(Some((path, text))),
+            Err(err) if err.kind() == std::io::ErrorKind::NotFound => Ok(None),
+            Err(err) => Err(ConfigError::in_file(path, err.to_string())),
+        }
+    });
+    for layer in read.chain(std::iter::once(Ok(given))) {
+        let Some((path, text)) = layer? else {
+            continue;
         };
         let mut layer = parse_layer::<T>(&path, &text)?;
         T::normalize(&mut layer);
@@ -349,6 +385,21 @@ mod tests {
     fn a_bad_layer_rejects_the_whole_load() {
         let (_root, layers) = layers(&["count = 1\n", "count = [\n"]);
         assert!(load::<Sample>(&layers).is_err());
+    }
+
+    #[test]
+    fn given_user_text_replaces_the_user_file() {
+        let (_root, layers) = layers(&["name = \"system\"\ncount = 1\n", "count = 2\n"]);
+        let config = load_with_user::<Sample>(&layers, Some("count = 7\n"))
+            .unwrap()
+            .config;
+        assert_eq!((config.name.as_str(), config.count), ("system", 7));
+        let config = load_with_user::<Sample>(&layers, None).unwrap().config;
+        assert_eq!(config.count, 1);
+        let err = load_with_user::<Sample>(&layers, Some("count = \"x\"\n")).unwrap_err();
+        assert!(err.file.ends_with("1/sample.toml"));
+        let only = load_with_user::<Sample>(&Layers::none(), Some("count = 3\n")).unwrap();
+        assert_eq!(only.config.count, 3);
     }
 
     #[test]
