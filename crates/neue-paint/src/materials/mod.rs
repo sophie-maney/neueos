@@ -4,6 +4,7 @@
 
 mod aqua_button;
 mod bevel_button;
+mod color_well;
 pub mod dock_shelf;
 mod focus_ring;
 mod groove;
@@ -34,6 +35,10 @@ pub use aqua_button::{ButtonState, PushButton, aqua_button, push_button, push_bu
 pub use bevel_button::{
     BevelButton, RecessedButton, bevel_button, bevel_button_outline, recessed_button,
     recessed_button_outline,
+};
+pub use color_well::{
+    ColorArea, ColorWell, Hsb, checkerboard, color_area, color_area_knob, color_area_value_at,
+    color_hex, color_well, parse_hex,
 };
 pub use focus_ring::focus_ring;
 pub use linen::{Linen, fill_linen};

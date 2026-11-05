@@ -624,13 +624,29 @@ the paper and leather materials move to Phase 6/7 (Widgets, Write).
         clicking a segment other than the focused one (Masonry doesn't say which child node
         an action was for), a menu on the ellipsis, a golden for the collapsed row (test
         windows keep their content's width).
-  - [ ] **2.24b Colour well** · Sonnet. A swatch button with a bevelled border. Click opens
+  - [x] **2.24b Colour well** · Sonnet. A swatch button with a bevelled border. Click opens
         a `Popover` colour panel: hue/saturation area, brightness and opacity sliders, hex
         field (reuse `Slider` and the text field). `on_change(Color)` message, continuous
         while dragging; the swatch shows opacity over a checkerboard.
         *Accept:* tests (open, drag, hex entry, Esc closes); HSB↔sRGB round-trip unit
         tests; goldens (well states, panel, light/dark, 1×/2×); AccessKit value as hex;
         a gallery entry.
+        *Done:* ADR 0061. `ColorWell::new(color).label(..).on_change(|Color| ..)`, handle
+        `set_color` and `set_enabled`. A press, Space or Return opens a popover with the
+        panel; pressing the well again or Escape closes it. The panel is one container
+        widget over the kit's own `Slider` (brightness, opacity) and `TextField` (hex), plus
+        a new hue and saturation area; it keeps the colour as HSB so a grey or black doesn't
+        lose its hue, and the well sends each change, continuously while dragging. Hex takes
+        `RGB`, `RRGGBB` and `RRGGBBAA`; Return tidies it or puts the colour back. Material
+        `neue_paint::materials::{color_well, color_area, checkerboard}` with `Hsb`,
+        `color_hex` and `parse_hex`; tokens `neue_theme::materials::color_well`. `Slider` and
+        `TextField` got `.label(..)` for assistive technology. 17 end-to-end tests
+        (`src/tests/colors.rs`), 9 material unit tests (HSB round trips, hex); 24 goldens
+        `color-well-{normal,pressed,focused,disabled}-…` and `color-panel-open-…`; shown on
+        the gallery's Pop-ups page. Checked: `cargo xtask check` on macOS; Linux and x86_64
+        not run. VM steps in `docs/checks/phase-2.md` §27, not run. Not yet: the well
+        drawn pressed while its panel is open, a panel that follows `set_color` while open,
+        gradient tracks on the sliders, a swatch strip or colour names, an eyedropper.
   - [ ] **2.24c Date picker** · Sonnet. Textual style (day/month/year segments, stepper
         arrows, Up/Down changes the focused segment) and graphical calendar style (month
         grid, previous/next month, today, selected day). Internal civil-date type; week

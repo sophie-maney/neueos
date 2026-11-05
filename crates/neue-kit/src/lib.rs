@@ -68,8 +68,8 @@ pub use neue_paint::materials::{DividerStyle, Edge};
 pub use neue_platform::WindowId;
 pub use task::{Sender, Task};
 pub use widgets::{
-    Align, BevelButton, Button, Cell, CheckState, Checkbox, Collection, Column, ComboBox,
-    ContextMenu, DisplayMode, Entry, IconImage, Item, Label, MaterialTile, Outline, Pane,
+    Align, BevelButton, Button, Cell, CheckState, Checkbox, Collection, ColorWell, Column,
+    ComboBox, ContextMenu, DisplayMode, Entry, IconImage, Item, Label, MaterialTile, Outline, Pane,
     PathControl, PopUpButton, Popover, ProgressBar, PullDownButton, Radio, ScrollAxes, ScrollView,
     Segmented, Sheet, Slider, SortOrder, SourceList, Specimen, Spinner, SplitView, Stack, Stepper,
     TabView, Table, TextField, TextStyle, TextView, Toolbar, ToolbarButton, VirtualGrid,

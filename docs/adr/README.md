@@ -70,3 +70,4 @@ Don't edit an accepted ADR's decision; supersede it with a new one.
 | [0058](0058-sheet-placement.md) | Sheet placement in neue-comp: modal dialogs with a parent hang from its chrome and follow it | Accepted |
 | [0059](0059-hud-windows.md) | HUD windows: a third kind of kit chrome over the HUD material; a parent keeps its focused look while its HUD window has the keyboard | Accepted |
 | [0060](0060-path-control.md) | Path control: one leaf widget that collapses its middle into an ellipsis; the popup style is a pop-up button over the reversed path | Accepted |
+| [0061](0061-color-well.md) | Colour well: a bevel-button swatch that opens a popover panel built from kit widgets; the panel keeps the colour as HSB and reports to the well | Accepted |

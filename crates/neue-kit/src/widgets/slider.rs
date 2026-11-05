@@ -94,6 +94,8 @@ pub(crate) struct SliderWidget {
     range: Range,
     value: f64,
     width: f64,
+    /// What assistive technology announces.
+    label: Option<String>,
     replayer: ImagingReplayer,
     /// Size from the last layout.
     size: Size,
@@ -105,6 +107,7 @@ impl SliderWidget {
             range: Range::new(0.0, 1.0, 0.0),
             value: 0.0,
             width: control::SLIDER_WIDTH,
+            label: None,
             replayer: ImagingReplayer::new(),
             size: Size::ZERO,
         }
@@ -278,6 +281,9 @@ impl Widget for SliderWidget {
         _props: &PropertiesRef<'_>,
         node: &mut Node,
     ) {
+        if let Some(label) = &self.label {
+            node.set_label(label.clone());
+        }
         node.set_numeric_value(self.value);
         node.set_min_numeric_value(self.range.min);
         node.set_max_numeric_value(self.range.max);
@@ -365,6 +371,13 @@ impl<M: 'static> Slider<M> {
     #[must_use]
     pub fn width(mut self, width: f64) -> Self {
         self.inner.widget.width = width.max(control::SLIDER_HEIGHT);
+        self
+    }
+
+    /// What assistive technology announces for the slider.
+    #[must_use]
+    pub fn label(mut self, label: impl Into<String>) -> Self {
+        self.inner.widget.label = Some(label.into());
         self
     }
 

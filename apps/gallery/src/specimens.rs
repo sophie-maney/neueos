@@ -2,11 +2,11 @@
 
 use neue_kit::tokens::Color;
 use neue_kit::{
-    Align, BevelButton, Button, CheckState, Checkbox, Collection, Column, ComboBox, ContextMenu,
-    Entry, Glyph, Icon, IconImage, IconPaint, Item, Label, MaterialTile, Menu, MenuItem, Outline,
-    PathControl, PopUpButton, ProgressBar, PullDownButton, Radio, ScrollAxes, ScrollView,
-    Segmented, Shortcut, Slider, SortOrder, SourceList, Specimen, Spinner, Stack, Stepper, Table,
-    TextField, TextView, VectorIcon, VirtualGrid, VirtualList,
+    Align, BevelButton, Button, CheckState, Checkbox, Collection, ColorWell, Column, ComboBox,
+    ContextMenu, Entry, Glyph, Icon, IconImage, IconPaint, Item, Label, MaterialTile, Menu,
+    MenuItem, Outline, PathControl, PopUpButton, ProgressBar, PullDownButton, Radio, ScrollAxes,
+    ScrollView, Segmented, Shortcut, Slider, SortOrder, SourceList, Specimen, Spinner, Stack,
+    Stepper, Table, TextField, TextView, VectorIcon, VirtualGrid, VirtualList,
 };
 use neue_kit::{DisplayMode, Toolbar, ToolbarButton};
 use neue_kit::{DividerStyle, Pane, SplitView, TabView, Window};
@@ -880,4 +880,43 @@ pub const PATH: [&str; 3] = ["Macintosh HD", "Users", "sophie"];
 /// A path control of [`PATH`].
 pub fn path_control<M: 'static>() -> PathControl<M> {
     PathControl::new(PATH)
+}
+
+/// Golden window size for the colour well.
+pub const COLOR_WELL_SIZE: (u32, u32) = (90, 40);
+
+/// The colour of the gallery's wells: a translucent orange, so the checkerboard shows.
+pub const WELL_COLOR: Color = Color::new([1.0, 0.55, 0.1, 0.6]);
+
+/// A colour well showing [`WELL_COLOR`].
+pub fn color_well<M: 'static>() -> ColorWell<M> {
+    ColorWell::new(WELL_COLOR).label("Colour")
+}
+
+/// `color` as hex: `#RRGGBB`, or `#RRGGBBAA` when it isn't opaque.
+pub fn hex(color: Color) -> String {
+    #[expect(
+        clippy::cast_possible_truncation,
+        clippy::cast_sign_loss,
+        reason = "a channel clamped to 0..255 and rounded"
+    )]
+    let [r, g, b, a] = color
+        .components
+        .map(|v| (v.clamp(0.0, 1.0) * 255.0).round() as u8);
+    if a == 255 {
+        format!("#{r:02X}{g:02X}{b:02X}")
+    } else {
+        format!("#{r:02X}{g:02X}{b:02X}{a:02X}")
+    }
+}
+
+/// Room around [`color_well_anchor`]'s well: enough for its panel below it.
+const COLOR_PANEL_ROOM: f64 = 130.0;
+
+/// Golden window size for a colour well with its panel open below it.
+pub const COLOR_PANEL_SIZE: (u32, u32) = (306, 440);
+
+/// A colour well with room around it for its panel (in a [`COLOR_PANEL_SIZE`] window).
+pub fn color_well_anchor<M: 'static>() -> Stack<M> {
+    Stack::column().padding(COLOR_PANEL_ROOM).with(color_well())
 }

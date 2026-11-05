@@ -19,6 +19,7 @@ use neue_theme::Theme;
 
 mod chrome;
 mod collection;
+mod colors;
 mod controls;
 mod editmenu;
 mod fields;

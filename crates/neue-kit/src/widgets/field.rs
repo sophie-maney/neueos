@@ -131,6 +131,8 @@ pub(crate) struct FieldWidget {
     focus_by_click: bool,
     /// The search field's cancel button is held down.
     cancel_held: bool,
+    /// What assistive technology announces.
+    label: Option<String>,
     /// The text was replaced: put the caret at its end at the next layout.
     caret_to_end: bool,
     /// Has keyboard focus. Without it the text shows from its start.
@@ -201,6 +203,7 @@ impl FieldWidget {
             rendered: Generation::default(),
             focus_by_click: false,
             cancel_held: false,
+            label: None,
             caret_to_end: false,
             focused: false,
             blink: Blink::default(),
@@ -982,6 +985,9 @@ impl Widget for FieldWidget {
         node: &mut Node,
     ) {
         let ThemeProp(theme) = *props.get::<ThemeProp>(ctx.property_cache());
+        if let Some(label) = &self.label {
+            node.set_label(label.clone());
+        }
         if !self.placeholder.text().is_empty() {
             node.set_placeholder(self.placeholder.text().to_owned());
         }
@@ -1137,6 +1143,13 @@ impl<M: 'static> TextField<M> {
     #[must_use]
     pub fn placeholder(mut self, text: impl Into<String>) -> Self {
         self.inner.widget.placeholder.set_text(text.into());
+        self
+    }
+
+    /// What assistive technology announces for the field.
+    #[must_use]
+    pub fn label(mut self, label: impl Into<String>) -> Self {
+        self.inner.widget.label = Some(label.into());
         self
     }
 

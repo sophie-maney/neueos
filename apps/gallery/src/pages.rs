@@ -822,7 +822,8 @@ fn pop_ups(_: &mut PageHandles) -> Element<Message> {
             "Press a button to open its menu · Space, Return or Down open it from the keyboard · \
              type to choose in a closed pop-up · the combo box takes your own text too · \
              right-click a field for Cut, Copy and Select All · click a path segment, or use \
-             Left, Right and Return · the status line shows what you chose",
+             Left, Right and Return · press a colour well to choose a colour, drag in its panel \
+             · the status line shows what you chose",
         ))
         .with(
             Stack::row()
@@ -857,6 +858,16 @@ fn pop_ups(_: &mut PageHandles) -> Element<Message> {
                 .with(neue_kit::PathControl::popup(specimens::PATH, |i| {
                     Message::Field("Path", specimens::PATH[i].into())
                 })),
+        ))
+        .with(section(
+            "Colour well",
+            Stack::row()
+                .spacing(spacing::L)
+                .with(
+                    specimens::color_well()
+                        .on_change(|c| Message::Field("Colour", specimens::hex(c))),
+                )
+                .with(specimens::color_well().disabled(true)),
         ))
         .with(section(
             "Combo box",

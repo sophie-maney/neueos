@@ -661,6 +661,69 @@ pub mod path_control {
     }
 }
 
+/// The colour well (a bevel button holding a swatch) and its panel: the hue and
+/// saturation area, and the checkerboard that shows opacity.
+pub mod color_well {
+    use crate::{Appearance, Color, Variant, black, grey, white};
+
+    /// Width of the well.
+    pub const WIDTH: f64 = 46.0;
+    /// Space between the well's bevel and its swatch.
+    pub const SWATCH_INSET: f64 = 3.0;
+    /// Corner radius of the swatch.
+    pub const SWATCH_RADIUS: f64 = 2.0;
+    /// Side of one checkerboard square.
+    pub const CHECKER: f64 = 4.0;
+    /// Width of the panel's content.
+    pub const PANEL_WIDTH: f64 = 220.0;
+    /// Height of the hue and saturation area.
+    pub const AREA_HEIGHT: f64 = 120.0;
+    /// Width of the label column in the panel (labels sit right-aligned in it).
+    pub const LABEL_WIDTH: f64 = 72.0;
+    /// Height of a row of the panel (label and slider, or label and hex field).
+    pub const ROW_HEIGHT: f64 = 22.0;
+    /// Radius of the area's knob.
+    pub const KNOB_RADIUS: f64 = 5.5;
+    /// How far a key moves the area's knob, as a fraction of the area.
+    pub const KEY_STEP: f64 = 0.02;
+    /// Corner radius of the area.
+    pub const AREA_RADIUS: f64 = 2.0;
+    /// Opacity of a disabled well.
+    pub const DISABLED_OPACITY: f32 = 0.5;
+
+    /// The checkerboard's two squares, light and dark.
+    pub fn checker(variant: Variant) -> [Color; 2] {
+        match variant.appearance {
+            Appearance::Light => [grey(1.0), grey(0.8)],
+            Appearance::Dark => [grey(0.62), grey(0.42)],
+        }
+    }
+
+    /// The thin line around the swatch and the area.
+    pub fn border(variant: Variant) -> Color {
+        let c = match variant.appearance {
+            Appearance::Light => black(0.45),
+            Appearance::Dark => black(0.7),
+        };
+        if variant.is_increased_contrast() {
+            c.with_alpha((c.components[3] + 0.3).min(1.0))
+        } else {
+            c
+        }
+    }
+
+    /// The knob's outer ring (the inner one is white): dark enough to show on light
+    /// colours.
+    pub fn knob_outline(_variant: Variant) -> Color {
+        black(0.6)
+    }
+
+    /// The knob's inner ring.
+    pub fn knob_ring(_variant: Variant) -> Color {
+        white(1.0)
+    }
+}
+
 /// Procedural linen.
 pub mod linen {
     use crate::{Appearance, Variant};
