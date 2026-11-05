@@ -540,6 +540,10 @@ impl State {
             for (id, address) in std::mem::take(&mut self.reg.menu_addresses) {
                 self.set_menu_address(id, address);
             }
+            if let Some(text) = self.reg.primary_selection.take() {
+                progress = true;
+                self.store_primary(text);
+            }
             let ids: Vec<WindowId> = self.reg.windows.keys().copied().collect();
             for id in ids {
                 while let Some(signal) = self

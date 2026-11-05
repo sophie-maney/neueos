@@ -330,6 +330,13 @@ impl<'a> Ctx<'a> {
         self.host.waker()
     }
 
+    /// Makes `text` the primary selection (what a middle click pastes), as when the user
+    /// has just selected it. Call it from the callback that handles the selecting input:
+    /// Wayland needs that input's serial. A no-op on winit and for an empty `text`.
+    pub fn set_primary_selection(&mut self, text: String) {
+        self.host.set_primary_selection(text);
+    }
+
     /// Tells the compositor where `window`'s menu bar is exported (`None`: it has none).
     /// On Wayland through `org_kde_kwin_appmenu`, for toplevels only; elsewhere ignored.
     pub fn set_menu_address(&mut self, window: WindowId, address: Option<MenuAddress>) {
@@ -346,6 +353,7 @@ pub(crate) trait Host {
     fn exit(&mut self);
     fn waker(&self) -> Waker;
     fn set_menu_address(&mut self, window: WindowId, address: Option<MenuAddress>);
+    fn set_primary_selection(&mut self, text: String);
 }
 
 /// A driver's open windows, the windows queued to open, and the exit flag.
@@ -355,6 +363,9 @@ pub(crate) struct Registry<W> {
     pub(crate) opening: Vec<(WindowId, WindowSpec)>,
     /// Queued by [`Ctx::set_menu_address`]; the driver applies them after opening windows.
     pub(crate) menu_addresses: Vec<(WindowId, Option<MenuAddress>)>,
+    /// Queued by [`Ctx::set_primary_selection`]; the latest wins. The driver takes the
+    /// selection after the callback.
+    pub(crate) primary_selection: Option<String>,
     next_id: u64,
     pub(crate) exit: bool,
     pub(crate) waker: Waker,
@@ -366,6 +377,7 @@ impl<W> Registry<W> {
             windows: HashMap::new(),
             opening: Vec::new(),
             menu_addresses: Vec::new(),
+            primary_selection: None,
             next_id: 0,
             exit: false,
             waker,
@@ -422,6 +434,12 @@ impl<W: DriverWindow> Host for Registry<W> {
     fn set_menu_address(&mut self, window: WindowId, address: Option<MenuAddress>) {
         self.menu_addresses.push((window, address));
     }
+
+    fn set_primary_selection(&mut self, text: String) {
+        if !text.is_empty() {
+            self.primary_selection = Some(text);
+        }
+    }
 }
 
 impl<W> Registry<W> {
@@ -446,6 +464,15 @@ mod tests {
     fn spec() -> WindowSpec {
         // Any widget will do; the registry never builds it.
         WindowSpec::new("t", (10, 10), NewWidget::new(Spacer).erased())
+    }
+
+    #[test]
+    fn the_latest_primary_selection_wins_and_empty_is_ignored() {
+        let mut reg = Registry::<Dummy>::new(Waker::new(|| {}));
+        Ctx::new(&mut reg).set_primary_selection("a".into());
+        Ctx::new(&mut reg).set_primary_selection("b".into());
+        Ctx::new(&mut reg).set_primary_selection(String::new());
+        assert_eq!(reg.primary_selection.as_deref(), Some("b"));
     }
 
     #[test]

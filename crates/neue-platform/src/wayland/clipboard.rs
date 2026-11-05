@@ -9,7 +9,9 @@
 //!   or be us) and hands the text over as `TextEvent::ClipboardPaste`. Our own selection
 //!   is pasted straight from memory.
 //! - **Primary selection:** a middle click pastes it the same way. Masonry doesn't report
-//!   text selections, so the driver doesn't own the primary selection yet (task 2.28).
+//!   text selections, so neue-kit's text fields report theirs through
+//!   `Ctx::set_primary_selection` (task 2.28); the driver then owns the primary selection
+//!   like the clipboard (offers it, answers `send`, pastes it from memory).
 
 use std::io::{ErrorKind, Read as _, Write as _};
 
@@ -24,7 +26,9 @@ use smithay_client_toolkit::primary_selection::PrimarySelectionManagerState;
 use smithay_client_toolkit::primary_selection::device::{
     PrimarySelectionDevice, PrimarySelectionDeviceHandler,
 };
-use smithay_client_toolkit::primary_selection::selection::PrimarySelectionSourceHandler;
+use smithay_client_toolkit::primary_selection::selection::{
+    PrimarySelectionSource, PrimarySelectionSourceHandler,
+};
 use smithay_client_toolkit::reexports::calloop::PostAction;
 use wayland_client::globals::GlobalList;
 use wayland_client::protocol::wl_data_device::WlDataDevice;
@@ -72,6 +76,8 @@ pub(super) struct Clipboard {
     primary_device: Option<PrimarySelectionDevice>,
     /// Our clipboard selection and its text, until another client takes it.
     owned: Option<(CopyPasteSource, String)>,
+    /// Our primary selection and its text, until another client takes it.
+    owned_primary: Option<(PrimarySelectionSource, String)>,
 }
 
 impl Clipboard {
@@ -140,6 +146,24 @@ impl State {
         cb.owned = Some((source, text));
     }
 
+    /// Takes the primary selection with `text` (a text field's selection), using the serial
+    /// of the input event that ended the selecting.
+    pub(super) fn store_primary(&mut self, text: String) {
+        let cb = &mut self.clipboard;
+        let (Some(manager), Some(device), Some(serial)) = (
+            &cb.primary_manager,
+            &cb.primary_device,
+            self.input.last_serial,
+        ) else {
+            tracing::debug!("no primary selection device or input serial: not selecting");
+            return;
+        };
+        let source = manager.create_selection_source(&self.qh, TEXT_MIMES);
+        source.set_selection(device, serial);
+        tracing::debug!(bytes = text.len(), "took the primary selection");
+        cb.owned_primary = Some((source, text));
+    }
+
     /// Reads `which` selection and pastes its text into `window` once it has arrived.
     pub(super) fn paste(&mut self, window: WindowId, which: Selection) {
         let pipe = match which {
@@ -164,6 +188,11 @@ impl State {
                 offer.receive(mime.to_owned()).map_err(|e| e.to_string())
             }
             Selection::Primary => {
+                if let Some((_, text)) = &self.clipboard.owned_primary {
+                    let text = text.clone();
+                    self.deliver_paste(window, text);
+                    return;
+                }
                 let Some(offer) = self
                     .clipboard
                     .primary_device
@@ -357,22 +386,34 @@ impl PrimarySelectionDeviceHandler for State {
 }
 
 impl PrimarySelectionSourceHandler for State {
-    // We never own the primary selection (see the module docs).
     fn send_request(
         &mut self,
         _: &Connection,
         _: &QueueHandle<Self>,
-        _: &ZwpPrimarySelectionSourceV1,
-        _: String,
-        _: WritePipe,
+        source: &ZwpPrimarySelectionSourceV1,
+        mime: String,
+        pipe: WritePipe,
     ) {
+        let text = match &self.clipboard.owned_primary {
+            Some((owned, text)) if owned.inner() == source && TEXT_MIMES.contains(&&*mime) => {
+                text.clone()
+            }
+            // Dropping the pipe closes it: the reader gets nothing.
+            _ => return,
+        };
+        self.write_selection(pipe, text);
     }
+
     fn cancelled(
         &mut self,
         _: &Connection,
         _: &QueueHandle<Self>,
-        _: &ZwpPrimarySelectionSourceV1,
+        source: &ZwpPrimarySelectionSourceV1,
     ) {
+        if matches!(&self.clipboard.owned_primary, Some((owned, _)) if owned.inner() == source) {
+            tracing::debug!("another client took the primary selection");
+            self.clipboard.owned_primary = None;
+        }
     }
 }
 

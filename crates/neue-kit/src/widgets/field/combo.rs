@@ -174,6 +174,7 @@ impl<M: 'static> From<ComboBox<M>> for Element<M> {
                     let title = labels.get(*i)?.clone();
                     on_select.as_mut().map(|f| f(*i, title))
                 }
+                FieldAction::Selected(_) => None,
             }
         });
         element

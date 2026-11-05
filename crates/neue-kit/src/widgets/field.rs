@@ -68,6 +68,9 @@ pub(crate) enum FieldAction {
     Submitted(String),
     /// A combo box's suggestion was chosen: its index.
     Chosen(usize),
+    /// The user finished selecting text with the pointer or Shift: the runner makes it the
+    /// primary selection. Never sent by a secure field.
+    Selected(String),
 }
 
 /// The caret's blink: shown for the first half of each [`CARET_BLINK`], solid again
@@ -145,6 +148,8 @@ pub(crate) struct FieldWidget {
     /// A menu took focus away and gives it back: the text stays as it was, not selected
     /// as Tab would.
     keep_selection: bool,
+    /// A primary-button press began a selection that its release ends.
+    selecting: bool,
 }
 
 /// What makes a text field a combo box: an arrow button inside its right end that opens a
@@ -210,6 +215,7 @@ impl FieldWidget {
             combo: None,
             edit_return_focus: None,
             keep_selection: false,
+            selecting: false,
         }
     }
 
@@ -455,6 +461,18 @@ impl FieldWidget {
         self.blink.restart(ctx, wanted);
     }
 
+    /// Offers the selected text as the primary selection (a middle click elsewhere pastes
+    /// it). Called when a pointer or Shift selection ends. Never for a secure field, nor
+    /// for an empty selection (that leaves the primary selection as it is).
+    fn publish_selection(&self, ctx: &mut EventCtx<'_>) {
+        if self.kind == Kind::Secure {
+            return;
+        }
+        if let Some(text) = self.editor.selected_text().filter(|t| !t.is_empty()) {
+            ctx.submit_action::<FieldAction>(FieldAction::Selected(text.to_owned()));
+        }
+    }
+
     /// A key while focused; false if the field doesn't use it.
     fn on_key(
         &mut self,
@@ -664,7 +682,15 @@ impl Widget for FieldWidget {
                     ctx.request_focus();
                 }
                 ctx.capture_pointer();
+                self.selecting = true;
                 self.after_edit(ctx, false);
+            }
+            PointerEvent::Up(PointerButtonEvent {
+                button: None | Some(PointerButton::Primary),
+                ..
+            }) if self.selecting => {
+                self.selecting = false;
+                self.publish_selection(ctx);
             }
             PointerEvent::Move(PointerUpdate { current, .. })
                 if ctx.is_active() && !self.cancel_held =>
@@ -687,6 +713,7 @@ impl Widget for FieldWidget {
             }
             PointerEvent::Cancel(..) => {
                 self.cancel_held = false;
+                self.selecting = false;
                 ctx.request_paint_only();
             }
             _ => {}
@@ -709,6 +736,23 @@ impl Widget for FieldWidget {
                 };
                 ctx.set_handled();
                 self.after_edit(ctx, changed);
+                // Shift with a caret move ends one selecting step: the selection is the
+                // primary selection from now on.
+                if key.modifiers.shift()
+                    && matches!(
+                        key.key,
+                        Key::Named(
+                            NamedKey::ArrowLeft
+                                | NamedKey::ArrowRight
+                                | NamedKey::ArrowUp
+                                | NamedKey::ArrowDown
+                                | NamedKey::Home
+                                | NamedKey::End
+                        )
+                    )
+                {
+                    self.publish_selection(ctx);
+                }
             }
             TextEvent::Ime(ime) => {
                 let (fonts, layouts) = ctx.text_contexts();
@@ -1203,7 +1247,7 @@ impl<M: 'static> From<TextField<M>> for Element<M> {
                 match action.downcast_ref::<FieldAction>()? {
                     FieldAction::Changed(text) => on_change.as_mut().map(|f| f(text.clone())),
                     FieldAction::Submitted(text) => on_submit.as_mut().map(|f| f(text.clone())),
-                    FieldAction::Chosen(_) => None,
+                    FieldAction::Chosen(_) | FieldAction::Selected(_) => None,
                 }
             });
         }

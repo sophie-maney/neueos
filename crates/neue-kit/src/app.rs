@@ -18,8 +18,8 @@ use crate::menubar::MenuBars;
 use crate::task::{Mailbox, Sender, Task};
 use crate::theme;
 use crate::widgets::{
-    self, ButtonWidget, Chrome, ChromeKind, Popover, PopoverWidget, Pressed, Rewired, RootAction,
-    RootWidget, RowsWidget, Sheet, SheetButtons, SheetKey,
+    self, ButtonWidget, Chrome, ChromeKind, FieldAction, Popover, PopoverWidget, Pressed, Rewired,
+    RootAction, RootWidget, RowsWidget, Sheet, SheetButtons, SheetKey,
 };
 
 /// An app: its state is the model, [`Application::Message`] is everything that can happen
@@ -262,6 +262,8 @@ pub(crate) trait Host {
     fn windows(&self) -> Vec<WindowId>;
     fn exit(&mut self);
     fn set_menu_address(&mut self, window: WindowId, address: Option<MenuAddress>);
+    /// Makes `text` the primary selection ([`neue_platform::Ctx::set_primary_selection`]).
+    fn set_primary_selection(&mut self, text: String);
     /// Whether modal child windows exist ([`neue_platform::Ctx::has_modal_windows`]):
     /// sheets open as windows of their own, or else inside their parent.
     fn has_modal_windows(&self) -> bool;
@@ -285,6 +287,9 @@ impl Host for neue_platform::Ctx<'_> {
     }
     fn set_menu_address(&mut self, window: WindowId, address: Option<MenuAddress>) {
         neue_platform::Ctx::set_menu_address(self, window, address);
+    }
+    fn set_primary_selection(&mut self, text: String) {
+        neue_platform::Ctx::set_primary_selection(self, text);
     }
     fn has_modal_windows(&self) -> bool {
         neue_platform::Ctx::has_modal_windows(self)
@@ -828,6 +833,11 @@ impl<A: Application> Runner<A> {
         };
         if action.is::<Rewired>() {
             return self.rewire(host, window, widget);
+        }
+        // A text field's selection ended: it becomes the primary selection, whether or not
+        // the field has a handler.
+        if let Some(FieldAction::Selected(text)) = action.downcast_ref::<FieldAction>() {
+            return host.set_primary_selection(text.clone());
         }
         let Some(kit) = &mut self.kit else { return };
         let Some((_, handler)) = kit.handlers.get_mut(&widget) else {
