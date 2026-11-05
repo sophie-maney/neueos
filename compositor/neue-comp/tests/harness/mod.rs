@@ -167,6 +167,11 @@ impl Server {
 
     /// Connect a new scripted client as the shell: the one that sees `neue_shell_v1`.
     pub fn connect_shell(&self) -> TestClient {
+        TestClient::new(self.connect_shell_raw())
+    }
+
+    /// The client end of a new shell connection, for a client the harness doesn't script.
+    pub fn connect_shell_raw(&self) -> UnixStream {
         let (ours, theirs) = UnixStream::pair().expect("creating a socket pair");
         self.with_state(move |state| {
             state
@@ -175,7 +180,7 @@ impl Server {
                 .map_err(|err| err.to_string())
         })
         .expect("inserting the shell client");
-        TestClient::new(ours)
+        ours
     }
 
     /// The client end of a new connection, for a client the harness doesn't script

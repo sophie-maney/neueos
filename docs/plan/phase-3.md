@@ -4,7 +4,7 @@ Task list for Phase 3 of the roadmap in `PLAN.md` §8. Architecture and decision
 live in `PLAN.md` and `docs/adr/`.
 
 One task = one thread = one PR, as before. Order: the foundations 3.1–3.6 first (3.1 before
-3.2; 3.3, 3.4 and 3.6 can run alongside them). Then the menu bar (3.7–3.15), the dock
+3.2a–c; 3.3, 3.4 and 3.6 can run alongside them). Then the menu bar (3.7–3.15), the dock
 (3.16–3.17), the session (3.18–3.20) and the portal and Preferences (3.21–3.26) mostly run
 in parallel, each after the foundations it names. 3.27–3.30 close the phase.
 
@@ -46,21 +46,45 @@ their goldens and the gallery's "Shell" page run on macOS.
       *Done:* ADR 0066, `docs/protocols/neue-shell-v1.md`. The compositor spawns the shell
       itself (`neue-comp --shell <cmd>`, private socket in `WAYLAND_SOCKET`) and restarts it
       (at once after 10 s of life, else 250 ms doubling to 30 s); only that client sees the
-      global. `neuectl` unchanged. 3.2 adds `--shell /usr/bin/neue-shell` to
+      global. `neuectl` unchanged. 3.2b adds `--shell /usr/bin/neue-shell` to
       `neue-comp.service`.
-- [ ] **3.2 `neue-shell` skeleton, menu bar and desktop background** · Opus. New crate
-      `neue-shell`: one process, several layer surfaces, shared state (window list from
-      3.1, settings, later the app registry). A menu bar on every output (top layer,
-      exclusive zone, height from `neue-theme`), translucent gradient material with the
-      opaque fallback until 3.5; the logo menu (About, Preferences…, Lock Screen, Log
-      Out, Restart, Shut Down; logind over zbus), the focused app's name in bold, and the
-      clock extra. A `background` layer surface per output with a procedural default
-      picture and an optional image from config. Starting and restarting as decided in
-      3.1. Gallery "Shell" page with the bar's pieces.
+- [ ] **3.2 `neue-shell` skeleton, menu bar and desktop background**, split into 3.2a–c
+      (the platform had no per-output layers and no way for the shell to use 3.1's
+      protocol on its one connection).
+- [x] **3.2a Shell surfaces in platform and kit** · Opus. `neue-platform` tells the app
+      which outputs exist (added and removed, with name, logical size and scale) and
+      `LayerSpec` takes an output. The Wayland driver binds `neue_shell_manager_v1` when it
+      is offered and passes its window list (identifier, title, app id, state, closed) and
+      the active window up through `App`, and activate, minimise, unminimise, close,
+      `run_action` and `send_shortcut` down through `Ctx`. `neue-kit`: `Window::layer(..)`,
+      and output and shell events reaching `Application`. ADR. Icons, menu addresses,
+      system keys and minimise rectangles wait for the tasks that use them (3.7, 3.14,
+      3.16).
+      *Accept:* headless `neue-comp` tests run the real driver on a socket pair: a layer
+      surface lands on the second output, and window and active-window events arrive and
+      requests take effect; kit unit tests with the fake host.
+      *Done:* ADR 0067. `neue_platform::desktop` (re-exported as `neue_kit::desktop`);
+      `Ctx::keep_alive` / `Cx::keep_alive` keeps the shell running with no surface open.
+      Tests: `neue-comp/tests/platform_shell.rs`, `neue-kit/src/tests/desktop.rs`.
+- [ ] **3.2b `neue-shell` skeleton and menu bar** · Opus. After 3.2a. New crate
+      `shell/neue-shell`: one process, several layer surfaces, shared state (window list
+      from 3.1, settings, later the app registry); widgets in portable modules, the binary
+      Linux-only. A menu bar on every output (top layer, exclusive zone, height from
+      `neue-theme`), translucent gradient material with the opaque fallback until 3.5; the
+      logo menu (About, Preferences…, Lock Screen, Log Out, Restart, Shut Down; logind over
+      zbus), the focused app's name in bold, and the clock extra. Starting and restarting
+      as decided in 3.1: `--shell /usr/bin/neue-shell` in `neue-comp.service`. Gallery
+      "Shell" page with the bar's pieces.
       *Accept:* goldens of the bar (light/dark × scale 1 and 2); in the VM the name
       follows focus, the clock ticks, Log Out ends the session, `pkill neue-shell` brings
       the shell back within a second, all checked by the agent with screenshots.
       *Owner:* the bar on the PC at its native scale and on a second display.
+- [ ] **3.2c Desktop background** · Sonnet. After 3.2b. A `background` layer surface per
+      output with a procedural default picture (light and dark) and an optional image
+      from `neue-config`. The image decoder needs an ADR and a licence check (shared with
+      3.3's `png`/`resvg`).
+      *Accept:* goldens of the default picture; a VM screenshot with and without a
+      configured image.
 - [ ] **3.3 `neue-desktop` v0** · Sonnet. New portable crate: desktop entries (parsing,
       localisation, `Actions` including `new-window`, `NoDisplay`, `OnlyShowIn`), matching
       an app id to its entry (`StartupWMClass`, Flatpak ids, the file name), icon theme
@@ -98,7 +122,7 @@ their goldens and the gallery's "Shell" page run on macOS.
       org.gnome.desktop.interface color-scheme`.
 
 ## B. Menu bar
-- [ ] **3.7 Global menu A: registrar and DBusMenu** · Opus. After 3.2. In `neue-dbus`
+- [ ] **3.7 Global menu A: registrar and DBusMenu** · Opus. After 3.2b. In `neue-dbus`
       (ADR 0005 §1): `com.canonical.AppMenu.Registrar` owned by the shell, and a DBusMenu
       client (layout, properties, `AboutToShow`, events, toggles, shortcuts, icons,
       updates). The menu bar shows the focused window's menus as kit menus opened from the
@@ -128,7 +152,7 @@ their goldens and the gallery's "Shell" page run on macOS.
       *Accept:* headless tests: Super+C reaches a scripted client as Ctrl+C, an exempt app
       gets Super+C, compositor bindings still win; in the VM, Super+C/Super+V copy and
       paste in Firefox and the gallery, and foot gets Ctrl-Shift-C semantics unchanged.
-- [ ] **3.11 Menu extras: battery and Bluetooth** · Sonnet. After 3.2. zbus proxies for
+- [ ] **3.11 Menu extras: battery and Bluetooth** · Sonnet. After 3.2b. zbus proxies for
       UPower and BlueZ (not `bluer`, which links libdbus). Battery: icon with charge and
       state, menu with percentage and time left, hidden without a battery. Bluetooth:
       on/off, paired devices with connect and disconnect, hidden without an adapter.
@@ -136,7 +160,7 @@ their goldens and the gallery's "Shell" page run on macOS.
       services where the VM lacks the hardware.
       *Owner:* battery on a laptop if one is available; pairing and connecting a device on
       the PC.
-- [ ] **3.12 Menu extra: network** · Sonnet. After 3.2. NetworkManager over zbus: wired
+- [ ] **3.12 Menu extra: network** · Sonnet. After 3.2b. NetworkManager over zbus: wired
       and Wi-Fi state in the icon, the Wi-Fi list with signal and lock, Wi-Fi on/off, join
       a saved or open network, disconnect. Joining a new protected network needs a secret
       agent and is deferred (`nmtui` until then; note it in the plan).
@@ -148,7 +172,7 @@ their goldens and the gallery's "Shell" page run on macOS.
       DBusMenu client.
       *Accept:* unit tests; in the VM a tray app (`nm-applet --indicator` or a test SNI
       item) shows, its menu opens and its items act.
-- [ ] **3.14 Volume, brightness and OSDs** · Opus. After 3.1 and 3.2. ADR for
+- [ ] **3.14 Volume, brightness and OSDs** · Opus. After 3.1 and 3.2b. ADR for
       `pipewire-rs` (a C dependency, also used by 3.22). The volume extra (slider, mute,
       output device), media and volume keys routed by `neue-shell-v1`, brightness through
       logind `SetBrightness` on the backlight, and the rounded-square HUD OSD for both
@@ -157,7 +181,7 @@ their goldens and the gallery's "Shell" page run on macOS.
       the sink volume shown by `wpctl` and show the OSD.
       *Owner:* the volume you hear follows the keys and the slider; brightness keys on a
       laptop if available.
-- [ ] **3.15 Notifications** · Sonnet. After 3.2. An `org.freedesktop.Notifications`
+- [ ] **3.15 Notifications** · Sonnet. After 3.2b. An `org.freedesktop.Notifications`
       server in the shell (interface in `neue-dbus`): banners at the top right under the
       menu bar, sliding in with a spring, stacking, timing out; alerts for critical or
       persistent ones; default action on click and action buttons, with an activation
@@ -185,7 +209,7 @@ their goldens and the gallery's "Shell" page run on macOS.
       *Owner:* magnification feels right with a real mouse and trackpad.
 
 ## D. Session
-- [ ] **3.18 Lock screen** · Opus. After 3.2. An `ext-session-lock-v1` client on linen
+- [ ] **3.18 Lock screen** · Opus. After 3.2b. An `ext-session-lock-v1` client on linen
       (ADR 0015 §3): user picture and name, password field, a shake on a wrong password
       (reduced motion). ADR for the PAM binding (a C dependency) and for where the locker
       lives (in the shell or its own binary). Locks from the logo menu, a shortcut, idle
@@ -203,7 +227,7 @@ their goldens and the gallery's "Shell" page run on macOS.
       *Accept:* in the VM, a reboot shows the greeter; a wrong password shows an error, the
       right one starts the neueOS session.
       *Owner:* the greeter on the PC, including on the NVIDIA card.
-- [ ] **3.20 Polkit agent** · Sonnet. After 3.2. `neue-polkit-agent` registers as the
+- [ ] **3.20 Polkit agent** · Sonnet. After 3.2b. `neue-polkit-agent` registers as the
       session's authentication agent over zbus, runs polkit's own
       `polkit-agent-helper-1` as a subprocess (not linked), and shows a kit dialog: lock
       icon, message, user, password, Cancel and Authenticate, details disclosure, a shake

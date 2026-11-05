@@ -1,0 +1,129 @@
+//! What the desktop shell gets from a driver beyond windows (task 3.2a, ADR 0067): the
+//! outputs, so it can put a layer surface on each, and the compositor's window list and
+//! window requests through `neue_shell_v1` (ADR 0066).
+//!
+//! Only the Wayland driver fills these in. The winit driver reports no outputs and no
+//! shell protocol, and drops shell requests.
+
+/// Identifies an output for as long as it is connected. Never reused.
+#[derive(Debug, Clone, Copy, PartialEq, Eq, Hash, PartialOrd, Ord)]
+pub struct OutputId(u64);
+
+impl OutputId {
+    /// An id made outside a driver, for fakes in tests. Never mix such ids with a running
+    /// driver's.
+    pub const fn from_raw(raw: u64) -> Self {
+        Self(raw)
+    }
+}
+
+/// An output (a display) as the compositor describes it.
+#[derive(Debug, Clone, PartialEq)]
+pub struct OutputInfo {
+    pub id: OutputId,
+    /// The connector name (`eDP-1`, `HEADLESS-1`); empty if the compositor sent none.
+    pub name: String,
+    /// The human-readable description (make and model); may be empty.
+    pub description: String,
+    /// Size in logical pixels, which is what a layer surface spanning it measures.
+    pub logical_size: (u32, u32),
+    /// The integer scale `wl_output` advertises. Surfaces on it learn their exact
+    /// (fractional) scale on their own.
+    pub scale: i32,
+}
+
+/// An output appeared, changed or went away.
+#[derive(Debug, Clone, PartialEq)]
+pub enum OutputEvent {
+    /// Sent once the output's description is complete, including for every output that
+    /// existed when the driver started.
+    Added(OutputInfo),
+    /// Its mode, scale, name or position changed.
+    Changed(OutputInfo),
+    /// It was unplugged. The compositor closes layer surfaces on it on its own.
+    Removed(OutputId),
+}
+
+/// Identifies a window in the shell's window list (not one of the app's own windows) for
+/// as long as it exists. Never reused.
+#[derive(Debug, Clone, Copy, PartialEq, Eq, Hash, PartialOrd, Ord)]
+pub struct ToplevelId(u64);
+
+impl ToplevelId {
+    /// An id made outside a driver, for fakes in tests.
+    pub const fn from_raw(raw: u64) -> Self {
+        Self(raw)
+    }
+}
+
+/// A window in the compositor's window list.
+#[derive(Debug, Clone, Default, PartialEq, Eq)]
+pub struct Toplevel {
+    /// `window-N`, N being the `neuectl` window id; the same string as
+    /// `ext-foreign-toplevel-list`'s identifier.
+    pub identifier: String,
+    /// Empty when unset.
+    pub title: String,
+    /// Empty when unset.
+    pub app_id: String,
+    pub minimized: bool,
+    /// It asked for focus it wasn't given (the dock bounces its icon).
+    pub attention: bool,
+}
+
+/// What the compositor tells the shell (`neue_shell_v1`).
+#[derive(Debug, Clone, PartialEq, Eq)]
+pub enum ShellEvent {
+    /// A window appeared or changed: its whole state, sent when the compositor finishes a
+    /// batch of changes. The first one for an id is the window appearing.
+    Toplevel(ToplevelId, Toplevel),
+    /// The window is gone.
+    Closed(ToplevelId),
+    /// The window whose app owns the menu bar changed. `None`: no window is active (the
+    /// desktop was clicked, or the last window closed or was minimised). Always sent after
+    /// the window's own [`ShellEvent::Toplevel`].
+    Active(Option<ToplevelId>),
+    /// A [`ShellRequest::RunAction`] failed.
+    ActionFailed { name: String, message: String },
+}
+
+/// Modifiers of a key chord for [`ShellRequest::SendShortcut`].
+#[derive(Debug, Clone, Copy, Default, PartialEq, Eq)]
+#[allow(
+    clippy::struct_excessive_bools,
+    reason = "four independent modifiers, as in the protocol's bitfield"
+)]
+pub struct ChordModifiers {
+    pub shift: bool,
+    pub ctrl: bool,
+    pub alt: bool,
+    /// The Super key (⌘ on neueOS, Q1).
+    pub logo: bool,
+}
+
+/// What the shell asks the compositor to do (`neue_shell_v1`). Ignored when the
+/// compositor doesn't offer the protocol to this client ([`crate::Ctx::has_shell`]), and
+/// for windows that have closed.
+#[derive(Debug, Clone, PartialEq, Eq)]
+pub enum ShellRequest {
+    /// Raise and focus the window, restoring it if it's minimised.
+    Activate(ToplevelId),
+    /// Minimise the window and its dialogs.
+    Minimize(ToplevelId),
+    Unminimize(ToplevelId),
+    /// Ask the window to close, as its close button does.
+    Close(ToplevelId),
+    /// Run a compositor action, as `neuectl action` does. `window: None` acts on the
+    /// active window, or on none for actions that take no window. A failure comes back as
+    /// [`ShellEvent::ActionFailed`].
+    RunAction {
+        name: String,
+        window: Option<ToplevelId>,
+    },
+    /// Type a key chord into the active window (the fallback Edit menu). `keysym` is an
+    /// XKB keysym (`0x63` for c), so it works in any layout.
+    SendShortcut {
+        modifiers: ChordModifiers,
+        keysym: u32,
+    },
+}

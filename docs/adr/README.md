@@ -76,3 +76,4 @@ Don't edit an accepted ADR's decision; supersede it with a new one.
 | [0064](0064-neue-window-protocol.md) | `neue_window_v1`: a window tells neue-comp where its own chrome ends, and sheets hang under it | Accepted |
 | [0065](0065-imaging-fork-layer-texture-size.md) | Patch `imaging` from our fork so vello_gpu's layer textures can grow past 4096 px | Accepted |
 | [0066](0066-neue-shell-protocol.md) | `neue_shell_v1`: the compositor spawns the shell on a private socket, restarts it, and is the only one to offer it windows, actions, key chords and system keys | Accepted |
+| [0067](0067-shell-surfaces-in-platform-and-kit.md) | Shell surfaces: the platform reports outputs, places layer surfaces on them, binds `neue_shell_v1` for the shell and can run with no window; the kit exposes them | Accepted |

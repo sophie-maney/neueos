@@ -9,7 +9,8 @@ use std::sync::Arc;
 use masonry_core::app::RenderRoot;
 use masonry_core::core::{ErasedAction, FromDynWidget, NewWidget, Widget, WidgetId, WidgetMut};
 use masonry_core::peniko::{Blob, Color};
-use neue_platform::{Decorations, MenuAddress, WindowId, WindowSpec};
+use neue_platform::desktop::{OutputEvent, OutputInfo, ShellEvent, ShellRequest};
+use neue_platform::{Decorations, LayerSpec, MenuAddress, WindowId, WindowKind, WindowSpec};
 use neue_theme::Theme;
 
 use crate::element::{Element, Handle, Handler, Wiring};
@@ -43,6 +44,14 @@ pub trait Application {
     fn close_requested(&mut self, cx: &mut Cx<'_, Self::Message>, window: WindowId) {
         cx.close_window(window);
     }
+
+    /// An output appeared, changed or went away (Linux only; see [`crate::desktop`]). The
+    /// shell opens and closes its per-output layer surfaces here.
+    fn output(&mut self, _cx: &mut Cx<'_, Self::Message>, _event: OutputEvent) {}
+
+    /// The compositor's window list changed. Only the shell gets these
+    /// ([`Cx::has_shell`]).
+    fn shell(&mut self, _cx: &mut Cx<'_, Self::Message>, _event: ShellEvent) {}
 }
 
 /// App-wide settings for [`run`].
@@ -86,6 +95,8 @@ pub struct Window<M> {
     /// A HUD panel: its chrome is the dark HUD's.
     hud: bool,
     toolbar: Option<Element<M>>,
+    /// A layer-shell surface instead of a toplevel.
+    layer: Option<LayerSpec>,
 }
 
 impl<M> std::fmt::Debug for Window<M> {
@@ -99,6 +110,7 @@ impl<M> std::fmt::Debug for Window<M> {
             .field("chrome", &self.chrome)
             .field("hud", &self.hud)
             .field("toolbar", &self.toolbar.is_some())
+            .field("layer", &self.layer)
             .finish_non_exhaustive()
     }
 }
@@ -117,7 +129,18 @@ impl<M> Window<M> {
             chrome: false,
             hud: false,
             toolbar: None,
+            layer: None,
         }
+    }
+
+    /// Makes it a shell surface on a desktop layer (menu bar, dock, desktop background)
+    /// instead of an app window: no chrome, a transparent background (the root paints
+    /// everything), placed as `layer` says. Linux only; the winit driver opens a plain
+    /// window instead.
+    #[must_use]
+    pub fn layer(mut self, layer: LayerSpec) -> Self {
+        self.layer = Some(layer);
+        self
     }
 
     /// Overrides [`Settings::app_id`] for this window.
@@ -212,6 +235,9 @@ fn root_widget<M>(
 impl<M> Window<M> {
     /// Which chrome the window draws, if any.
     fn chrome_kind(&self) -> Option<ChromeKind> {
+        if self.layer.is_some() {
+            return None;
+        }
         match (self.chrome, self.hud) {
             (_, true) => Some(ChromeKind::Hud),
             (true, false) => Some(ChromeKind::Standard),
@@ -267,6 +293,10 @@ pub(crate) trait Host {
     /// Whether modal child windows exist ([`neue_platform::Ctx::has_modal_windows`]):
     /// sheets open as windows of their own, or else inside their parent.
     fn has_modal_windows(&self) -> bool;
+    fn keep_alive(&mut self);
+    fn outputs(&self) -> Vec<OutputInfo>;
+    fn has_shell(&self) -> bool;
+    fn shell(&mut self, request: ShellRequest);
 }
 
 impl Host for neue_platform::Ctx<'_> {
@@ -293,6 +323,18 @@ impl Host for neue_platform::Ctx<'_> {
     }
     fn has_modal_windows(&self) -> bool {
         neue_platform::Ctx::has_modal_windows(self)
+    }
+    fn keep_alive(&mut self) {
+        neue_platform::Ctx::keep_alive(self);
+    }
+    fn outputs(&self) -> Vec<OutputInfo> {
+        neue_platform::Ctx::outputs(self)
+    }
+    fn has_shell(&self) -> bool {
+        neue_platform::Ctx::has_shell(self)
+    }
+    fn shell(&mut self, request: ShellRequest) {
+        neue_platform::Ctx::shell(self, request);
     }
 }
 
@@ -386,7 +428,10 @@ impl<M> Cx<'_, M> {
         spec.modal = window.modal;
         spec.default_properties =
             Some(Arc::new(theme::default_properties(self.kit.settings.theme)));
-        if kind.is_some() {
+        if let Some(layer) = window.layer {
+            spec.kind = WindowKind::Layer(layer);
+            spec.background = Color::TRANSPARENT;
+        } else if kind.is_some() {
             // The chrome's top corners are rounded (a HUD's all of them); the root paints
             // everything else.
             spec.decorations = Decorations::Client;
@@ -572,6 +617,29 @@ impl<M> Cx<'_, M> {
     /// Ends the app after the current callback.
     pub fn exit(&mut self) {
         self.host.exit();
+    }
+
+    /// Keeps the app running while no window is open, until [`Cx::exit`]: for the shell,
+    /// whose surfaces come and go with the outputs.
+    pub fn keep_alive(&mut self) {
+        self.host.keep_alive();
+    }
+
+    /// The outputs connected now, in the order they appeared. Empty on macOS.
+    pub fn outputs(&self) -> Vec<OutputInfo> {
+        self.host.outputs()
+    }
+
+    /// Whether this app is the shell: the compositor offers it its window list and window
+    /// requests (`neue_shell_v1`, ADR 0066).
+    pub fn has_shell(&self) -> bool {
+        self.host.has_shell()
+    }
+
+    /// Asks the compositor to act on its windows (activate, minimise, close, run an
+    /// action, type a key chord). Dropped unless [`Cx::has_shell`].
+    pub fn shell(&mut self, request: ShellRequest) {
+        self.host.shell(request);
     }
 
     /// The app's theme.
@@ -980,6 +1048,18 @@ impl<A: Application> Runner<A> {
         self.drain(host);
     }
 
+    pub(crate) fn output(&mut self, host: &mut dyn Host, event: OutputEvent) {
+        let Some(kit) = &mut self.kit else { return };
+        self.app.output(&mut Cx { host, kit }, event);
+        self.drain(host);
+    }
+
+    pub(crate) fn shell(&mut self, host: &mut dyn Host, event: ShellEvent) {
+        let Some(kit) = &mut self.kit else { return };
+        self.app.shell(&mut Cx { host, kit }, event);
+        self.drain(host);
+    }
+
     /// Feeds every queued and mailed message to `update`, including ones `update` sends.
     pub(crate) fn drain(&mut self, host: &mut dyn Host) {
         let Some(kit) = &mut self.kit else { return };
@@ -1011,6 +1091,14 @@ impl<A: Application> neue_platform::App for Runner<A> {
 
     fn on_wake(&mut self, cx: &mut neue_platform::Ctx<'_>) {
         self.drain(cx);
+    }
+
+    fn on_output(&mut self, cx: &mut neue_platform::Ctx<'_>, event: OutputEvent) {
+        self.output(cx, event);
+    }
+
+    fn on_shell(&mut self, cx: &mut neue_platform::Ctx<'_>, event: ShellEvent) {
+        self.shell(cx, event);
     }
 }
 

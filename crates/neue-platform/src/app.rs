@@ -12,6 +12,8 @@ use masonry_core::app::RenderRoot;
 use masonry_core::core::{DefaultProperties, ErasedAction, NewWidget, Widget, WidgetId};
 use masonry_core::peniko::Color;
 
+use crate::desktop::{OutputEvent, OutputId, OutputInfo, ShellEvent, ShellRequest};
+
 /// Identifies a window for the lifetime of the driver. Never reused.
 #[derive(Debug, Clone, Copy, PartialEq, Eq, Hash, PartialOrd, Ord)]
 pub struct WindowId(u64);
@@ -165,6 +167,9 @@ pub struct LayerSpec {
     /// Space reserved at the anchored edge; 0 for none, -1 to ignore other surfaces' zones.
     pub exclusive_zone: i32,
     pub keyboard: LayerKeyboard,
+    /// The output to put it on; `None` lets the compositor choose (the active one). An
+    /// output that has gone away by the time the surface opens counts as `None`.
+    pub output: Option<OutputId>,
 }
 
 impl LayerSpec {
@@ -178,6 +183,7 @@ impl LayerSpec {
             margin: Margin::default(),
             exclusive_zone: 0,
             keyboard: LayerKeyboard::OnDemand,
+            output: None,
         }
     }
 }
@@ -224,6 +230,13 @@ impl Anchor {
         left: true,
         right: true,
     };
+    /// Every edge: the whole output (a desktop background).
+    pub const ALL: Self = Self {
+        top: true,
+        bottom: true,
+        left: true,
+        right: true,
+    };
 }
 
 /// Logical distance from the anchored edges.
@@ -267,6 +280,12 @@ pub trait App {
     /// Another thread called [`Waker::wake`]. Wakes coalesce: one call can stand for
     /// several, so drain whatever the other threads queued.
     fn on_wake(&mut self, _cx: &mut Ctx<'_>) {}
+
+    /// An output appeared, changed or went away (Wayland only; see [`crate::desktop`]).
+    fn on_output(&mut self, _cx: &mut Ctx<'_>, _event: OutputEvent) {}
+
+    /// The compositor's window list changed (`neue_shell_v1`; only the shell gets these).
+    fn on_shell(&mut self, _cx: &mut Ctx<'_>, _event: ShellEvent) {}
 }
 
 /// Wakes a driver's event loop from any thread; the loop then calls [`App::on_wake`].
@@ -362,6 +381,12 @@ impl<'a> Ctx<'a> {
         self.host.exit();
     }
 
+    /// Keeps the loop running while no window is open, until [`Ctx::exit`]: for the
+    /// shell, whose surfaces come and go with the outputs.
+    pub fn keep_alive(&mut self) {
+        self.host.keep_alive();
+    }
+
     /// A handle other threads use to wake the loop (see [`App::on_wake`]).
     pub fn waker(&self) -> Waker {
         self.host.waker()
@@ -379,6 +404,23 @@ impl<'a> Ctx<'a> {
     pub fn set_menu_address(&mut self, window: WindowId, address: Option<MenuAddress>) {
         self.host.set_menu_address(window, address);
     }
+
+    /// The outputs connected now, in the order they appeared. Empty on the winit driver.
+    pub fn outputs(&self) -> Vec<OutputInfo> {
+        self.host.outputs()
+    }
+
+    /// Whether the compositor offers this client `neue_shell_v1`: true only for the shell
+    /// the compositor started (ADR 0066).
+    pub fn has_shell(&self) -> bool {
+        self.host.has_shell()
+    }
+
+    /// Sends a request to the compositor over `neue_shell_v1`, after the callback returns.
+    /// Dropped (with a debug log) without the protocol.
+    pub fn shell(&mut self, request: ShellRequest) {
+        self.host.shell(request);
+    }
 }
 
 /// The driver side of [`Ctx`].
@@ -388,9 +430,13 @@ pub(crate) trait Host {
     fn render_root(&mut self, window: WindowId) -> Option<&mut RenderRoot>;
     fn window_ids(&self) -> Vec<WindowId>;
     fn exit(&mut self);
+    fn keep_alive(&mut self);
     fn waker(&self) -> Waker;
     fn set_menu_address(&mut self, window: WindowId, address: Option<MenuAddress>);
     fn set_primary_selection(&mut self, text: String);
+    fn outputs(&self) -> Vec<OutputInfo>;
+    fn has_shell(&self) -> bool;
+    fn shell(&mut self, request: ShellRequest);
 }
 
 /// A driver's open windows, the windows queued to open, and the exit flag.
@@ -403,8 +449,16 @@ pub(crate) struct Registry<W> {
     /// Queued by [`Ctx::set_primary_selection`]; the latest wins. The driver takes the
     /// selection after the callback.
     pub(crate) primary_selection: Option<String>,
+    /// Connected outputs, in the order they appeared; kept by the driver.
+    pub(crate) outputs: Vec<OutputInfo>,
+    /// Whether `neue_shell_manager_v1` is bound; set by the driver.
+    pub(crate) has_shell: bool,
+    /// Queued by [`Ctx::shell`]; the driver sends them after the callback.
+    pub(crate) shell_requests: Vec<ShellRequest>,
     next_id: u64,
     pub(crate) exit: bool,
+    /// Set by [`Ctx::keep_alive`]: no open window doesn't end the loop.
+    keep_alive: bool,
     pub(crate) waker: Waker,
 }
 
@@ -415,8 +469,12 @@ impl<W> Registry<W> {
             opening: Vec::new(),
             menu_addresses: Vec::new(),
             primary_selection: None,
+            outputs: Vec::new(),
+            has_shell: false,
+            shell_requests: Vec::new(),
             next_id: 0,
             exit: false,
+            keep_alive: false,
             waker,
         }
     }
@@ -464,6 +522,10 @@ impl<W: DriverWindow> Host for Registry<W> {
         self.exit = true;
     }
 
+    fn keep_alive(&mut self) {
+        self.keep_alive = true;
+    }
+
     fn waker(&self) -> Waker {
         self.waker.clone()
     }
@@ -477,12 +539,29 @@ impl<W: DriverWindow> Host for Registry<W> {
             self.primary_selection = Some(text);
         }
     }
+
+    fn outputs(&self) -> Vec<OutputInfo> {
+        self.outputs.clone()
+    }
+
+    fn has_shell(&self) -> bool {
+        self.has_shell
+    }
+
+    fn shell(&mut self, request: ShellRequest) {
+        if self.has_shell {
+            self.shell_requests.push(request);
+        } else {
+            tracing::debug!(?request, "no neue_shell_v1: request dropped");
+        }
+    }
 }
 
 impl<W> Registry<W> {
-    /// Whether the loop should end: exit was requested, or every window has closed.
+    /// Whether the loop should end: exit was requested, or every window has closed (unless
+    /// kept alive).
     pub(crate) fn done(&self) -> bool {
-        self.exit || (self.windows.is_empty() && self.opening.is_empty())
+        self.exit || (!self.keep_alive && self.windows.is_empty() && self.opening.is_empty())
     }
 }
 
@@ -563,6 +642,15 @@ mod tests {
         Ctx::new(&mut reg).close_window(id);
         assert!(reg.done());
         Ctx::new(&mut reg).open_window(spec());
+        Ctx::new(&mut reg).exit();
+        assert!(reg.done());
+    }
+
+    #[test]
+    fn kept_alive_without_windows_until_exit() {
+        let mut reg = Registry::<Dummy>::new(Waker::new(|| {}));
+        Ctx::new(&mut reg).keep_alive();
+        assert!(!reg.done());
         Ctx::new(&mut reg).exit();
         assert!(reg.done());
     }

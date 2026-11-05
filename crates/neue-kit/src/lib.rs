@@ -78,6 +78,14 @@ pub use widgets::{
     ToolbarButton, VirtualGrid, VirtualList, Zoom,
 };
 
+/// What only the desktop shell uses (task 3.2a, ADR 0067): layer surfaces
+/// ([`Window::layer`]), outputs ([`Application::output`]) and the compositor's window list
+/// and window requests ([`Application::shell`], [`Cx::shell`]).
+pub mod desktop {
+    pub use neue_platform::desktop::*;
+    pub use neue_platform::{Anchor, LayerKeyboard, LayerSpec, Margin, ShellLayer};
+}
+
 /// Design tokens (colours, metrics, type scale, motion).
 pub use neue_theme as tokens;
 pub use neue_theme::{Accent, Appearance, Contrast, Theme, Variant};

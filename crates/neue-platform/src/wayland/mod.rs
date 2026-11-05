@@ -22,6 +22,7 @@
 
 mod access;
 mod clipboard;
+mod desktop;
 mod handle;
 mod input;
 mod keymap;
@@ -66,7 +67,7 @@ use smithay_client_toolkit::shell::xdg::{XdgShell, XdgSurface as _};
 use smithay_client_toolkit::shm::Shm;
 use smithay_client_toolkit::{delegate_dispatch2, delegate_registry, registry_handlers};
 use wayland_client::globals::{GlobalList, registry_queue_init};
-use wayland_client::protocol::wl_surface;
+use wayland_client::protocol::{wl_output, wl_surface};
 use wayland_client::{Connection, Proxy, QueueHandle};
 use wayland_protocols::wp::fractional_scale::v1::client::{
     wp_fractional_scale_manager_v1::WpFractionalScaleManagerV1,
@@ -181,12 +182,14 @@ pub fn run_with_connection(
         registry: RegistryState::new(&globals),
         seats: SeatState::new(&globals, &qh),
         outputs: OutputState::new(&globals, &qh),
+        desktop: desktop::Desktop::bind(&globals, &qh),
         input: seat::Input::default(),
         loop_handle: event_loop.handle(),
         qh,
         conn: conn.clone(),
         options,
     };
+    state.reg.has_shell = state.desktop.has_shell();
     // sctk binds the seats that exist at start-up without calling `new_seat` for them.
     let seats: Vec<_> = state.seats.seats().collect();
     for seat in seats {
@@ -536,6 +539,8 @@ impl DriverWindow for Win {
 enum AppEvent {
     Action(WindowId, WidgetId, ErasedAction),
     CloseRequested(WindowId),
+    Output(crate::desktop::OutputEvent),
+    Shell(crate::desktop::ShellEvent),
 }
 
 struct State {
@@ -549,6 +554,8 @@ struct State {
     registry: RegistryState,
     seats: SeatState,
     outputs: OutputState,
+    /// Outputs as the app knows them, and `neue_shell_v1`.
+    desktop: desktop::Desktop,
     input: seat::Input,
     clipboard: Clipboard,
     access_tx: Sender<(WindowId, AccessEvent)>,
@@ -577,6 +584,7 @@ impl State {
             for (id, address) in std::mem::take(&mut self.reg.menu_addresses) {
                 self.set_menu_address(id, address);
             }
+            self.send_shell_requests();
             if let Some(text) = self.reg.primary_selection.take() {
                 progress = true;
                 self.store_primary(text);
@@ -603,6 +611,8 @@ impl State {
                         app.on_action(cx, id, widget, action);
                     }
                     AppEvent::CloseRequested(id) => app.on_close_requested(cx, id),
+                    AppEvent::Output(event) => app.on_output(cx, event),
+                    AppEvent::Shell(event) => app.on_shell(cx, event),
                 }
             }
             if !progress {
@@ -629,7 +639,14 @@ impl State {
         let toplevel = !matches!(spec.kind, WindowKind::Layer(_));
         let shell = match (spec.kind, &self.g.layer_shell) {
             (WindowKind::Layer(layer), Some(layer_shell)) => {
-                Shell::Layer(create_layer(layer_shell, &qh, wl, &layer, size))
+                let output = layer.output.and_then(|o| {
+                    let found = self.desktop.wl_output(o);
+                    if found.is_none() {
+                        tracing::warn!(%id, ?o, "layer surface's output is gone; compositor picks");
+                    }
+                    found
+                });
+                Shell::Layer(create_layer(layer_shell, &qh, wl, &layer, size, output))
             }
             _ => {
                 let decorations = match spec.decorations {
@@ -1301,6 +1318,7 @@ fn create_layer(
     wl: wl_surface::WlSurface,
     spec: &LayerSpec,
     size: (u32, u32),
+    output: Option<&wl_output::WlOutput>,
 ) -> LayerSurface {
     let level = match spec.layer {
         ShellLayer::Background => wlr_layer::Layer::Background,
@@ -1308,7 +1326,8 @@ fn create_layer(
         ShellLayer::Top => wlr_layer::Layer::Top,
         ShellLayer::Overlay => wlr_layer::Layer::Overlay,
     };
-    let layer = layer_shell.create_layer_surface(qh, wl, level, Some(spec.namespace.clone()), None);
+    let layer =
+        layer_shell.create_layer_surface(qh, wl, level, Some(spec.namespace.clone()), output);
     layer.set_anchor(layer_anchor(spec.anchor));
     layer.set_size(size.0, size.1);
     let m = spec.margin;

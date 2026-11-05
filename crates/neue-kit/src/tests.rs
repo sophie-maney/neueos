@@ -22,6 +22,7 @@ mod collection;
 mod colors;
 mod controls;
 mod dates;
+mod desktop;
 mod editmenu;
 mod fields;
 mod grid;
@@ -72,6 +73,13 @@ struct FakeHost {
     modal_windows: bool,
     /// The primary selection a text field last set.
     primary_selection: Option<String>,
+    /// Each window's kind (toplevel or layer surface).
+    kinds: BTreeMap<WindowId, neue_platform::WindowKind>,
+    /// The outputs the fake reports.
+    outputs: Vec<neue_platform::desktop::OutputInfo>,
+    /// Whether it offers the shell protocol, and the shell requests sent.
+    shell: bool,
+    shell_requests: Vec<neue_platform::desktop::ShellRequest>,
 }
 
 impl Host for FakeHost {
@@ -105,6 +113,7 @@ impl Host for FakeHost {
             .insert(id, (spec.focus_fallback, spec.decorations, spec.background));
         self.dialogs
             .insert(id, (spec.parent, spec.modal, (spec.width, spec.height)));
+        self.kinds.insert(id, spec.kind);
         id
     }
     fn close_window(&mut self, window: WindowId) {
@@ -130,6 +139,18 @@ impl Host for FakeHost {
     }
     fn has_modal_windows(&self) -> bool {
         self.modal_windows
+    }
+    fn keep_alive(&mut self) {}
+    fn outputs(&self) -> Vec<neue_platform::desktop::OutputInfo> {
+        self.outputs.clone()
+    }
+    fn has_shell(&self) -> bool {
+        self.shell
+    }
+    fn shell(&mut self, request: neue_platform::desktop::ShellRequest) {
+        if self.shell {
+            self.shell_requests.push(request);
+        }
     }
 }
 
