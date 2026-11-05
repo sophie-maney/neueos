@@ -8,7 +8,7 @@ use neue_kit::{
     Slider, SortOrder, SourceList, Specimen, Spinner, Stack, Stepper, Table, TextField, TextView,
     VectorIcon, VirtualGrid, VirtualList,
 };
-use neue_kit::{DividerStyle, Pane, SplitView, TabView};
+use neue_kit::{DividerStyle, Pane, SplitView, TabView, Window};
 
 /// Golden window size for one push button (logical pixels): the button with the fixture's
 /// margin, room for its focus ring.
@@ -733,4 +733,25 @@ pub fn tab_view<M: 'static>(selected: usize) -> TabView<M> {
         .selected(selected)
         .width(260.0)
         .height(90.0)
+}
+
+/// Golden window size for a window with its own title bar.
+pub const CHROME_SIZE: (u32, u32) = (240, 60);
+/// Golden window size for a window with a unified toolbar.
+pub const TOOLBAR_SIZE: (u32, u32) = (300, 90);
+
+/// A window that draws its own title bar over some content.
+pub fn window_chrome<M: 'static>() -> Window<M> {
+    Window::new("Untitled", CHROME_SIZE, pane_label("Content")).chrome()
+}
+
+/// A window with a unified title bar and toolbar: two buttons and a label.
+pub fn window_toolbar<M: 'static>() -> Window<M> {
+    let toolbar = Stack::row()
+        .spacing(8.0)
+        .align(Align::Center)
+        .with(Button::new("Back"))
+        .with(Button::new("Forward"))
+        .with(Label::new("Documents"));
+    Window::new("Documents", TOOLBAR_SIZE, pane_label("Content")).toolbar(toolbar)
 }

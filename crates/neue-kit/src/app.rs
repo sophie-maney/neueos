@@ -8,8 +8,8 @@ use std::sync::Arc;
 
 use masonry_core::app::RenderRoot;
 use masonry_core::core::{ErasedAction, FromDynWidget, NewWidget, Widget, WidgetId, WidgetMut};
-use masonry_core::peniko::Blob;
-use neue_platform::{MenuAddress, WindowId, WindowSpec};
+use masonry_core::peniko::{Blob, Color};
+use neue_platform::{Decorations, MenuAddress, WindowId, WindowSpec};
 use neue_theme::Theme;
 
 use crate::element::{Element, Handle, Handler, Wiring};
@@ -17,7 +17,7 @@ use crate::menu::Menu;
 use crate::menubar::MenuBars;
 use crate::task::{Mailbox, Sender, Task};
 use crate::theme;
-use crate::widgets::{ButtonWidget, Pressed, Rewired, RootAction, RootWidget, RowsWidget};
+use crate::widgets::{ButtonWidget, Chrome, Pressed, Rewired, RootAction, RootWidget, RowsWidget};
 
 /// An app: its state is the model, [`Application::Message`] is everything that can happen
 /// to it, and [`Application::update`] is the only place the state changes.
@@ -78,6 +78,9 @@ pub struct Window<M> {
     parent: Option<WindowId>,
     modal: bool,
     menu_bar: Option<Menu<M>>,
+    /// Draws its own chrome (ADR 0055).
+    chrome: bool,
+    toolbar: Option<Element<M>>,
 }
 
 impl<M> std::fmt::Debug for Window<M> {
@@ -88,6 +91,8 @@ impl<M> std::fmt::Debug for Window<M> {
             .field("parent", &self.parent)
             .field("modal", &self.modal)
             .field("menu_bar", &self.menu_bar)
+            .field("chrome", &self.chrome)
+            .field("toolbar", &self.toolbar.is_some())
             .finish_non_exhaustive()
     }
 }
@@ -103,6 +108,8 @@ impl<M> Window<M> {
             parent: None,
             modal: false,
             menu_bar: None,
+            chrome: false,
+            toolbar: None,
         }
     }
 
@@ -127,6 +134,26 @@ impl<M> Window<M> {
         self
     }
 
+    /// Draws the window's own title bar, with the traffic lights and the title, instead of
+    /// the compositor's (client-side chrome, ADR 0055). It looks the same: the bar comes
+    /// from the same `neue-paint` code. Drag it to move the window, double-click it to
+    /// zoom. [`Window::toolbar`] implies it.
+    #[must_use]
+    pub fn chrome(mut self) -> Self {
+        self.chrome = true;
+        self
+    }
+
+    /// A unified title bar and toolbar: `toolbar` sits under the title row, inside the
+    /// chrome's gradient, across the window. Bare areas of the toolbar move the window like
+    /// the title row does. Implies [`Window::chrome`].
+    #[must_use]
+    pub fn toolbar(mut self, toolbar: impl Into<Element<M>>) -> Self {
+        self.chrome = true;
+        self.toolbar = Some(toolbar.into());
+        self
+    }
+
     /// The window's menu bar: its items are the menu titles, each a submenu. Shown in the
     /// global menu bar on neueOS (exported over D-Bus, ADR 0047); not shown on macOS
     /// hosts yet. Change it with [`Cx::set_menu_bar`].
@@ -134,6 +161,33 @@ impl<M> Window<M> {
     pub fn menu_bar(mut self, menu: Menu<M>) -> Self {
         self.menu_bar = Some(menu);
         self
+    }
+}
+
+/// A window's root widget around `content`, with chrome if it has some, and the wiring of
+/// the content and of the toolbar.
+fn root_widget<M>(
+    title: &str,
+    content: Element<M>,
+    chrome: bool,
+    toolbar: Option<Element<M>>,
+) -> (RootWidget, Wiring<M>, Option<Wiring<M>>) {
+    let (content, wiring) = content.into_parts();
+    let (toolbar, toolbar_wiring) = toolbar.map(Element::into_parts).unzip();
+    let root = if chrome {
+        RootWidget::with_chrome(content, Chrome::new(title.to_owned(), toolbar))
+    } else {
+        RootWidget::new(content)
+    };
+    (root, wiring, toolbar_wiring)
+}
+
+#[cfg(feature = "testing")]
+impl<M> Window<M> {
+    /// The root widget the window opens with, and its size; message handlers are dropped.
+    pub(crate) fn into_root(self) -> (RootWidget, (u32, u32)) {
+        let (root, ..) = root_widget(&self.title, self.root, self.chrome, self.toolbar);
+        (root, self.size)
     }
 }
 
@@ -221,19 +275,29 @@ impl<M> Cx<'_, M> {
     /// Opens a window. It appears after the current callback returns; handles to its
     /// widgets work from then on.
     pub fn open_window(&mut self, window: Window<M>) -> WindowId {
-        let (content, wiring) = window.root.into_parts();
-        let root = NewWidget::new(RootWidget::new(content));
+        let (root, wiring, toolbar_wiring) =
+            root_widget(&window.title, window.root, window.chrome, window.toolbar);
+        let root = NewWidget::new(root);
         let root_id = root.id();
         let mut spec = WindowSpec::new(window.title, window.size, root.erased());
         spec.focus_fallback = Some(root_id);
         spec.app_id = window
             .app_id
             .unwrap_or_else(|| self.kit.settings.app_id.clone());
-        spec.background = self.kit.settings.theme.colors().window_background;
         spec.parent = window.parent;
         spec.modal = window.modal;
+        if window.chrome {
+            // The chrome's top corners are rounded; the root paints everything else.
+            spec.decorations = Decorations::Client;
+            spec.background = Color::TRANSPARENT;
+        } else {
+            spec.background = self.kit.settings.theme.colors().window_background;
+        }
         let id = self.host.open_window(spec);
         self.register_wiring(id, wiring);
+        if let Some(wiring) = toolbar_wiring {
+            self.register_wiring(id, wiring);
+        }
         if let Some(menu) = window.menu_bar {
             self.set_menu_bar(id, menu);
         }
@@ -441,9 +505,12 @@ impl<A: Application> Runner<A> {
         self.drain(host);
     }
 
-    /// Handles a window root's action: Return presses the default button, and window focus
-    /// changes its look.
+    /// Handles a window root's action: Return presses the default button, window focus
+    /// changes its look, and the chrome's close button asks the app to close the window.
     fn root_action(&mut self, host: &mut dyn Host, window: WindowId, action: RootAction) {
+        if action == RootAction::Close {
+            return self.close_requested(host, window);
+        }
         let Some(kit) = &mut self.kit else { return };
         let Some(&id) = kit.defaults.get(&window) else {
             return;
@@ -464,6 +531,7 @@ impl<A: Application> Runner<A> {
                 }
                 self.drain(host);
             }
+            RootAction::Close => {}
             RootAction::WindowFocus(_) => {
                 if root.has_widget(id) {
                     root.edit_widget(id, |mut button| {

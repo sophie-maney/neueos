@@ -115,6 +115,11 @@ impl TextLine {
         )
     }
 
+    /// The width of the last layout ([`size`](Self::size) lays it out).
+    pub(crate) fn width(&self) -> f64 {
+        f64::from(self.layout.width())
+    }
+
     /// The first line's baseline, from the top of the layout.
     pub(crate) fn baseline(&self) -> f64 {
         self.layout

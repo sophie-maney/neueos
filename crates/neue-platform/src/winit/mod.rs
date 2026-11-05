@@ -45,7 +45,7 @@ use winit::window::{
 
 use crate::app::{DriverWindow, Registry};
 use crate::gpu::{Gpu, GpuError, SurfaceTarget};
-use crate::{App, Ctx, Options, Waker, WindowId, WindowKind, WindowSpec};
+use crate::{App, Ctx, Decorations, Options, Waker, WindowId, WindowKind, WindowSpec};
 use clipboard::Clipboard;
 
 /// Driver errors.
@@ -217,6 +217,10 @@ impl Driver<'_> {
             .with_inner_size(LogicalSize::new(spec.width, spec.height))
             // Shown after the first frame, and AccessKit must attach to a hidden window.
             .with_visible(false);
+        let attributes = match spec.decorations {
+            Decorations::Server => attributes,
+            Decorations::Client => client_chrome(attributes),
+        };
         let handle = Arc::new(event_loop.create_window(attributes)?);
         let accesskit = Adapter::with_event_loop_proxy(event_loop, &handle, self.proxy.clone());
         // Same instance either way; the GPU's copy once it exists.
@@ -509,6 +513,18 @@ fn ime_event(ime: WinitIme) -> Ime {
         WinitIme::Preedit(text, cursor) => Ime::Preedit(text, cursor),
         WinitIme::Commit(text) => Ime::Commit(text),
     }
+}
+
+/// A window that draws its own chrome (ADR 0055): the title bar is transparent and spans
+/// the content, the native title and buttons are hidden, and the native shadow, corners and
+/// resizing stay.
+fn client_chrome(attributes: WindowAttributes) -> WindowAttributes {
+    use winit::platform::macos::WindowAttributesExtMacOS as _;
+    attributes
+        .with_titlebar_transparent(true)
+        .with_fullsize_content_view(true)
+        .with_title_hidden(true)
+        .with_titlebar_buttons_hidden(true)
 }
 
 fn resize_direction(direction: ResizeDirection) -> WinitResizeDirection {

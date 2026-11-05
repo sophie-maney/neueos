@@ -12,10 +12,12 @@ use masonry_core::app::RenderRoot;
 use masonry_core::core::keyboard::{Key, KeyState, KeyboardEvent, NamedKey};
 use masonry_core::core::{NewWidget, TextEvent, WidgetId};
 use masonry_core::kurbo::Axis;
+use masonry_core::peniko::Color;
 use masonry_testing::{TestHarness, TestHarnessParams};
-use neue_platform::{MenuAddress, WindowId, WindowSpec};
+use neue_platform::{Decorations, MenuAddress, WindowId, WindowSpec};
 use neue_theme::Theme;
 
+mod chrome;
 mod collection;
 mod controls;
 mod editmenu;
@@ -50,6 +52,8 @@ struct FakeHost {
     theme: Theme,
     /// Each window's menu-bar address, as last set.
     menu_addresses: BTreeMap<WindowId, MenuAddress>,
+    /// Each window's root widget (its focus fallback), decorations and background.
+    specs: BTreeMap<WindowId, (Option<WidgetId>, Decorations, Color)>,
 }
 
 impl Host for FakeHost {
@@ -57,6 +61,11 @@ impl Host for FakeHost {
         let id = WindowId::from_raw(self.next);
         self.next += 1;
         let mut root = StackWidget::new(Axis::Vertical, 0.0);
+        // A chrome spans the window, as a driver lays the root out. (Other roots keep their
+        // content's width, which older tests rely on.)
+        if spec.decorations == Decorations::Client {
+            root.align = crate::Align::Fill;
+        }
         root.push(spec.root);
         let mut harness = TestHarness::create_with(
             default_properties(self.theme),
@@ -65,6 +74,8 @@ impl Host for FakeHost {
         );
         harness.set_focus_fallback(spec.focus_fallback);
         self.windows.insert(id, harness);
+        self.specs
+            .insert(id, (spec.focus_fallback, spec.decorations, spec.background));
         id
     }
     fn close_window(&mut self, window: WindowId) {

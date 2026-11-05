@@ -74,6 +74,17 @@ windows currently get that bar. PLAN §3.1 says kit apps draw their own unified 
   comparisons show that taller bars need a darker bottom, revisit this in
   `neue_theme::materials::title_bar`.
 
+## Implementation notes (2.22b)
+- `neue_platform::WindowSpec::decorations` (`Decorations::{Server, Client}`) carries the
+  choice to the drivers; `Server` stays the default, so layer surfaces and plain windows
+  are unchanged.
+- The chrome is part of the window's root widget rather than a wrapper around it: the root
+  is the focus fallback and every widget's ancestor, so window focus changes and
+  unhandled pointer and access events reach it. The traffic lights are AccessKit-only
+  child widgets that take no pointer input.
+- A press counts as a press on the bar only if no descendant captured the pointer:
+  several kit controls capture without marking the press handled.
+
 ## Revisit when
 - The compositor gains shadows (check that client-side windows get them).
 - Clients should follow `title-bar-double-click` (it needs a settings channel, Phase 3).

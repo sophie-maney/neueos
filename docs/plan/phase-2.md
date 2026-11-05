@@ -452,7 +452,7 @@ the paper and leather materials move to Phase 6/7 (Widgets, Write).
         (the bar's palette and metrics serve both). `titlebar-*` goldens unchanged; a unit
         test that 22 px chrome matches `title_bar`; 16 goldens `chrome-{22,52}-…` (macOS;
         Linux not run). neue-comp checked on Linux aarch64.
-  - [ ] **2.22b Kit window chrome** · Opus. `Window::toolbar(...)` wraps the root in a
+  - [x] **2.22b Kit window chrome** · Opus. `Window::toolbar(...)` wraps the root in a
         chrome widget: the bar, traffic lights (glyphs on group hover, pressed, close /
         minimise / zoom), the title, drag to move, double-click to zoom, the inactive look
         when the window loses focus. The Wayland driver asks for client-side decorations
@@ -460,6 +460,21 @@ the paper and leather materials move to Phase 6/7 (Widgets, Write).
         full-size title bar with the native buttons hidden. AccessKit labels on the buttons.
         *Accept:* end-to-end tests (button actions, drag signal, double-click, inactive
         look); goldens; the gallery window uses it; VM steps in `docs/checks/phase-2.md`.
+        *Done:* `Window::chrome()` (title bar only) and `Window::toolbar(element)`. The
+        window root draws the chrome (`widgets/chrome.rs`, not a separate wrapper widget:
+        the root is the focus fallback, so it sees window focus changes and every bubbled
+        pointer event); the traffic lights are pointer-transparent AccessKit buttons
+        ("Close", "Minimise", "Zoom") that the root paints and handles. A press on the bar
+        that no control captured moves the window (`drag_window`), a double-click zooms;
+        close goes through `Application::close_requested`. `neue_platform::Decorations`
+        on `WindowSpec`: `Client` asks for `RequestClient` on Wayland and a transparent
+        full-size title bar with hidden native title and buttons on macOS; chrome windows
+        clear to transparent. Tokens `TOOLBAR_INSET`, `TOOLBAR_BOTTOM`. 7 end-to-end tests;
+        24 goldens `window-{chrome,toolbar}-…` (macOS and Linux aarch64; x86_64 not run); `testing::
+        check_window_states`. The gallery's theme switches moved into its toolbar. VM
+        steps in `docs/checks/phase-2.md` §19, not run; macOS checked only by build and
+        tests (no interactive run). Not yet: a title-changing API, title ellipsis (the
+        title is clipped).
   - [ ] **2.22c Toolbar items** · Sonnet. `Toolbar` items: icon-and-label buttons,
         segmented control, search field, flexible and fixed space, separator; display modes
         (icon and text, icon only, text only); keyboard and the AccessKit `Toolbar` role.
