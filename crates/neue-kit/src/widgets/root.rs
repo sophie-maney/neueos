@@ -2,6 +2,10 @@
 //! it has some (ADR 0055), and turns window-wide keys into actions neue-kit's runner handles
 //! (ADR 0037).
 //!
+//! While a sheet is open on the window (ADR 0057), the root lays a scrim over its content,
+//! under the chrome, that takes the pointer's events so the content gets none. Where the
+//! sheet is not a window of its own, the root also draws it, centred under the chrome.
+//!
 //! It is the window's focus fallback, so it sees keys while nothing has focus; keys a
 //! focused widget leaves unhandled bubble up to it as well.
 
@@ -10,15 +14,16 @@ use std::any::TypeId;
 use masonry_core::accesskit::{Node, Role};
 use masonry_core::core::keyboard::{Key, NamedKey};
 use masonry_core::core::{
-    AccessCtx, AccessEvent, ChildrenIds, EventCtx, LayoutCtx, MeasureCtx, NewWidget, PaintCtx,
-    PointerEvent, PropertiesMut, PropertiesRef, RegisterCtx, TextEvent, Update, UpdateCtx,
-    UsesProperty, Widget, WidgetPod,
+    AccessCtx, AccessEvent, ChildrenIds, EventCtx, LayoutCtx, MeasureCtx, NewWidget, NoAction,
+    PaintCtx, PointerEvent, PropertiesMut, PropertiesRef, RegisterCtx, TextEvent, Update,
+    UpdateCtx, UsesProperty, Widget, WidgetMut, WidgetPod,
 };
 use masonry_core::imaging::Painter;
 use masonry_core::kurbo::{Axis, Point, Rect, Size};
 use masonry_core::layout::{LayoutSize, LenReq, Length};
 
 use super::chrome::Chrome;
+use super::sheet::SheetWidget;
 use crate::theme::ThemeProp;
 
 /// What a window root reports to the runner.
@@ -37,6 +42,15 @@ pub(crate) enum RootAction {
 pub(crate) struct RootWidget {
     child: WidgetPod<dyn Widget>,
     chrome: Option<Chrome>,
+    sheet: Option<Attached>,
+}
+
+/// A sheet open on the window: the scrim over the content, and the sheet itself unless it
+/// is a window of its own.
+#[derive(Debug)]
+struct Attached {
+    scrim: WidgetPod<Scrim>,
+    panel: Option<(WidgetPod<SheetWidget>, Size)>,
 }
 
 impl RootWidget {
@@ -44,6 +58,7 @@ impl RootWidget {
         Self {
             child: child.to_pod(),
             chrome: None,
+            sheet: None,
         }
     }
 
@@ -52,6 +67,36 @@ impl RootWidget {
         Self {
             child: child.to_pod(),
             chrome: Some(chrome),
+            sheet: None,
+        }
+    }
+
+    /// Blocks pointer input to the content for a sheet, and draws `panel` (a sheet that
+    /// isn't a window of its own) under the chrome. Replaces a sheet already there.
+    pub(crate) fn attach_sheet(
+        this: &mut WidgetMut<'_, Self>,
+        panel: Option<NewWidget<SheetWidget>>,
+    ) {
+        Self::detach_sheet(this);
+        let panel = panel.map(|mut panel| {
+            panel.widget.set_attached(true);
+            let size = panel.widget.size();
+            (panel.to_pod(), size)
+        });
+        this.widget.sheet = Some(Attached {
+            scrim: NewWidget::new(Scrim).to_pod(),
+            panel,
+        });
+        this.ctx.children_changed();
+    }
+
+    /// Removes the sheet's scrim and panel, if there are any.
+    pub(crate) fn detach_sheet(this: &mut WidgetMut<'_, Self>) {
+        if let Some(sheet) = this.widget.sheet.take() {
+            this.ctx.remove_child(sheet.scrim);
+            if let Some((panel, _)) = sheet.panel {
+                this.ctx.remove_child(panel);
+            }
         }
     }
 
@@ -121,6 +166,12 @@ impl Widget for RootWidget {
             chrome.register_children(ctx);
         }
         ctx.register_child(&mut self.child);
+        if let Some(sheet) = &mut self.sheet {
+            ctx.register_child(&mut sheet.scrim);
+            if let Some((panel, _)) = &mut sheet.panel {
+                ctx.register_child(panel);
+            }
+        }
     }
 
     fn update(&mut self, ctx: &mut UpdateCtx<'_>, _props: &mut PropertiesMut<'_>, event: &Update) {
@@ -167,6 +218,21 @@ impl Widget for RootWidget {
         let content = Size::new(size.width, (size.height - top).max(0.0));
         ctx.run_layout(&mut self.child, content);
         ctx.place_child(&mut self.child, Point::new(0.0, top));
+        if let Some(sheet) = &mut self.sheet {
+            ctx.run_layout(&mut sheet.scrim, content);
+            ctx.place_child(&mut sheet.scrim, Point::new(0.0, top));
+            if let Some((panel, wanted)) = &mut sheet.panel {
+                // As asked, but no wider or taller than the content area; centred, its top
+                // edge under the chrome.
+                let fit = Size::new(
+                    wanted.width.min(content.width),
+                    wanted.height.min(content.height),
+                );
+                ctx.run_layout(panel, fit);
+                let x = ((size.width - fit.width) / 2.0).round();
+                ctx.place_child(panel, Point::new(x, top));
+            }
+        }
     }
 
     fn paint(
@@ -203,10 +269,57 @@ impl Widget for RootWidget {
 
     fn children_ids(&self) -> ChildrenIds {
         // The chrome first: reading order is the window controls, the toolbar, the content.
+        // The sheet last: it is on top.
         self.chrome
             .iter()
             .flat_map(Chrome::children_ids)
             .chain(std::iter::once(self.child.id()))
+            .chain(self.sheet.iter().flat_map(|sheet| {
+                std::iter::once(sheet.scrim.id())
+                    .chain(sheet.panel.as_ref().map(|(panel, _)| panel.id()))
+            }))
             .collect()
+    }
+}
+
+/// An invisible widget over a window's content while a sheet is open: the pointer's events
+/// land on it instead of on the content.
+#[derive(Debug)]
+pub(crate) struct Scrim;
+
+impl Widget for Scrim {
+    type Action = NoAction;
+
+    fn register_children(&mut self, _ctx: &mut RegisterCtx<'_>) {}
+
+    fn measure(
+        &mut self,
+        _ctx: &mut MeasureCtx<'_>,
+        _props: &PropertiesRef<'_>,
+        _axis: Axis,
+        _len_req: LenReq,
+        _cross_length: Option<Length>,
+    ) -> Length {
+        Length::ZERO
+    }
+
+    fn layout(&mut self, _ctx: &mut LayoutCtx<'_>, _props: &PropertiesRef<'_>, _size: Size) {}
+
+    fn paint(&mut self, _ctx: &mut PaintCtx<'_>, _props: &PropertiesRef<'_>, _: &mut Painter<'_>) {}
+
+    fn accessibility_role(&self) -> Role {
+        Role::GenericContainer
+    }
+
+    fn accessibility(
+        &mut self,
+        _ctx: &mut AccessCtx<'_>,
+        _props: &PropertiesRef<'_>,
+        _node: &mut Node,
+    ) {
+    }
+
+    fn children_ids(&self) -> ChildrenIds {
+        ChildrenIds::new()
     }
 }

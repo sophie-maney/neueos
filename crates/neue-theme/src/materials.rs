@@ -1731,6 +1731,79 @@ pub mod popover {
     }
 }
 
+/// Sheets (task 2.23b): a modal panel that slides out from under a window's title bar. It
+/// is the window's background with the bar's shadow falling on its top edge, a hairline
+/// rim down its sides and along its bottom, and, drawn over the window it belongs to, a
+/// soft drop shadow beside and below it.
+pub mod sheet {
+    use crate::colors::SemanticColors;
+    use crate::{Appearance, Color, Variant, black, white};
+
+    /// Space between the sheet's edges and its content.
+    pub const PADDING: f64 = crate::metrics::spacing::L;
+    /// Space between the content and the row of buttons under it.
+    pub const BUTTON_ROW_GAP: f64 = crate::metrics::spacing::L;
+    /// Space between two buttons in the row.
+    pub const BUTTON_GAP: f64 = crate::metrics::spacing::M;
+    /// How far down the title bar's shadow reaches into the sheet.
+    pub const INNER_SHADOW: f64 = 8.0;
+    /// Rim thickness.
+    pub const RIM: f64 = 1.0;
+    /// How far the drop shadow sits below the sheet.
+    pub const SHADOW_OFFSET: f64 = 3.0;
+    /// Blur radius (standard deviation) of the drop shadow.
+    pub const SHADOW_BLUR: f64 = 7.0;
+    /// Room the drop shadow needs beside and below the sheet.
+    pub const SHADOW_REACH: f64 = 3.0 * SHADOW_BLUR + SHADOW_OFFSET;
+
+    /// Colours of a sheet.
+    #[derive(Clone, Copy, Debug, PartialEq)]
+    pub struct Palette {
+        /// The body: the window background.
+        pub fill: Color,
+        /// The title bar's shadow at the very top; it fades out over [`INNER_SHADOW`].
+        pub inner_shadow: Color,
+        /// Rim along the sides and the bottom, inside the edge.
+        pub rim: Color,
+        /// Drop shadow, outside the sheet.
+        pub shadow: Color,
+    }
+
+    impl Palette {
+        /// Colours for `variant`; increased contrast firms up the rim.
+        pub fn new(variant: Variant) -> Self {
+            let fill = SemanticColors::new(variant).window_background;
+            let p = match variant.appearance {
+                Appearance::Light => Self {
+                    fill,
+                    inner_shadow: black(0.30),
+                    rim: black(0.20),
+                    shadow: black(0.38),
+                },
+                Appearance::Dark => Self {
+                    fill,
+                    inner_shadow: black(0.55),
+                    rim: white(0.14),
+                    shadow: black(0.65),
+                },
+            };
+            if !variant.is_increased_contrast() {
+                return p;
+            }
+            match variant.appearance {
+                Appearance::Light => Self {
+                    rim: black(0.60),
+                    ..p
+                },
+                Appearance::Dark => Self {
+                    rim: white(0.55),
+                    ..p
+                },
+            }
+        }
+    }
+}
+
 /// Tables (task 2.19a) and outline views (2.19b): a header bar of column titles over rows of one height, in a scroll
 /// view with a hairline border. Row stripes and the selection use the semantic colours
 /// ([`crate::colors::SemanticColors::alternate_row`], `selection`, `unfocused_selection`).

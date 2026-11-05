@@ -538,13 +538,31 @@ the paper and leather materials move to Phase 6/7 (Widgets, Write).
         `docs/checks/phase-2.md` §22, not run. Not yet: Tab trapped inside the popover,
         following the anchor when the window re-lays out, flipping inside the window on
         macOS, an arrow shadow.
-  - [ ] **2.23b Sheet (kit)** · Opus. `Sheet`: a modal panel with no title bar, the sheet
+  - [x] **2.23b Sheet (kit)** · Opus. `Sheet`: a modal panel with no title bar, the sheet
         material (window background, inner shadow at the top), default and cancel buttons
         (Return, Esc). On Wayland a modal xdg-dialog child window; on macOS (winit) an
         in-window overlay under the parent's chrome that blocks input to the content (the
         sheet widget is shared, only the host differs).
         *Accept:* end-to-end tests (open, Return/Esc, parent input blocked); goldens; a
         gallery button that opens one; ADR.
+        *Done:* ADR 0057. `Cx::show_sheet(window, Sheet::new(size, content).title(..)
+        .default_button(..).cancel_button(..))` and `Cx::close_sheet`; buttons send
+        messages, the app closes the sheet. `neue_platform::Ctx::has_modal_windows` picks
+        the host: on Wayland a toplevel with parent, modal and client-side decorations; on
+        macOS (and in tests) the parent's `RootWidget` draws it centred under its chrome.
+        Both hosts put a scrim over the parent's content, so it takes no clicks, and Return
+        in the parent is ignored. The sheet owns Return, Escape and Tab (focus cycles
+        inside it, walked by the runner); a compositor close request presses Cancel;
+        closing the parent closes the sheet. Material `neue_paint::materials::{sheet,
+        sheet_shadow}`, tokens `neue_theme::materials::sheet`. 12 end-to-end tests
+        (`src/tests/sheets.rs`, both hosts), 2 material unit tests, 8 goldens
+        `sheet-{attached,window}-…`; gallery "Save…" button on the Popovers page;
+        `testing::{Fixture::sheet, Fixture::show_sheet, check_sheet_states}`. Checked:
+        `cargo xtask check` on macOS and Linux aarch64; x86_64 not run. VM steps in
+        `docs/checks/phase-2.md` §23, not run. Not yet: keyboard blocking of the parent on
+        Wayland beyond Return (needs neue-comp modality), a fixed size for the sheet's
+        window, the toolbar blocked under an in-window sheet, sizing to content, a slide
+        animation.
   - [ ] **2.23c neue-comp: place modal dialogs as sheets** · Opus. A modal dialog's
         toplevel is centred horizontally on its parent with its top under the parent's
         chrome (the server-side bar, or the top of a client-side window's geometry), and

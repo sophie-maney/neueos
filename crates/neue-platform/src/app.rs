@@ -312,6 +312,14 @@ impl<'a> Ctx<'a> {
         self.host.window_ids().into_iter()
     }
 
+    /// Whether a toplevel with [`WindowSpec::parent`] and [`WindowSpec::modal`] opens as a
+    /// modal child window that the compositor keeps above its parent: on Wayland
+    /// (xdg-dialog). The winit driver ignores both, so neue-kit draws sheets inside the
+    /// parent window there instead (ADR 0057).
+    pub fn has_modal_windows(&self) -> bool {
+        cfg!(target_os = "linux")
+    }
+
     /// Ends the event loop after the current callback.
     pub fn exit(&mut self) {
         self.host.exit();
