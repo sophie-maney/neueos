@@ -68,12 +68,19 @@ Rule of thumb: Opus sets a pattern, and Sonnet repeats it.
   decision in `PLAN.md` or an ADR;
 - you've made **two failed attempts** at the same bug or build error: summarise the
   hypotheses and evidence, and ask before trying more;
-- the next step needs **manual or hardware work**: installing a VM, BIOS, partitioning,
-  testing on real PCs, anything that needs clicking through a GUI. Write exact steps as
-  ssh commands run from the Mac, following `docs/dev-setup.md` §2, into
-  `docs/checks/phase-N.md` (reusable commands go into `docs/dev-setup.md` §1), and let
-  the owner run them. Don't
-  burn tokens on trial and error;
+- the next step needs **manual or hardware work you can't get past** (installing a VM,
+  BIOS, partitioning, anything the task can't be built without). Write exact steps as ssh
+  commands run from the Mac, following `docs/dev-setup.md` §2 (reusable commands go into
+  `docs/dev-setup.md` §1), and let the owner run them. Don't burn tokens on trial and
+  error.
+
+  Checks that only confirm a finished task (the real PC, NVIDIA, sound, Bluetooth,
+  VoiceOver, how something looks) are **not** a reason to stop. Verify what you can
+  yourself (tests, and the VM over ssh with `neuectl` and `ydotool`), and list the rest on
+  the task's *Owner:* line in `docs/plan/phase-N.md`. At the end of the phase one task
+  turns all *Owner:* lines into a single runbook, `docs/checks/phase-N-owner.md`, in the
+  format of `docs/checks/phase-2-owner.md`; the owner runs it in one sitting and reports
+  once, and each failure becomes a fix task;
 - the context is getting long and the task isn't close to done: suggest `/compact` with a
   focus (for example "keep failing test, hypothesis, files touched"), or wrap up with a
   handoff (step 4) so a fresh thread can continue.

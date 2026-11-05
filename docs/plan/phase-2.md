@@ -686,6 +686,8 @@ the paper and leather materials move to Phase 6/7 (Widgets, Write).
 - [ ] **2.26 Exit check** · Sonnet, plus owner VM steps. Screenshot every gallery page
       with `neuectl` in the VM, compare with macOS and the goldens, fix drift, tick
       Phase 2.
+      *Moved:* the owner steps are folded into the Phase 3 runbook (task 3.29, decided
+      2026-11-05); Phase 2 is ticked with Phase 3's exit check (3.30).
 - [x] **2.27 neue-comp: scale for layer surfaces** · Sonnet. Found in 2.2:
       `State::refresh_surface_scales` (`compositor/neue-comp/src/outputs.rs`) sends
       `wp_fractional_scale_v1.preferred_scale` and `wl_surface.preferred_buffer_scale`
