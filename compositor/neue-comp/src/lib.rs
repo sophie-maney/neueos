@@ -54,6 +54,7 @@ mod scanout;
 mod screencopy;
 mod security;
 pub mod session;
+mod sheets;
 mod shell_protocols;
 pub mod state;
 mod sync;
@@ -283,6 +284,7 @@ impl Compositor {
                 if let Err(err) = display.dispatch_clients(state) {
                     warn!(%err, "dispatching clients failed");
                 }
+                state.attach_sheets();
                 state.space.refresh();
                 state.popups.cleanup();
                 state.refresh_surface_scales();

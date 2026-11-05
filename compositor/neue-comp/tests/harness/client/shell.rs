@@ -410,6 +410,25 @@ impl TestClient {
 
     // ---- xdg-dialog ----
 
+    /// A `setup` for `create_toplevel_with` and friends that makes the new toplevel a
+    /// modal dialog of `parent` before its first commit: a sheet.
+    pub fn modal_of(
+        &mut self,
+        parent: &Toplevel,
+    ) -> impl FnOnce(&wayland_protocols::xdg::shell::client::xdg_toplevel::XdgToplevel) + use<>
+    {
+        let manager: XdgWmDialogV1 = self
+            ._globals
+            .bind(&self.qh, 1..=1, ())
+            .expect("binding xdg_wm_dialog_v1");
+        let qh = self.qh.clone();
+        let parent = parent.toplevel.clone();
+        move |toplevel| {
+            toplevel.set_parent(Some(&parent));
+            manager.get_xdg_dialog(toplevel, &qh, ()).set_modal();
+        }
+    }
+
     /// Mark `toplevel` as a modal dialog.
     pub fn set_modal(&mut self, toplevel: &Toplevel) {
         let manager: XdgWmDialogV1 = self

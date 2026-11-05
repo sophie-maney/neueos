@@ -39,7 +39,8 @@ decisions are the policy around them.
 6. **`xdg-foreign`** is Smithay's: an imported parent is set as the toplevel's xdg parent,
    so our existing parent handling (stacking, `neuectl` `parent`) applies.
 7. **`xdg-dialog`: modal flag only.** Recorded (`State::dialog_hint`) and nothing more;
-   sheets and modal behaviour come with Phase 4.
+   sheets and modal behaviour come with Phase 4. *Amended by ADR 0058:* a modal dialog
+   with a parent is placed as a sheet.
 8. **`xdg-toplevel-icon`.** Sizes 64 and 128 are announced; the icon is kept on the
    surface for the dock (Phase 3).
 9. **`xdg-system-bell`.** A bell for a window asks for its attention, like a dock bounce.

@@ -72,6 +72,16 @@ pub fn constrain(work: Rect, size: (i32, i32), pos: (i32, i32)) -> (i32, i32) {
     (clamp(pos.0, size.0, wx, ww), clamp(pos.1, size.1, wy, wh))
 }
 
+/// Where a sheet's frame (its title bar, if it has one, and client area) goes: centred
+/// horizontally on its parent's client area `parent`, its top against the top of it, which
+/// is just under a server-side title bar or at the top of a window that draws its own
+/// chrome. Not constrained to the work area: a sheet stays attached to its parent even
+/// when the parent hangs off the screen.
+pub fn sheet(parent: Rect, size: (i32, i32)) -> (i32, i32) {
+    let (px, py, pw, _) = parent;
+    (px + (pw - size.0) / 2, py)
+}
+
 /// The position for an interactive or scripted move to `pos`: free, except that the top
 /// edge stays at or below the top of the work area (OS X keeps title bars below the menu
 /// bar) and above its bottom, so the window can always be grabbed again.
@@ -152,6 +162,13 @@ mod tests {
             ..new((400, 300))
         };
         assert_eq!(place(work, &dialog), (0, 22));
+    }
+
+    #[test]
+    fn sheets_hang_from_the_top_of_their_parent() {
+        assert_eq!(sheet((100, 122, 600, 400), (200, 150)), (300, 122));
+        // Wider than its parent, or with the parent off screen: still attached.
+        assert_eq!(sheet((-500, 300, 400, 300), (600, 200)), (-600, 300));
     }
 
     #[test]

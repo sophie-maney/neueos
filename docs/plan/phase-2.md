@@ -563,11 +563,21 @@ the paper and leather materials move to Phase 6/7 (Widgets, Write).
         Wayland beyond Return (needs neue-comp modality), a fixed size for the sheet's
         window, the toolbar blocked under an in-window sheet, sizing to content, a slide
         animation.
-  - [ ] **2.23c neue-comp: place modal dialogs as sheets** · Opus. A modal dialog's
+  - [x] **2.23c neue-comp: place modal dialogs as sheets** · Opus. A modal dialog's
         toplevel is centred horizontally on its parent with its top under the parent's
         chrome (the server-side bar, or the top of a client-side window's geometry), and
         moves with the parent. No slide animation (Phase 4).
         *Accept:* headless tests (placement, following a parent move); VM steps.
+        *Done:* ADR 0058. `State::is_sheet` (a parent and the xdg-dialog modal hint, also
+        when set after mapping), `placement::sheet`, `State::attach_sheets` (called after
+        the WM's moves, zooms and commits, and once per event loop iteration); a sheet's
+        own move requests are ignored and it gets no resize edges; its `window_changed`
+        waits for the end of a parent's drag. Fixed on the way: `move_window_to` no longer
+        raises the window above its children. 4 headless tests (`tests/sheets.rs`), a
+        placement unit test; harness `TestClient::modal_of`. Checked: `cargo xtask check`
+        on Linux aarch64; macOS has nothing to build (Linux-only crate); x86_64 not run.
+        VM steps in `docs/checks/phase-2.md` §24, not run. Not yet: keyboard modality,
+        dropping a modal dialog's server-side bar, a slide animation.
   - [ ] **2.23d HUD panel** · Sonnet (follows 2.22b). `Window::hud()`: dark HUD chrome
         with a small title bar and a close button only, the existing HUD material, a
         utility window with a parent that does not take the parent's activation look.

@@ -238,8 +238,7 @@ impl MoveGrab {
 
     /// The grab ended: the window's changes are reported again.
     fn finish(&self, state: &mut State) {
-        State::with_wm_data(&self.window, |data| data.grabbed = false);
-        state.notify_window_changed(&self.window);
+        state.grab_ended(&self.window);
     }
 }
 
