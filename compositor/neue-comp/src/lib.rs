@@ -14,6 +14,8 @@
 //! - [`placement`]: where new windows go (a cascading stack).
 //! - [`decorations`]: server-side title bars (xdg-decoration, KDE server-decoration).
 //! - `render`: the render elements of an output (windows, title bars, layers).
+//! - `blur`: backdrop blur behind surfaces that ask for it (`ext-background-effect-v1`,
+//!   ADR 0071).
 //! - [`outputs`]: output layout, hotplug, per-output scale and frame callbacks.
 //! - `ipc`: the `neuectl` socket (ADR 0003, ADR 0007).
 //! - `headless`: virtual outputs without input, optionally rendered offscreen; used by tests.
@@ -30,6 +32,7 @@
 #![cfg(target_os = "linux")]
 
 mod appmenu;
+mod blur;
 pub mod config;
 #[cfg(feature = "tty")]
 mod cursor;

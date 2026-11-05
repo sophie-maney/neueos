@@ -62,7 +62,7 @@ PLAN.md §3.2 assumed vello's compute renderer for the GPU, taffy for layout, an
    presets and the reduced-motion flag from `neue-theme`.
 7. **Backdrop blur** (menus, sheets, HUDs, the menu bar) is the compositor's job, not the
    toolkit's: clients mark regions, `neue-comp` blurs behind them. The protocol
-   (`ext-background-effect-v1` or a private one) is decided in Phase 3 (amended 2026-11-04: deferred from Phase 2; the menu bar is the first user).
+   (`ext-background-effect-v1` or a private one) is decided in Phase 3 (amended 2026-11-04: deferred from Phase 2; the menu bar is the first user). Decided in ADR 0071: `ext-background-effect-v1`.
 
 ## Amendment 2026-11-04: gate result (tasks 2.1 and 2.2): **go**
 Both halves of the Decision 4 gate pass, so Masonry stays and 2.4 onward proceed as planned.

@@ -32,6 +32,7 @@ use wayland_protocols::xdg::shell::client::{
 };
 
 mod appmenu;
+mod blur;
 mod capture;
 mod decoration;
 mod input;
@@ -131,6 +132,8 @@ struct ClientData {
     window: neue_window::WindowData,
     /// `neue_shell_v1` objects and events, and the keys an app got (see `neue_shell.rs`).
     neue_shell: neue_shell::NeueShellData,
+    /// `ext_background_effect_manager_v1` (see `blur.rs`).
+    blur: blur::BlurData,
 }
 
 impl TestClient {
@@ -370,6 +373,30 @@ impl TestClient {
     pub fn fill(&mut self, toplevel: &mut Toplevel, argb: u32) {
         let (w, h) = toplevel.size;
         let buffer = self.shm_buffer_filled((w, h), argb);
+        toplevel.surface.attach(Some(&buffer), 0, 0);
+        toplevel.surface.damage_buffer(0, 0, w, h);
+        toplevel.surface.commit();
+        if let Some(old) = toplevel.buffer.replace(buffer) {
+            old.destroy();
+        }
+        self.roundtrip();
+    }
+
+    /// Like [`TestClient::fill`], with each pixel `pixel(x, y)` (`0xAARRGGBB`).
+    pub fn fill_with(&mut self, toplevel: &mut Toplevel, pixel: impl Fn(i32, i32) -> u32) {
+        let (w, h) = toplevel.size;
+        let fd = rustix::fs::memfd_create("neue-comp-test", rustix::fs::MemfdFlags::CLOEXEC)
+            .expect("memfd_create");
+        let mut file = std::fs::File::from(fd);
+        // wl_shm formats are little-endian.
+        let pixels: Vec<u8> = (0..h)
+            .flat_map(|y| (0..w).map(move |x| (x, y)))
+            .flat_map(|(x, y)| pixel(x, y).to_le_bytes())
+            .collect();
+        std::io::Write::write_all(&mut file, &pixels).expect("filling the shm file");
+        let pool = self.shm.create_pool(file.as_fd(), w * h * 4, &self.qh, ());
+        let buffer = pool.create_buffer(0, w, h, w * 4, wl_shm::Format::Argb8888, &self.qh, ());
+        pool.destroy();
         toplevel.surface.attach(Some(&buffer), 0, 0);
         toplevel.surface.damage_buffer(0, 0, w, h);
         toplevel.surface.commit();
