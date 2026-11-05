@@ -131,7 +131,7 @@ fn the_menu_bar_is_exported_with_its_items() {
         .unwrap()
         .try_into()
         .unwrap();
-    assert_eq!(keys, [["Control", "Shift", "N"]]);
+    assert_eq!(keys, [["Shift", "Super", "N"]]);
     let view: Vec<i32> = root.children[1].children.iter().map(|c| c.id).collect();
     assert_eq!(view, [4, 5, 6]);
     let wrap = &root.children[1].children[0].properties;

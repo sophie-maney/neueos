@@ -557,7 +557,7 @@ fn tables(handles: &mut PageHandles) -> Element<Message> {
         .spacing(spacing::L)
         .with(heading(
             "Tables",
-            "Click a row · Shift-click or Shift-arrows extend the selection, Cmd/Ctrl-click \
+            "Click a row · Shift-click or Shift-arrows extend the selection, Cmd-click \
              adds a row · type a name to jump · Return or double-click opens · click a title \
              to sort, again to reverse · drag a divider to resize a column · in the outline, \
              click a triangle (Option-click: every level below) or press Right and Left to \
@@ -621,7 +621,7 @@ fn icons(_: &mut PageHandles) -> Element<Message> {
             "Glyphs are drawn in the text colour at any size · a vector icon comes from SVG \
              path data, with colours that follow the text or have their own for light and dark \
              · switch the appearance and the scale to see them stay sharp · in a collection \
-             click, Shift-click and Cmd- or Ctrl-click select · the arrow keys move over the \
+             click, Shift-click and Cmd-click select · the arrow keys move over the \
              grid · type a name to jump · Return or double-click opens · resize the window to \
              change the columns",
         ))

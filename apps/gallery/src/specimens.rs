@@ -478,20 +478,14 @@ pub const MENU_SIZE: (u32, u32) = (250, 190);
 /// Golden window size for a context menu with its submenu open.
 pub const SUBMENU_SIZE: (u32, u32) = (370, 190);
 
-/// The command-key shortcut for `key`, as the gallery shows it: Cmd on macOS hosts, Ctrl
-/// elsewhere.
+/// The command-key shortcut for `key`, as the gallery shows it: Super (⌘) on every host.
 pub fn command(key: &'static str) -> Shortcut {
     Shortcut::command(key)
 }
 
-/// Ctrl and `key`: the same on every host, so goldens match on macOS and Linux.
-pub fn ctrl(key: &'static str) -> Shortcut {
-    Shortcut::new(key).ctrl()
-}
-
 /// The sample menu: Cut and Copy with shortcuts, a disabled Paste, a separator, a checked
 /// item, a submenu with a radio group, and Delete. `send(label)` is each item's message;
-/// `shortcut` makes the command shortcuts ([`command`] or [`ctrl`]).
+/// `shortcut` makes the command shortcuts ([`command`]).
 pub fn sample_menu<M: Clone + 'static>(
     send: impl Fn(&'static str) -> M,
     shortcut: fn(&'static str) -> Shortcut,

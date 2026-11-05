@@ -435,12 +435,7 @@ fn assistive_technologies_see_roles_states_and_shortcuts() {
     };
     let cut = by_label("Cut");
     assert_eq!(cut.role(), Role::MenuItem);
-    let spoken = if cfg!(target_os = "macos") {
-        "Cmd+X"
-    } else {
-        "Ctrl+X"
-    };
-    assert_eq!(cut.data().keyboard_shortcut(), Some(spoken));
+    assert_eq!(cut.data().keyboard_shortcut(), Some("Cmd+X"));
     assert!(cut.data().supports_action(Action::Click));
     assert!(by_label("Paste").is_disabled());
     let wrap = by_label("Wrap");

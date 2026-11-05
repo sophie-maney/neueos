@@ -92,13 +92,9 @@ fn tap(runner: &mut Runner<Notes>, host: &mut FakeHost, key: NamedKey) {
     deliver(runner, host);
 }
 
-/// The platform's command key: Cmd on macOS, Ctrl elsewhere.
+/// The command key: Super (⌘) on every host (ADR 0080).
 fn command() -> Modifiers {
-    if cfg!(target_os = "macos") {
-        Modifiers::META
-    } else {
-        Modifiers::CONTROL
-    }
+    Modifiers::META
 }
 
 fn focus(host: &mut FakeHost, view: &Handle<TextView<Msg>>) {
@@ -183,13 +179,8 @@ fn the_view_scrolls_to_keep_the_caret_in_sight() {
     let _ = host.only().render();
     let down = scroller_of(&mut host, &runner.app().notes);
     assert!(down.y > 80.0, "the view followed the caret: {down:?}");
-    // Back to the top with Cmd-Up (macOS) or Ctrl-Home.
-    let (key, mods) = if cfg!(target_os = "macos") {
-        (NamedKey::ArrowUp, Modifiers::META)
-    } else {
-        (NamedKey::Home, Modifiers::CONTROL)
-    };
-    press(&mut host, Key::Named(key), mods);
+    // Back to the top with Cmd-Up.
+    press(&mut host, Key::Named(NamedKey::ArrowUp), Modifiers::META);
     deliver(&mut runner, &mut host);
     let _ = host.only().render();
     assert_eq!(scroller_of(&mut host, &runner.app().notes), Vec2::ZERO);
