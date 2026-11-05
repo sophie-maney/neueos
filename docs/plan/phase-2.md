@@ -578,11 +578,27 @@ the paper and leather materials move to Phase 6/7 (Widgets, Write).
         on Linux aarch64; macOS has nothing to build (Linux-only crate); x86_64 not run.
         VM steps in `docs/checks/phase-2.md` §24, not run. Not yet: keyboard modality,
         dropping a modal dialog's server-side bar, a slide animation.
-  - [ ] **2.23d HUD panel** · Sonnet (follows 2.22b). `Window::hud()`: dark HUD chrome
+  - [x] **2.23d HUD panel** · Sonnet (follows 2.22b). `Window::hud()`: dark HUD chrome
         with a small title bar and a close button only, the existing HUD material, a
         utility window with a parent that does not take the parent's activation look.
         *Accept:* end-to-end tests; goldens; a gallery button. Not in scope: dark controls
         inside the HUD (a per-subtree theme override, its own task).
+        *Done:* ADR 0059. `Window::hud()` (implies chrome; `toolbar` is ignored) is a third
+        `ChromeKind` in `widgets/chrome.rs`: `materials::hud` over the whole window (opaque
+        tint), a 19 px bar with a close disc (cross on hover, brighter pressed) and the
+        title, drag to move, no zoom on double-click, AccessKit "Close". Tokens
+        `neue_theme::materials::hud::{TITLE_HEIGHT, CLOSE_SIZE, CLOSE_INSET, TITLE_BASELINE,
+        TITLE_INSET}` and `Palette::close`; `neue_paint::materials::hud::{close_rect,
+        hud_close_button, CloseState}`. With `.parent(p)` it is a utility window: the
+        runner sets `RootWidget::set_keep_active` on the parent while one of its HUD windows
+        has the keyboard, so its chrome keeps the focused look; closing the parent closes its
+        HUD windows. Added `Label::on_hud()` (light text; without it a label is unreadable
+        on the panel in the light appearance). 14 end-to-end tests (`src/tests/huds.rs`),
+        2 material unit tests; 12 goldens `hud-{normal,inactive,close-hovered}-…` (pass on macOS
+        and Linux aarch64); gallery "Inspector" button on the Popovers page. Checked: `cargo
+        xtask check` on macOS, the HUD goldens on Linux aarch64; x86_64 not run. VM steps in
+        `docs/checks/phase-2.md` §25, not run. Not yet: dark controls in a HUD, translucency
+        (needs the blur protocol), a shadow (compositor shadows), a title-changing API.
 - [ ] **2.24 Colour well, date picker, path control** · Sonnet.
 - [ ] **2.25 `docs/design/` specs** · Sonnet. Token reference, materials spec, motion
       spec.

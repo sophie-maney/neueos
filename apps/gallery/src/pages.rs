@@ -771,6 +771,16 @@ fn popovers(handles: &mut PageHandles) -> Element<Message> {
             "Show a sheet",
             Stack::row().with(Button::new("Save…").on_press(Message::ShowSheet)),
         ))
+        .with(heading(
+            "HUD panel",
+            "A small dark window for tools: a close button and a title, nothing else · it \
+             stays above the gallery window, which keeps its focused look while the panel \
+             has the keyboard · drag its bar to move it",
+        ))
+        .with(section(
+            "Show a HUD window",
+            Stack::row().with(Button::new("Inspector").on_press(Message::ShowHud)),
+        ))
         .into()
 }
 

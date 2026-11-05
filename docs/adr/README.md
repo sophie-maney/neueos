@@ -68,3 +68,4 @@ Don't edit an accepted ADR's decision; supersede it with a new one.
 | [0056](0056-popovers.md) | Popovers: a kit layer that tells the Wayland driver its anchor through Masonry properties; window geometry instead of a positioner offset | Accepted |
 | [0057](0057-sheets.md) | Sheets: one kit widget; a modal child window on Wayland, drawn in the parent with a scrim on macOS; the sheet owns Return, Escape and Tab | Accepted |
 | [0058](0058-sheet-placement.md) | Sheet placement in neue-comp: modal dialogs with a parent hang from its chrome and follow it | Accepted |
+| [0059](0059-hud-windows.md) | HUD windows: a third kind of kit chrome over the HUD material; a parent keeps its focused look while its HUD window has the keyboard | Accepted |

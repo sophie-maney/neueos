@@ -11,6 +11,9 @@ use masonry_core::imaging::Painter;
 use masonry_core::kurbo::{Affine, Axis, Size};
 use masonry_core::layout::{LenReq, Length};
 
+use neue_theme::materials::Backdrop;
+use neue_theme::materials::hud::Palette as HudPalette;
+
 use super::text::{TextLine, TextStyle};
 use crate::theme::ThemeProp;
 
@@ -19,6 +22,8 @@ use crate::theme::ThemeProp;
 pub(crate) struct LabelWidget {
     line: TextLine,
     secondary: bool,
+    /// Drawn on a HUD window: light text.
+    on_hud: bool,
 }
 
 impl LabelWidget {
@@ -26,6 +31,7 @@ impl LabelWidget {
         Self {
             line: TextLine::new(text, TextStyle::Body),
             secondary: false,
+            on_hud: false,
         }
     }
 
@@ -35,6 +41,10 @@ impl LabelWidget {
 
     pub(crate) fn set_secondary(&mut self, secondary: bool) {
         self.secondary = secondary;
+    }
+
+    pub(crate) fn set_on_hud(&mut self, on_hud: bool) {
+        self.on_hud = on_hud;
     }
 
     pub(crate) fn text(&self) -> &str {
@@ -103,7 +113,14 @@ impl Widget for LabelWidget {
     ) {
         let ThemeProp(theme) = *props.get::<ThemeProp>(ctx.property_cache());
         let colors = theme.colors();
-        let color = if ctx.is_disabled() {
+        let hud = HudPalette::new(theme.variant, Backdrop::Opaque);
+        let color = if self.on_hud {
+            if self.secondary {
+                hud.secondary_label
+            } else {
+                hud.label
+            }
+        } else if ctx.is_disabled() {
             colors.disabled_label
         } else if self.secondary {
             colors.secondary_label

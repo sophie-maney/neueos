@@ -23,6 +23,7 @@ mod controls;
 mod editmenu;
 mod fields;
 mod grid;
+mod huds;
 mod icons;
 #[cfg(target_os = "linux")]
 mod menubar;

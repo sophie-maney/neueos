@@ -1045,6 +1045,17 @@ pub mod hud {
     pub const SHADOW_REACH: f64 = 3.0 * SHADOW_BLUR;
     /// Share of the panel's height that the gloss covers, from the top.
     pub const GLOSS_HEIGHT: f64 = 0.45;
+    /// Height of a HUD window's title bar: the title and the close button.
+    pub const TITLE_HEIGHT: f64 = 19.0;
+    /// Diameter of the close button.
+    pub const CLOSE_SIZE: f64 = 13.0;
+    /// Distance from the window's left edge to the close button.
+    pub const CLOSE_INSET: f64 = 6.0;
+    /// Distance from the top of a HUD window to its title's baseline.
+    pub const TITLE_BASELINE: f64 = 13.0;
+    /// Room kept clear on each side of the title: the close button and a gap, mirrored on
+    /// the right so the title stays centred.
+    pub const TITLE_INSET: f64 = CLOSE_INSET + CLOSE_SIZE + 6.0;
 
     /// Colours of the panel.
     #[derive(Clone, Copy, Debug, PartialEq)]
@@ -1061,6 +1072,8 @@ pub mod hud {
         pub label: Color,
         /// Secondary text.
         pub secondary_label: Color,
+        /// A HUD window's close button: its disc at rest, and while pressed.
+        pub close: [Color; 2],
     }
 
     impl Palette {
@@ -1083,6 +1096,7 @@ pub mod hud {
                     rim: white(0.28),
                     label: white(0.95),
                     secondary_label: white(0.60),
+                    close: [white(0.22), white(0.38)],
                 },
                 Appearance::Dark => Self {
                     shadow: black(0.75),
@@ -1095,11 +1109,13 @@ pub mod hud {
                     rim: white(0.36),
                     label: white(0.92),
                     secondary_label: white(0.55),
+                    close: [white(0.18), white(0.32)],
                 },
             };
             if contrast {
                 Self {
                     rim: white(0.70),
+                    close: [white(0.34), white(0.52)],
                     label: white(1.0),
                     secondary_label: white(0.80),
                     ..p

@@ -100,6 +100,15 @@ impl RootWidget {
         }
     }
 
+    /// Paints the focused look while a HUD window of this one has the keyboard, or stops.
+    pub(crate) fn set_keep_active(this: &mut WidgetMut<'_, Self>, keep: bool) {
+        if let Some(chrome) = &mut this.widget.chrome
+            && chrome.set_keep_active(keep)
+        {
+            this.ctx.request_paint_only();
+        }
+    }
+
     #[cfg(test)]
     pub(crate) fn chrome(&self) -> Option<&Chrome> {
         self.chrome.as_ref()
@@ -245,10 +254,13 @@ impl Widget for RootWidget {
         let size = ctx.content_box().size();
         let top = self.chrome.as_ref().map_or(0.0, Chrome::height);
         let rect = Rect::new(0.0, top, size.width, size.height);
-        painter.fill_rect(rect, theme.colors().window_background);
+        // A HUD window's panel is the chrome's, over the whole window.
+        if self.chrome.as_ref().is_none_or(|chrome| !chrome.is_hud()) {
+            painter.fill_rect(rect, theme.colors().window_background);
+        }
         if let Some(chrome) = &mut self.chrome {
             let focused = ctx.is_window_focused();
-            chrome.paint(painter, theme, focused, size.width, ctx.scale_factor());
+            chrome.paint(painter, theme, focused, size, ctx.scale_factor());
         }
     }
 

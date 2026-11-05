@@ -969,3 +969,26 @@ the wider window afterwards.
 **4. The sheet stays put:** `neuectl action move-window --window <sheet id> --x 0 --y 0`
 changes nothing, and the sheet's edges show no resize cursor (`move_to` its right edge).
 Escape closes the sheet.
+
+## 25. Checking the HUD window (task 2.23d)
+Not run yet. In the VM, set up as in `docs/dev-setup.md` §1.3, with the gallery open on
+the "Popovers" page as §23 step 1; `wins` as in §24.
+
+**1. Open it:** click "Inspector" under "HUD panel", then `wins` and
+`neuectl screenshot /tmp/hud1.png`. Expected: a second window titled "Inspector", 240 × 120,
+whose `parent` is the gallery's `id`, listed above the gallery. In `hud1.png` it is a dark
+rounded panel with a small close disc at the top left, the title centred, three lines of
+light text, and no compositor title bar. The gallery's title bar still has its focused
+look (coloured traffic lights), although the panel has the keyboard.
+
+**2. Focus:** click the gallery's content, then the panel again; take a screenshot each
+time. Expected: the gallery's bar looks focused in both; the panel looks the same in both.
+Switch to another app's window (`foot`): both go inactive.
+
+**3. Move and close:** drag the panel by its bar (`move_to` the title, `ydotool click 0x40`,
+`move_to` 200 px right, `ydotool click 0x80`); a double-click on the bar does nothing.
+Hover the disc: a cross appears. Click it. Expected: the panel closes (`wins` lists only
+the gallery) and the gallery stays.
+
+**4. With the parent:** open the panel again, then close the gallery from its close button.
+Expected: both windows close.

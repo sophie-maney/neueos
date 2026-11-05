@@ -2,7 +2,7 @@
 //! `update` changes the model and, through handles, the widgets.
 
 use std::collections::hash_map::Entry;
-use std::collections::{HashMap, VecDeque};
+use std::collections::{HashMap, HashSet, VecDeque};
 use std::future::Future;
 use std::sync::Arc;
 
@@ -18,8 +18,8 @@ use crate::menubar::MenuBars;
 use crate::task::{Mailbox, Sender, Task};
 use crate::theme;
 use crate::widgets::{
-    self, ButtonWidget, Chrome, Popover, PopoverWidget, Pressed, Rewired, RootAction, RootWidget,
-    RowsWidget, Sheet, SheetButtons, SheetKey,
+    self, ButtonWidget, Chrome, ChromeKind, Popover, PopoverWidget, Pressed, Rewired, RootAction,
+    RootWidget, RowsWidget, Sheet, SheetButtons, SheetKey,
 };
 
 /// An app: its state is the model, [`Application::Message`] is everything that can happen
@@ -83,6 +83,8 @@ pub struct Window<M> {
     menu_bar: Option<Menu<M>>,
     /// Draws its own chrome (ADR 0055).
     chrome: bool,
+    /// A HUD panel: its chrome is the dark HUD's.
+    hud: bool,
     toolbar: Option<Element<M>>,
 }
 
@@ -95,6 +97,7 @@ impl<M> std::fmt::Debug for Window<M> {
             .field("modal", &self.modal)
             .field("menu_bar", &self.menu_bar)
             .field("chrome", &self.chrome)
+            .field("hud", &self.hud)
             .field("toolbar", &self.toolbar.is_some())
             .finish_non_exhaustive()
     }
@@ -112,6 +115,7 @@ impl<M> Window<M> {
             modal: false,
             menu_bar: None,
             chrome: false,
+            hud: false,
             toolbar: None,
         }
     }
@@ -157,6 +161,25 @@ impl<M> Window<M> {
         self
     }
 
+    /// A HUD panel: a dark, small window for tools and inspectors, with a small title bar
+    /// that has a close button and the title and nothing else. The HUD material fills the
+    /// whole window (it is dark in both appearances), and there is no toolbar:
+    /// [`Window::toolbar`] is ignored. Implies [`Window::chrome`].
+    ///
+    /// Give it a [`Window::parent`] to make it a utility window: the compositor keeps it
+    /// above the parent, and the parent keeps its focused look while the HUD has the
+    /// keyboard.
+    ///
+    /// The window's content is drawn as usual, so it is the app's to make it readable on
+    /// a dark panel: [`Label::on_hud`] does it for text. Dark controls come with a theme
+    /// override for a subtree, later.
+    #[must_use]
+    pub fn hud(mut self) -> Self {
+        self.chrome = true;
+        self.hud = true;
+        self
+    }
+
     /// The window's menu bar: its items are the menu titles, each a submenu. Shown in the
     /// global menu bar on neueOS (exported over D-Bus, ADR 0047); not shown on macOS
     /// hosts yet. Change it with [`Cx::set_menu_bar`].
@@ -172,25 +195,62 @@ impl<M> Window<M> {
 fn root_widget<M>(
     title: &str,
     content: Element<M>,
-    chrome: bool,
+    chrome: Option<ChromeKind>,
     toolbar: Option<Element<M>>,
 ) -> (RootWidget, Wiring<M>, Option<Wiring<M>>) {
     let (content, wiring) = content.into_parts();
     let (toolbar, toolbar_wiring) = toolbar.map(Element::into_parts).unzip();
-    let root = if chrome {
-        RootWidget::with_chrome(content, Chrome::new(title.to_owned(), toolbar))
-    } else {
-        RootWidget::new(content)
+    let root = match chrome {
+        Some(kind) => {
+            RootWidget::with_chrome(content, Chrome::new(kind, title.to_owned(), toolbar))
+        }
+        None => RootWidget::new(content),
     };
     (root, wiring, toolbar_wiring)
+}
+
+impl<M> Window<M> {
+    /// Which chrome the window draws, if any.
+    fn chrome_kind(&self) -> Option<ChromeKind> {
+        match (self.chrome, self.hud) {
+            (_, true) => Some(ChromeKind::Hud),
+            (true, false) => Some(ChromeKind::Standard),
+            (false, false) => None,
+        }
+    }
 }
 
 #[cfg(feature = "testing")]
 impl<M> Window<M> {
     /// The root widget the window opens with, and its size; message handlers are dropped.
     pub(crate) fn into_root(self) -> (RootWidget, (u32, u32)) {
-        let (root, ..) = root_widget(&self.title, self.root, self.chrome, self.toolbar);
+        let kind = self.chrome_kind();
+        let (root, ..) = root_widget(&self.title, self.root, kind, self.toolbar);
         (root, self.size)
+    }
+}
+
+/// Sets each of `parents` to paint its focused look while one of its HUD windows has the
+/// keyboard (a utility window doesn't take the parent's activation look).
+fn refresh_hud_parent_look<M>(
+    host: &mut dyn Host,
+    kit: &Kit<M>,
+    parents: impl IntoIterator<Item = WindowId>,
+) {
+    for parent in parents {
+        let keep = kit
+            .huds
+            .iter()
+            .any(|(hud, p)| *p == parent && kit.huds_focused.contains(hud));
+        let (Some(&root_id), Some(root)) = (kit.roots.get(&parent), host.render_root(parent))
+        else {
+            continue;
+        };
+        if root.has_widget(root_id) {
+            root.edit_widget(root_id, |mut r| {
+                RootWidget::set_keep_active(&mut r.downcast(), keep);
+            });
+        }
     }
 }
 
@@ -255,6 +315,10 @@ pub(crate) struct Kit<M> {
     roots: HashMap<WindowId, WidgetId>,
     /// Open sheets, by the window they are on.
     sheets: HashMap<WindowId, OpenSheet>,
+    /// Open HUD windows that have a parent, and the parent.
+    huds: HashMap<WindowId, WindowId>,
+    /// The HUD windows that have the keyboard.
+    huds_focused: HashSet<WindowId>,
     /// Messages for `update`, in order.
     queue: VecDeque<M>,
     mailbox: Mailbox<M>,
@@ -301,8 +365,9 @@ impl<M> Cx<'_, M> {
     /// Opens a window. It appears after the current callback returns; handles to its
     /// widgets work from then on.
     pub fn open_window(&mut self, window: Window<M>) -> WindowId {
+        let kind = window.chrome_kind();
         let (root, wiring, toolbar_wiring) =
-            root_widget(&window.title, window.root, window.chrome, window.toolbar);
+            root_widget(&window.title, window.root, kind, window.toolbar);
         let root = NewWidget::new(root);
         let root_id = root.id();
         let mut spec = WindowSpec::new(window.title, window.size, root.erased());
@@ -312,8 +377,9 @@ impl<M> Cx<'_, M> {
             .unwrap_or_else(|| self.kit.settings.app_id.clone());
         spec.parent = window.parent;
         spec.modal = window.modal;
-        if window.chrome {
-            // The chrome's top corners are rounded; the root paints everything else.
+        if kind.is_some() {
+            // The chrome's top corners are rounded (a HUD's all of them); the root paints
+            // everything else.
             spec.decorations = Decorations::Client;
             spec.background = Color::TRANSPARENT;
         } else {
@@ -321,6 +387,9 @@ impl<M> Cx<'_, M> {
         }
         let id = self.host.open_window(spec);
         self.kit.roots.insert(id, root_id);
+        if let (Some(ChromeKind::Hud), Some(parent)) = (kind, window.parent) {
+            self.kit.huds.insert(id, parent);
+        }
         self.register_wiring(id, wiring);
         if let Some(wiring) = toolbar_wiring {
             self.register_wiring(id, wiring);
@@ -348,11 +417,27 @@ impl<M> Cx<'_, M> {
 
     /// Closes `window` and forgets everything about it.
     fn forget_window(&mut self, window: WindowId) {
+        // HUD windows don't outlive their parent.
+        let huds: Vec<WindowId> = self
+            .kit
+            .huds
+            .iter()
+            .filter_map(|(&hud, &parent)| (parent == window).then_some(hud))
+            .collect();
+        for hud in huds {
+            self.forget_window(hud);
+        }
         self.host.close_window(window);
         self.kit.menu_bars.remove(window);
         self.kit.handlers.retain(|_, (w, _)| *w != window);
         self.kit.defaults.remove(&window);
         self.kit.roots.remove(&window);
+        // A HUD window going away gives its parent back its own look; a parent going away
+        // leaves its HUD windows without one.
+        self.kit.huds_focused.remove(&window);
+        if let Some(parent) = self.kit.huds.remove(&window) {
+            refresh_hud_parent_look(self.host, self.kit, [parent]);
+        }
     }
 
     /// Shows `sheet` on `window`, replacing a sheet already open there (without sending its
@@ -712,6 +797,8 @@ impl<A: Application> Runner<A> {
             defaults: HashMap::new(),
             roots: HashMap::new(),
             sheets: HashMap::new(),
+            huds: HashMap::new(),
+            huds_focused: HashSet::new(),
             queue: VecDeque::new(),
             mailbox: Mailbox::new(wake.clone()),
             menu_bars: MenuBars::new(wake),
@@ -766,7 +853,16 @@ impl<A: Application> Runner<A> {
                     self.press(host, window, id);
                 }
             }
-            RootAction::WindowFocus(_) => {
+            RootAction::WindowFocus(focused) => {
+                if kit.huds.contains_key(&window) {
+                    if focused {
+                        kit.huds_focused.insert(window);
+                    } else {
+                        kit.huds_focused.remove(&window);
+                    }
+                    let parent = kit.huds[&window];
+                    refresh_hud_parent_look(host, kit, [parent]);
+                }
                 // The window's default button, and that of a sheet drawn in it or that is
                 // this window.
                 let sheet = kit.sheets.iter().find_map(|(&parent, open)| {
