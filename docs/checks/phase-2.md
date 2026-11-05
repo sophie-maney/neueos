@@ -1064,3 +1064,34 @@ November (the specimen's "today") and selects it.
 **5. Keyboard:** Tab to the calendar. Left and Right move the selection a day, Up and Down a
 week, Page Up and Page Down a month, Home to 20 November; the page follows the selection
 and the status line shows each date.
+
+## 29. Checking the primary selection from text fields (task 2.28)
+Not run yet. In the VM, set up as in `docs/dev-setup.md` §1.3, with the gallery open on the
+"Fields" page as in §6 step 1 (no IME probe needed). The Name field is at (271,168) in
+window coordinates.
+
+**1. A Shift selection in the gallery, pasted into foot with a middle click:**
+```sh
+ssh neueos-vm '. ~/neueos/docs/vm-env.sh; export YDOTOOL_SOCKET=/tmp/.ydotool_socket; rm -f /tmp/pasted
+  move_to() { ydotool mousemove --absolute -x $(($1 / 2)) -y $(($2 / 2)); sleep 0.2; ydotool mousemove -x 1 -y 0; sleep 0.1; }
+  click_in_window 271 168; sleep 0.5; ydotool type neuepick; sleep 0.3
+  ydotool key 42:1 102:1 102:0 42:0; sleep 0.3
+  setsid nohup foot sh -c "cat > /tmp/pasted" >/dev/null 2>&1 </dev/null &
+  sleep 2; F=$(neuectl --json windows | jq -r ".[] | select(.app_id==\"foot\") | .id")
+  neuectl action resize-window --window $F --width 440 --height 160; neuectl action move-window --window $F --x 292 --y 540; sleep 0.5
+  move_to 500 640; ydotool click 0xC2; sleep 0.5; ydotool key 28:1 28:0; sleep 0.5
+  echo "foot got: $(cat /tmp/pasted)"'
+```
+Expected: `foot got: neuepick`.
+
+**2. A pointer selection (drag), and nothing from the secure field:** close foot, then drag
+across the Name field's text with the primary button (`ydotool mousemove` to the start,
+`ydotool click 0x40`, move to the end, `ydotool click 0x80`) and repeat the foot paste of
+step 1: the dragged text arrives. Then type in the Password field, select it with Shift-Home
+and middle-click in foot: it pastes the previous selection (the Name field's), not the
+password.
+
+**3. Middle click inside the gallery:** select text in the Name field, click in the "Note"
+field and middle-click: the selected text is inserted there.
+
+**4. Clean up:** give the console back as in `docs/dev-setup.md` §1.3 step 4.

@@ -196,6 +196,75 @@ fn copy_cut_and_paste() {
     assert_eq!(runner.app().log.last(), Some(&Msg::Name("one two".into())));
 }
 
+/// The window point `fx` of the way across `field`'s width, at its middle height.
+fn field_point(host: &mut FakeHost, field: &Handle<TextField<Msg>>, fx: f64) -> Point {
+    let widget = host.only().get_widget_with_id(id(field));
+    let ctx = widget.ctx();
+    let size = ctx.border_box().size();
+    ctx.to_window(Point::new(size.width * fx, size.height / 2.0))
+}
+
+#[test]
+fn a_pointer_selection_becomes_the_primary_selection_when_it_ends() {
+    let (mut runner, mut host) = setup();
+    focus(&mut host, &runner.app().name);
+    type_text(&mut runner, &mut host, "hello world");
+    let (from, to) = (
+        field_point(&mut host, &runner.app().name, 0.0),
+        field_point(&mut host, &runner.app().name, 1.0),
+    );
+    host.only().mouse_move(from);
+    host.only().mouse_button_press(None);
+    host.only().mouse_move(to);
+    deliver(&mut runner, &mut host);
+    assert_eq!(host.primary_selection, None, "still dragging");
+    host.only().mouse_button_release(None);
+    deliver(&mut runner, &mut host);
+    assert_eq!(host.primary_selection.as_deref(), Some("hello world"));
+}
+
+#[test]
+fn a_click_without_a_selection_leaves_the_primary_selection_alone() {
+    let (mut runner, mut host) = setup();
+    focus(&mut host, &runner.app().name);
+    type_text(&mut runner, &mut host, "hello");
+    let at = field_point(&mut host, &runner.app().name, 0.5);
+    host.only().mouse_move(at);
+    host.only().mouse_button_press(None);
+    host.only().mouse_button_release(None);
+    deliver(&mut runner, &mut host);
+    assert_eq!(host.primary_selection, None);
+}
+
+#[test]
+fn shift_arrows_select_into_the_primary_selection() {
+    let (mut runner, mut host) = setup();
+    focus(&mut host, &runner.app().name);
+    type_text(&mut runner, &mut host, "abc");
+    press(&mut host, Key::Named(NamedKey::ArrowLeft), Modifiers::SHIFT);
+    press(&mut host, Key::Named(NamedKey::ArrowLeft), Modifiers::SHIFT);
+    deliver(&mut runner, &mut host);
+    assert_eq!(host.primary_selection.as_deref(), Some("bc"));
+}
+
+#[test]
+fn a_secure_field_never_sets_the_primary_selection() {
+    let (mut runner, mut host) = setup();
+    focus(&mut host, &runner.app().password);
+    type_text(&mut runner, &mut host, "s3cret");
+    press(&mut host, Key::Named(NamedKey::ArrowLeft), Modifiers::SHIFT);
+    let (from, to) = (
+        field_point(&mut host, &runner.app().password, 0.0),
+        field_point(&mut host, &runner.app().password, 1.0),
+    );
+    host.only().mouse_move(from);
+    host.only().mouse_button_press(None);
+    host.only().mouse_move(to);
+    host.only().mouse_button_release(None);
+    deliver(&mut runner, &mut host);
+    assert_eq!(host.primary_selection, None);
+}
+
 #[test]
 fn escape_and_the_cancel_button_clear_a_search_field() {
     let (mut runner, mut host) = setup();

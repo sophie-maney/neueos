@@ -68,6 +68,8 @@ struct FakeHost {
     dialogs: BTreeMap<WindowId, DialogSpec>,
     /// Sheets open as windows of their own, as on Wayland.
     modal_windows: bool,
+    /// The primary selection a text field last set.
+    primary_selection: Option<String>,
 }
 
 impl Host for FakeHost {
@@ -111,6 +113,9 @@ impl Host for FakeHost {
             Some(address) => self.menu_addresses.insert(window, address),
             None => self.menu_addresses.remove(&window),
         };
+    }
+    fn set_primary_selection(&mut self, text: String) {
+        self.primary_selection = Some(text);
     }
     fn has_modal_windows(&self) -> bool {
         self.modal_windows

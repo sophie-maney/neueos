@@ -33,7 +33,8 @@ for Cmd-V); and nothing about text selections.
    with no `O_NONBLOCK` (and no `fcntl` binding).
 3. **Primary selection: paste only.** A middle click pastes it, after Masonry has seen the
    press. Masonry doesn't report text selections, so the driver can't own the primary
-   selection. That waits for the text fields task (2.14) or a Masonry change.
+   selection. That waits for the text fields task (2.14) or a Masonry change. (Amended
+   2026-11-05: see below.)
 4. **AccessKit through `accesskit_unix` 0.24** (AT-SPI over zbus, with its default
    `async-io` executor on its own thread). One adapter per window. Its handlers send
    requests to the loop over a calloop channel; the tree goes out with the next frame, as
@@ -66,3 +67,20 @@ It is pure Rust and talks D-Bus through zbus, so it needs no C library.
   nested menus (they arrive with task 2.17), `TakeFocus` and the start-up token.
 - The neue-comp test harness has no xdg-popup client, so the layer-popup fix has no
   headless test yet.
+
+## Amendment 2026-11-05 (task 2.28): owning the primary selection
+Decision 3 changes: the driver owns the primary selection when a neue-kit text field
+reports one. Masonry still has no signal for it, so the report goes by neue-kit's own
+channel instead:
+- `neue_platform::Ctx::set_primary_selection(text)`, a no-op on winit. It queues the text
+  on the driver's registry (the latest call wins; empty text is ignored), and the driver
+  takes the selection after the callback with the serial of the latest input event, like
+  Copy (decision 2). The driver keeps the source and its text, answers `send` requests
+  itself, pastes it from memory on a middle click, and forgets it when another client
+  takes the selection.
+- `TextField` submits `FieldAction::Selected(text)` when a primary-button press is released
+  over a non-empty selection (a drag, a double or triple click, a Shift-click), and on
+  Shift with an arrow, Home or End. Secure fields never do. `Runner::action` handles it
+  before looking for a message handler, so fields need no `on_*` call.
+- Not covered: `TextView`, Ctrl-A and clearing the selection when a field's selection
+  collapses; a text view or a Masonry-level signal can reuse `Ctx::set_primary_selection`.

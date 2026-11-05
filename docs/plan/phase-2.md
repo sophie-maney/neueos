@@ -156,7 +156,7 @@ the paper and leather materials move to Phase 6/7 (Widgets, Write).
       `TEXT_FIELD_WIDTH`, caret blink. `Fixture::{type_text, select_text, compose}`;
       gallery page "Fields"; 68 goldens, passing on macOS and Linux aarch64 (x86_64 not
       run). IME: VM check `docs/checks/phase-2.md` §6 (input-method probe); macOS IME
-      step for the owner in the same section. Not yet: undo, primary selection (2.28),
+      step for the owner in the same section. Not yet: undo,
       context menu (2.17b).
 - [x] **2.15 Scroll view** · Opus. Overlay scrollbars and virtual scrolling (the base for
       tables and collection views).
@@ -184,7 +184,7 @@ the paper and leather materials move to Phase 6/7 (Widgets, Write).
       on macOS and Linux aarch64 (x86_64 not run). `Fixture::focus` descends to the first
       focusable widget; `Fixture::select_text` is now Cmd/Ctrl-A. IME in a text view: VM and
       macOS steps in `docs/checks/phase-2.md` §7, not run. Not yet: undo, context menu (2.17b),
-      primary selection (2.28), tab characters, caret moves on Page Up/Down.
+      primary selection from a text view, tab characters, caret moves on Page Up/Down.
 - [x] **2.17a Menus: model and context menus** · Opus. Split from 2.17. The menu model
       (data for 2.18's DBusMenu export: items, separators, submenus, check and radio
       states, shortcuts, disabled), the menu layer widget (xdg-popup on Wayland, overlay
@@ -704,13 +704,24 @@ the paper and leather materials move to Phase 6/7 (Widgets, Write).
       test client got `track_layer_scale`. Test: `layer_surfaces_take_their_outputs_scale`
       in `tests/outputs.rs` (180, then 240 after reload). Headless only; the VM check
       (strip sharp at 1.5×) is still the owner's.
-- [ ] **2.28 Primary selection from text fields** · Sonnet. Found in 2.14: the Wayland
+- [x] **2.28 Primary selection from text fields** · Sonnet. Found in 2.14: the Wayland
       driver pastes the primary selection but never owns it. Add a platform call to set
       the primary selection (`Ctx`, no-op on winit), a runner hook, and have
       `TextField` report its selected text when a pointer or Shift selection ends (not in
       secure fields). ADR amendment to 0034.
       *Accept:* in the VM, selecting text in the gallery's field and middle-clicking in
       foot pastes it.
+      *Done:* `Ctx::set_primary_selection` (no-op on winit; the latest call per callback
+      wins, empty text is ignored); the Wayland driver takes the primary selection with the
+      serial of the input that ended the selecting, answers `send` itself, pastes it from
+      memory on a middle click, and drops it when another client takes it
+      (`wayland/clipboard.rs`). neue-kit: `FieldAction::Selected` goes from `TextField` to
+      the runner (needs no handler) when a primary-button press is released over a
+      non-empty selection, and on Shift plus an arrow, Home or End; never from a secure
+      field. Tests in `tests/fields.rs` (macOS, fake host) and `Ctx` in `app.rs`; clippy
+      clean on Linux aarch64. VM check: `docs/checks/phase-2.md` §29, not run. Not yet:
+      `TextView` (2.16) and Ctrl-A don't set it; a field doesn't release it when its
+      selection collapses.
 - [ ] **2.29 macOS: one see-through, garbled frame** · Opus (hard debugging). Found in
       2.17a, on the macOS host (winit driver, Metal). Now and then, for a single frame,
       the whole gallery window is drawn see-through (the desktop shows through it), and
