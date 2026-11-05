@@ -53,7 +53,15 @@ pub struct MenuNode {
     /// Modifier names (`Control`, `Alt`, `Shift`, `Super`) then the key (`S`, `F5`);
     /// empty for none.
     pub shortcut: Vec<String>,
+    pub icon: Option<MenuIcon>,
     pub children: Vec<MenuNode>,
+}
+
+/// An item's icon: `icon-name` (a name in the icon theme) or `icon-data` (PNG bytes).
+#[derive(Clone, Debug, PartialEq, Eq)]
+pub enum MenuIcon {
+    Name(String),
+    Png(Vec<u8>),
 }
 
 /// What a [`MenuNode`] is.
@@ -106,6 +114,7 @@ impl MenuNode {
             enabled: true,
             toggle: Toggle::None,
             shortcut: Vec::new(),
+            icon: None,
             children: Vec::new(),
         }
     }
@@ -182,10 +191,68 @@ impl MenuNode {
         if !self.shortcut.is_empty() {
             put("shortcut", Value::from(vec![self.shortcut.clone()]));
         }
+        match &self.icon {
+            Some(MenuIcon::Name(name)) => put("icon-name", Value::from(name.clone())),
+            Some(MenuIcon::Png(png)) => put("icon-data", Value::from(png.clone())),
+            None => {}
+        }
         if !self.children.is_empty() {
             put("children-display", Value::from("submenu"));
         }
         props
+    }
+
+    /// The item a client reads from `layout`, with its children; `None` if it is hidden
+    /// (`visible` false). Properties left out take their default values; ones of the wrong
+    /// type are ignored. The label loses its mnemonic markers (`_File` → `File`, `__` →
+    /// `_`); only the first of several shortcuts is kept.
+    pub fn from_layout(layout: &Layout) -> Option<Self> {
+        let props = &layout.properties;
+        let get = |name: &str| props.get(name).map(|v| &**v);
+        let flag = |name: &str| get(name).and_then(|v| bool::try_from(v).ok());
+        let text = |name: &str| get(name).and_then(|v| <&str>::try_from(v).ok());
+        if flag("visible") == Some(false) {
+            return None;
+        }
+        let mut node = Self::item(
+            layout.id,
+            text("label").map(unescape_label).unwrap_or_default(),
+        );
+        if text("type") == Some("separator") {
+            node.kind = NodeKind::Separator;
+        }
+        node.enabled = flag("enabled").unwrap_or(true);
+        let state = match get("toggle-state").and_then(|v| i32::try_from(v).ok()) {
+            Some(0) | None => ToggleState::Off,
+            Some(1) => ToggleState::On,
+            Some(_) => ToggleState::Mixed,
+        };
+        node.toggle = match text("toggle-type") {
+            Some("checkmark") => Toggle::Check(state),
+            Some("radio") => Toggle::Radio(state),
+            _ => Toggle::None,
+        };
+        node.shortcut = get("shortcut")
+            .and_then(|v| v.try_clone().ok())
+            .and_then(|v| Vec::<Vec<String>>::try_from(v).ok())
+            .and_then(|mut keys| (!keys.is_empty()).then(|| keys.swap_remove(0)))
+            .unwrap_or_default();
+        node.icon = match (text("icon-name"), get("icon-data")) {
+            (Some(name), _) if !name.is_empty() => Some(MenuIcon::Name(name.to_owned())),
+            (_, Some(data)) => data
+                .try_clone()
+                .ok()
+                .and_then(|v| Vec::<u8>::try_from(v).ok())
+                .filter(|png| !png.is_empty())
+                .map(MenuIcon::Png),
+            _ => None,
+        };
+        node.children = layout
+            .children
+            .iter()
+            .filter_map(Self::from_layout)
+            .collect();
+        Some(node)
     }
 
     /// The layout under this item, `depth` levels deep (-1: all).
@@ -209,6 +276,24 @@ impl MenuNode {
 /// Doubles underscores: a single `_` marks the next letter as the mnemonic.
 fn escape_label(label: &str) -> String {
     label.replace('_', "__")
+}
+
+/// Removes DBusMenu's mnemonic markers: a single `_` goes, `__` becomes `_`.
+fn unescape_label(label: &str) -> String {
+    let mut out = String::with_capacity(label.len());
+    let mut chars = label.chars();
+    while let Some(c) = chars.next() {
+        if c != '_' {
+            out.push(c);
+        } else if let Some(next) = chars.next() {
+            if next == '_' {
+                out.push('_');
+            } else {
+                out.push(next);
+            }
+        }
+    }
+    out
 }
 
 /// A subtree as `GetLayout` returns it: `(ia{sv}av)`, each child a variant holding the
@@ -604,6 +689,36 @@ mod tests {
         node.enabled = false;
         let props = node.properties(&names(&["enabled"]));
         assert_eq!(props.keys().collect::<Vec<_>>(), ["enabled"]);
+    }
+
+    #[test]
+    fn parsing_a_layout_round_trips_the_properties() {
+        let mut wrap = MenuNode::item(2, "Word_Wrap");
+        wrap.enabled = false;
+        wrap.toggle = Toggle::Radio(ToggleState::On);
+        wrap.shortcut = names(&["Control", "W"]);
+        wrap.icon = Some(MenuIcon::Name("document-open".into()));
+        let mut png = MenuNode::item(4, "Png");
+        png.icon = Some(MenuIcon::Png(vec![0x89, b'P']));
+        let tree = MenuNode::submenu(1, "View", vec![wrap, MenuNode::separator(3), png]);
+        let parsed = MenuNode::from_layout(&tree.layout(-1, &[])).unwrap();
+        assert_eq!(parsed, tree);
+    }
+
+    #[test]
+    fn parsing_drops_hidden_items_and_mnemonics() {
+        let mut layout = MenuNode::submenu(1, "", vec![MenuNode::item(2, "x")]).layout(-1, &[]);
+        layout.properties.insert(
+            "label".into(),
+            OwnedValue::from(zbus::zvariant::Str::from("_File __x")),
+        );
+        layout.children[0]
+            .properties
+            .insert("visible".into(), OwnedValue::from(false));
+        let parsed = MenuNode::from_layout(&layout).unwrap();
+        assert_eq!(parsed.label, "File _x");
+        assert!(parsed.children.is_empty());
+        assert_eq!(unescape_label("a_"), "a");
     }
 
     #[test]

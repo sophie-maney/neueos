@@ -1,7 +1,8 @@
-//! The shell process (Linux): a menu bar on every output, the active app's name from the
-//! compositor's window list, the clock, and the logo menu's commands.
+//! The shell process (Linux): a menu bar on every output, the active app's name and menus
+//! from the compositor's window list, the clock, and the logo menu's commands.
 
 use std::collections::BTreeMap;
+use std::sync::mpsc;
 
 use anyhow::Context as _;
 use neue_config::{AppearanceConfig, Layers};
@@ -18,6 +19,7 @@ use neue_shell::picture;
 use neue_shell::windows::Windows;
 
 use crate::appearance;
+use crate::global_menu::{self, Address, Input, MenuEvent, Menus};
 
 /// The bar's layer-shell namespace.
 const NAMESPACE: &str = "neue-menubar";
@@ -40,6 +42,12 @@ enum Message {
     Appearance(Box<AppearanceConfig>),
     /// The `appearance.toml` watcher stopped (it logged why).
     AppearanceWatchEnded,
+    /// The active app's menus were read.
+    AppMenus(Menus),
+    /// The user did something with the app's menus.
+    AppMenu(MenuEvent),
+    /// The global-menu worker stopped (it logged why).
+    GlobalMenuEnded,
 }
 
 struct Bar {
@@ -62,6 +70,35 @@ struct Shell {
     /// What every bar shows.
     content: BarContent,
     about: Option<WindowId>,
+    global_menu: GlobalMenu,
+}
+
+/// The global menu as the UI thread keeps it.
+#[derive(Default)]
+struct GlobalMenu {
+    /// To the worker; `None` until it starts, and after it stopped.
+    worker: Option<mpsc::Sender<Input>>,
+    /// The address the worker follows.
+    following: Option<Address>,
+    /// Counts [`Input::Follow`]s as the worker does: menus of another generation were read
+    /// for an earlier window.
+    generation: u64,
+    /// What the bars show.
+    shown: Option<Menus>,
+    /// Newer menus, held back while one of the shown menus is up.
+    pending: Option<Menus>,
+    /// One of the app's menus is up.
+    open: bool,
+}
+
+impl GlobalMenu {
+    fn send(&mut self, input: Input) {
+        if let Some(worker) = &self.worker
+            && worker.send(input).is_err()
+        {
+            self.worker = None;
+        }
+    }
 }
 
 impl Shell {
@@ -79,7 +116,79 @@ impl Shell {
             },
             windows,
             about: None,
+            global_menu: GlobalMenu::default(),
         }
+    }
+
+    /// Starts the global-menu worker on its own thread.
+    fn start_global_menu(&mut self, cx: &mut Cx<'_, Message>) {
+        let (tx, rx) = mpsc::channel();
+        let signals = tx.clone();
+        self.global_menu.worker = Some(tx);
+        cx.spawn(move |sender| {
+            let send = |menus| sender.send(Message::AppMenus(menus));
+            if let Err(err) = global_menu::run(&rx, signals, send) {
+                tracing::warn!(%err, "no global menu: the session bus is unavailable");
+            }
+            Message::GlobalMenuEnded
+        });
+    }
+
+    /// The bar's titles for the app's menus being shown.
+    fn app_titles(&self) -> Vec<neue_kit::desktop::MenuTitle<Message>> {
+        self.global_menu.shown.as_ref().map_or_else(Vec::new, |m| {
+            global_menu::bar_titles(&m.titles, m.generation, Message::AppMenu)
+        })
+    }
+
+    /// Shows the app's menus on every bar.
+    fn sync_menus(&self, cx: &mut Cx<'_, Message>) {
+        for bar in self.bars.values() {
+            bar.handles.bar.set_menus(cx, self.app_titles());
+        }
+    }
+
+    /// Shows `menus`, or holds them back while a menu is up.
+    fn show_menus(&mut self, cx: &mut Cx<'_, Message>, menus: Menus) {
+        if self.global_menu.open {
+            self.global_menu.pending = Some(menus);
+        } else {
+            self.global_menu.shown = Some(menus);
+            self.sync_menus(cx);
+        }
+    }
+
+    /// Follows the active window's menus.
+    fn follow_menus(&mut self, cx: &mut Cx<'_, Message>) {
+        let address = self.windows.active().and_then(|w| Address::of(&w.menu));
+        if address == self.global_menu.following {
+            return;
+        }
+        self.global_menu.following.clone_from(&address);
+        self.global_menu.generation += 1;
+        // The old app's menus go at once; the new ones follow when read.
+        if self.global_menu.shown.is_some() {
+            let empty = Menus {
+                generation: self.global_menu.generation,
+                titles: Vec::new(),
+            };
+            self.show_menus(cx, empty);
+        }
+        self.global_menu.send(Input::Follow(address));
+    }
+
+    fn app_menu(&mut self, cx: &mut Cx<'_, Message>, event: MenuEvent) {
+        match event.event {
+            global_menu::ItemEvent::Opened => self.global_menu.open = true,
+            global_menu::ItemEvent::Closed => {
+                self.global_menu.open = false;
+                if let Some(menus) = self.global_menu.pending.take() {
+                    self.show_menus(cx, menus);
+                }
+            }
+            global_menu::ItemEvent::Clicked => {}
+        }
+        self.global_menu.send(Input::Event(event));
     }
 
     fn open_background(&mut self, cx: &mut Cx<'_, Message>, output: OutputId) {
@@ -155,7 +264,13 @@ impl Shell {
             return;
         }
         let mut handles = BarHandles::default();
-        let root = bar::menu_bar(&self.content, Message::System, &mut handles, cx.backdrop());
+        let root = bar::menu_bar(
+            &self.content,
+            self.app_titles(),
+            Message::System,
+            &mut handles,
+            cx.backdrop(),
+        );
         let height = neue_kit::tokens::materials::menu_bar::HEIGHT;
         #[expect(clippy::cast_possible_truncation, reason = "the bar's 22 px height")]
         let layer = LayerSpec {
@@ -256,13 +371,28 @@ impl Application for Shell {
         }
         self.load_picture(cx);
         self.watch_appearance(cx);
+        self.start_global_menu(cx);
         self.tick(cx);
     }
 
     fn update(&mut self, cx: &mut Cx<'_, Message>, message: Message) {
         match message {
             Message::Tick => self.tick(cx),
-            Message::Sync => self.sync_bars(cx),
+            Message::Sync => {
+                self.sync_bars(cx);
+                // A new bar can't take the menus while another bar's menu is up.
+                if !self.global_menu.open {
+                    self.sync_menus(cx);
+                }
+            }
+            Message::AppMenus(menus) => {
+                // Menus read for an earlier window are stale.
+                if menus.generation == self.global_menu.generation {
+                    self.show_menus(cx, menus);
+                }
+            }
+            Message::AppMenu(event) => self.app_menu(cx, event),
+            Message::GlobalMenuEnded => self.global_menu.worker = None,
             Message::System(command) => self.system(cx, command),
             Message::Login(Ok(())) => {}
             Message::Login(Err(error)) => tracing::warn!(%error, "logind call failed"),
@@ -302,6 +432,7 @@ impl Application for Shell {
     fn shell(&mut self, cx: &mut Cx<'_, Message>, event: ShellEvent) {
         self.windows.apply(event);
         self.app_changed(cx);
+        self.follow_menus(cx);
     }
 }
 

@@ -1,5 +1,6 @@
 //! The shell's menu bar (3.2b) on the fake host: titles on the left, extras on the right,
-//! a title's menu opening below it, choosing, the keyboard, and changing a title.
+//! a title's menu opening below it, choosing, the keyboard, and changing a title; the
+//! active app's menus being replaced, and their open and close messages (3.7a).
 
 use masonry_core::accesskit::{Action, Role};
 use masonry_core::core::PointerButton;
@@ -18,12 +19,29 @@ enum Msg {
     Quit,
     /// Script: the app renames its title.
     Rename(&'static str),
+    /// Script: the app's menus become these titles, each with one item named after it.
+    SetMenus(Vec<&'static str>),
+    Opened(&'static str),
+    Closed(&'static str),
+    Item(&'static str),
+}
+
+/// An app menu titled `name`, with an item `name item`, reporting opening and closing.
+fn app_menu(name: &'static str) -> MenuTitle<Msg> {
+    let item: &'static str = Box::leak(format!("{name} item").into_boxed_str());
+    MenuTitle::new(
+        name,
+        Menu::new().with(MenuItem::new(item).on_choose(Msg::Item(item))),
+    )
+    .on_open(Msg::Opened(name))
+    .on_close(Msg::Closed(name))
 }
 
 const WIDTH: u32 = 500;
 
 #[derive(Default)]
 struct Bar {
+    bar: Handle<MenuBar<Msg>>,
     logo: Handle<MenuTitle<Msg>>,
     app: Handle<MenuTitle<Msg>>,
     clock: Handle<MenuTitle<Msg>>,
@@ -50,7 +68,9 @@ impl Application for Bar {
                 .bold(true)
                 .bind(&mut self.app),
             )
-            .with_extra(MenuTitle::new("10:09", Menu::new()).bind(&mut self.clock));
+            .with_menu(app_menu("Edit"))
+            .with_extra(MenuTitle::new("10:09", Menu::new()).bind(&mut self.clock))
+            .bind(&mut self.bar);
         // The bar is the surface's root, as in the shell; the window is taller so that the
         // menus fit in the fake host.
         let layer = LayerSpec::new("test-bar", Anchor::TOP_EDGE);
@@ -58,11 +78,14 @@ impl Application for Bar {
     }
 
     fn update(&mut self, cx: &mut Cx<'_, Msg>, message: Msg) {
-        if let Msg::Rename(name) = message {
-            self.app.set_text(cx, name);
-            return;
+        match message {
+            Msg::Rename(name) => self.app.set_text(cx, name),
+            Msg::SetMenus(names) => {
+                self.bar
+                    .set_menus(cx, names.into_iter().map(app_menu).collect());
+            }
+            message => self.log.push(message),
         }
-        self.log.push(message);
     }
 }
 
@@ -174,6 +197,73 @@ fn a_title_with_no_menu_opens_nothing_and_text_can_change() {
     assert_eq!(
         find(&mut host, Role::MenuItem, Some("A Much Longer Name")).len(),
         1
+    );
+}
+
+/// The bounds of the title labelled `label`, if it is in the bar.
+fn title(host: &mut FakeHost, label: &str) -> Option<Rect> {
+    find(host, Role::MenuItem, Some(label))
+        .first()
+        .map(|n| n.bounds)
+}
+
+#[test]
+fn app_menus_follow_the_fixed_titles_and_report_opening_and_closing() {
+    let (mut runner, mut host) = setup();
+    let files = bounds_of(&mut host, id(&runner.app().app));
+    let edit = title(&mut host, "Edit").unwrap();
+    assert!(
+        (edit.x0 - files.x1).abs() < 0.5,
+        "after the app's name: {edit:?}"
+    );
+
+    let at = edit.center();
+    let harness = host.only();
+    harness.mouse_move(at);
+    harness.mouse_button_press(Some(PointerButton::Primary));
+    harness.mouse_button_release(Some(PointerButton::Primary));
+    deliver(&mut runner, &mut host);
+    assert_eq!(menus_open(&mut host), 1);
+    assert_eq!(runner.app().log, [Msg::Opened("Edit")]);
+    click_item(&mut runner, &mut host, "Edit item");
+    assert_eq!(
+        runner.app().log,
+        [
+            Msg::Opened("Edit"),
+            Msg::Item("Edit item"),
+            Msg::Closed("Edit")
+        ]
+    );
+}
+
+#[test]
+fn app_menus_are_replaced_whole() {
+    let (mut runner, mut host) = setup();
+    runner.send(&mut host, Msg::SetMenus(vec!["Window", "Help"]));
+    let _ = host.only().render();
+    assert!(title(&mut host, "Edit").is_none());
+    let files = bounds_of(&mut host, id(&runner.app().app));
+    let window = title(&mut host, "Window").unwrap();
+    let help = title(&mut host, "Help").unwrap();
+    assert!((window.x0 - files.x1).abs() < 0.5, "{window:?}");
+    assert!((help.x0 - window.x1).abs() < 0.5, "{help:?}");
+
+    // The new titles' items act.
+    let harness = host.only();
+    harness.mouse_move(help.center());
+    harness.mouse_button_press(Some(PointerButton::Primary));
+    harness.mouse_button_release(Some(PointerButton::Primary));
+    deliver(&mut runner, &mut host);
+    click_item(&mut runner, &mut host, "Help item");
+    assert!(runner.app().log.contains(&Msg::Item("Help item")));
+
+    runner.send(&mut host, Msg::SetMenus(Vec::new()));
+    let _ = host.only().render();
+    assert!(title(&mut host, "Window").is_none());
+    assert_eq!(
+        find(&mut host, Role::MenuItem, None).len(),
+        3,
+        "logo, app, clock"
     );
 }
 

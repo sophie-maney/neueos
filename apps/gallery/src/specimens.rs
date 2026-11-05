@@ -968,10 +968,21 @@ pub fn shell_bar<M: 'static>(
     send: impl Fn(neue_shell::bar::SystemCommand) -> M + Clone + 'static,
 ) -> Stack<M> {
     let mut handles = neue_shell::bar::BarHandles::default();
+    // The app's own menus, as the global menu shows them (task 3.7a).
+    let menus = ["File", "Edit", "View"]
+        .into_iter()
+        .map(|title| {
+            neue_kit::desktop::MenuTitle::new(
+                title,
+                neue_kit::Menu::new().with(neue_kit::MenuItem::new("Close").disabled(true)),
+            )
+        })
+        .collect();
     Stack::column()
         .align(Align::Fill)
         .with(neue_shell::bar::menu_bar(
             &shell_bar_content(app_name),
+            menus,
             send,
             &mut handles,
             // Inside a gallery window, nothing is blurred behind the bar.

@@ -1,7 +1,8 @@
 //! The shell's menu bar (task 3.2b, ADR 0068): a strip in the menu-bar material, with menu
 //! titles from its left edge and menu extras from its right edge. Each title (the logo,
 //! the app's name, a menu extra such as the clock) opens its menu right below itself and
-//! stays highlighted while the menu is up.
+//! stays highlighted while the menu is up. The active app's menus (task 3.7a, ADR 0076)
+//! are a group of titles after the fixed ones that the shell replaces as apps change.
 
 use masonry_core::accesskit::{Action, HasPopup, Node, Role};
 use masonry_core::core::keyboard::{Key, NamedKey};
@@ -22,17 +23,18 @@ use neue_theme::materials::menu_bar::{
     EDGE_INSET, HEIGHT, LABEL_BASELINE, LABEL_EMBOSS_OFFSET, LOGO_SIZE, Palette, TITLE_PADDING,
 };
 
-use super::context::handler;
-use super::menu::{self, Anchor, Chosen};
+use super::menu::{self, Anchor};
 use super::text::{TextLine, TextStyle};
 use crate::Cx;
-use crate::element::{Element, Handle, Wiring};
+use crate::element::{Element, Handle, Handler, Wiring};
 use crate::menu::{ItemHandler, Menu, MenuSpec};
 use crate::theme::ThemeProp;
 
 /// The Masonry widget behind [`MenuBar`].
 pub(crate) struct MenuBarWidget {
     leading: Vec<WidgetPod<dyn Widget>>,
+    /// The active app's menus, after `leading`.
+    menus: Vec<WidgetPod<dyn Widget>>,
     trailing: Vec<WidgetPod<dyn Widget>>,
     backdrop: Backdrop,
     replayer: ImagingReplayer,
@@ -42,9 +44,24 @@ impl std::fmt::Debug for MenuBarWidget {
     fn fmt(&self, f: &mut std::fmt::Formatter<'_>) -> std::fmt::Result {
         f.debug_struct("MenuBarWidget")
             .field("leading", &self.leading.len())
+            .field("menus", &self.menus.len())
             .field("trailing", &self.trailing.len())
             .field("backdrop", &self.backdrop)
             .finish_non_exhaustive()
+    }
+}
+
+impl MenuBarWidget {
+    fn left(&mut self) -> impl Iterator<Item = &mut WidgetPod<dyn Widget>> {
+        self.leading.iter_mut().chain(&mut self.menus)
+    }
+
+    fn edit_set_menus(this: &mut WidgetMut<'_, Self>, menus: Vec<NewWidget<dyn Widget>>) {
+        for old in std::mem::take(&mut this.widget.menus) {
+            this.ctx.remove_child(old);
+        }
+        this.widget.menus = menus.into_iter().map(NewWidget::to_pod).collect();
+        this.ctx.children_changed();
     }
 }
 
@@ -54,7 +71,12 @@ impl Widget for MenuBarWidget {
     type Action = NoAction;
 
     fn register_children(&mut self, ctx: &mut RegisterCtx<'_>) {
-        for child in self.leading.iter_mut().chain(&mut self.trailing) {
+        for child in self
+            .leading
+            .iter_mut()
+            .chain(&mut self.menus)
+            .chain(&mut self.trailing)
+        {
             ctx.register_child(child);
         }
     }
@@ -78,7 +100,8 @@ impl Widget for MenuBarWidget {
             // Every title side by side: what the bar needs to show them all.
             Axis::Horizontal => {
                 let mut width = Length::px(2.0 * EDGE_INSET);
-                for child in self.leading.iter_mut().chain(&mut self.trailing) {
+                let all = self.leading.iter_mut().chain(&mut self.menus);
+                for child in all.chain(&mut self.trailing) {
                     let w = ctx.compute_length(
                         child,
                         LenDef::MaxContent,
@@ -97,7 +120,7 @@ impl Widget for MenuBarWidget {
         let auto = SizeDef::new(LenDef::MaxContent, LenDef::Fixed(Length::px(HEIGHT)));
         let available = Size::new(size.width, HEIGHT);
         let mut x = EDGE_INSET;
-        for child in &mut self.leading {
+        for child in self.left() {
             let child_size = ctx.compute_size(child, auto, available.into());
             ctx.run_layout(child, child_size);
             ctx.place_child(child, Point::new(x, 0.0));
@@ -147,6 +170,7 @@ impl Widget for MenuBarWidget {
     fn children_ids(&self) -> ChildrenIds {
         self.leading
             .iter()
+            .chain(&self.menus)
             .chain(&self.trailing)
             .map(WidgetPod::id)
             .collect()
@@ -159,6 +183,17 @@ enum Content {
     Text(Box<TextLine>),
     /// The logo mark; the string is its accessible name.
     Logo(String),
+}
+
+/// What a [`MenuTitleWidget`] tells its owner.
+#[derive(Debug, Clone, Copy, PartialEq, Eq)]
+pub(crate) enum TitleAction {
+    /// Its menu opened.
+    Opened,
+    /// An item was chosen (its id in the menu tree).
+    Chosen(usize),
+    /// Its menu closed (after [`TitleAction::Chosen`], if an item was chosen).
+    Closed,
 }
 
 /// The Masonry widget behind [`MenuTitle`].
@@ -222,6 +257,7 @@ impl MenuTitleWidget {
             &mut self.return_focus,
         );
         self.open = true;
+        ctx.submit_action::<TitleAction>(TitleAction::Opened);
         ctx.request_paint_only();
         ctx.request_accessibility_update();
     }
@@ -232,8 +268,10 @@ fn closed(mut owner: WidgetMut<'_, dyn Widget>, chosen: Option<usize>) {
     let mut this = owner.downcast::<MenuTitleWidget>();
     this.widget.open = false;
     if let Some(i) = chosen {
-        this.ctx.submit_action::<Chosen>(Chosen(i));
+        this.ctx
+            .submit_action::<TitleAction>(TitleAction::Chosen(i));
     }
+    this.ctx.submit_action::<TitleAction>(TitleAction::Closed);
     this.ctx.request_paint_only();
     this.ctx.request_accessibility_update();
 }
@@ -241,7 +279,7 @@ fn closed(mut owner: WidgetMut<'_, dyn Widget>, chosen: Option<usize>) {
 impl UsesProperty<ThemeProp> for MenuTitleWidget {}
 
 impl Widget for MenuTitleWidget {
-    type Action = Chosen;
+    type Action = TitleAction;
 
     fn on_pointer_event(
         &mut self,
@@ -449,6 +487,7 @@ impl Widget for MenuTitleWidget {
 pub struct MenuBar<M> {
     inner: NewWidget<MenuBarWidget>,
     leading: Vec<Element<M>>,
+    menus: Vec<Element<M>>,
     trailing: Vec<Element<M>>,
 }
 
@@ -472,11 +511,13 @@ impl<M> MenuBar<M> {
         Self {
             inner: NewWidget::new(MenuBarWidget {
                 leading: Vec::new(),
+                menus: Vec::new(),
                 trailing: Vec::new(),
                 backdrop: Backdrop::Opaque,
                 replayer: ImagingReplayer::new(),
             }),
             leading: Vec::new(),
+            menus: Vec::new(),
             trailing: Vec::new(),
         }
     }
@@ -485,6 +526,17 @@ impl<M> MenuBar<M> {
     #[must_use]
     pub fn with(mut self, title: impl Into<Element<M>>) -> Self {
         self.leading.push(title.into());
+        self
+    }
+
+    /// Adds a title to the active app's menus, after the fixed titles ([`MenuBar::with`]);
+    /// [`Handle::set_menus`] replaces them all.
+    #[must_use]
+    pub fn with_menu(mut self, title: MenuTitle<M>) -> Self
+    where
+        M: 'static,
+    {
+        self.menus.push(title.into());
         self
     }
 
@@ -515,16 +567,42 @@ impl<M> From<MenuBar<M>> for Element<M> {
         let MenuBar {
             mut inner,
             leading,
+            menus,
             trailing,
         } = bar;
         let mut wiring = Wiring::default();
         for child in leading {
             inner.widget.leading.push(wiring.adopt(child).to_pod());
         }
+        for child in menus {
+            inner.widget.menus.push(wiring.adopt(child).to_pod());
+        }
         for child in trailing {
             inner.widget.trailing.push(wiring.adopt(child).to_pod());
         }
         Element::with_wiring(inner.erased(), wiring)
+    }
+}
+
+impl<M: 'static> Handle<MenuBar<M>> {
+    /// Replaces the active app's menus (the titles added with [`MenuBar::with_menu`]).
+    /// Don't replace a title while its menu is up: wait for its close message
+    /// ([`MenuTitle::on_close`]).
+    pub fn set_menus(&self, cx: &mut Cx<'_, M>, titles: Vec<MenuTitle<M>>) {
+        let Some(window) = cx.window_of(self) else {
+            tracing::debug!("setting the menus of a bar that isn't in an open window");
+            return;
+        };
+        let mut wiring = Wiring::default();
+        let widgets = titles
+            .into_iter()
+            .map(|title| wiring.adopt(title.into()))
+            .collect();
+        cx.edit::<MenuBarWidget, _>(self, |mut bar| {
+            MenuBarWidget::edit_set_menus(&mut bar, widgets);
+        });
+        cx.prune_handlers(window);
+        cx.register_wiring(window, wiring);
     }
 }
 
@@ -535,6 +613,8 @@ impl<M> From<MenuBar<M>> for Element<M> {
 pub struct MenuTitle<M> {
     inner: NewWidget<MenuTitleWidget>,
     items: Vec<Option<ItemHandler<M>>>,
+    on_open: Option<ItemHandler<M>>,
+    on_close: Option<ItemHandler<M>>,
 }
 
 impl<M> std::fmt::Debug for MenuTitle<M> {
@@ -562,7 +642,31 @@ impl<M: 'static> MenuTitle<M> {
         Self {
             inner: NewWidget::new(MenuTitleWidget::new(content, spec)),
             items,
+            on_open: None,
+            on_close: None,
         }
+    }
+
+    /// Sends `message` whenever its menu opens. [`Handle::set_menu`] keeps only the items:
+    /// to change this, build a new title.
+    #[must_use]
+    pub fn on_open(mut self, message: M) -> Self
+    where
+        M: Clone,
+    {
+        self.on_open = Some(Box::new(move || message.clone()));
+        self
+    }
+
+    /// Sends `message` whenever its menu closes, after the chosen item's message if one
+    /// was chosen. Like [`MenuTitle::on_open`], not kept by [`Handle::set_menu`].
+    #[must_use]
+    pub fn on_close(mut self, message: M) -> Self
+    where
+        M: Clone,
+    {
+        self.on_close = Some(Box::new(move || message.clone()));
+        self
     }
 
     /// Bold text (the active app's name).
@@ -586,9 +690,26 @@ impl<M: 'static> From<MenuTitle<M>> for Element<M> {
     fn from(title: MenuTitle<M>) -> Self {
         let id = title.inner.id();
         let mut element = Element::new(title.inner.erased());
-        element.on_action(id, handler(title.items));
+        element.on_action(
+            id,
+            title_handler(title.items, title.on_open, title.on_close),
+        );
         element
     }
+}
+
+/// Turns a title's actions into messages: the chosen item's, and the open and close ones
+/// if it has them.
+fn title_handler<M: 'static>(
+    mut items: Vec<Option<ItemHandler<M>>>,
+    mut on_open: Option<ItemHandler<M>>,
+    mut on_close: Option<ItemHandler<M>>,
+) -> Handler<M> {
+    Box::new(move |action| match *action.downcast_ref::<TitleAction>()? {
+        TitleAction::Opened => on_open.as_mut().map(|make| make()),
+        TitleAction::Closed => on_close.as_mut().map(|make| make()),
+        TitleAction::Chosen(i) => items.get_mut(i)?.as_mut().map(|make| make()),
+    })
 }
 
 impl<M: 'static> Handle<MenuTitle<M>> {
@@ -600,7 +721,7 @@ impl<M: 'static> Handle<MenuTitle<M>> {
         let (spec, items) = menu.into_parts();
         cx.edit::<MenuTitleWidget, _>(self, |w| w.widget.spec = spec);
         let mut wiring = Wiring::default();
-        wiring.handlers.push((id, handler(items)));
+        wiring.handlers.push((id, title_handler(items, None, None)));
         cx.register_wiring(window, wiring);
     }
 }
