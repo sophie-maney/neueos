@@ -1,6 +1,6 @@
 [workspace]
 resolver = "3"
-members = ["crates/*", "compositor/*", "apps/*", "session/neue-session", "xtask"]
+members = ["crates/*", "compositor/*", "shell/*", "apps/*", "session/neue-session", "xtask"]
 
 [workspace.package]
 version = "0.0.0"
@@ -72,6 +72,10 @@ tempfile = "3"
 # Its own `async-io` executor, not tokio: neue-kit apps have no async runtime (ADR 0047).
 zbus = { version = "5.19", default-features = false, features = ["async-io", "blocking-api"] }
 
+# The menu bar clock's local time (neue-shell, ADR 0068). Pure Rust, reads the system
+# tzdb; MIT OR Unlicense.
+jiff = "0.2"
+
 # Configuration (neue-config, ADR 0004). `toml` is MIT OR Apache-2.0.
 toml = "1"
 
@@ -110,6 +114,7 @@ neue-protocols = { path = "crates/neue-protocols" }
 neue-platform = { path = "crates/neue-platform" }
 neue-kit = { path = "crates/neue-kit" }
 neue-dbus = { path = "crates/neue-dbus" }
+neue-shell = { path = "shell/neue-shell" }
 
 [workspace.lints.rust]
 unsafe_code = "deny"

@@ -80,6 +80,7 @@ fn options() -> Options {
     Options {
         default_properties: Arc::new(masonry::theme::default_property_set()),
         font: Some(Blob::new(Arc::new(FONT))),
+        extra_fonts: Vec::new(),
     }
 }
 

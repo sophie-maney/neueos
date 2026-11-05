@@ -13,6 +13,8 @@ publish.workspace = true
 [dependencies]
 anyhow.workspace = true
 neue-kit.workspace = true
+# The Shell page: the menu bar's pieces (portable part of neue-shell).
+neue-shell.workspace = true
 tracing-subscriber.workspace = true
 
 [dev-dependencies]

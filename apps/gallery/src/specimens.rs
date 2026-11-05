@@ -948,3 +948,31 @@ pub fn date_picker<M: 'static>() -> DatePicker<M> {
 pub fn calendar<M: 'static>() -> neue_kit::CalendarPicker<M> {
     DatePicker::calendar(DATE).today(TODAY).label("Calendar")
 }
+
+/// Golden window size for the shell's menu bar, with room for its logo menu.
+pub const SHELL_BAR_SIZE: (u32, u32) = (420, 210);
+
+/// What the specimen bar shows: a fixed app name and time, so goldens don't change.
+pub fn shell_bar_content(app_name: &str) -> neue_shell::bar::BarContent {
+    neue_shell::bar::BarContent {
+        app_name: app_name.to_owned(),
+        time: "Thu 09:41".to_owned(),
+        full_date: "Thursday, 5 November 2026".to_owned(),
+    }
+}
+
+/// The shell's menu bar across the top, naming `app_name`; the logo menu sends
+/// `send(command)`.
+pub fn shell_bar<M: 'static>(
+    app_name: &str,
+    send: impl Fn(neue_shell::bar::SystemCommand) -> M + Clone + 'static,
+) -> Stack<M> {
+    let mut handles = neue_shell::bar::BarHandles::default();
+    Stack::column()
+        .align(Align::Fill)
+        .with(neue_shell::bar::menu_bar(
+            &shell_bar_content(app_name),
+            send,
+            &mut handles,
+        ))
+}

@@ -158,7 +158,46 @@ pub const PAGES: &[Page] = &[
         title: "Materials",
         build: materials,
     },
+    Page {
+        title: "Shell",
+        build: shell,
+    },
 ];
+
+/// The shell's pieces (task 3.2b): the menu bar with its logo menu, the active app's name
+/// and the clock extra.
+fn shell(_: &mut PageHandles) -> Element<Message> {
+    let send = |command: neue_shell::bar::SystemCommand| {
+        Message::Pressed(match command {
+            neue_shell::bar::SystemCommand::About => "About This Computer",
+            neue_shell::bar::SystemCommand::Preferences => "Preferences",
+            neue_shell::bar::SystemCommand::Lock => "Lock Screen",
+            neue_shell::bar::SystemCommand::LogOut => "Log Out",
+            neue_shell::bar::SystemCommand::Restart => "Restart",
+            neue_shell::bar::SystemCommand::ShutDown => "Shut Down",
+        })
+    };
+    Stack::column()
+        .spacing(spacing::L)
+        .with(heading(
+            "Shell",
+            "The menu bar on every display: press the logo for the system menu, the clock \
+             for today's date · Space, Return or Down open a focused title · the status \
+             line shows what you chose (nothing here locks or shuts down)",
+        ))
+        .with(section(
+            "Menu bar, an app active",
+            Stack::column().with(specimens::shell_bar("Gallery", send)),
+        ))
+        .with(section(
+            "Menu bar, no window active",
+            Stack::column().with(specimens::shell_bar(
+                neue_shell::windows::DESKTOP_NAME,
+                send,
+            )),
+        ))
+        .into()
+}
 
 fn heading(title: &str, blurb: &str) -> Stack<Message> {
     Stack::column()

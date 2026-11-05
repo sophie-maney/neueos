@@ -10,6 +10,7 @@
 //! apps without an async runtime can use this crate; method calls are answered on that
 //! thread, never on the caller's.
 
+pub mod login;
 pub mod menu;
 pub mod testing;
 

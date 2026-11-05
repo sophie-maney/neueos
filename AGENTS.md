@@ -116,8 +116,8 @@ The repo is the memory between threads, not chat history. Before finishing:
 ## Platform matrix
 | Crate group | macOS (dev host, aarch64) | Linux aarch64 | Linux x86_64 |
 |---|---|---|---|
-| `neue-paint`, `neue-theme`, `neue-kit`, `neue-platform` (crate), `neue-config`, `neue-ipc`, `neuectl`, `neue-desktop` (pure parts), apps' UI, widget gallery | ✅ portable | ✅ | ✅ |
-| `neue-comp`, `neue-shell`, services, `neue-platform` (Wayland), anything using D-Bus, DRM, udev or PipeWire | ❌ | ✅ | ✅ |
+| `neue-paint`, `neue-theme`, `neue-kit`, `neue-platform` (crate), `neue-config`, `neue-ipc`, `neuectl`, `neue-desktop` (pure parts), `neue-shell` (library), apps' UI, widget gallery | ✅ portable | ✅ | ✅ |
+| `neue-comp`, the `neue-shell` process, services, `neue-platform` (Wayland), anything using D-Bus, DRM, udev or PipeWire | ❌ | ✅ | ✅ |
 | `neue-platform` (winit driver): on Linux, winit would pull in X11 crates (ADR 0032) | ✅ | ❌ | ❌ |
 
 - Gate Linux-only code with `#[cfg(target_os = "linux")]` at module or crate level.

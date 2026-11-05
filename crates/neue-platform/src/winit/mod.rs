@@ -258,6 +258,9 @@ impl Driver<'_> {
                 test_font: self.options.font.clone(),
             },
         );
+        for font in &self.options.extra_fonts {
+            root.register_fonts(font.clone());
+        }
         if spec.focus_fallback.is_some() && !root.set_focus_fallback(spec.focus_fallback) {
             tracing::warn!(%id, "focus fallback isn't in the window's tree");
         }

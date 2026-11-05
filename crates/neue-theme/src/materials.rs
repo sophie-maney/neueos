@@ -1129,6 +1129,14 @@ pub mod menu_bar {
     pub const LABEL_BASELINE: f64 = 15.0;
     /// How far the label's embossed shadow sits below the text.
     pub const LABEL_EMBOSS_OFFSET: f64 = 1.0;
+    /// Space left and right of a menu title's text, inside its highlight.
+    pub const TITLE_PADDING: f64 = 9.0;
+    /// Space between the screen's left and right edges and the first and last title.
+    pub const EDGE_INSET: f64 = 6.0;
+    /// Width and height of the logo mark that opens the logo menu.
+    pub const LOGO_SIZE: f64 = 14.0;
+    /// Stroke width of the logo mark.
+    pub const LOGO_STROKE: f64 = 1.6;
 
     /// Colours of the bar.
     #[derive(Clone, Copy, Debug, PartialEq)]

@@ -66,7 +66,7 @@ their goldens and the gallery's "Shell" page run on macOS.
       *Done:* ADR 0067. `neue_platform::desktop` (re-exported as `neue_kit::desktop`);
       `Ctx::keep_alive` / `Cx::keep_alive` keeps the shell running with no surface open.
       Tests: `neue-comp/tests/platform_shell.rs`, `neue-kit/src/tests/desktop.rs`.
-- [ ] **3.2b `neue-shell` skeleton and menu bar** · Opus. After 3.2a. New crate
+- [x] **3.2b `neue-shell` skeleton and menu bar** · Opus. After 3.2a. New crate
       `shell/neue-shell`: one process, several layer surfaces, shared state (window list
       from 3.1, settings, later the app registry); widgets in portable modules, the binary
       Linux-only. A menu bar on every output (top layer, exclusive zone, height from
@@ -78,7 +78,15 @@ their goldens and the gallery's "Shell" page run on macOS.
       *Accept:* goldens of the bar (light/dark × scale 1 and 2); in the VM the name
       follows focus, the clock ticks, Log Out ends the session, `pkill neue-shell` brings
       the shell back within a second, all checked by the agent with screenshots.
-      *Owner:* the bar on the PC at its native scale and on a second display.
+      *Owner:* the bar on the PC at its native scale and on a second display: one bar
+      per display, crisp text and logo, windows start below it. Restart and Shut Down
+      from the logo menu do what they say (not run in the VM).
+      *Done:* ADR 0068. `neue_kit::desktop::{MenuBar, MenuTitle}`, DejaVu Sans Bold
+      (`Options::extra_fonts`), `neue_dbus::login`, goldens `shell-bar-*` in the gallery
+      (Shell page). Log Out is the compositor's `quit` action. The `neue-comp` PKGBUILD
+      gained a `neue-shell` package. VM (arm64): name follows focus and survives a shell
+      restart, clock ticks, `pkill neue-shell` → bar back within 1 s, About opens, Log Out
+      ends the compositor; Lock (no lock screen until 3.18), Restart and Shut Down not run.
 - [ ] **3.2c Desktop background** · Sonnet. After 3.2b. A `background` layer surface per
       output with a procedural default picture (light and dark) and an optional image
       from `neue-config`. The image decoder needs an ADR and a licence check (shared with
@@ -279,7 +287,7 @@ their goldens and the gallery's "Shell" page run on macOS.
 
 ## F. Distribution and exit
 - [ ] **3.27 Packages, user units and `neueos-desktop`** · Sonnet. PKGBUILDs following
-      ADR 0028 for `neue-shell`, `neue-settingsd`, `xdg-desktop-portal-neue`,
+      ADR 0028 for `neue-settingsd`, `xdg-desktop-portal-neue`,
       `neue-greeter`, `neue-polkit-agent` and `neue-preferences`; user units in
       `neue-session.target` (or D-Bus activation where it fits); the greetd config; and
       the `neueos-desktop` meta-package (PipeWire, WirePlumber, NetworkManager, BlueZ,

@@ -6,7 +6,9 @@ use std::borrow::Cow;
 use masonry_core::core::{BrushIndex, render_text};
 use masonry_core::imaging::Painter;
 use masonry_core::kurbo::{Affine, Size};
-use masonry_core::parley::{FontContext, FontFamily, Layout, LayoutContext, StyleProperty};
+use masonry_core::parley::{
+    FontContext, FontFamily, FontWeight, Layout, LayoutContext, StyleProperty,
+};
 use masonry_core::peniko::Color;
 use neue_theme::typography;
 
@@ -42,6 +44,8 @@ impl TextStyle {
 pub(crate) struct TextLine {
     text: String,
     style: TextStyle,
+    /// The bold face (the menu bar's app name).
+    bold: bool,
     layout: Layout<BrushIndex>,
     stale: bool,
 }
@@ -60,6 +64,7 @@ impl TextLine {
         Self {
             text,
             style,
+            bold: false,
             layout: Layout::new(),
             stale: true,
         }
@@ -88,6 +93,16 @@ impl TextLine {
         true
     }
 
+    /// Sets bold; true if it changed (the caller then requests layout).
+    pub(crate) fn set_bold(&mut self, bold: bool) -> bool {
+        if self.bold == bold {
+            return false;
+        }
+        self.bold = bold;
+        self.stale = true;
+        true
+    }
+
     /// Forces a new layout (the font collection changed).
     pub(crate) fn invalidate(&mut self) {
         self.stale = true;
@@ -105,6 +120,9 @@ impl TextLine {
             builder.push_default(StyleProperty::FontFamily(FontFamily::Source(Cow::Owned(
                 family,
             ))));
+            if self.bold {
+                builder.push_default(StyleProperty::FontWeight(FontWeight::BOLD));
+            }
             builder.build_into(&mut self.layout, &self.text);
             self.layout.break_all_lines(None);
             self.stale = false;

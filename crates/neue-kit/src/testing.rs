@@ -120,6 +120,9 @@ impl Fixture {
         harness
             .render_root()
             .register_fonts(Blob::new(Arc::new(neue_paint::text::ui_font_data())));
+        harness
+            .render_root()
+            .register_fonts(Blob::new(Arc::new(neue_paint::text::ui_bold_font_data())));
         harness.set_focus_fallback(Some(root_id));
         Self {
             harness,

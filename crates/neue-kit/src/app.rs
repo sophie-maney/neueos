@@ -75,6 +75,7 @@ pub fn run<A: Application>(app: A, settings: Settings) -> Result<(), Error> {
     let options = neue_platform::Options {
         default_properties: Arc::new(theme::default_properties(settings.theme)),
         font: Some(Blob::new(Arc::new(neue_paint::text::ui_font_data()))),
+        extra_fonts: vec![Blob::new(Arc::new(neue_paint::text::ui_bold_font_data()))],
     };
     let mut runner = Runner::new(app, settings);
     neue_platform::run(&mut runner, options)?;

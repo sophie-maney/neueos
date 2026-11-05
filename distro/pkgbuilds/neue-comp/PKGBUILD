@@ -1,7 +1,8 @@
 # Maintainer: sophie-maney
 #
-# Split package for the Phase 1 session stack: the compositor, its control tool and the
-# session launcher with its systemd units (tasks 1.19 and 1.20, ADR 0028).
+# Split package for the session stack: the compositor, its control tool, the session
+# launcher with its systemd units (tasks 1.19 and 1.20, ADR 0028) and the desktop shell the
+# compositor starts (task 3.2b).
 #
 # Build with `cargo xtask package neue-comp [--arch aarch64|x86_64|all]`, which makes the
 # source tarball from the working tree and runs makepkg in the OrbStack Arch machines.
@@ -9,7 +10,7 @@
 # this file.
 
 pkgbase=neue-comp
-pkgname=(neue-comp neuectl neue-session)
+pkgname=(neue-comp neuectl neue-session neue-shell)
 pkgver=0.0.0
 pkgrel=1
 arch=(x86_64 aarch64)
@@ -39,7 +40,7 @@ build() {
   export CARGO_TARGET_DIR="$(_target)"
   # `--no-default-features`: no winit backend, so no X11 crates in the shipped binary (ADR 0001).
   cargo build --frozen --release \
-    -p neue-comp -p neuectl -p neue-session \
+    -p neue-comp -p neuectl -p neue-session -p neue-shell \
     --no-default-features --features neue-comp/tty
 }
 
@@ -60,7 +61,7 @@ package_neuectl() {
 
 package_neue-session() {
   pkgdesc="neueOS session launcher, systemd user units and greetd/Wayland session entry"
-  depends=(neue-comp neuectl systemd)
+  depends=(neue-comp neuectl neue-shell systemd)
   optdepends=('greetd: log in to the session (see /usr/share/neueos/greetd/config.toml)')
   install -Dm755 "$(_target)/release/neue-session" -t "$pkgdir/usr/bin"
   install -Dm644 "$srcdir"/session/systemd/user/* -t "$pkgdir/usr/lib/systemd/user"
@@ -68,5 +69,13 @@ package_neue-session() {
     -t "$pkgdir/usr/share/wayland-sessions"
   # Example only: the graphical greeter replaces it in Phase 3, so it is not put in /etc.
   install -Dm644 "$srcdir/session/greetd/config.toml" -t "$pkgdir/usr/share/neueos/greetd"
+  install -Dm644 "$srcdir/LICENSE" -t "$pkgdir/usr/share/licenses/$pkgname"
+}
+
+package_neue-shell() {
+  pkgdesc="neueOS desktop shell: the menu bar (started by neue-comp)"
+  # libwayland-client is dlopen'd; wgpu draws through Vulkan or GL (mesa).
+  depends=(gcc-libs libxkbcommon mesa systemd wayland)
+  install -Dm755 "$(_target)/release/neue-shell" -t "$pkgdir/usr/bin"
   install -Dm644 "$srcdir/LICENSE" -t "$pkgdir/usr/share/licenses/$pkgname"
 }
