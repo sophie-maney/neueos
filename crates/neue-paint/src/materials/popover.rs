@@ -186,6 +186,19 @@ pub fn popover_outline(size: Size, arrow: Edge, at: f64) -> BezPath {
     path
 }
 
+/// Where the arrow joins the panel: a strip along the panel's edge, as wide as the arrow's
+/// base and deep enough to cover the highlight and rim strokes that run along that edge.
+fn arrow_base(body: Rect, arrow: Edge, at: f64) -> Rect {
+    let w = ARROW_WIDTH / 2.0;
+    let depth = 2.0 * RIM + 1.0;
+    match arrow {
+        Edge::Top => Rect::new(at - w, body.y0 - 1.0, at + w, body.y0 + depth),
+        Edge::Bottom => Rect::new(at - w, body.y1 - depth, at + w, body.y1 + 1.0),
+        Edge::Left => Rect::new(body.x0 - 1.0, at - w, body.x0 + depth, at + w),
+        Edge::Right => Rect::new(body.x1 - depth, at - w, body.x1 + 1.0, at + w),
+    }
+}
+
 /// A quarter circle from `from` to `to` around the corner `at` (a cubic approximation).
 fn corner(path: &mut BezPath, from: (f64, f64), at: (f64, f64), to: (f64, f64)) {
     // Control points 0.5523 of the way to the corner make a circular quarter.
@@ -225,8 +238,21 @@ pub fn popover(scene: &mut Scene, size: Size, arrow: Edge, at: f64, variant: imp
     // width, so only the inner half shows.
     scene.push_clip(&outline);
     let highlight = RoundedRect::from_rect(body.inset(-RIM), (r - RIM).max(0.0));
+    // The highlight is the panel's top edge catching light; it stops at the arrow's base
+    // instead of running across the opening between arrow and panel.
+    let span = if arrow.is_horizontal() {
+        body.width()
+    } else {
+        body.height()
+    };
     let top = Rect::new(body.x0, body.y0, body.x1, body.y0 + r + 2.0 * RIM);
-    scene.push_clip(&top);
+    let mut lit = top.to_path(0.1);
+    lit.extend(
+        arrow_base(body, arrow, clamp_arrow(at, span))
+            .to_path(0.1)
+            .reverse_subpaths(),
+    );
+    scene.push_clip(&lit);
     scene.stroke(&highlight, &Stroke::new(2.0 * RIM), p.highlight);
     scene.pop_layer();
     scene.stroke(&outline, &Stroke::new(2.0 * RIM), p.rim);
@@ -240,6 +266,39 @@ mod tests {
 
     const ANCHOR: Rect = Rect::new(100.0, 100.0, 160.0, 122.0);
     const SIZE: Size = Size::new(200.0, 120.0);
+
+    /// The brightest channel of the pixel at logical `(x, y)`.
+    fn level(pixmap: &crate::Pixmap, scale: f64, x: f64, y: f64) -> i32 {
+        let p = pixmap.sample((x * scale) as u16, (y * scale) as u16);
+        i32::from(p.r.max(p.g).max(p.b))
+    }
+
+    #[test]
+    fn the_highlight_does_not_cross_the_arrows_base() {
+        use crate::cpu::{CpuRenderer, Quality};
+        // The panel's top highlight is a light line along its top edge. Where the arrow
+        // joins the panel there is no edge, so nothing should be lit across the base: the
+        // pixels just inside the panel under the arrow match those a few pixels deeper.
+        let mut cpu = CpuRenderer::new(Quality::Reference);
+        for variant in [Appearance::Light, Appearance::Dark] {
+            for scale in [1.0, 1.5, 2.0] {
+                let size = Size::new(200.0, 120.0);
+                let mut scene = Scene::new(size.width, size.height);
+                popover(&mut scene, size, Edge::Top, 60.0, variant);
+                let pixmap = cpu.render(&scene, scale).expect("renders");
+                let y0 = popover_body(size, Edge::Top).y0;
+                for dx in [-1.0, 0.0, 1.0] {
+                    let x = 60.0 + dx;
+                    let edge = level(&pixmap, scale, x, y0 + 0.75);
+                    let inside = level(&pixmap, scale, x, y0 + 4.0);
+                    assert!(
+                        (edge - inside).abs() <= 6,
+                        "{variant:?} @{scale}x, x {x}: {edge} at the base, {inside} below it"
+                    );
+                }
+            }
+        }
+    }
 
     #[test]
     fn layers_are_balanced() {

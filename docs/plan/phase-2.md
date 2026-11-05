@@ -773,7 +773,7 @@ the toolbar).
       is wide), and menus have no positioner offset. Point-anchored menus round the point
       instead of flooring it. Tests model the positioner's flip. **Not yet checked in the
       VM:** re-run 4.7, 5.5, and look at 5.3's known gap.
-- [ ] **2.32 Widget fixes: path control keys, thin divider, popover arrow** · Sonnet.
+- [x] **2.32 Widget fixes: path control keys, thin divider, popover arrow** · Sonnet.
       - Step 5.10: Tab gives the path control focus on "Macintosh HD", not "sophie", and
         Left does nothing; after clicking "sophie", Left works. Find what moves the focused
         segment to the first one (suspects: the collapse fallback in `path.rs` `layout`,
@@ -789,6 +789,18 @@ the toolbar).
       Return choose the first); a split-view test that a press 2 px beside a thin divider
       drags it; popover goldens re-blessed after inspecting the diff. Re-run: 5.10, 9.2,
       11.2.
+      *Done:* **Path control:** it couldn't be reproduced by Tab alone (a fresh control
+      starts on the last segment); the cause is that a press leaves the keyboard focus on
+      the pressed segment (5.9 presses "Users") and Tab back in kept it. Taking the focus
+      from the keyboard now starts on the current level again; a press still picks its
+      segment. **Divider:** each divider gets a transparent grab strip in front of the
+      panes (`split::THIN_GRAB` = 3 px each side for the thin style; the thick bar is its
+      own target). It must be a child widget: Masonry takes the cursor from the innermost
+      widget under the pointer, so only a widget in front of the panes gives the resize
+      cursor over the margin. **Popover:** the highlight along the panel's top edge was
+      drawn across the arrow's base; it is now cut out there (all four arrow sides). The
+      old goldens show the line; the colour panel's goldens changed the same way.
+      **Not yet checked in the VM:** re-run 5.10, 9.2, 11.2 (look at 1.5× too).
 - [ ] **2.33 Sheet theme and HUD parent focus** · Sonnet. Both in the kit runner.
       - Step 11.13: a sheet opened in Dark draws light. The sheet window doesn't take the
         app's current theme (check both opening while Dark and switching while open).
