@@ -221,6 +221,13 @@ impl PopupHandler for State {
             (config.height + insets.vertical()).max(1) as u32,
         );
         p.surf.apply(gpu, w.scale, fractional);
+        if let Some(blur) = &p.blur {
+            // The box may have moved to the other side of its anchor, and the arrow with it.
+            let (at, size) =
+                p.placement
+                    .blur_box(p.origin, (config.width, config.height), blur.arrow);
+            blur.effect.set_region(&self.g.compositor, at, size);
+        }
         p.configured = true;
         // Drawn by the next `draw_dirty`, whether or not the window's frame is pending.
         p.surf.stale = true;

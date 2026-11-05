@@ -32,22 +32,23 @@ use masonry_core::dpi::PhysicalPosition;
 use masonry_core::imaging::Painter;
 use masonry_core::kurbo::{Affine, Axis, Insets, Point, Rect, Size, Vec2};
 use masonry_core::layout::{LayoutSize, LenDef, LenReq, Length};
-use neue_paint::Scene;
 use neue_paint::imaging::ImagingReplayer;
 use neue_paint::materials::{
     MenuMark, menu_highlight, menu_mark, menu_panel, menu_separator, submenu_arrow,
 };
+use neue_paint::{Backdrop, Scene};
+use neue_platform::{PopupBlur, PopupBlurRequest};
 use neue_theme::materials::menu::{
     ARROW_WIDTH, DRAG_THRESHOLD, ITEM_HEIGHT, LABEL_INSET, MARK_SIZE, MIN_WIDTH, PADDING_Y,
-    Palette, RIM, SEPARATOR_HEIGHT, SHADOW_OFFSET, SHADOW_REACH, SHORTCUT_GAP, SUBMENU_OVERLAP,
-    TRAILING_INSET,
+    Palette, RADIUS, RIM, SEPARATOR_HEIGHT, SHADOW_OFFSET, SHADOW_REACH, SHORTCUT_GAP,
+    SUBMENU_OVERLAP, TRAILING_INSET,
 };
 use neue_theme::motion::TYPE_SELECT_RESET;
 
 use super::text::{TextLine, TextStyle};
 use crate::CheckState;
 use crate::menu::{ItemSpec, MenuSpec, MenuToggle, SpecKind};
-use crate::theme::ThemeProp;
+use crate::theme::{BackdropProp, ThemeProp};
 
 /// What a menu's owner receives when an item is chosen: the item's id in the menu tree.
 #[derive(Debug, Clone, Copy, PartialEq, Eq)]
@@ -180,7 +181,16 @@ pub(crate) fn open(
         anchor.highlight,
     );
     OPENED.with(|n| n.set(n.get() + 1));
-    ctx.create_menu(NewWidget::new(menu), anchor.at);
+    ctx.create_menu(popup_menu(menu), anchor.at);
+}
+
+/// `menu` as a popup layer's root: it asks for a blur behind its panel (honoured when the
+/// compositor offers one; see [`BackdropProp`]).
+fn popup_menu(menu: MenuWidget) -> NewWidget<MenuWidget> {
+    NewWidget::new(menu).with_props(PopupBlur(Some(PopupBlurRequest {
+        radius: RADIUS,
+        arrow: 0.0,
+    })))
 }
 
 /// State one menu and its submenus share.
@@ -448,7 +458,7 @@ impl MenuWidget {
         } else {
             OnReady::Nothing
         };
-        let menu = NewWidget::new(MenuWidget::new(spec, chain, on_ready, 0.0, None));
+        let menu = popup_menu(MenuWidget::new(spec, chain, on_ready, 0.0, None));
         self.submenu = Some((i, menu.id()));
         ctx.attach(menu, at);
         ctx.repaint();
@@ -648,6 +658,7 @@ impl MenuWidget {
 }
 
 impl UsesProperty<ThemeProp> for MenuWidget {}
+impl UsesProperty<BackdropProp> for MenuWidget {}
 
 impl Widget for MenuWidget {
     type Action = NoAction;
@@ -717,7 +728,9 @@ impl Widget for MenuWidget {
     }
 
     fn property_changed(&mut self, ctx: &mut UpdateCtx<'_>, property_type: TypeId) {
-        if property_type == TypeId::of::<ThemeProp>() {
+        if property_type == TypeId::of::<ThemeProp>()
+            || property_type == TypeId::of::<BackdropProp>()
+        {
             ctx.request_paint_only();
         }
     }
@@ -778,6 +791,7 @@ impl Widget for MenuWidget {
         painter: &mut Painter<'_>,
     ) {
         let ThemeProp(theme) = *props.get::<ThemeProp>(ctx.property_cache());
+        let BackdropProp(backdrop) = *props.get::<BackdropProp>(ctx.property_cache());
         let size = ctx.content_box().size();
         // The shadow falls outside the box, in the paint insets.
         let mut scene = Scene::new(size.width, size.height);
@@ -785,6 +799,7 @@ impl Widget for MenuWidget {
             &mut scene,
             Rect::from_origin_size(Point::ORIGIN, size),
             theme.variant,
+            backdrop,
         );
         self.replayer.replay(&scene, ctx.scale_factor(), painter);
     }
@@ -975,7 +990,7 @@ impl Widget for MenuRowWidget {
         let variant = theme.variant;
         let size = ctx.content_box().size();
         let rect = Rect::from_origin_size(Point::ORIGIN, size);
-        let p = Palette::new(variant);
+        let p = Palette::new(variant, Backdrop::Opaque);
         let mut scene = Scene::new(size.width, size.height);
         if matches!(self.spec.kind, SpecKind::Separator) {
             menu_separator(&mut scene, rect, variant);

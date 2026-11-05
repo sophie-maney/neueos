@@ -269,6 +269,59 @@ impl Placement {
     }
 }
 
+impl Placement {
+    /// The part of the popup's surface to blur: the window geometry (the box, without the
+    /// shadow around it) of logical `size`, whose surface starts at `surface` in window
+    /// coordinates, less the popover's arrow strip, `arrow` deep, on the side facing the
+    /// anchor (the compositor may have flipped the popover). Returns the top-left within
+    /// the surface and the size.
+    pub(super) fn blur_box(
+        &self,
+        surface: Point,
+        size: (i32, i32),
+        arrow: f64,
+    ) -> ((i32, i32), (u32, u32)) {
+        let (mut x, mut y) = (self.insets.left, self.insets.top);
+        let (mut w, mut h) = size;
+        #[expect(clippy::cast_possible_truncation, reason = "an arrow is a few pixels")]
+        let arrow = arrow.round() as i32;
+        if self.popover && arrow > 0 {
+            let centre = |v: i32, len: i32| f64::from(v) + f64::from(len) / 2.0;
+            let anchor = self.anchor_rect;
+            let (ax, ay) = (
+                centre(anchor.x, anchor.width),
+                centre(anchor.y, anchor.height),
+            );
+            let (bx, by) = (
+                centre(surface.x.round() as i32 + x, w),
+                centre(surface.y.round() as i32 + y, h),
+            );
+            match self.gravity {
+                Gravity::Bottom | Gravity::Top => {
+                    // The arrow is on the side facing the anchor.
+                    if by >= ay {
+                        y += arrow;
+                    }
+                    h -= arrow;
+                }
+                _ => {
+                    if bx >= ax {
+                        x += arrow;
+                    }
+                    w -= arrow;
+                }
+            }
+        }
+        (
+            (x, y),
+            (
+                u32::try_from(w.max(0)).unwrap_or(0),
+                u32::try_from(h.max(0)).unwrap_or(0),
+            ),
+        )
+    }
+}
+
 /// The border box, in window coordinates, of the widget whose bottom-left corner is at
 /// `pos` (within a pixel): the widget a menu opened under. The outermost match wins.
 pub(super) fn owner_rect(widget: WidgetRef<'_, dyn Widget>, pos: Point) -> Option<Rect> {
@@ -297,6 +350,50 @@ mod tests {
     use super::*;
 
     const MENU: LayerType = LayerType::Other;
+
+    #[test]
+    fn a_menus_blur_box_is_its_geometry() {
+        let bbox = Rect::new(50.0, 40.0, 250.0, 180.0);
+        let border = Rect::new(56.0, 46.0, 236.0, 166.0);
+        let p = Placement::new(&MENU, Point::new(56.0, 46.0), bbox, border, None);
+        let (origin, size) = p.blur_box(bbox.origin(), p.size, 0.0);
+        assert_eq!(origin, (p.insets.left, p.insets.top));
+        assert_eq!(size, (180, 120));
+    }
+
+    #[test]
+    fn a_popovers_blur_box_leaves_out_the_arrow_on_the_anchors_side() {
+        let request = PopoverRequest {
+            anchor: Rect::new(100.0, 50.0, 160.0, 73.0),
+            side: Side::Bottom,
+            reach: 21.0,
+        };
+        let p = Placement::popover(request, Rect::new(0.0, 0.0, 242.0, 162.0));
+        // Below the anchor: the arrow is on the box's top edge.
+        let below = Point::new(60.0, 74.0 - 21.0);
+        assert_eq!(p.blur_box(below, (200, 120), 11.0), ((21, 32), (200, 109)));
+        // Flipped above it: the arrow is on the bottom edge.
+        let above = Point::new(60.0, -100.0);
+        assert_eq!(p.blur_box(above, (200, 120), 11.0), ((21, 21), (200, 109)));
+        // To the right of the anchor, then flipped to its left.
+        let side = Placement::popover(
+            PopoverRequest {
+                side: Side::Right,
+                ..request
+            },
+            Rect::new(0.0, 0.0, 242.0, 162.0),
+        );
+        let right = Point::new(161.0 - 21.0, 40.0);
+        assert_eq!(
+            side.blur_box(right, (200, 120), 11.0),
+            ((32, 21), (189, 120))
+        );
+        let left = Point::new(-100.0, 40.0);
+        assert_eq!(
+            side.blur_box(left, (200, 120), 11.0),
+            ((21, 21), (189, 120))
+        );
+    }
 
     #[test]
     fn a_popover_places_its_box_on_its_side_of_the_anchor() {

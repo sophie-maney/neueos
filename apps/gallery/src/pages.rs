@@ -835,7 +835,8 @@ fn menus(_: &mut PageHandles) -> Element<Message> {
             "Menus",
             "Right-click an area, or Tab to the field and press the Menu key or Shift-F10 · \
              Up and Down move · Right opens a submenu, Left closes it · Return chooses · \
-             Escape closes · type to jump to an item · the status line shows what you chose",
+             Escape closes · type to jump to an item · the status line shows what you chose · \
+             over a compositor that blurs, the menu panel is translucent (see Materials)",
         ))
         .with(
             Stack::row()
@@ -995,6 +996,15 @@ fn materials(_: &mut PageHandles) -> Element<Message> {
             .with(section(
                 "HUD panel",
                 Stack::row().with(tile(MaterialTile::Hud)),
+            ))
+            .with(section("Menu", Stack::row().with(tile(MaterialTile::Menu))))
+            .with(section(
+                "Popover",
+                Stack::row().with(tile(MaterialTile::Popover)),
+            ))
+            .with(section(
+                "Sheet",
+                Stack::row().with(tile(MaterialTile::Sheet)),
             ))
     };
     Stack::column()

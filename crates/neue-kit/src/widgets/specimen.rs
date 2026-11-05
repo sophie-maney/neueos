@@ -48,6 +48,9 @@ impl SpecimenWidget {
             MaterialTile::DockShelf => "Dock shelf material, in perspective",
             MaterialTile::DockShelfFlat => "Dock shelf material, flat",
             MaterialTile::Hud => "HUD panel material",
+            MaterialTile::Menu => "Menu material",
+            MaterialTile::Popover => "Popover material",
+            MaterialTile::Sheet => "Sheet material",
         }
     }
 }

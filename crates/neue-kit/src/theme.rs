@@ -2,7 +2,7 @@
 //! repaints them ([`masonry_core::app::RenderRoot::set_default_properties`]).
 
 use masonry_core::core::{DefaultProperties, Property};
-use neue_theme::{Appearance, Theme, Variant};
+use neue_theme::{Appearance, Backdrop, Theme, Variant};
 
 use crate::widgets::{
     BevelWidget, ButtonWidget, CalendarWidget, CellWidget, CollectionItemWidget, ColorWellWidget,
@@ -29,9 +29,32 @@ impl Property for ThemeProp {
     }
 }
 
-/// Default properties carrying `theme` for every neue-kit widget type.
+/// What the popup materials (menus, popovers) paint on, as a default property of their
+/// widgets: [`Backdrop::Translucent`] in a window whose compositor blurs behind popups
+/// ([`crate::Cx::has_blur`]), else the opaque tint. The palettes fall back to opaque
+/// under increased contrast by themselves.
+#[derive(Clone, Copy, Debug, Default, PartialEq)]
+pub(crate) struct BackdropProp(pub(crate) Backdrop);
+
+static DEFAULT_BACKDROP: BackdropProp = BackdropProp(Backdrop::Opaque);
+
+impl Property for BackdropProp {
+    fn static_default() -> &'static Self {
+        &DEFAULT_BACKDROP
+    }
+}
+
+/// Default properties carrying `theme` for every neue-kit widget type, with opaque popups.
 pub(crate) fn default_properties(theme: Theme) -> DefaultProperties {
+    default_properties_on(theme, Backdrop::Opaque)
+}
+
+/// Default properties carrying `theme` for every neue-kit widget type, and `backdrop` for
+/// the popup materials.
+pub(crate) fn default_properties_on(theme: Theme, backdrop: Backdrop) -> DefaultProperties {
     let mut props = DefaultProperties::new();
+    props.insert::<MenuWidget, _>(BackdropProp(backdrop));
+    props.insert::<PopoverWidget, _>(BackdropProp(backdrop));
     props.insert::<LabelWidget, _>(ThemeProp(theme));
     props.insert::<IconWidget, _>(ThemeProp(theme));
     props.insert::<MenuWidget, _>(ThemeProp(theme));

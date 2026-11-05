@@ -16,8 +16,8 @@ use neue_theme::materials::popover::{
 use vello_common::kurbo::{BezPath, Point, Rect, RoundedRect, Shape, Size, Stroke, Vec2};
 use vello_common::peniko::{Color, Gradient};
 
-use crate::Variant;
 use crate::scene::Scene;
+use crate::{Backdrop, Variant};
 
 pub use neue_theme::materials::popover::SHADOW_REACH;
 
@@ -209,9 +209,17 @@ fn corner(path: &mut BezPath, from: (f64, f64), at: (f64, f64), to: (f64, f64)) 
 
 /// Draw a popover box of `size` at the origin (logical pixels): shadow, body, highlight
 /// and rim, with the arrow on side `arrow` and its tip at `at` along that side. The shadow
-/// reaches [`SHADOW_REACH`] beyond the box on every side, so leave that room.
-pub fn popover(scene: &mut Scene, size: Size, arrow: Edge, at: f64, variant: impl Into<Variant>) {
-    let p = Palette::new(variant.into());
+/// reaches [`SHADOW_REACH`] beyond the box on every side, so leave that room. The body is
+/// translucent on [`Backdrop::Translucent`], for the compositor to blur behind it.
+pub fn popover(
+    scene: &mut Scene,
+    size: Size,
+    arrow: Edge,
+    at: f64,
+    variant: impl Into<Variant>,
+    backdrop: Backdrop,
+) {
+    let p = Palette::new(variant.into(), backdrop);
     let outline = popover_outline(size, arrow, at);
     let body = popover_body(size, arrow);
     let r = RADIUS.min(body.width().min(body.height()) / 2.0);
@@ -284,7 +292,7 @@ mod tests {
             for scale in [1.0, 1.5, 2.0] {
                 let size = Size::new(200.0, 120.0);
                 let mut scene = Scene::new(size.width, size.height);
-                popover(&mut scene, size, Edge::Top, 60.0, variant);
+                popover(&mut scene, size, Edge::Top, 60.0, variant, Backdrop::Opaque);
                 let pixmap = cpu.render(&scene, scale).expect("renders");
                 let y0 = popover_body(size, Edge::Top).y0;
                 for dx in [-1.0, 0.0, 1.0] {
@@ -304,7 +312,14 @@ mod tests {
     fn layers_are_balanced() {
         for arrow in [Edge::Top, Edge::Bottom, Edge::Left, Edge::Right] {
             let mut scene = Scene::new(300.0, 200.0);
-            popover(&mut scene, SIZE, arrow, 40.0, Appearance::Light);
+            popover(
+                &mut scene,
+                SIZE,
+                arrow,
+                40.0,
+                Appearance::Light,
+                Backdrop::Translucent,
+            );
             assert_eq!(scene.open_layers(), 0);
         }
     }

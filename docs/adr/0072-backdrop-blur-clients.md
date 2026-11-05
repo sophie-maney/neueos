@@ -26,7 +26,7 @@ variant today. Menus, popovers and sheets are opaque materials.
    contrast (ADR 0039 §2); otherwise the request is not made and the opaque tint stays.
    `Cx::backdrop()` gives the shell the same answer for the menu bar widget, so the
    request and the paint never disagree.
-4. **Popups stay as they are.** Menus, popovers and sheets are opaque materials with no
+4. **Popups stay as they are** (amended by ADR 0073: menus and popovers now ask too). Menus, popovers and sheets are opaque materials with no
    translucent variant, so they do not ask for blur. That needs new palettes and goldens
    and is a separate task (3.5b).
 5. **No new goldens.** The existing goldens render with `Backdrop::Opaque`, unchanged;

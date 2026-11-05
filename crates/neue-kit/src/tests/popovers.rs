@@ -307,3 +307,39 @@ fn showing_it_again_replaces_it() {
     assert_eq!(dialogs(&mut host).len(), 1);
     assert_ne!(popover_id(&runner, &mut host), first);
 }
+
+fn setup_with_blur(blur: bool) -> (Runner<Popovers>, FakeHost) {
+    let mut runner = Runner::new(Popovers::new(Edge::Bottom), Settings::default());
+    let mut host = FakeHost {
+        blur,
+        ..FakeHost::default()
+    };
+    runner.start(&mut host, Arc::new(|| {}));
+    let _ = host.only().render();
+    (runner, host)
+}
+
+#[test]
+fn it_asks_for_a_blur_without_its_arrow_and_turns_translucent_when_it_is_offered() {
+    use neue_platform::{PopupBlur, PopupBlurRequest};
+
+    let (mut runner, mut host) = setup_with_blur(true);
+    let pop = open(&mut runner, &mut host).bounds;
+    let id = popover_id(&runner, &mut host);
+    let request = host.only().get_widget_with_id(id).get_prop::<PopupBlur>().0;
+    assert_eq!(
+        request,
+        Some(PopupBlurRequest {
+            radius: neue_theme::materials::popover::RADIUS,
+            arrow: ARROW_HEIGHT
+        })
+    );
+    // Inside the panel, near a corner: nothing but the body's tint.
+    let (x, y) = (pop.x0 as u32 + 10, pop.y1 as u32 - 10);
+    let translucent = host.only().render().get_pixel(x, y).0;
+
+    let (mut runner, mut host) = setup_with_blur(false);
+    open(&mut runner, &mut host);
+    let opaque = host.only().render().get_pixel(x, y).0;
+    assert_ne!(translucent, opaque, "the panel draws the translucent tint");
+}

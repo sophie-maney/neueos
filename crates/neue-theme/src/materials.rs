@@ -1507,6 +1507,18 @@ mod tests {
                     hud::Palette::new(light, backdrop),
                     hud::Palette::new(dark, backdrop)
                 );
+                assert_ne!(
+                    menu::Palette::new(light, backdrop),
+                    menu::Palette::new(dark, backdrop)
+                );
+                assert_ne!(
+                    popover::Palette::new(light, backdrop),
+                    popover::Palette::new(dark, backdrop)
+                );
+                assert_ne!(
+                    sheet::Palette::new(light, backdrop),
+                    sheet::Palette::new(dark, backdrop)
+                );
             }
         }
     }
@@ -1518,6 +1530,9 @@ mod tests {
                 menu_bar::Palette::new(v, backdrop).fill.to_vec(),
                 dock_shelf::Palette::new(v, backdrop).fill.to_vec(),
                 hud::Palette::new(v, backdrop).fill.to_vec(),
+                menu::Palette::new(v, backdrop).fill.to_vec(),
+                popover::Palette::new(v, backdrop).fill.to_vec(),
+                vec![sheet::Palette::new(v, backdrop).fill],
             ]
             .concat()
             .into_iter()
@@ -1855,7 +1870,8 @@ pub mod scroller {
 /// buttons' menus. A light (or dark) panel with a soft shadow; the item under the pointer
 /// or the keyboard is an accent band with white text.
 pub mod menu {
-    use crate::{Accent, Appearance, Color, Variant, black, grey, rgb, white};
+    use super::Backdrop;
+    use crate::{Accent, Appearance, Color, Variant, black, grey, rgb, rgba, white};
 
     /// Corner radius of the panel.
     pub const RADIUS: f64 = crate::radii::MENU;
@@ -1923,9 +1939,11 @@ pub mod menu {
     }
 
     impl Palette {
-        /// Colours for `variant`. The highlight follows the accent; increased contrast
-        /// firms up the rim, the separators and the text.
-        pub fn new(variant: Variant) -> Self {
+        /// Colours for `variant` on `backdrop`. The highlight follows the accent; increased
+        /// contrast firms up the rim, the separators and the text, and makes the body
+        /// opaque. Only the body's fill depends on the backdrop.
+        pub fn new(variant: Variant, backdrop: Backdrop) -> Self {
+            let backdrop = backdrop.for_variant(variant);
             let highlight = match (variant.accent, variant.appearance) {
                 (Accent::Blue, Appearance::Light) => [rgb(0.36, 0.53, 0.96), rgb(0.12, 0.34, 0.90)],
                 (Accent::Blue, Appearance::Dark) => [rgb(0.30, 0.47, 0.92), rgb(0.10, 0.29, 0.80)],
@@ -1935,7 +1953,13 @@ pub mod menu {
             let p = match variant.appearance {
                 Appearance::Light => Self {
                     shadow: black(0.38),
-                    fill: [grey(0.985), grey(0.955)],
+                    fill: match backdrop {
+                        Backdrop::Opaque => [grey(0.985), grey(0.955)],
+                        Backdrop::Translucent => [
+                            rgba(0.985, 0.985, 0.985, 0.84),
+                            rgba(0.955, 0.955, 0.955, 0.84),
+                        ],
+                    },
                     rim: black(0.18),
                     label: black(0.88),
                     disabled_label: black(0.30),
@@ -1947,7 +1971,12 @@ pub mod menu {
                 },
                 Appearance::Dark => Self {
                     shadow: black(0.65),
-                    fill: [grey(0.22), grey(0.18)],
+                    fill: match backdrop {
+                        Backdrop::Opaque => [grey(0.22), grey(0.18)],
+                        Backdrop::Translucent => {
+                            [rgba(0.22, 0.22, 0.22, 0.80), rgba(0.18, 0.18, 0.18, 0.80)]
+                        }
+                    },
                     rim: white(0.16),
                     label: white(0.90),
                     disabled_label: white(0.32),
@@ -1987,7 +2016,8 @@ pub mod menu {
 /// from, a soft drop shadow and a thin rim. Light in the light appearance, dark in the dark
 /// one; content draws in the window's usual colours.
 pub mod popover {
-    use crate::{Appearance, Color, Variant, black, grey, white};
+    use super::Backdrop;
+    use crate::{Appearance, Color, Variant, black, grey, rgba, white};
 
     /// Corner radius of the panel.
     pub const RADIUS: f64 = crate::radii::MENU;
@@ -2023,18 +2053,32 @@ pub mod popover {
     }
 
     impl Palette {
-        /// Colours for `variant`; increased contrast firms up the rim.
-        pub fn new(variant: Variant) -> Self {
+        /// Colours for `variant` on `backdrop`; increased contrast firms up the rim and
+        /// makes the body opaque.
+        pub fn new(variant: Variant, backdrop: Backdrop) -> Self {
+            let backdrop = backdrop.for_variant(variant);
             let p = match variant.appearance {
                 Appearance::Light => Self {
                     shadow: black(0.40),
-                    fill: [grey(0.975), grey(0.925)],
+                    fill: match backdrop {
+                        Backdrop::Opaque => [grey(0.975), grey(0.925)],
+                        Backdrop::Translucent => [
+                            rgba(0.975, 0.975, 0.975, 0.86),
+                            rgba(0.925, 0.925, 0.925, 0.86),
+                        ],
+                    },
                     rim: black(0.22),
                     highlight: white(0.85),
                 },
                 Appearance::Dark => Self {
                     shadow: black(0.70),
-                    fill: [grey(0.215), grey(0.165)],
+                    fill: match backdrop {
+                        Backdrop::Opaque => [grey(0.215), grey(0.165)],
+                        Backdrop::Translucent => [
+                            rgba(0.215, 0.215, 0.215, 0.82),
+                            rgba(0.165, 0.165, 0.165, 0.82),
+                        ],
+                    },
                     rim: white(0.17),
                     highlight: white(0.08),
                 },
@@ -2061,6 +2105,7 @@ pub mod popover {
 /// rim down its sides and along its bottom, and, drawn over the window it belongs to, a
 /// soft drop shadow beside and below it.
 pub mod sheet {
+    use super::Backdrop;
     use crate::colors::SemanticColors;
     use crate::{Appearance, Color, Variant, black, white};
 
@@ -2080,6 +2125,8 @@ pub mod sheet {
     pub const SHADOW_BLUR: f64 = 7.0;
     /// Room the drop shadow needs beside and below the sheet.
     pub const SHADOW_REACH: f64 = 3.0 * SHADOW_BLUR + SHADOW_OFFSET;
+    /// Opacity of the body over a blurred backdrop.
+    pub const TRANSLUCENT_ALPHA: f32 = 0.88;
 
     /// Colours of a sheet.
     #[derive(Clone, Copy, Debug, PartialEq)]
@@ -2095,9 +2142,16 @@ pub mod sheet {
     }
 
     impl Palette {
-        /// Colours for `variant`; increased contrast firms up the rim.
-        pub fn new(variant: Variant) -> Self {
+        /// Colours for `variant` on `backdrop`; increased contrast firms up the rim and
+        /// makes the body opaque. Translucent, the body is the window background at
+        /// [`TRANSLUCENT_ALPHA`].
+        pub fn new(variant: Variant, backdrop: Backdrop) -> Self {
+            let backdrop = backdrop.for_variant(variant);
             let fill = SemanticColors::new(variant).window_background;
+            let fill = match backdrop {
+                Backdrop::Opaque => fill,
+                Backdrop::Translucent => fill.with_alpha(TRANSLUCENT_ALPHA),
+            };
             let p = match variant.appearance {
                 Appearance::Light => Self {
                     fill,

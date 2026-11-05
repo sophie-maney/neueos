@@ -220,7 +220,8 @@ fn window_chrome_goldens() {
     }
 }
 
-/// The translucent materials (menu bar, dock shelf, flat dock shelf, HUD): opaque and
+/// The translucent materials (menu bar, dock shelf, flat dock shelf, HUD, menu, popover,
+/// sheet): opaque and
 /// translucent × light/dark × 1x/2x, and increased contrast (always opaque) × light/dark ×
 /// 1x/2x.
 #[test]

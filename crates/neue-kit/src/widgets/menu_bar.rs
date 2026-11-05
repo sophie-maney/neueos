@@ -380,7 +380,8 @@ impl Widget for MenuTitleWidget {
                 Size::new(LOGO_SIZE, LOGO_SIZE),
             );
             if highlighted {
-                let colour = menu_tokens::Palette::new(theme.variant).highlighted_label;
+                let colour =
+                    menu_tokens::Palette::new(theme.variant, Backdrop::Opaque).highlighted_label;
                 menu_bar::logo(&mut scene, logo, colour);
             } else {
                 menu_bar::logo_label(&mut scene, logo, theme.variant);
@@ -392,7 +393,8 @@ impl Widget for MenuTitleWidget {
             line.size(ctx.text_contexts());
             let origin = Vec2::new(TITLE_PADDING, (LABEL_BASELINE - line.baseline()).round());
             if highlighted {
-                let colour = menu_tokens::Palette::new(theme.variant).highlighted_label;
+                let colour =
+                    menu_tokens::Palette::new(theme.variant, Backdrop::Opaque).highlighted_label;
                 line.paint(painter, Affine::translate(origin), colour);
             } else {
                 let shadow = origin + Vec2::new(0.0, LABEL_EMBOSS_OFFSET);

@@ -147,7 +147,7 @@ const SPOKES_TURNED: State = ("turned", |f: &mut Fixture| {
     f.advance(Duration::from_millis(250))
 });
 
-/// The Specimen widget, painting the HUD and the menu bar through Masonry: opaque and
+/// The Specimen widget, painting the HUD, the menu bar, a menu, a popover and a sheet through Masonry: opaque and
 /// translucent, light and dark, scale 1 and 2. The materials themselves have their
 /// goldens in neue-paint.
 #[test]
@@ -155,6 +155,9 @@ fn material_specimens() {
     for (tile, name) in [
         (MaterialTile::Hud, "specimen-hud"),
         (MaterialTile::MenuBar, "specimen-menu-bar"),
+        (MaterialTile::Menu, "specimen-menu"),
+        (MaterialTile::Popover, "specimen-popover"),
+        (MaterialTile::Sheet, "specimen-sheet"),
     ] {
         for (translucent, look) in [(false, "opaque"), (true, "translucent")] {
             testing::check_states(
