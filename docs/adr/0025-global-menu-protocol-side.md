@@ -40,7 +40,7 @@ and what to announce in `gtk_shell1.capabilities`.
    app_menu_path?, application_path?, window_path?}`. A change sends `window_changed`.
    `neuectl windows` prints `[menu dbusmenu SERVICE PATH]` or `[menu gmenu BUS
    menubar=… app-menu=… app=… win=…]`.
-7. **`gtk_shell1.capabilities` is 0 for now.** With `global_app_menu | global_menu_bar` GTK
+7. **`gtk_shell1.capabilities` is 0 for now** (3 since task 3.8, ADR 0078; the claim below that the enum is not a bit set was wrong: GTK tests bit `value - 1`). With `global_app_menu | global_menu_bar` GTK
    hides its in-window menu bar, and until the menu bar exists (Phase 3) that would leave
    GTK apps with no menus at all. The constant is in `appmenu.rs`; the Phase 3 menu-bar
    task sets it. Note the XML's enum has values 1, 2 and 3, which are not bit flags:

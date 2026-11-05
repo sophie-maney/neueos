@@ -3,16 +3,18 @@
 //! - [`menu`]: menus as `com.canonical.dbusmenu`. [`MenuExport`] serves one menu tree
 //!   (neue-kit apps' menu bars, task 2.18); [`Layout`] is the wire form a client reads.
 //! - [`menu_client`]: the shell's side, reading an app's menus (task 3.7a).
+//! - [`gmenu_client`]: the same for GTK's `org.gtk.Menus` and `org.gtk.Actions` (task 3.8).
 //! - [`registrar`]: `com.canonical.AppMenu.Registrar`, owned by the shell (task 3.7a).
 //! - [`login`]: the logind calls behind the logo menu.
 //!
-//! The StatusNotifierItem host, the GMenuModel client and our private services arrive
+//! The StatusNotifierItem host and our private services arrive
 //! with later Phase 3 tasks.
 //!
 //! Connections are zbus's blocking ones with zbus's own executor thread (`async-io`), so
 //! apps without an async runtime can use this crate; method calls are answered on that
 //! thread, never on the caller's.
 
+pub mod gmenu_client;
 pub mod login;
 pub mod menu;
 pub mod menu_client;
@@ -28,6 +30,7 @@ use zbus::fdo::ObjectManager;
 /// The zbus this crate uses, for callers that need its types.
 pub use zbus;
 
+pub use gmenu_client::{Activation, GMenuAddress, GMenuClient, GMenuSignals, GMenus, Scope};
 pub use menu::{Layout, MENU_ROOT, MenuExport, MenuIcon, MenuNode, NodeKind, Toggle, ToggleState};
 pub use menu_client::{MenuChanged, MenuClient, MenuSignals};
 pub use registrar::Registrar;

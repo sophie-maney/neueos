@@ -239,13 +239,21 @@ their goldens and the gallery's "Shell" page run on macOS.
       no keyboard or pointer, which is why 3.7a's VM input failed). Known gap: the app's
       window draws inactive while a bar menu has the keyboard.
       *Owner:* on the PC, Ctrl+F2 and the arrows over a Qt app's menus (KWrite).
-- [ ] **3.8 Global menu B: GMenuModel** · Sonnet. After 3.7a. An `org.gtk.Menus` +
+- [x] **3.8 Global menu B: GMenuModel** · Sonnet. After 3.7a. An `org.gtk.Menus` +
       `org.gtk.Actions` client in `neue-dbus`, the same menu rendering, and the
       `gtk_shell1` capabilities in `appmenu.rs` switched on (ADR 0025 §7: the enum values
       are not bit flags).
       *Accept:* in the VM, `gtk3-demo` and `gtk4-demo` (`GtkApplication`) show their menus
       in the bar and hide their in-window menu bar; a GTK app with no exported menus keeps
       working.
+      *Done (ADR 0078):* in the VM, `gtk3-demo-application` and `gtk4-demo-application`
+      (the "Application Class" demos; `gtk3-demo` itself exports no menus, and keeps working)
+      show their menus in the bar, hide their in-window menu bar, and Help ▸ About and
+      Preferences ▸ Prefer Dark Theme act. GTK 3's app menu is the menu under the app's name.
+      Capabilities are 3: GTK tests bit `value - 1`, so the enum values *are* used as bits
+      after all (ADR 0025 §7 amended). Icons and section headers are not shown.
+      *Owner:* Nautilus/gedit-style GNOME apps on the PC; a Flatpak GTK app (its bus name is
+      the sandbox's own).
 - [ ] **3.9 Fallback menu and menu search** · Sonnet. After 3.7b and 3.10. ADR 0005 §4:
       App, File, Edit, Window and Help for windows with no menu address. Edit items send
       key chords through `neue-shell-v1`; Window items run compositor actions; New Window

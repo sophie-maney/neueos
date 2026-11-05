@@ -38,12 +38,12 @@ const APPMENU_VERSION: u32 = 2;
 /// Version of `gtk_shell1` we implement. GTK's XML is at 7, but 6 asserts surface offsets
 /// and 7 adds accessibility paths, which we don't do.
 const GTK_SHELL_VERSION: u32 = 5;
-/// What we tell GTK apps the shell does for them (`gtk_shell1.capabilities`): nothing yet.
-/// GTK apps then keep their menu bar inside the window while still exporting the address.
-/// Phase 3 turns on `global_app_menu | global_menu_bar` (values 1 and 2, whose bitwise or
-/// is the value of `desktop_icons`: the enum is not a proper bit set) when the menu bar
-/// shows them.
-const GTK_SHELL_CAPABILITIES: u32 = 0;
+/// What we tell GTK apps the shell does for them (`gtk_shell1.capabilities`): it shows
+/// their app menu and menu bar, so GTK hides its own (task 3.8, ADR 0078). The XML's enum
+/// numbers the capabilities 1, 2, 3, but GTK tests bit `value - 1` of this field
+/// (`1 << (GTK_SHELL1_CAPABILITY_x - 1)`), so these are bits 0 and 1: `global_app_menu`
+/// is 1 and `global_menu_bar` is 2. (`desktop_icons`, which we don't claim, is 4.)
+const GTK_SHELL_CAPABILITIES: u32 = 0b11;
 
 /// The two globals this module serves.
 #[derive(Debug)]

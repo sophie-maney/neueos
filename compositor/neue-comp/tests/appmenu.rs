@@ -60,8 +60,8 @@ fn globals_are_advertised_at_the_versions_we_implement() {
     assert!(client.has_global("org_kde_kwin_appmenu_manager"));
     assert!(client.has_global("gtk_shell1"));
     assert_eq!(client.gtk_shell_version(), 5);
-    // Nothing shows the menus yet, so GTK keeps its in-window menu bar (Phase 3 flips it).
-    assert_eq!(client.gtk_shell_capabilities(), Some(0));
+    // The shell shows app menu and menu bar (bits 0 and 1), so GTK hides its own.
+    assert_eq!(client.gtk_shell_capabilities(), Some(0b11));
 }
 
 #[test]

@@ -279,7 +279,7 @@ fn escape_label(label: &str) -> String {
 }
 
 /// Removes DBusMenu's mnemonic markers: a single `_` goes, `__` becomes `_`.
-fn unescape_label(label: &str) -> String {
+pub(crate) fn unescape_label(label: &str) -> String {
     let mut out = String::with_capacity(label.len());
     let mut chars = label.chars();
     while let Some(c) = chars.next() {
