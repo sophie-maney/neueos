@@ -821,8 +821,8 @@ fn pop_ups(_: &mut PageHandles) -> Element<Message> {
             "Pop-ups",
             "Press a button to open its menu · Space, Return or Down open it from the keyboard · \
              type to choose in a closed pop-up · the combo box takes your own text too · \
-             right-click a field for Cut, Copy and Select All · the status line shows what \
-             you chose",
+             right-click a field for Cut, Copy and Select All · click a path segment, or use \
+             Left, Right and Return · the status line shows what you chose",
         ))
         .with(
             Stack::row()
@@ -846,6 +846,18 @@ fn pop_ups(_: &mut PageHandles) -> Element<Message> {
                         .with(specimens::pull_down_button(Message::Pressed).disabled(true)),
                 )),
         )
+        .with(section(
+            "Path control (standard and popup styles)",
+            Stack::row()
+                .spacing(spacing::L)
+                .with(
+                    specimens::path_control()
+                        .on_select(|i| Message::Field("Path", specimens::PATH[i].into())),
+                )
+                .with(neue_kit::PathControl::popup(specimens::PATH, |i| {
+                    Message::Field("Path", specimens::PATH[i].into())
+                })),
+        ))
         .with(section(
             "Combo box",
             Stack::column()

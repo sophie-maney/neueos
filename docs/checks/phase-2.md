@@ -992,3 +992,24 @@ the gallery) and the gallery stays.
 
 **4. With the parent:** open the panel again, then close the gallery from its close button.
 Expected: both windows close.
+
+## 26. Checking the path control (task 2.24a)
+Not run yet. In the VM, set up as in `docs/dev-setup.md` §1.3, with the gallery open on
+the "Pop-ups" page (`NEUE_GALLERY_PAGE=7`).
+
+**1. Look:** `neuectl screenshot /tmp/path1.png`. Expected: under "Path control", a row
+"Macintosh HD › Users › sophie" with grey chevrons and no frame, and next to it a pop-up
+button that shows "sophie".
+
+**2. Pointer:** hover "Users", then hold the button down on it (`ydotool click 0x40`),
+and screenshot each time. Expected: a soft grey fill behind "Users", darker while held.
+Release over it: the status line shows "Path: Users". Press on "Users", move off it,
+release: nothing is sent.
+
+**3. Keyboard:** Tab to the row. Expected: a focus ring around "sophie". Left twice, then
+Return: the ring moves to "Macintosh HD" and the status line shows "Path: Macintosh HD".
+
+**4. Popup style:** click the pop-up button. Expected: a menu with "sophie" over the
+button, then "Users", then "Macintosh HD". Choose "Users": the status line shows
+"Path: Users".
+

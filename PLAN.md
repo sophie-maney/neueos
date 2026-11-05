@@ -425,7 +425,8 @@ The split and tab views (2.21) are split into the split view (2.21a) and the tab
 (2.22a), kit window chrome (2.22b), toolbar items (2.22c) and resize edges for
 client-side windows in neue-comp (2.22d). Sheet, popover and HUD panel (2.23) are split into the
 popover (2.23a), the kit sheet (2.23b), sheet placement in neue-comp (2.23c) and the HUD
-panel (2.23d).
+panel (2.23d). Colour well, date picker and path control (2.24) are split into the path
+control (2.24a), the colour well (2.24b) and the date picker (2.24c).
 - **Exit:** the gallery shows the whole widget set, in light and dark, identically on
   macOS and in the VM.
 

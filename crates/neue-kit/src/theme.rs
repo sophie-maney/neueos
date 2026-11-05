@@ -6,7 +6,7 @@ use neue_theme::{Appearance, Theme, Variant};
 
 use crate::widgets::{
     BevelWidget, ButtonWidget, CellWidget, CollectionItemWidget, ColumnHeaderWidget, FieldWidget,
-    HeaderWidget, IconWidget, LabelWidget, MenuRowWidget, MenuWidget, PopoverWidget,
+    HeaderWidget, IconWidget, LabelWidget, MenuRowWidget, MenuWidget, PathWidget, PopoverWidget,
     ProgressWidget, RootWidget, RowsWidget, ScrollWidget, ScrollerWidget, SegmentedWidget,
     SeparatorWidget, SheetWidget, SliderWidget, SpecimenWidget, SpinnerWidget, SplitWidget,
     StackWidget, StepperWidget, TabViewWidget, TextViewWidget, ToggleWidget, ToolbarButtonWidget,
@@ -34,6 +34,7 @@ pub(crate) fn default_properties(theme: Theme) -> DefaultProperties {
     props.insert::<LabelWidget, _>(ThemeProp(theme));
     props.insert::<IconWidget, _>(ThemeProp(theme));
     props.insert::<MenuWidget, _>(ThemeProp(theme));
+    props.insert::<PathWidget, _>(ThemeProp(theme));
     props.insert::<PopoverWidget, _>(ThemeProp(theme));
     props.insert::<SheetWidget, _>(ThemeProp(theme));
     props.insert::<MenuRowWidget, _>(ThemeProp(theme));
