@@ -844,7 +844,7 @@ the toolbar).
       background in the new strip (fails without the fix); a collection's columns follow
       the window; two flex collections split a row after a label and follow a resize. No
       golden changed. **Not yet checked in the VM or by eye on macOS:** re-run 8.3–8.8.
-- [ ] **2.35 Sheets hang under the parent's toolbar: private protocol** · Opus. Step 11.7.
+- [x] **2.35 Sheets hang under the parent's toolbar: private protocol** · Opus. Step 11.7.
       On Wayland the compositor places a sheet at the top of the parent's window geometry
       (2.23c), over its toolbar, because it can't know where a client-side toolbar ends.
       Decision (owner, 2026-11-05): a small private protocol in `crates/neue-protocols/`
@@ -857,6 +857,13 @@ the toolbar).
       *Accept:* ADR (new protocol); headless test in `tests/sheets.rs` (a sheet sits under
       the announced height and follows a change); in the VM, 11.7, 11.8, 11.10 and 11.11
       show the sheet under the toolbar, centred.
+      *Done:* `neue_window_v1` (ADR 0064, `docs/protocols/neue-window-v1.md`):
+      `get_window(wl_surface)` and a double-buffered `set_chrome_height`. neue-comp keeps
+      it in the surface's cached state; `placement::sheet` takes the depth below the
+      parent's geometry top (clamped to its height). The kit's root writes its laid-out
+      chrome height into a shared `neue_platform::ChromeHeight` (`WindowSpec::
+      chrome_height`); the Wayland driver sends it after `redraw`, before the commit,
+      when it changed. `child_check` now prints `below-top=N`. VM steps not yet re-run.
 - [ ] **2.36 neue-comp: modal keyboard focus, and no unzoom on a click** · Opus.
       - Step 11.9: clicking the gallery while its sheet is open gives the gallery the
         keyboard (Tab then rings its buttons and Escape no longer reaches the sheet). A

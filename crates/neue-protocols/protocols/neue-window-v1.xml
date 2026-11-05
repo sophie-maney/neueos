@@ -1,0 +1,72 @@
+<?xml version="1.0" encoding="UTF-8"?>
+<protocol name="neue_window_v1">
+  <copyright>
+    Copyright © 2026 the neueOS authors
+
+    This program is free software: you can redistribute it and/or modify it under the
+    terms of the GNU General Public License as published by the Free Software Foundation,
+    either version 3 of the License, or (at your option) any later version.
+
+    SPDX-License-Identifier: GPL-3.0-or-later
+  </copyright>
+
+  <description summary="what a window tells neue-comp about its own content">
+    A private neueOS protocol (docs/protocols/neue-window-v1.md, ADR 0064). A client that
+    draws its own window chrome tells the compositor facts about it that the compositor
+    can't read from the buffer. Version 1 carries the height of the chrome (title bar
+    plus toolbar), which the compositor hangs sheets (modal child dialogs) under.
+
+    Unprivileged: sandboxed clients may use it.
+  </description>
+
+  <interface name="neue_window_manager_v1" version="1">
+    <description summary="hands out per-surface window objects"/>
+
+    <enum name="error">
+      <entry name="window_exists" value="0"
+             summary="the surface already has a neue_window_v1"/>
+    </enum>
+
+    <request name="destroy" type="destructor">
+      <description summary="destroy the manager">
+        Objects created through the manager are unaffected.
+      </description>
+    </request>
+
+    <request name="get_window">
+      <description summary="extend a surface with window facts">
+        Create a neue_window_v1 for a surface. The facts are used while the surface has
+        the xdg_toplevel role and ignored otherwise. A surface may have one
+        neue_window_v1 at a time; asking for a second one is a window_exists error.
+      </description>
+      <arg name="id" type="new_id" interface="neue_window_v1"/>
+      <arg name="surface" type="object" interface="wl_surface"/>
+    </request>
+  </interface>
+
+  <interface name="neue_window_v1" version="1">
+    <description summary="facts about one window's content">
+      All state is double-buffered: it takes effect on the next wl_surface.commit, so it
+      can change in step with the content it describes. Once the surface is destroyed
+      the object is inert.
+    </description>
+
+    <request name="destroy" type="destructor">
+      <description summary="forget the facts">
+        Every fact goes back to unset on the next wl_surface.commit. The surface may then
+        get a new neue_window_v1.
+      </description>
+    </request>
+
+    <request name="set_chrome_height">
+      <description summary="where the window's chrome ends">
+        The bottom edge of the chrome the client draws at the top of its window (its
+        title bar and toolbar), in surface-local logical coordinates. 0 means none.
+        The compositor hangs sheets from this line and clamps it to the window
+        geometry. Unset, the chrome is taken to end at the top of the window geometry.
+        Double-buffered.
+      </description>
+      <arg name="height" type="uint" summary="surface-local y, logical pixels"/>
+    </request>
+  </interface>
+</protocol>

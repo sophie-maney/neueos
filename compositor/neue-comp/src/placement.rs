@@ -73,13 +73,14 @@ pub fn constrain(work: Rect, size: (i32, i32), pos: (i32, i32)) -> (i32, i32) {
 }
 
 /// Where a sheet's frame (its title bar, if it has one, and client area) goes: centred
-/// horizontally on its parent's client area `parent`, its top against the top of it, which
-/// is just under a server-side title bar or at the top of a window that draws its own
-/// chrome. Not constrained to the work area: a sheet stays attached to its parent even
-/// when the parent hangs off the screen.
-pub fn sheet(parent: Rect, size: (i32, i32)) -> (i32, i32) {
-    let (px, py, pw, _) = parent;
-    (px + (pw - size.0) / 2, py)
+/// horizontally on its parent's client area `parent`, its top `chrome` below the top of
+/// it. That is just under a server-side title bar (`chrome` 0), or under the title bar and
+/// toolbar a window draws itself, as far down as it announced (`neue_window_v1`, ADR 0064;
+/// clamped to the parent's height). Not constrained to the work area: a sheet stays
+/// attached to its parent even when the parent hangs off the screen.
+pub fn sheet(parent: Rect, chrome: i32, size: (i32, i32)) -> (i32, i32) {
+    let (px, py, pw, ph) = parent;
+    (px + (pw - size.0) / 2, py + chrome.clamp(0, ph.max(0)))
 }
 
 /// The position for an interactive or scripted move to `pos`: free, except that the top
@@ -166,9 +167,17 @@ mod tests {
 
     #[test]
     fn sheets_hang_from_the_top_of_their_parent() {
-        assert_eq!(sheet((100, 122, 600, 400), (200, 150)), (300, 122));
+        assert_eq!(sheet((100, 122, 600, 400), 0, (200, 150)), (300, 122));
         // Wider than its parent, or with the parent off screen: still attached.
-        assert_eq!(sheet((-500, 300, 400, 300), (600, 200)), (-600, 300));
+        assert_eq!(sheet((-500, 300, 400, 300), 0, (600, 200)), (-600, 300));
+    }
+
+    #[test]
+    fn sheets_hang_under_announced_chrome() {
+        assert_eq!(sheet((100, 122, 600, 400), 52, (200, 150)), (300, 174));
+        // Never below the parent's bottom edge, never above its top.
+        assert_eq!(sheet((100, 122, 600, 400), 900, (200, 150)), (300, 522));
+        assert_eq!(sheet((100, 122, 600, 400), -5, (200, 150)), (300, 122));
     }
 
     #[test]

@@ -1,6 +1,6 @@
 [package]
 name = "neue-protocols"
-description = "neueOS Wayland protocol bindings generated from vendored XML (gtk_shell1)"
+description = "neueOS Wayland protocol bindings generated from vendored XML (gtk_shell1, neue_window_v1)"
 version.workspace = true
 edition.workspace = true
 rust-version.workspace = true
@@ -12,7 +12,7 @@ publish.workspace = true
 default = []
 # Server-side bindings, for the compositor.
 server = ["dep:wayland-server"]
-# Client-side bindings, for tests.
+# Client-side bindings, for the toolkit's Wayland driver and tests.
 client = ["dep:wayland-client"]
 
 [dependencies]

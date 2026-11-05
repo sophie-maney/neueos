@@ -342,7 +342,8 @@ Sheet:
   ssh neueos-vm '. ~/neueos/docs/vm-env.sh; wins; child_check; grep -c "no xdg-dialog" /tmp/gallery.log'
   ```
   Expected: a window titled `Save` whose `parent` is the gallery's `id`;
-  `Save: top-aligned=true centred=true`; the last line `0`.
+  `Save: below-top=N centred=true`, where N is the height of the gallery's title bar and
+  toolbar (more than 22; task 2.35), the same N in every check below; the last line `0`.
 - [ ] **11.9 Do:** press Return: the sheet closes, `Sheet: saved`. Open it, press Escape:
   `Sheet: cancelled`. Open it, press Tab three times: the ring goes Cancel → Save →
   Cancel and never into the gallery. Click a page in the gallery's page list: nothing
@@ -351,19 +352,19 @@ Sheet:
   ```sh
   ssh neueos-vm '. ~/neueos/docs/vm-env.sh; neuectl action move-window --window $(win_id) --x 100 --y 200; sleep 0.5; child_check'
   ```
-  Expected: the sheet moved with the gallery; `Save: top-aligned=true centred=true`.
+  Expected: the sheet moved with the gallery; `Save: below-top=N centred=true`.
 - [ ] **11.11 Do:** drag the gallery by its title bar: the sheet follows while you drag.
   **Run:**
   ```sh
   ssh neueos-vm '. ~/neueos/docs/vm-env.sh; neuectl action resize-window --window $(win_id) --width 1000 --height 700; sleep 0.5; child_check'
   ```
-  Expected: `Save: top-aligned=true centred=true`, and on screen it's centred on the
+  Expected: `Save: below-top=N centred=true`, and on screen it's centred on the
   wider window.
 - [ ] **11.12 Run** (tries to move the sheet itself):
   ```sh
   ssh neueos-vm '. ~/neueos/docs/vm-env.sh; neuectl action move-window --window $(win_id Save) --x 0 --y 0; sleep 0.5; child_check'
   ```
-  Expected: the sheet doesn't move; still `top-aligned=true centred=true`. Hover the
+  Expected: the sheet doesn't move; still `below-top=N centred=true`. Hover the
   sheet's right edge: no resize cursor. Press Escape.
 - [ ] **11.13 Do:** Dark, open the sheet: dark panel, light text. Escape, set Light back.
 

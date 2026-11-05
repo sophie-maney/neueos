@@ -2563,6 +2563,7 @@ dependencies = [
  "masonry_core",
  "masonry_imaging",
  "neue-paint",
+ "neue-protocols",
  "pollster 1.0.1",
  "raw-window-handle",
  "smithay-client-toolkit 0.21.1",

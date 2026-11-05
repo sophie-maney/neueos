@@ -22,6 +22,7 @@
 //! - `cursor`: the built-in pointer image.
 //! - `winit`: the nested development backend (cargo feature `winit`).
 //! - `xwayland`: X11 apps through `xwayland-satellite`, started on demand (ADR 0026).
+//! - `neue_window`: `neue_window_v1`, where a window's own chrome ends (ADR 0064).
 //! - [`session`]: environment import and `READY=1` under systemd (ADR 0027).
 //!
 //! The skeleton follows Smithay's `smallvil` and `anvil` examples (MIT); see the comments in
@@ -43,6 +44,7 @@ pub mod interaction;
 mod ipc;
 mod layer;
 pub mod lock;
+mod neue_window;
 pub mod outputs;
 pub mod placement;
 mod presentation;

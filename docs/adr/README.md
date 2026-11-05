@@ -73,3 +73,4 @@ Don't edit an accepted ADR's decision; supersede it with a new one.
 | [0061](0061-color-well.md) | Colour well: a bevel-button swatch that opens a popover panel built from kit widgets; the panel keeps the colour as HSB and reports to the well | Accepted |
 | [0062](0062-date-picker.md) | Date picker: a kit civil-date type and two leaf widgets (textual field, calendar), each with its own builder and handle | Accepted |
 | [0063](0063-window-theme-and-focus-leave.md) | A window carries its own theme properties; the Wayland driver never drops a keyboard leave | Accepted |
+| [0064](0064-neue-window-protocol.md) | `neue_window_v1`: a window tells neue-comp where its own chrome ends, and sheets hang under it | Accepted |

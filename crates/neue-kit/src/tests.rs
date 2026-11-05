@@ -64,6 +64,8 @@ struct FakeHost {
     menu_addresses: BTreeMap<WindowId, MenuAddress>,
     /// Each window's root widget (its focus fallback), decorations and background.
     specs: BTreeMap<WindowId, (Option<WidgetId>, Decorations, Color)>,
+    /// Each window's chrome height, for windows that draw chrome.
+    chrome_heights: BTreeMap<WindowId, neue_platform::ChromeHeight>,
     /// Each window's parent and whether it is modal, and its size.
     dialogs: BTreeMap<WindowId, DialogSpec>,
     /// Sheets open as windows of their own, as on Wayland.
@@ -96,6 +98,9 @@ impl Host for FakeHost {
         );
         harness.set_focus_fallback(spec.focus_fallback);
         self.windows.insert(id, harness);
+        if let Some(height) = spec.chrome_height {
+            self.chrome_heights.insert(id, height);
+        }
         self.specs
             .insert(id, (spec.focus_fallback, spec.decorations, spec.background));
         self.dialogs

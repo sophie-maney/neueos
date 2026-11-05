@@ -17,7 +17,8 @@
 //! - xdg-activation (Masonry's `TakeFocus`, `XDG_ACTIVATION_TOKEN` at start-up),
 //!   parent windows and modal dialogs (xdg-dialog);
 //! - AccessKit through `accesskit_unix` (AT-SPI);
-//! - the menu-bar address for the global menu (`org_kde_kwin_appmenu`, ADR 0047).
+//! - the menu-bar address for the global menu (`org_kde_kwin_appmenu`, ADR 0047);
+//! - where a window's own chrome ends, for sheets (`neue_window_v1`, ADR 0064).
 
 mod access;
 mod clipboard;
@@ -44,6 +45,9 @@ use masonry_core::imaging::record::Scene;
 use masonry_core::kurbo::{Affine, Point, Rect, Vec2};
 use masonry_core::peniko::Color;
 use masonry_imaging::{Layer as ImagingLayer, PreparedFrame};
+use neue_protocols::neue_window::client::{
+    neue_window_manager_v1::NeueWindowManagerV1, neue_window_v1::NeueWindowV1,
+};
 use smithay_client_toolkit::activation::{ActivationHandler, ActivationState, RequestData};
 use smithay_client_toolkit::compositor::{CompositorState, FrameCallbackData, Region};
 use smithay_client_toolkit::dispatch2::Dispatch2;
@@ -86,8 +90,8 @@ use wayland_protocols_plasma::appmenu::client::{
 use crate::app::{DriverWindow, Registry};
 use crate::gpu::{Gpu, GpuError, SurfaceTarget};
 use crate::{
-    Anchor, App, Ctx, Decorations, LayerKeyboard, LayerSpec, MenuAddress, Options, PopoverAnchor,
-    ShellLayer, Waker, WindowId, WindowKind, WindowSpec,
+    Anchor, App, ChromeHeight, Ctx, Decorations, LayerKeyboard, LayerSpec, MenuAddress, Options,
+    PopoverAnchor, ShellLayer, Waker, WindowId, WindowKind, WindowSpec,
 };
 use access::{Access, AccessEvent};
 use clipboard::Clipboard;
@@ -220,6 +224,7 @@ struct Globals {
     activation: Option<ActivationState>,
     dialog: Option<XdgWmDialogV1>,
     appmenu: Option<OrgKdeKwinAppmenuManager>,
+    window: Option<NeueWindowManagerV1>,
 }
 
 impl Globals {
@@ -236,6 +241,7 @@ impl Globals {
         let activation = ActivationState::bind(globals, qh).ok();
         let dialog = globals.bind(qh, 1..=1, NoEvents).ok();
         let appmenu = globals.bind(qh, 1..=2, NoEvents).ok();
+        let window = globals.bind(qh, 1..=1, NoEvents).ok();
         optional("zwlr_layer_shell_v1", layer_shell.is_some());
         optional("wp_fractional_scale_manager_v1", fractional.is_some());
         optional("wp_viewporter", viewporter.is_some());
@@ -243,6 +249,7 @@ impl Globals {
         optional("xdg_activation_v1", activation.is_some());
         optional("xdg_wm_dialog_v1", dialog.is_some());
         optional("org_kde_kwin_appmenu_manager", appmenu.is_some());
+        optional("neue_window_manager_v1", window.is_some());
         Ok(Self {
             compositor: CompositorState::bind(globals, qh)?,
             xdg: XdgShell::bind(globals, qh)?,
@@ -254,6 +261,7 @@ impl Globals {
             activation,
             dialog,
             appmenu,
+            window,
         })
     }
 }
@@ -429,6 +437,11 @@ struct Win {
     dialog: Option<XdgDialogV1>,
     /// Where the menu bar is exported, once the app has set an address.
     appmenu: Option<OrgKdeKwinAppmenu>,
+    /// Where the window's own chrome ends (toplevels with chrome only), the height last
+    /// sent, and the object it went through.
+    chrome_height: Option<ChromeHeight>,
+    chrome_sent: Option<u32>,
+    neue_window: Option<NeueWindowV1>,
 }
 
 impl Win {
@@ -448,6 +461,25 @@ impl Win {
             }
         }
         gone
+    }
+
+    /// Tells the compositor where the window's chrome ends if that changed since it was last
+    /// told; it applies with the next commit of the window's surface, so in step with the
+    /// frame that draws the chrome at that height.
+    fn sync_chrome(&mut self, manager: Option<&NeueWindowManagerV1>, qh: &QueueHandle<State>) {
+        let (Some(chrome), Some(manager), Shell::Toplevel(window)) =
+            (&self.chrome_height, manager, &self.shell)
+        else {
+            return;
+        };
+        let height = chrome.get();
+        if self.chrome_sent == Some(height) {
+            return;
+        }
+        self.neue_window
+            .get_or_insert_with(|| manager.get_window(window.wl_surface(), qh, NoEvents))
+            .set_chrome_height(height);
+        self.chrome_sent = Some(height);
     }
 
     /// Window-coordinate origin of the surface a popup is placed against.
@@ -477,6 +509,9 @@ impl Drop for Win {
         }
         if let Some(appmenu) = self.appmenu.take() {
             release_appmenu(appmenu);
+        }
+        if let Some(window) = self.neue_window.take() {
+            window.destroy();
         }
     }
 }
@@ -589,6 +624,7 @@ impl State {
         let surf = Surf::new(&self.g, &qh, wl.clone(), wgpu_surface, true);
         let size = (spec.width, spec.height);
         let mut dialog = None;
+        let toplevel = !matches!(spec.kind, WindowKind::Layer(_));
         let shell = match (spec.kind, &self.g.layer_shell) {
             (WindowKind::Layer(layer), Some(layer_shell)) => {
                 Shell::Layer(create_layer(layer_shell, &qh, wl, &layer, size))
@@ -687,6 +723,9 @@ impl State {
                 accesskit: Access::new(id, self.access_tx.clone()),
                 dialog,
                 appmenu: None,
+                chrome_height: spec.chrome_height.filter(|_| toplevel),
+                chrome_sent: None,
+                neue_window: None,
             },
         );
         Ok(())
@@ -1195,6 +1234,7 @@ impl State {
         if let Some(update) = access {
             w.accesskit.update(update);
         }
+        w.sync_chrome(self.g.window.as_ref(), &self.qh);
 
         // Split the plan: each layer root starts a group; sub-layers follow their root.
         let mut main: Vec<ImagingLayer<'_>> = Vec::new();

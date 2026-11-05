@@ -21,6 +21,7 @@ use masonry_core::core::{
 use masonry_core::imaging::Painter;
 use masonry_core::kurbo::{Axis, Point, Rect, Size};
 use masonry_core::layout::{LayoutSize, LenReq, Length};
+use neue_platform::ChromeHeight;
 
 use super::chrome::Chrome;
 use super::sheet::SheetWidget;
@@ -42,6 +43,8 @@ pub(crate) enum RootAction {
 pub(crate) struct RootWidget {
     child: WidgetPod<dyn Widget>,
     chrome: Option<Chrome>,
+    /// Where the chrome ends, for the driver to tell the compositor (ADR 0064).
+    chrome_height: Option<ChromeHeight>,
     sheet: Option<Attached>,
 }
 
@@ -58,6 +61,7 @@ impl RootWidget {
         Self {
             child: child.to_pod(),
             chrome: None,
+            chrome_height: None,
             sheet: None,
         }
     }
@@ -67,8 +71,15 @@ impl RootWidget {
         Self {
             child: child.to_pod(),
             chrome: Some(chrome),
+            chrome_height: Some(ChromeHeight::new()),
             sheet: None,
         }
+    }
+
+    /// Where the chrome ends, as of the last layout, shared with the driver; `None` without
+    /// chrome. The Wayland driver tells the compositor, which hangs sheets under it.
+    pub(crate) fn chrome_height(&self) -> Option<ChromeHeight> {
+        self.chrome_height.clone()
     }
 
     /// Blocks pointer input to the content for a sheet, and draws `panel` (a sheet that
@@ -224,6 +235,9 @@ impl Widget for RootWidget {
             Some(chrome) => chrome.layout(ctx, size.width, size.height),
             None => 0.0,
         };
+        if let Some(height) = &self.chrome_height {
+            height.set(top);
+        }
         let content = Size::new(size.width, (size.height - top).max(0.0));
         ctx.run_layout(&mut self.child, content);
         ctx.place_child(&mut self.child, Point::new(0.0, top));

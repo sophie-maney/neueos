@@ -6,7 +6,7 @@
 
 use std::collections::HashMap;
 use std::sync::Arc;
-use std::sync::atomic::{AtomicBool, Ordering};
+use std::sync::atomic::{AtomicBool, AtomicU32, Ordering};
 
 use masonry_core::app::RenderRoot;
 use masonry_core::core::{DefaultProperties, ErasedAction, NewWidget, Widget, WidgetId};
@@ -76,6 +76,10 @@ pub struct WindowSpec {
     /// [`crate::Options::default_properties`], which is fixed when the driver starts: a
     /// window opened after the app switched themes would otherwise open in the old one.
     pub default_properties: Option<Arc<DefaultProperties>>,
+    /// Where the chrome the window draws at its top ends, kept up to date by the widget
+    /// that lays it out. The Wayland driver tells the compositor (`neue_window_v1`), which
+    /// hangs sheets under it (ADR 0064). `None` for a window without chrome of its own.
+    pub chrome_height: Option<ChromeHeight>,
 }
 
 impl WindowSpec {
@@ -94,7 +98,35 @@ impl WindowSpec {
             modal: false,
             focus_fallback: None,
             default_properties: None,
+            chrome_height: None,
         }
+    }
+}
+
+/// The height of the chrome (title bar and toolbar) a window draws at its top, in logical
+/// pixels from the top of the window, shared between the widget that lays the chrome out
+/// and the driver (ADR 0064). Clones share the value.
+#[derive(Debug, Clone, Default)]
+pub struct ChromeHeight(Arc<AtomicU32>);
+
+impl ChromeHeight {
+    /// A height of 0 (no chrome yet).
+    pub fn new() -> Self {
+        Self::default()
+    }
+
+    /// Records the chrome's laid-out height, rounded up to whole pixels so nothing hung
+    /// under it covers its last row.
+    pub fn set(&self, height: f64) {
+        // Saturating: NaN and negative heights become 0, huge ones u32::MAX.
+        #[allow(clippy::cast_possible_truncation, clippy::cast_sign_loss)] // reason above
+        let px = height.ceil() as u32;
+        self.0.store(px, Ordering::Relaxed);
+    }
+
+    /// The last height recorded.
+    pub fn get(&self) -> u32 {
+        self.0.load(Ordering::Relaxed)
     }
 }
 
@@ -478,6 +510,19 @@ mod tests {
         Ctx::new(&mut reg).set_primary_selection("b".into());
         Ctx::new(&mut reg).set_primary_selection(String::new());
         assert_eq!(reg.primary_selection.as_deref(), Some("b"));
+    }
+
+    #[test]
+    fn chrome_height_rounds_up_and_is_shared() {
+        let height = ChromeHeight::new();
+        let driver = height.clone();
+        assert_eq!(driver.get(), 0);
+        height.set(51.2);
+        assert_eq!(driver.get(), 52);
+        height.set(-3.0);
+        assert_eq!(driver.get(), 0);
+        height.set(f64::NAN);
+        assert_eq!(driver.get(), 0);
     }
 
     #[test]

@@ -121,6 +121,36 @@ fn chrome_asks_for_client_side_decorations_over_a_transparent_background() {
 }
 
 #[test]
+fn the_driver_learns_where_the_chrome_ends() {
+    let (_, mut host) = with_toolbar();
+    let height = chrome(&mut host, crate::widgets::Chrome::height);
+    let shared = host
+        .chrome_heights
+        .values()
+        .next()
+        .expect("a chrome height");
+    assert!(height > TITLE_BAR_HEIGHT, "{height}");
+    assert_eq!(f64::from(shared.get()), height.ceil());
+
+    let (_, host) = setup(Chromed::default());
+    let shared = host
+        .chrome_heights
+        .values()
+        .next()
+        .expect("a chrome height");
+    assert_eq!(f64::from(shared.get()), TITLE_BAR_HEIGHT);
+
+    let (_, host) = setup(Chromed {
+        plain: true,
+        ..Chromed::default()
+    });
+    assert!(
+        host.chrome_heights.is_empty(),
+        "no chrome, nothing to announce"
+    );
+}
+
+#[test]
 fn the_toolbar_sits_under_the_title_row_and_the_content_under_the_chrome() {
     let (runner, mut host) = with_toolbar();
     let (tools, content) = (id(&runner.app().tools), id(&runner.app().content));

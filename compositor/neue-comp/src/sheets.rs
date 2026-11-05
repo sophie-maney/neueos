@@ -2,8 +2,9 @@
 //!
 //! A toplevel with a parent that `xdg-dialog` marks modal is a *sheet*: its frame is
 //! centred horizontally on the parent's client area with its top against the top of it
-//! (under a server-side title bar, or at the top of a window that draws its own chrome),
-//! and it stays there. [`State::attach_sheets`] puts every mapped sheet back where its
+//! (under a server-side title bar), or under the chrome of a window that draws its own,
+//! where it says that chrome ends (`neue_window_v1`, task 2.35, ADR 0064); and it stays
+//! there. [`State::attach_sheets`] puts every mapped sheet back where its
 //! parent says. The window manager calls it after its own moves, zooms and commits, so a
 //! state read right after sees the sheet in place; the event loop also runs it once per
 //! iteration, which catches every other way a parent can move (outputs going away, full
@@ -15,6 +16,7 @@ use smithay::utils::{Logical, Point};
 use smithay::wayland::shell::xdg::dialog::ToplevelDialogHint;
 
 use crate::decorations::title_bar_height;
+use crate::neue_window::chrome_height;
 use crate::placement;
 use crate::state::State;
 use crate::wm::rect;
@@ -37,11 +39,26 @@ impl State {
             return None;
         }
         let parent = self.parent_window(window)?;
+        let chrome = Self::chrome_depth(&parent);
         let parent = self.space.element_geometry(&parent)?;
         let size = window.geometry().size;
         let bar = title_bar_height(window);
-        let (x, y) = placement::sheet(rect(parent), (size.w, size.h + bar));
+        let (x, y) = placement::sheet(rect(parent), chrome, (size.w, size.h + bar));
         Some(Point::from((x, y + bar)))
+    }
+
+    /// How far below the top of `parent`'s window geometry its own chrome ends: the
+    /// height it announced (surface-local) minus where its geometry starts in the surface.
+    /// 0 for a window that announced none.
+    fn chrome_depth(parent: &Window) -> i32 {
+        parent
+            .toplevel()
+            .and_then(|t| chrome_height(t.wl_surface()))
+            .map_or(0, |h| {
+                i32::try_from(h)
+                    .unwrap_or(i32::MAX)
+                    .saturating_sub(parent.geometry().loc.y)
+            })
     }
 
     /// Move every mapped sheet back under its parent's chrome, after the parent moved or

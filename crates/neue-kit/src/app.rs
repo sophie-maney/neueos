@@ -373,10 +373,12 @@ impl<M> Cx<'_, M> {
         let kind = window.chrome_kind();
         let (root, wiring, toolbar_wiring) =
             root_widget(&window.title, window.root, kind, window.toolbar);
+        let chrome_height = root.chrome_height();
         let root = NewWidget::new(root);
         let root_id = root.id();
         let mut spec = WindowSpec::new(window.title, window.size, root.erased());
         spec.focus_fallback = Some(root_id);
+        spec.chrome_height = chrome_height;
         spec.app_id = window
             .app_id
             .unwrap_or_else(|| self.kit.settings.app_id.clone());

@@ -34,6 +34,8 @@ wayland-client.workspace = true
 wayland-protocols.workspace = true
 # `org_kde_kwin_appmenu` for the global menu (task 2.18, ADR 0005, ADR 0047). MIT.
 wayland-protocols-plasma = { workspace = true, features = ["client"] }
+# `neue_window_v1`: where a window's own chrome ends, for sheets (ADR 0064).
+neue-protocols = { workspace = true, features = ["client"] }
 
 [dev-dependencies]
 anyhow.workspace = true

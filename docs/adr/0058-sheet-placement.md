@@ -41,3 +41,5 @@ outputs going away, a minimised family coming back.
   slide animation (Phase 4), dropping the server-side bar of a modal dialog that asks for
   one (a GTK dialog gets a bar under its parent's), constraining a sheet taller than the
   room below its parent.
+- Task 2.35 (ADR 0064): a parent that announces its chrome height through
+  `neue_window_v1` gets its sheets under that line instead of at the top of its geometry.
