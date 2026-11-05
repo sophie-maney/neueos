@@ -1,0 +1,28 @@
+[package]
+name = "neue-shell"
+description = "neueOS's desktop shell: the menu bar on every output (and later the dock, notifications and more)"
+version.workspace = true
+edition.workspace = true
+rust-version.workspace = true
+license.workspace = true
+repository.workspace = true
+publish.workspace = true
+
+# The library (the bar's pieces and the models behind them) is portable, so its goldens and
+# the gallery's Shell page run on macOS. The `neue-shell` process is Linux-only: on other
+# hosts its main only says so (AGENTS.md platform matrix).
+[dependencies]
+anyhow.workspace = true
+jiff.workspace = true
+neue-kit.workspace = true
+tracing.workspace = true
+tracing-subscriber.workspace = true
+
+[target.'cfg(target_os = "linux")'.dependencies]
+neue-dbus.workspace = true
+
+[dev-dependencies]
+neue-kit = { workspace = true, features = ["testing"] }
+
+[lints]
+workspace = true

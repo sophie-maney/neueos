@@ -27,6 +27,14 @@ pub fn ui_font_data() -> &'static [u8] {
     UI_FONT
 }
 
+/// The bundled UI font's bold face (DejaVu Sans Bold 2.37, same licence; ADR 0068), for
+/// the menu bar's app name and other bold text.
+static UI_BOLD_FONT: &[u8] = include_bytes!("../fonts/DejaVuSans-Bold.ttf");
+/// The bold face's data, registered next to [`ui_font_data`].
+pub fn ui_bold_font_data() -> &'static [u8] {
+    UI_BOLD_FONT
+}
+
 /// Appended to truncated text.
 const ELLIPSIS: char = '…';
 
@@ -105,6 +113,7 @@ impl TextEngine {
             system_fonts: false,
         });
         collection.register_fonts(Blob::new(Arc::new(UI_FONT)), None);
+        collection.register_fonts(Blob::new(Arc::new(UI_BOLD_FONT)), None);
         Self {
             fonts: FontContext {
                 collection,

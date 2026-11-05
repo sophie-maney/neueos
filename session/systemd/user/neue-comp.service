@@ -10,7 +10,9 @@ After=graphical-session-pre.target
 # `--notify` imports WAYLAND_DISPLAY and DISPLAY into the user manager, then sends READY=1.
 Type=notify
 NotifyAccess=main
-ExecStart=/usr/bin/neue-comp --tty --notify
+# `--shell`: the compositor starts the desktop shell on a private socket and restarts it if
+# it exits (ADR 0066).
+ExecStart=/usr/bin/neue-comp --tty --notify --shell /usr/bin/neue-shell
 # Stop through the compositor's own IPC so it leaves its loop and releases the seat; it has no
 # SIGTERM handler (that needs a new dependency, ADR 0027). The environment is read when
 # ExecStop runs, so `neuectl` sees the WAYLAND_DISPLAY that `--notify` imported. systemd

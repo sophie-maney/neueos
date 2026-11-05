@@ -47,4 +47,6 @@ pub struct Options {
     pub default_properties: Arc<DefaultProperties>,
     /// Font added to the Latin fallback chain (no system fonts: ADR 0002, ADR 0030).
     pub font: Option<Blob<u8>>,
+    /// More faces of the UI font (bold), registered after `font` (ADR 0068).
+    pub extra_fonts: Vec<Blob<u8>>,
 }

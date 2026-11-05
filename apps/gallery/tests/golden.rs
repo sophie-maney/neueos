@@ -14,8 +14,8 @@ use neue_gallery::specimens::{
     self, BEVEL_SIZE, CALENDAR_SIZE, CHROME_SIZE, COLLECTION_SIZE, COLOR_PANEL_SIZE,
     COLOR_WELL_SIZE, COMBO_SIZE, DATE_SIZE, FIELD_SIZE, ICONS_SIZE, MENU_SIZE, OUTLINE_SIZE,
     PATH_SIZE, POPOVER_SIZE, POPUP_SIZE, PROGRESS_SIZE, PULL_DOWN_SIZE, PUSH_BUTTON_SIZE,
-    SCROLL_SIZE, SEGMENTED_SIZE, SIDEBAR_SIZE, SLIDER_SIZE, SPINNER_SIZE, SPLIT_SIZE, STEPPER_SIZE,
-    SUBMENU_SIZE, TABLE_SIZE, TABS_SIZE, TEXT_VIEW_SIZE, TOGGLE_SIZE,
+    SCROLL_SIZE, SEGMENTED_SIZE, SHELL_BAR_SIZE, SIDEBAR_SIZE, SLIDER_SIZE, SPINNER_SIZE,
+    SPLIT_SIZE, STEPPER_SIZE, SUBMENU_SIZE, TABLE_SIZE, TABS_SIZE, TEXT_VIEW_SIZE, TOGGLE_SIZE,
 };
 use neue_kit::testing::{
     self, DISABLED, FOCUSED, Fixture, Goldens, INACTIVE, NORMAL, NavKey, PRESSED, State,
@@ -186,6 +186,17 @@ const MENU_SUBMENU: State = ("submenu", |f: &mut Fixture| {
 
 /// A pop-up or pull-down button opened from the keyboard: its first (or chosen) item
 /// highlighted.
+/// The shell bar's logo pressed: its menu open below it, the logo highlighted.
+const LOGO_OPEN: State = ("logo-open", |f: &mut Fixture| {
+    let (w, h) = SHELL_BAR_SIZE;
+    f.press_at(20.0 / f64::from(w), 11.0 / f64::from(h));
+});
+/// The shell bar's clock pressed: today's date in its menu.
+const CLOCK_OPEN: State = ("clock-open", |f: &mut Fixture| {
+    let (w, h) = SHELL_BAR_SIZE;
+    f.press_at(1.0 - 30.0 / f64::from(w), 11.0 / f64::from(h));
+});
+
 const OPEN_BY_KEY: State = ("open-by-key", |f: &mut Fixture| {
     f.focus();
     f.press_key(NavKey::Down);
@@ -333,6 +344,10 @@ control_goldens! {
     combo_box: "combo-box", COMBO_SIZE, &[NORMAL, FOCUSED, COMBO_OPEN, TYPED], specimens::combo_box();
     combo_box_filled: "combo-box-filled", COMBO_SIZE, &[NORMAL, DISABLED], specimens::combo_box_filled();
     edit_menu: "edit-menu", MENU_SIZE, &[EDIT_MENU], specimens::edit_menu_field();
+
+    // The shell's menu bar (3.2b): the logo, the active app's name in bold and the clock;
+    // the logo's menu and the clock's menu open, their titles highlighted.
+    shell_bar: "shell-bar", SHELL_BAR_SIZE, &[NORMAL, LOGO_OPEN, CLOCK_OPEN], specimens::shell_bar("Gallery", |_| ());
 
     context_menu: "context-menu", MENU_SIZE, &[MENU_OPEN, MENU_HIGHLIGHTED], specimens::context_menu(|_| (), specimens::ctrl);
     context_submenu: "context-menu", SUBMENU_SIZE, &[MENU_SUBMENU], specimens::context_menu(|_| (), specimens::ctrl);

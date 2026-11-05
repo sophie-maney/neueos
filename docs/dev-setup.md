@@ -49,18 +49,18 @@ ssh -t neueos-vm 'sudo systemctl stop greetd; pkill -x weston; true'
 **2. Sync and build:**
 ```sh
 rsync -az --delete --exclude target --exclude .git ./ neueos-vm:neueos/
-ssh neueos-vm 'cd neueos && cargo build --release -p neue-comp -p neuectl --no-default-features --features tty'
+ssh neueos-vm 'cd neueos && cargo build --release -p neue-comp -p neuectl -p neue-shell --no-default-features --features neue-comp/tty'
 ```
 
 **3. Start the compositor and check that it listens:**
 ```sh
 ssh neueos-vm 'export XDG_RUNTIME_DIR=/run/user/1000 RUST_LOG=info,neue_comp=debug; unset WAYLAND_DISPLAY
-  setsid nohup ~/neueos/target/release/neue-comp --tty -c foot >/tmp/comp.log 2>&1 </dev/null &
+  setsid nohup ~/neueos/target/release/neue-comp --tty --shell ~/neueos/target/release/neue-shell -c foot >/tmp/comp.log 2>&1 </dev/null &
   sleep 3; . ~/neueos/docs/vm-env.sh; neuectl windows'
 ```
 Expected: one `foot` window. If not, `ssh neueos-vm 'tail -30 /tmp/comp.log'`: the usual
 causes are seatd and `/dev/dri` (§3.2). `-c <cmd>` starts a client (repeatable). Super+Q
-quits.
+quits. `--shell` runs the menu bar (ADR 0066, 0068); leave it out for a bare compositor.
 
 **4. When done,** quit and give the console back to greetd:
 ```sh

@@ -37,6 +37,7 @@ mod popovers;
 mod popups;
 mod scroll;
 mod sheets;
+mod shell_bar;
 mod source_list;
 mod split;
 mod table;
@@ -87,9 +88,11 @@ impl Host for FakeHost {
         let id = WindowId::from_raw(self.next);
         self.next += 1;
         let mut root = StackWidget::new(Axis::Vertical, 0.0);
-        // A chrome spans the window, as a driver lays the root out. (Other roots keep their
-        // content's width, which older tests rely on.)
-        if spec.decorations == Decorations::Client {
+        // A chrome or a layer surface spans the window, as a driver lays the root out.
+        // (Other roots keep their content's width, which older tests rely on.)
+        if spec.decorations == Decorations::Client
+            || matches!(spec.kind, neue_platform::WindowKind::Layer(_))
+        {
             root.align = crate::Align::Fill;
         }
         root.push(spec.root);

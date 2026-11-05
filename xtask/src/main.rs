@@ -232,6 +232,7 @@ const PACKAGES: &[(&str, &str)] = &[
     ("neue-comp", "neue-comp"),
     ("neuectl", "neue-comp"),
     ("neue-session", "neue-comp"),
+    ("neue-shell", "neue-comp"),
 ];
 
 /// Target architectures of `cargo xtask package`.
