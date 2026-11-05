@@ -4,6 +4,7 @@
 //! Rules, in short:
 //! - **Stacking:** a raised window takes its children (dialogs, `xdg_toplevel.set_parent`)
 //!   with it, so children always stay above their parent.
+//! - **Sheets:** a modal dialog hangs from its parent's chrome and follows it (`sheets.rs`).
 //! - **Focus:** pressing a button on a window raises and focuses it; new windows are
 //!   focused when they map. When the focused window goes away, focus moves to its parent,
 //!   else the topmost window of the same client, else the topmost window.
@@ -77,7 +78,7 @@ pub enum ResizeState {
 }
 
 /// `rect` as a placement tuple.
-fn rect(r: Rectangle<i32, Logical>) -> Rect {
+pub(crate) fn rect(r: Rectangle<i32, Logical>) -> Rect {
     (r.loc.x, r.loc.y, r.size.w, r.size.h)
 }
 
@@ -303,6 +304,8 @@ impl State {
             loc
         } else if Self::with_wm_data(&window, |d| d.zoomed) {
             work.loc
+        } else if let Some(loc) = self.sheet_location(&window) {
+            loc
         } else {
             let (_, app_id) = title_and_app_id(&window);
             let parent = self
@@ -487,6 +490,7 @@ impl State {
                 self.space.map_element(window.clone(), loc, false);
             }
         }
+        self.attach_sheets();
         // xdg-shell wants a configure in reply to every (un)maximize request.
         if toplevel.is_initial_configure_sent() {
             toplevel.send_configure();
@@ -510,7 +514,11 @@ impl State {
 
     /// Move `window` so its geometry starts at `location` (top edge kept in the work area
     /// of the output the middle of the top edge lands on, or the nearest one).
+    /// A sheet stays attached to its parent and ignores this.
     pub fn move_window_to(&mut self, window: &Window, location: Point<i32, Logical>) {
+        if self.is_sheet(window) {
+            return;
+        }
         let top_middle = location + Point::from((window.geometry().size.w / 2, 0));
         let work = self
             .output_near(top_middle)
@@ -520,7 +528,9 @@ impl State {
         if let Some(index) = self.minimized.iter().position(|(w, _)| w == window) {
             self.minimized[index].1 = loc.into();
         } else {
-            self.space.map_element(window.clone(), loc, false);
+            // Relocated, not remapped: remapping would raise it above its children.
+            self.space.relocate_element(window, loc);
+            self.attach_sheets();
         }
     }
 
@@ -583,13 +593,13 @@ impl State {
     /// Get `window` ready to be dragged with the pointer at `pointer`: a zoomed window is
     /// unzoomed first, keeping the pointer at the same relative spot of its title bar, and
     /// the window is marked as grabbed. Returns where its geometry starts, or `None` if it
-    /// is not mapped or is full screen.
+    /// is not mapped, is full screen or is a sheet.
     pub(crate) fn begin_move(
         &mut self,
         window: &Window,
         pointer: Point<f64, Logical>,
     ) -> Option<Point<i32, Logical>> {
-        if Self::is_fullscreen(window) {
+        if Self::is_fullscreen(window) || self.is_sheet(window) {
             return None;
         }
         let mut geo = self.space.element_geometry(window)?;
@@ -646,6 +656,7 @@ impl State {
             }
             resize
         });
+        let grab_ended = matches!(resize, ResizeState::WaitingForLastCommit { .. });
         if let ResizeState::Resizing { edges, initial }
         | ResizeState::WaitingForLastCommit { edges, initial } = resize
         {
@@ -659,7 +670,21 @@ impl State {
             }
         }
         self.fullscreen_committed(window);
+        self.attach_sheets();
+        if grab_ended {
+            self.grab_ended(window);
+        } else {
+            self.notify_window_changed(window);
+        }
+    }
+
+    /// A move or resize of `window` ended: report it and the sheets that followed it.
+    pub(crate) fn grab_ended(&mut self, window: &Window) {
+        Self::with_wm_data(window, |d| d.grabbed = false);
         self.notify_window_changed(window);
+        for child in self.children(window) {
+            self.notify_window_changed(&child);
+        }
     }
 
     /// Mark `window` as wanting focus it wasn't given (the dock will bounce its icon).
@@ -673,9 +698,17 @@ impl State {
     }
 
     /// Emit `window_changed` if `window`'s info (ignoring focus) differs from what
-    /// subscribers last saw. Quiet while a move or resize is in progress.
+    /// subscribers last saw. Quiet while a move or resize of it, or of the parent a sheet
+    /// follows, is in progress.
     pub fn notify_window_changed(&mut self, window: &Window) {
         if Self::with_wm_data(window, |d| d.reported.is_none()) {
+            return;
+        }
+        if self.is_sheet(window)
+            && self
+                .parent_window(window)
+                .is_some_and(|p| Self::with_wm_data(&p, |d| d.grabbed))
+        {
             return;
         }
         let focus = self.keyboard.current_focus();

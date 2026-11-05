@@ -64,6 +64,8 @@ impl XdgDialogHandler for State {
     fn dialog_hint_changed(&mut self, toplevel: ToplevelSurface, hint: ToplevelDialogHint) {
         debug!(?hint, "dialog hint changed");
         if let Some(window) = self.window_for_surface(toplevel.wl_surface()) {
+            // A modal dialog becomes a sheet (task 2.23c).
+            self.attach_sheets();
             self.notify_window_changed(&window);
         }
     }
@@ -194,7 +196,7 @@ impl State {
     }
 
     /// The `xdg-dialog` hint of `window`'s toplevel: the client says it is a dialog, or a
-    /// modal one. Only recorded for now; sheets come with Phase 4.
+    /// modal one. A modal dialog with a parent is placed as a sheet (`sheets.rs`).
     pub fn dialog_hint(&self, window: &Window) -> ToplevelDialogHint {
         let Some(toplevel) = window.toplevel() else {
             return ToplevelDialogHint::Unknown;

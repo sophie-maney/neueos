@@ -913,8 +913,7 @@ VO-Right reaches "Popover", the text and Done.
 ## 23. Checking sheets (task 2.23b)
 Not run yet. Steps 1 to 4 run in the VM, set up as in `docs/dev-setup.md` §1.3; step 5 is
 on the Mac. The button is on the "Popovers" page (page 13), under "Sheets". The helpers
-are those of §8 (`click_at`) and §19 (`move_to`). Until task 2.23c the compositor places
-the sheet's window like any new toplevel, not under the gallery's title bar.
+are those of §8 (`click_at`) and §19 (`move_to`). The sheet's placement is checked in §24.
 
 **1. Build and open the page:** as §8 step 1 with `NEUE_GALLERY_PAGE=13`. Then
 `neuectl windows --json > /tmp/s0.json`. Expected: no `WARN` or `ERROR`; a "Save…" button
@@ -942,3 +941,31 @@ appears inside the gallery window, centred, its top edge under the toolbar, with
 beside and below it; clicks on the page under it do nothing; Return, Escape and Tab behave
 as in step 3; the toolbar's buttons still work (known, ADR 0057). With VoiceOver on
 (Cmd-F5), opening it moves VoiceOver into a dialog named "Save".
+
+## 24. Checking sheet placement (task 2.23c)
+Not run yet. In the VM, set up as in `docs/dev-setup.md` §1.3, with the gallery open on
+the "Popovers" page as §23 step 1. The helpers are those of §8 (`click_at`) and §19
+(`move_to`). `wins` prints every window's geometry and parent:
+```sh
+wins() { neuectl --json windows | jq -c '.[] | {id,title,x,y,width,height,parent}'; }
+```
+
+**1. Open it:** click "Save…", then `wins` and `neuectl screenshot /tmp/sp1.png`.
+Expected: the sheet is the window whose `parent` is the gallery's `id`; its `y` equals the
+gallery's `y`, and its `x` equals gallery `x + (gallery width − sheet width) / 2`. In
+`sp1.png` the sheet hangs from the top of the gallery window, centred, under its chrome.
+
+**2. Follow a move:** `neuectl action move-window --window <gallery id> --x 100 --y 200`,
+then `wins` and screenshot `/tmp/sp2.png`. Expected: the sheet moved by
+the same amount and is still centred at the top; it is still above the gallery.
+
+**3. Follow a drag and a resize:** drag the gallery by its title area
+(`move_to` the title, `ydotool click 0x40`, `move_to` 300 px right, `ydotool click 0x80`)
+and screenshot `/tmp/sp3.png`; then
+`neuectl action resize-window --window <gallery id> --width 1000 --height 700` and
+screenshot `/tmp/sp4.png`. Expected: the sheet follows during the drag and is centred on
+the wider window afterwards.
+
+**4. The sheet stays put:** `neuectl action move-window --window <sheet id> --x 0 --y 0`
+changes nothing, and the sheet's edges show no resize cursor (`move_to` its right edge).
+Escape closes the sheet.

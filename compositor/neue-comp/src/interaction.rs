@@ -128,7 +128,10 @@ impl State {
             let Some(geometry) = self.space.element_geometry(window) else {
                 continue;
             };
-            let resizable = !Self::with_wm_data(window, |d| d.zoomed) && !has_fixed_size(window);
+            // A sheet keeps its size here: resizing would pull it off its parent's centre.
+            let resizable = !Self::with_wm_data(window, |d| d.zoomed)
+                && !has_fixed_size(window)
+                && !self.is_sheet(window);
             let frame = frame_geometry(window, geometry);
             let hit = if has_title_bar(window) {
                 hit_test(frame, pos, resizable)
