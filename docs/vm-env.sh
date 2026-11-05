@@ -66,7 +66,7 @@ child_check() {
         (first(.[] | select(.title == "Widget Gallery"))) as $p
         | .[] | select(.parent == $p.id)
         | (.x - ($p.x + ($p.width - .width) / 2)) as $d
-        | "\(.title): top-aligned=\(.y == $p.y) centred=\(($d < 1.01) and ($d > -1.01))"'
+        | "\(.title): below-top=\(.y - $p.y) centred=\(($d < 1.01) and ($d > -1.01))"'
 }
 
 # D-Bus name the gallery exports its menu bar under.

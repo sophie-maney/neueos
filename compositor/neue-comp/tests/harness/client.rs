@@ -35,6 +35,7 @@ mod appmenu;
 mod capture;
 mod decoration;
 mod input;
+mod neue_window;
 mod popup;
 mod presentation;
 mod selection;
@@ -124,6 +125,8 @@ struct ClientData {
     capture: capture::CaptureData,
     /// Global-menu protocol objects (see `appmenu.rs`).
     appmenu: appmenu::AppmenuData,
+    /// `neue_window_v1` objects (see `neue_window.rs`).
+    window: neue_window::WindowData,
 }
 
 impl TestClient {

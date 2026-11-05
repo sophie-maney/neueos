@@ -162,6 +162,55 @@ fn sheets_follow_their_parent() {
 }
 
 #[test]
+fn sheets_hang_under_the_chrome_their_parent_announces() {
+    let server = Server::start();
+    let mut client = server.connect();
+    let parent = client.create_toplevel("Doc", APP, (600, 400));
+    let setup = client.modal_of(&parent);
+    client.create_toplevel_with("Sheet", APP, (200, 100), setup);
+    let sheet_at = |server: &Server| {
+        let (p, s) = (window(server, "Doc"), window(server, "Sheet"));
+        assert_eq!(s.x, p.x + (p.width - s.width) / 2, "{s:?} on {p:?}");
+        s.y - p.y
+    };
+    assert_eq!(sheet_at(&server), 0);
+
+    // A title bar and toolbar 52 px tall: the sheet hangs under them once committed.
+    let chrome = client.neue_window(&parent.surface);
+    chrome.set_chrome_height(52);
+    client.roundtrip();
+    assert_eq!(sheet_at(&server), 0, "applied before the commit");
+    parent.surface.commit();
+    client.roundtrip();
+    assert_eq!(sheet_at(&server), 52);
+
+    // The toolbar changes its display mode: the sheet follows.
+    chrome.set_chrome_height(30);
+    parent.surface.commit();
+    client.roundtrip();
+    assert_eq!(sheet_at(&server), 30);
+
+    // Never below the parent's bottom edge.
+    chrome.set_chrome_height(1000);
+    parent.surface.commit();
+    client.roundtrip();
+    assert_eq!(sheet_at(&server), 400);
+
+    // Forgotten with the object: back to the top of the window geometry.
+    chrome.destroy();
+    parent.surface.commit();
+    client.roundtrip();
+    assert_eq!(sheet_at(&server), 0);
+
+    // A new object may be made for the surface.
+    let chrome = client.neue_window(&parent.surface);
+    chrome.set_chrome_height(22);
+    parent.surface.commit();
+    client.roundtrip();
+    assert_eq!(sheet_at(&server), 22);
+}
+
+#[test]
 fn a_dialog_made_modal_after_mapping_becomes_a_sheet() {
     let server = Server::start();
     let mut client = server.connect();
