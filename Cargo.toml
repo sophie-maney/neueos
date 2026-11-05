@@ -1,6 +1,6 @@
 [workspace]
 resolver = "3"
-members = ["crates/*", "compositor/*", "shell/*", "apps/*", "session/neue-session", "xtask"]
+members = ["crates/*", "compositor/*", "shell/*", "apps/*", "services/*", "session/neue-session", "xtask"]
 
 [workspace.package]
 version = "0.0.0"
@@ -88,8 +88,18 @@ zune-jpeg = { version = "0.5", default-features = false, features = ["std"] }
 # (Masonry's dev-dependency); `png` is shared with the desktop picture (ADR 0069).
 resvg = { version = "0.47", default-features = false }
 
-# Configuration (neue-config, ADR 0004). `toml` is MIT OR Apache-2.0.
+# Configuration (neue-config, ADR 0004). `toml` is MIT OR Apache-2.0. `toml_edit` (same
+# licence, already in the tree through `toml`'s parser family) edits user files in
+# neue-settingsd so comments and order survive (ADR 0004 §6, ADR 0074).
 toml = "1"
+toml_edit = "0.25"
+
+# Services' async runtime (AGENTS.md; neue-settingsd, ADR 0074). MIT, already in the tree.
+# zbus stays on its own async-io executor even in services: enabling its `tokio` feature
+# would turn it on for every crate in a workspace build, neue-kit apps included (ADR 0074).
+# Reading message streams in tests (neue-settingsd). MIT OR Apache-2.0, in the tree via zbus.
+futures-util = { version = "0.3", default-features = false }
+tokio = { version = "1.54", default-features = false, features = ["rt", "macros", "sync", "time"] }
 
 # Text layout for neue-paint (ADR 0002). No `system` feature: fonts are bundled, so no
 # fontconfig and identical output on every host (ADR 0013).
@@ -128,6 +138,7 @@ neue-kit = { path = "crates/neue-kit" }
 neue-dbus = { path = "crates/neue-dbus" }
 neue-desktop = { path = "crates/neue-desktop" }
 neue-shell = { path = "shell/neue-shell" }
+neue-settingsd = { path = "services/neue-settingsd" }
 
 [workspace.lints.rust]
 unsafe_code = "deny"

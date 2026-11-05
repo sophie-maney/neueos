@@ -125,6 +125,19 @@ ssh neueos-vm 'cat ~/.config/neueos/compositor.toml'
 ssh neueos-vm '. ~/neueos/docs/vm-env.sh; neuectl reload-config'
 ```
 
+### 1.6a Settings service
+`neue-settingsd` (ADR 0074) on the VM's session bus; build it with the step 2 command plus
+`-p neue-settingsd`. Keys are `<file>.<dotted path>` (`appearance.mode`,
+`compositor.pointer.natural-scroll`).
+```sh
+ssh neueos-vm 'export DBUS_SESSION_BUS_ADDRESS=unix:path=/run/user/1000/bus
+  setsid nohup ~/neueos/target/release/neue-settingsd >/tmp/settingsd.log 2>&1 </dev/null &
+  sleep 1; busctl --user call org.neueos.Settings /org/neueos/Settings org.neueos.Settings1 Set sv appearance.mode s dark
+  gsettings get org.gnome.desktop.interface color-scheme'
+```
+`Get s <key>`, `GetAll`, `Reset s <key>`; `busctl --user monitor org.neueos.Settings` shows
+`Changed`.
+
 ### 1.7 Known quirks
 - `ydotool mousemove --absolute` lands at twice the coordinates. Relative moves are 1:1.
 - Nested (winit) backend: after the pointer jumps into the window, send one relative move

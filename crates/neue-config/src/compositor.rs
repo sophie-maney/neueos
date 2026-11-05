@@ -279,7 +279,7 @@ fn xkb_variants<'de, D: Deserializer<'de>>(d: D) -> Result<Vec<String>, D::Error
     Ok(names)
 }
 
-fn in_range<'de, D, T>(d: D, what: &str, min: T, max: T) -> Result<T, D::Error>
+pub(crate) fn in_range<'de, D, T>(d: D, what: &str, min: T, max: T) -> Result<T, D::Error>
 where
     D: Deserializer<'de>,
     T: Deserialize<'de> + PartialOrd + std::fmt::Display,
