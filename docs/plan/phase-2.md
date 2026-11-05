@@ -475,6 +475,8 @@ the paper and leather materials move to Phase 6/7 (Widgets, Write).
         steps in `docs/checks/phase-2.md` §19, not run; macOS checked only by build and
         tests (no interactive run). Not yet: a title-changing API, title ellipsis (the
         title is clipped).
+        **16.3 answer (owner run, 2026-11-05):** macOS doesn't take clicks or drags in the
+        top 28 px; they behave like the rest of the toolbar. No code change (2.38).
   - [x] **2.22c Toolbar items** · Sonnet. `Toolbar` items: icon-and-label buttons,
         segmented control, search field, flexible and fixed space, separator; display modes
         (icon and text, icon only, text only); keyboard and the AccessKit `Toolbar` role.
@@ -903,11 +905,14 @@ the toolbar).
       from `sophie-maney/imaging` so `imaging_vello_hybrid` lets layer textures grow to
       the device limit; no neueOS code changed. Checked on the Mac with a temporary
       scripted zoom/unzoom: no render errors, full-width layout. Re-run: 16.2.
-- [ ] **2.38 Runbook fixes** · Haiku. Docs only, in `docs/checks/phase-2-owner.md`: 11.5
+- [x] **2.38 Runbook fixes** · Haiku. Docs only, in `docs/checks/phase-2-owner.md`: 11.5
       places the gallery with `neuectl action move-window --y 0` instead of a drag (a
       drag can't get "Above" near enough to the top); 11.16's Expected says only the
       gallery's chrome goes inactive; 9.7 notes Parallels takes Ctrl-Tab (send it from the
       Mac with Ctrl-Cmd-Tab, or with `ydotool`); record the 16.3 answer under 2.22b. Can
       ride along with any of 2.31–2.34.
+      **Done.** Runbook edited as above (9.7 also gives the `ydotool` key codes; 11.16 now
+      says the panel stays the same, since the HUD has no focused look). 16.3 recorded
+      under 2.22b. Not run: the runbook itself (docs only).
 - **Exit:** the gallery shows the whole widget set, in light and dark, identically on
   macOS and in the VM.
