@@ -826,3 +826,32 @@ the bar turns pale when another app is in front. Note whether the native title-b
 drag and double-click there natively. With VoiceOver on (Cmd-F5), the three lights are
 read as buttons "Close", "Minimise" and "Zoom", and VO-Space on them acts.
 
+## 20. Checking the toolbar items (task 2.22c)
+Not run yet. Steps 1 to 3 run in the VM, set up as in `docs/dev-setup.md` §1.3; step 4 is
+on the Mac. The page is "Toolbar" (page 12). Its toolbars sit on the page background, not
+on the chrome gradient; the same items in a real unified toolbar are in the goldens
+`toolbar-items-*`. The helpers are those of §8 and §19 (`move_to`).
+
+**1. Build and open the page:** as §8 step 1 with `NEUE_GALLERY_PAGE=12`, screenshot
+`/tmp/t1.png`. Expected: no `WARN` or `ERROR`; a "Display mode" segmented control and
+three toolbars: Open, Favourite and a greyed Share (icon over label), a separator, a
+List/Icons segmented control, then a search field at the far right. The second toolbar
+shows icons only, the third labels only.
+
+**2. Press and keys:** hold the button down on "Favourite" in the first toolbar,
+screenshot `/tmp/t2.png`, release; click greyed "Share". Click "Open" (it takes focus),
+press Tab once (`ydotool key 15:1 15:0`), screenshot `/tmp/t3.png`; Tab again,
+`/tmp/t4.png`. The buttons send no message here, so this checks looks only. Expected:
+`t2.png` shows a dark pill behind "Favourite" while held, and nothing for "Share"; `t3.png`
+has the focus ring on "Favourite" (the greyed "Share" and the separator take no focus);
+`t4.png` has it on the List/Icons control.
+
+**3. Display mode:** click "Icon only" in the Display mode control, screenshot
+`/tmp/t5.png`, then "Text only", `/tmp/t6.png`. Expected: only the first toolbar changes,
+and the page below it moves up with it: icons alone (the bar is shorter), then labels
+alone (shorter still).
+
+**4. macOS (owner):** `cargo xtask gallery`, page "Toolbar" (click it in the list: the
+Cmd shortcuts reach pages 1 to 9 only). With VoiceOver on (Cmd-F5), each toolbar is
+read as a toolbar, its buttons by their label (also in the icon-only toolbar), and
+VO-Space on one presses it.

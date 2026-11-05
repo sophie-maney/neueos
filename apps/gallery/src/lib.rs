@@ -69,6 +69,8 @@ pub enum Message {
     SplitResized(Vec<f64>),
     /// The Panes page: a tab view's tab was selected.
     TabSelected(usize),
+    /// The Toolbar page: display mode `n` of [`pages::DISPLAY_MODES`] was chosen.
+    ToolbarMode(usize),
     OpenFile(usize),
     SortFiles(usize, neue_kit::SortOrder),
 }
@@ -339,6 +341,11 @@ impl Application for Gallery {
             Message::CollectionOpened(id) => {
                 let text = format!("Opened “{}”", specimens::collection_label(id));
                 self.status.set_text(cx, text);
+            }
+            Message::ToolbarMode(n) => {
+                if let Some(&mode) = pages::DISPLAY_MODES.get(n) {
+                    self.handles.toolbar.set_display_mode(cx, mode);
+                }
             }
             Message::TabSelected(tab) => {
                 self.status.set_text(cx, format!("Tab {}", tab + 1));

@@ -475,6 +475,81 @@ pub mod bevel_button {
     }
 }
 
+/// Items of a toolbar: icon-and-label buttons that show a pill only while pressed, and
+/// separators.
+pub mod toolbar {
+    use crate::{Appearance, Color, Variant, black, radii, white};
+
+    /// Side of an item's icon.
+    pub const ICON_SIZE: f64 = 24.0;
+    /// Space between a button's edge and its content, left and right.
+    pub const PADDING_X: f64 = 8.0;
+    /// Space between a button's edge and its content, top and bottom.
+    pub const PADDING_Y: f64 = 4.0;
+    /// Space between a button's icon and its label.
+    pub const LABEL_GAP: f64 = 2.0;
+    /// Space between neighbouring items.
+    pub const ITEM_SPACING: f64 = 4.0;
+    /// Width of a fixed space.
+    pub const SPACE_WIDTH: f64 = 16.0;
+    /// Height of a separator's line.
+    pub const SEPARATOR_HEIGHT: f64 = 24.0;
+    /// Width of a separator: its line and the highlight beside it.
+    pub const SEPARATOR_WIDTH: f64 = 2.0;
+    /// Corner radius of a pressed button's pill.
+    pub const RADIUS: f64 = radii::CONTROL;
+    /// Opacity of a disabled button.
+    pub const DISABLED_OPACITY: f32 = 0.5;
+
+    /// Colours of toolbar items.
+    #[derive(Clone, Copy, Debug, PartialEq)]
+    pub struct Palette {
+        /// The pill behind a button while it is held down.
+        pub pressed: Color,
+        /// A separator's line.
+        pub separator: Color,
+        /// The highlight beside a separator.
+        pub separator_highlight: Color,
+    }
+
+    impl Palette {
+        /// Colours for `variant`.
+        pub fn new(variant: Variant) -> Self {
+            let more = if variant.is_increased_contrast() {
+                1.4
+            } else {
+                1.0
+            };
+            match variant.appearance {
+                Appearance::Light => Self {
+                    pressed: black(0.22 * more),
+                    separator: black(0.28 * more),
+                    separator_highlight: white(0.5),
+                },
+                Appearance::Dark => Self {
+                    pressed: black(0.35 * more),
+                    separator: black(0.5 * more),
+                    separator_highlight: white(0.10),
+                },
+            }
+        }
+    }
+
+    #[cfg(test)]
+    mod tests {
+        use super::*;
+
+        #[test]
+        fn increased_contrast_darkens_the_pill() {
+            let standard = Palette::new(Variant::new(Appearance::Light));
+            let increased = Palette::new(
+                Variant::new(Appearance::Light).with_contrast(crate::Contrast::Increased),
+            );
+            assert!(increased.pressed.components[3] > standard.pressed.components[3]);
+        }
+    }
+}
+
 /// Checkboxes and radio buttons: a small gel box or disc, accent gel when on, with a
 /// white mark.
 pub mod toggle {

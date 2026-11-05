@@ -4,10 +4,11 @@ use neue_kit::tokens::metrics::spacing;
 use std::cell::RefCell;
 use std::rc::Rc;
 
+use neue_kit::DisplayMode;
 use neue_kit::{
     Align, BevelButton, Button, Cell, Checkbox, Column, ContextMenu, DividerStyle, Element, Handle,
     Label, MaterialTile, Pane, PopUpButton, ProgressBar, Radio, Segmented, Slider, SortOrder,
-    Spinner, SplitView, Stack, Stepper, TabView, Table, TextField, TextStyle,
+    Spinner, SplitView, Stack, Stepper, TabView, Table, TextField, TextStyle, Toolbar,
 };
 
 use crate::Message;
@@ -25,6 +26,8 @@ pub struct PageHandles {
     /// The Tables page: the files table and the files it shows, in its order.
     pub files: Rc<RefCell<Vec<specimens::SampleFile>>>,
     pub files_table: Handle<Table<Message>>,
+    /// The Toolbar page: the toolbar whose display mode the segmented control changes.
+    pub toolbar: Handle<Toolbar<Message>>,
 }
 
 impl PageHandles {
@@ -107,6 +110,10 @@ pub const PAGES: &[Page] = &[
     Page {
         title: "Panes",
         build: panes,
+    },
+    Page {
+        title: "Toolbar",
+        build: toolbar,
     },
     Page {
         title: "Text",
@@ -646,6 +653,43 @@ fn panes(_: &mut PageHandles) -> Element<Message> {
                         .height(110.0),
                 ),
         ))
+        .into()
+}
+
+/// What the Toolbar page's segmented control offers, in its order.
+pub const DISPLAY_MODES: [DisplayMode; 3] = [
+    DisplayMode::IconAndText,
+    DisplayMode::IconOnly,
+    DisplayMode::TextOnly,
+];
+
+fn toolbar(handles: &mut PageHandles) -> Element<Message> {
+    Stack::column()
+        .spacing(spacing::L)
+        .with(heading(
+            "Toolbar",
+            "The items of a window's toolbar (this gallery's own, at the top, holds its \
+             switches) · press a button by click, or Tab to it and press Space · the \
+             segmented control changes what the first toolbar's buttons show · a flexible \
+             space pushes the search field to the right · the disabled button ignores input",
+        ))
+        .with(section(
+            "Display mode",
+            Stack::row().with(
+                Segmented::new(["Icon and text", "Icon only", "Text only"])
+                    .on_select(Message::ToolbarMode),
+            ),
+        ))
+        .with(
+            Stack::column()
+                .spacing(spacing::M)
+                .with(
+                    specimens::toolbar_items::<Message>(DisplayMode::IconAndText)
+                        .bind(&mut handles.toolbar),
+                )
+                .with(specimens::toolbar_items::<Message>(DisplayMode::IconOnly))
+                .with(specimens::toolbar_items::<Message>(DisplayMode::TextOnly)),
+        )
         .into()
 }
 

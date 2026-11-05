@@ -32,6 +32,7 @@ mod text;
 mod textview;
 mod ticker;
 mod toggle;
+mod toolbar;
 mod zoom;
 
 use masonry_core::core::NewWidget;
@@ -87,6 +88,8 @@ pub use textview::TextView;
 pub(crate) use textview::TextViewWidget;
 pub(crate) use toggle::ToggleWidget;
 pub use toggle::{CheckState, Checkbox, Radio};
+pub use toolbar::{DisplayMode, Toolbar, ToolbarButton};
+pub(crate) use toolbar::{SeparatorWidget, ToolbarButtonWidget, ToolbarWidget};
 pub(crate) use zoom::ZoomWidget;
 
 use crate::Cx;

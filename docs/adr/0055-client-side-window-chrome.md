@@ -85,6 +85,13 @@ windows currently get that bar. PLAN §3.1 says kit apps draw their own unified 
 - A press counts as a press on the bar only if no descendant captured the pointer:
   several kit controls capture without marking the press handled.
 
+## Implementation notes (2.22c)
+- Toolbar items are ordinary widgets in a row (`Toolbar`), so any control can be one.
+  Only `ToolbarButton`s react to the display mode, which the toolbar sets when it is
+  built and through its handle: it looks the buttons up by type among its children.
+- A toolbar button has no bevel: its only chrome is a dark pill while held down (and the
+  focus ring), as in the unified toolbars it imitates. No new dependency or protocol.
+
 ## Revisit when
 - The compositor gains shadows (check that client-side windows get them).
 - Clients should follow `title-bar-double-click` (it needs a settings channel, Phase 3).
