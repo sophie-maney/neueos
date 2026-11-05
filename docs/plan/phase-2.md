@@ -886,7 +886,7 @@ the toolbar).
       `a_click_on_a_zoomed_window_leaves_it_zoomed_and_a_drag_unzooms_it`, both failing
       before the change. Checked: `cargo xtask check` on Linux aarch64; macOS has nothing
       to build; x86_64 not run. VM steps 11.9, 12.4, 12.5 not yet re-run.
-- [ ] **2.37 macOS: zoom stretches the content instead of laying it out** · Opus (hard
+- [x] **2.37 macOS: zoom stretches the content instead of laying it out** · Opus (hard
       debugging). Step 16.2. The green light or a double-click on the bar fills the
       screen, but the content is scaled up (an old-size frame stretched), not laid out at
       the new size; resizing by hand works. Check the winit driver's `ToggleMaximized`
@@ -895,6 +895,14 @@ the toolbar).
       surface target is reconfigured for it.
       *Accept:* zoom and unzoom on macOS lay the content out at the new size (owner check,
       step 16.2), the cause written in the PR.
+      *Diverged from the plan:* the winit path was fine; every `Resized` arrived and the
+      window was relaid out. On the owner's 5K display the zoomed window is 5120 px wide,
+      and vello_gpu caps layer textures at 4096 px by default, so every frame failed
+      (`IntermediateTexture TooLarge`), nothing was presented, and macOS stretched the
+      last frame. Hand resizing stayed under 4096 px. Fix (ADR 0065): `imaging` is patched
+      from `sophie-maney/imaging` so `imaging_vello_hybrid` lets layer textures grow to
+      the device limit; no neueOS code changed. Checked on the Mac with a temporary
+      scripted zoom/unzoom: no render errors, full-width layout. Re-run: 16.2.
 - [ ] **2.38 Runbook fixes** · Haiku. Docs only, in `docs/checks/phase-2-owner.md`: 11.5
       places the gallery with `neuectl action move-window --y 0` instead of a drag (a
       drag can't get "Above" near enough to the top); 11.16's Expected says only the

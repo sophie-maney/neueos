@@ -118,3 +118,13 @@ missing_debug_implementations = "warn"
 unwrap_used = "warn"
 expect_used = "warn"
 dbg_macro = "warn"
+
+# `imaging` from our fork (ADR 0065): upstream rev f3f932a (the rev pinned above and in the
+# Masonry fork) plus one patch that lets vello_gpu's layer textures grow past 4096 px.
+# Patching the source covers our pin and the Masonry fork's alike. Every package of that
+# source in the tree must be listed, or two copies of `imaging` end up in the build.
+[patch."https://github.com/forest-rs/imaging"]
+imaging = { git = "https://github.com/sophie-maney/imaging", rev = "b995a49983a6d1ad71448484a16829cbc7e3a6a4" }
+imaging_wgpu = { git = "https://github.com/sophie-maney/imaging", rev = "b995a49983a6d1ad71448484a16829cbc7e3a6a4" }
+imaging_vello_cpu = { git = "https://github.com/sophie-maney/imaging", rev = "b995a49983a6d1ad71448484a16829cbc7e3a6a4" }
+imaging_vello_hybrid = { git = "https://github.com/sophie-maney/imaging", rev = "b995a49983a6d1ad71448484a16829cbc7e3a6a4" }
