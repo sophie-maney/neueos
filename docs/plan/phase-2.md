@@ -722,46 +722,133 @@ the paper and leather materials move to Phase 6/7 (Widgets, Write).
       clean on Linux aarch64. VM check: `docs/checks/phase-2.md` §29, not run. Not yet:
       `TextView` (2.16) and Ctrl-A don't set it; a field doesn't release it when its
       selection collapses.
-- [ ] **2.29 macOS: one see-through, garbled frame** · Opus (hard debugging). Found in
-      2.17a, on the macOS host (winit driver, Metal). Now and then, for a single frame,
-      the whole gallery window is drawn see-through (the desktop shows through it), and
-      its top-left corner (the first sidebar buttons) fills with garbled pixels that
-      look like menu rows. Seen at 60 fps while hovering menu items: when the highlight
-      moved from Cut to Copy, and when Text Size opened its submenu. The next frame is fine.
-      *Ruled out:* rendering the same frames offscreen does not reproduce it. Over 200
-      frames at 2× (a window of buttons with the menu open, hover cycling through items),
-      neither the headless vello_hybrid renderer nor `texture_render::Renderer` into an
-      `Rgba8Unorm` texture on Metal produced a bad frame. That test skipped only the
-      surface steps (`get_current_texture`, the blit and `present` in
-      `neue-platform/src/gpu.rs`).
-      *Hypotheses:* (1) the surface path: a frame presented before it was fully rendered,
-      or a surface reconfigure mid-frame (`Outdated`/`Lost` → `configure` in `Gpu::render`),
-      shows leftover pixels with alpha below 1; (2) a vello_hybrid bug with clip layers.
-      The menu panel's shadow uses `push_clip`, and the Aqua buttons use layers too.
-      *Steps:*
-      1. Log while reproducing: `RUST_LOG=neue_platform=debug cargo xtask gallery 2>&1 |
-         tee /tmp/gallery.log`, then open "Menus", right-click, and sweep the pointer over
-         the items for a minute. Then run `grep -E "WARN|ERROR|skipping|reconfigure|failed"
-         /tmp/gallery.log`. Lines like "no surface texture", "skipping frame" or
-         "rendering Masonry content failed" point to (1).
-      2. Is it specific to menus? Sweep and click quickly over the Push Button and
-         Buttons pages, and scroll on Scrolling, for a minute each with a screen
-         recording. A bad frame without a menu means the cause is the winit/gpu path,
-         not the menu paint.
-      3. Note the display: built-in ProMotion, external, or scaled. Check whether
-         dragging the window to the other display changes how often it happens.
-      4. If (1): add a `debug!` with the frame number and timing around
-         `get_current_texture`, `render_to_texture`, the blit and `present`. Check
-         whether the bad frame matches a reconfigure or a `Suboptimal` texture. Fixes to
-         try: skip presenting after a reconfigure in the same frame, or render straight
-         to the surface texture when its format allows. Compare with `masonry_winit`'s
-         render loop.
-      5. If (2): draw the menu shadow without the clip (the panel is opaque until
-         Phase 3) and see whether it goes away. If it does, make a minimal vello_hybrid
-         repro (base scene with layers + an overlay with a clip) and report it upstream,
-         noting it in ADR 0002's vello_gpu caveats.
-      *Accept:* the cause is found and fixed (or worked around, with an upstream issue).
-      A one-minute screen recording of menu hovering on macOS has no bad frame (check at
-      60 fps, e.g. `ffmpeg -vf signalstats` and look for dips in mean brightness).
+- [x] **2.29 macOS: one see-through, garbled frame**. Withdrawn: the premise was wrong.
+      The owner sees this glitch only in the VM (Wayland driver), never with the gallery
+      running natively on macOS (owner run of 2026-11-05). Replaced by 2.30.
+
+**Fixes from the owner run of 2026-11-05.** The owner ran `docs/checks/phase-2-owner.md`
+in the VM and on macOS; step numbers below are that runbook's. After these land, re-run
+only the steps each task names, then 2.26. Order: 2.30 first (it affects every page),
+then 2.36, 2.31, 2.32, 2.33 and 2.34 in any order, 2.35, and 2.37 on the Mac. Two
+findings need no code: 9.7 (Parallels takes Ctrl-Tab; Ctrl-Cmd-Tab reaches the VM) and
+16.3 (macOS doesn't take clicks or drags in the top 28 px; they behave like the rest of
+the toolbar).
+
+- [ ] **2.30 VM: the window goes see-through while a menu or popover is hovered** · Opus
+      (hard debugging). Steps 4.2 and 11.2. In the VM, hovering the items of an open menu
+      or popover makes the gallery window flash: in the owner's recording (frame 139 and
+      frames 329–347 at 60 fps) the whole window is see-through for one or more frames,
+      with garbled pixels in its top-left corner, while the menu itself draws correctly.
+      Never seen with the gallery running natively on macOS.
+      *Hypothesis:* `Gpu` (`neue-platform/src/gpu.rs`) keeps one
+      `masonry_imaging::texture_render::Renderer`, so one vello_hybrid renderer, for every
+      surface. On Wayland a menu or popover is its own xdg-popup surface, so the renderer
+      draws the window and the popup in turn, at different sizes, and its internal state
+      (alpha and clip-slot textures, the size uniform written with `queue.write_buffer`)
+      is shared between them. On macOS (winit) menus are layers inside the window, so
+      there is only one surface: this matches the glitch being VM-only, and why 2.29's
+      single-surface offscreen test never reproduced it.
+      *Steps:* 1. Write a failing test first: on a headless wgpu device, render a large
+      target and a small one in turn through one `Renderer` and check the large target's
+      pixels stay opaque (the CPU-side readback is enough). 2. Give every `SurfaceTarget`
+      its own `Renderer` (keep the device and queue shared). 3. If the test can't
+      reproduce it, log frame numbers around `render_to_texture`, the blit and `present`
+      in the VM and compare with the bad frames before trying more.
+      *Accept:* the test fails before the fix and passes after; a one-minute recording of
+      menu and popover hovering in the VM has no dip in mean brightness (`ffmpeg -vf
+      signalstats`). Re-run: 4.2, 11.2.
+- [ ] **2.31 Menus flipped at a screen edge leave a gap** · Sonnet (follows 2.23a). Steps
+      4.7 and 5.5. A context menu flipped to the left of the pointer, or a combo box's
+      menu flipped above the field, sits about two shadow widths away from its anchor.
+      Cause: menu placements in `neue-platform/src/wayland/popup.rs` hide the shadow
+      inset with a positioner offset, and Smithay flips without inverting the offset (the
+      popover placement already avoids this). Fix: give menus the popover's treatment
+      (window geometry without the shadow, no offset), for context menus, pop-up buttons,
+      pull-downs and combo boxes; check whether 5.3's known gap (a pop-up menu near the
+      top of the screen no longer lines up) goes with it.
+      *Accept:* headless positioner tests (`popup.rs`) for a menu flipped on each axis, its
+      visible box touching the anchor; in the VM, 4.7 and 5.5 show no gap.
+- [ ] **2.32 Widget fixes: path control keys, thin divider, popover arrow** · Sonnet.
+      - Step 5.10: Tab gives the path control focus on "Macintosh HD", not "sophie", and
+        Left does nothing; after clicking "sophie", Left works. Find what moves the focused
+        segment to the first one (suspects: the collapse fallback in `path.rs` `layout`,
+        the pointer-down handler) and fix it.
+      - Step 9.2: the thin divider is very hard to grab. Give dividers a hit area wider
+        than what is drawn (a `neue-theme` token, about 3 px each side for the thin
+        style), with the resize cursor over all of it.
+      - Step 11.2: the "Below" popover has a white line between its arrow and its panel
+        (the other edges are fine; the golden at 1× and 2× doesn't show it clearly, so
+        check the VM's 1.5×/fractional path too). Likely the panel's top highlight drawn
+        across the arrow's base.
+      *Accept:* a path-control test (Tab in, focus on the last segment, Left twice and
+      Return choose the first); a split-view test that a press 2 px beside a thin divider
+      drags it; popover goldens re-blessed after inspecting the diff. Re-run: 5.10, 9.2,
+      11.2.
+- [ ] **2.33 Sheet theme and HUD parent focus** · Sonnet. Both in the kit runner.
+      - Step 11.13: a sheet opened in Dark draws light. The sheet window doesn't take the
+        app's current theme (check both opening while Dark and switching while open).
+      - Step 11.16: with the Inspector open, focusing foot leaves the gallery's title bar
+        active. The runner's `set_keep_active` on the parent (ADR 0059 §3) isn't cleared
+        when the keyboard leaves both windows for another client. (The HUD panel itself
+        looks the same focused or not, by design; 2.38 fixes the runbook.)
+      *Accept:* end-to-end tests on the fake host: a sheet opened in Dark paints with the
+      dark variant and follows a switch; parent's chrome inactive once neither the parent
+      nor its HUD has the keyboard. Re-run: 11.13, 11.16.
+- [ ] **2.34 Collection view after scrolling, and the Icons page layout** · Sonnet.
+      - Step 8.6: after scrolling either collection, rows that come into view have a grey
+        background; a click repaints them correctly until the next scroll. The background
+        fill in `collection.rs` (`paint`, `self.window`) is stale after a scroll: repaint
+        it when the visible window changes, or paint it from the viewport.
+      - Step 8.8: the two collections have a fixed width, so resizing the window changes
+        nothing. Let them take the page's width (split between them) so the column count
+        follows the window.
+      - Step 8.6 (second): the large collection's 12 items fill complete rows, so there is
+        no empty space to click. Use a count that leaves the last row part-empty (e.g. 11).
+      *Accept:* a test that scrolls a collection and checks the newly visible area paints
+      the content background; a test that the column count changes with the width; gallery
+      goldens updated after inspecting the diff. Re-run: 8.3–8.8.
+- [ ] **2.35 Sheets hang under the parent's toolbar: private protocol** · Opus. Step 11.7.
+      On Wayland the compositor places a sheet at the top of the parent's window geometry
+      (2.23c), over its toolbar, because it can't know where a client-side toolbar ends.
+      Decision (owner, 2026-11-05): a small private protocol in `crates/neue-protocols/`
+      (documented in `docs/protocols/`) by which a toplevel tells the compositor the height
+      of its chrome (title bar plus toolbar), in surface coordinates, updated when it
+      changes (toolbar display modes, zoom). neue-comp places sheets under that line
+      (`placement::sheet`, `State::attach_sheets`), falling back to the geometry's top; the
+      Wayland driver sends it from the window root's chrome height. Later the slide
+      animation (Phase 4) can reuse it.
+      *Accept:* ADR (new protocol); headless test in `tests/sheets.rs` (a sheet sits under
+      the announced height and follows a change); in the VM, 11.7, 11.8, 11.10 and 11.11
+      show the sheet under the toolbar, centred.
+- [ ] **2.36 neue-comp: modal keyboard focus, and no unzoom on a click** · Opus.
+      - Step 11.9: clicking the gallery while its sheet is open gives the gallery the
+        keyboard (Tab then rings its buttons and Escape no longer reaches the sheet). A
+        window with a modal child should pass keyboard focus to that child (its topmost
+        modal descendant) when clicked or focused; pointer input to the parent stays as
+        it is (the kit's scrim already blocks it). This is 2.23c's "Not yet: keyboard
+        modality".
+      - Step 12.5: a single click on the toolbar of a zoomed window unzooms it. A
+        client-requested move (`State::start_move` → `begin_move` in `wm.rs`) unzooms at
+        once; make it wait for the pointer to travel `DRAG_THRESHOLD` (as the server-side
+        bar's grab in `grabs.rs` already does), so a click or the first click of a
+        double-click leaves the window zoomed.
+      *Accept:* headless tests: a click on a parent with a modal child leaves the keyboard
+      on the child; a move request on a zoomed window released without moving keeps it
+      zoomed, and a drag past the threshold unzooms it. Re-run: 11.9, 12.4, 12.5.
+- [ ] **2.37 macOS: zoom stretches the content instead of laying it out** · Opus (hard
+      debugging). Step 16.2. The green light or a double-click on the bar fills the
+      screen, but the content is scaled up (an old-size frame stretched), not laid out at
+      the new size; resizing by hand works. Check the winit driver's `ToggleMaximized`
+      (`set_maximized`) and `Resized` path in `neue-platform/src/winit/mod.rs`: whether a
+      `Resized` arrives after a zoom with our hidden native title bar, and whether the
+      surface target is reconfigured for it.
+      *Accept:* zoom and unzoom on macOS lay the content out at the new size (owner check,
+      step 16.2), the cause written in the PR.
+- [ ] **2.38 Runbook fixes** · Haiku. Docs only, in `docs/checks/phase-2-owner.md`: 11.5
+      places the gallery with `neuectl action move-window --y 0` instead of a drag (a
+      drag can't get "Above" near enough to the top); 11.16's Expected says only the
+      gallery's chrome goes inactive; 9.7 notes Parallels takes Ctrl-Tab (send it from the
+      Mac with Ctrl-Cmd-Tab, or with `ydotool`); record the 16.3 answer under 2.22b. Can
+      ride along with any of 2.31–2.34.
 - **Exit:** the gallery shows the whole widget set, in light and dark, identically on
   macOS and in the VM.

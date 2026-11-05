@@ -26,3 +26,51 @@ click_in_window() {
     ydotool mousemove -x 1 -y 0
     ydotool click 0xC0
 }
+
+# --- Helpers for the owner's runbooks (docs/checks/phase-N-owner.md) ---
+
+# (Re)start the widget gallery on page N (0-based, default 0), with debug logs for the
+# platform layer in /tmp/gallery.log. Prints the window list and any WARN or ERROR line.
+gallery() {
+    pkill -x neue-gallery
+    sleep 0.5
+    WGPU_BACKEND=gl RUST_LOG=info,neue_platform=debug NEUE_GALLERY_PAGE="${1:-0}" \
+        setsid nohup neue-gallery >/tmp/gallery.log 2>&1 </dev/null &
+    sleep 4
+    neuectl windows
+    grep -E "WARN|ERROR" /tmp/gallery.log || echo "gallery log: no WARN or ERROR"
+}
+
+# Start a foot terminal (a second window to move focus to).
+term() {
+    setsid nohup foot "$@" >/dev/null 2>&1 </dev/null &
+    sleep 1.5
+}
+
+# Id of the first window titled TITLE (default "Widget Gallery").
+win_id() {
+    neuectl --json windows |
+        jq -r --arg t "${1:-Widget Gallery}" 'first(.[] | select(.title == $t) | .id) // empty'
+}
+
+# One line per window: id, title, geometry, parent and state.
+wins() {
+    neuectl --json windows |
+        jq -c '.[] | {id, title, x, y, width, height, parent, focused, minimized, zoomed}'
+}
+
+# For each child of the gallery (sheet, HUD): whether it hangs from the gallery's top edge
+# and is centred on it (within 1 px).
+child_check() {
+    neuectl --json windows | jq -r '
+        (first(.[] | select(.title == "Widget Gallery"))) as $p
+        | .[] | select(.parent == $p.id)
+        | (.x - ($p.x + ($p.width - .width) / 2)) as $d
+        | "\(.title): top-aligned=\(.y == $p.y) centred=\(($d < 1.01) and ($d > -1.01))"'
+}
+
+# D-Bus name the gallery exports its menu bar under.
+gallery_menu() {
+    neuectl --json windows |
+        jq -r 'first(.[] | select(.title == "Widget Gallery")) | .menu.service // empty'
+}

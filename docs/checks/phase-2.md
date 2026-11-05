@@ -1,7 +1,8 @@
 # Phase 2 manual checks
 
 The owner's manual check steps for Phase 2 tasks (`docs/plan/phase-2.md`). They follow
-`docs/dev-setup.md` §2: everything runs from the Mac over ssh, from the repo root.
+`docs/dev-setup.md` §2: everything runs from the Mac over ssh, from the repo root. Checks
+still open for the owner are collected in one runbook, `docs/checks/phase-2-owner.md`.
 
 ## 1. Checking the sctk driver spike (task 2.2)
 Historical: task 2.5 replaced `sctk_spike` with `demo` (§3); these steps no longer build.
@@ -405,186 +406,28 @@ Expected: `ime.log` ends with `deactivated` (no new `activated`, no commit into 
 field); `f5.png` shows three bullets and `Password: 3 characters`. Give the console back
 as in `docs/dev-setup.md` §1.3 step 4.
 
-**4. macOS (owner):** `cargo xtask gallery`, open the Fields page. Add Japanese – Romaji in
-System Settings → Keyboard → Text Input, switch to it, click the Name field and type
-`nihon`: the preedit is underlined, the candidate window sits under the field, and the
-status line doesn't change until you commit (Return), when it shows the committed text.
-Japanese glyphs show as boxes (bundled fonts only, ADR 0030). Then on the ABC layout:
-Option-E, E gives `é`; in the Password field the input menu greys out (no IME) and
-typing shows bullets. Also check Cmd-A/C/X/V, Option-Left/Right (words) and
-Cmd-Left/Right (ends) in the Name field, and that Escape clears the search field.
+**4. macOS (owner):** not run yet; in `docs/checks/phase-2-owner.md`, 16.4–16.6.
 
 ## 7. Checking the text view (task 2.16)
-Not run yet (the agent had no VM). Steps 1 and 2 run in the VM, set up as in
-`docs/dev-setup.md` §1.3; step 3 is on the Mac. The gallery's "Text View" page is page 4.
-
-**1. Build and open the page:**
-```sh
-rsync -az --delete --exclude target --exclude .git ./ neueos-vm:neueos/
-ssh neueos-vm 'cd neueos && cargo build --release -p neue-comp -p neuectl --no-default-features --features tty && cargo build --release -p neue-gallery -p neue-platform --examples --bins'
-ssh neueos-vm 'export XDG_RUNTIME_DIR=/run/user/1000 RUST_LOG=info; unset WAYLAND_DISPLAY
-  setsid nohup ~/neueos/target/release/neue-comp --tty >/tmp/comp.log 2>&1 </dev/null &
-  sleep 3; . ~/neueos/docs/vm-env.sh
-  setsid nohup ~/neueos/target/release/examples/ime_probe neue "neueOS IME" >/tmp/ime.log 2>&1 </dev/null &
-  sleep 0.5; export WGPU_BACKEND=gl RUST_LOG=info NEUE_GALLERY_PAGE=4
-  setsid nohup ~/neueos/target/release/neue-gallery >/tmp/gallery.log 2>&1 </dev/null &
-  sleep 4; neuectl windows; grep -E "WARN|ERROR" /tmp/gallery.log; neuectl screenshot /tmp/t1.png'
-scp 'neueos-vm:/tmp/t*.png' ~/Desktop/neueos-shots/
-```
-Expected: no `WARN` or `ERROR`; `t1.png` shows three text views side by side (editable,
-read-only, disabled), each wrapped, with a thin scroller on the editable one only while the
-pointer is over it.
-
-**2. Typing, IME and scrolling:** click into the editable view (the first), then:
-```sh
-ssh neueos-vm '. ~/neueos/docs/vm-env.sh; export YDOTOOL_SOCKET=/tmp/.ydotool_socket
-  ydotool key 29:1 107:1 107:0 29:0; sleep 0.3
-  ydotool type "typed"; ydotool key 28:1 28:0; ydotool type "more"; sleep 0.5; neuectl screenshot /tmp/t2.png
-  tail -3 /tmp/ime.log'
-```
-(Ctrl-End, type, Return, type.) Expected: `t2.png` shows the view scrolled to its end with the
-caret after "more" on a new line and the status line `Notes: “…typed\nmore”`; `ime.log`
-ends with `activated`. Then click into the read-only view: typing changes nothing, Cmd/
-Ctrl-A selects, and `ime.log` ends with `deactivated`.
-
-**3. macOS (owner):** `cargo xtask gallery`, open "Text View". In the editable view check
-Return, Up/Down across wrapped lines, Option-Left/Right (words), Cmd-Left/Right (line ends),
-Cmd-Up/Down (text ends), Cmd-A/C/X/V, a triple click (paragraph), that Tab leaves the view,
-and the Japanese – Romaji preedit as in §6 step 4 (underlined, candidate window under the
-caret, committed on Return, not before).
-
+Not run yet. The owner's steps are in `docs/checks/phase-2-owner.md`, Part 2 and 16.7.
 
 ## 8. Checking menus (task 2.17a)
-Not run yet (the agent had no VM). Steps 1–3 run in the VM, set up as in
-`docs/dev-setup.md` §1.3; step 4 is on the Mac. The gallery's "Menus" page is page 6.
-
-**1. Build and open the page:**
-```sh
-rsync -az --delete --exclude target --exclude .git ./ neueos-vm:neueos/
-ssh neueos-vm 'cd neueos && cargo build --release -p neue-comp -p neuectl --no-default-features --features tty && cargo build --release -p neue-gallery'
-ssh -t neueos-vm 'pgrep -x ydotoold || sudo sh -c "setsid nohup ydotoold --socket-path=/tmp/.ydotool_socket --socket-own=1000:1000 >/dev/null 2>&1 </dev/null &"'
-ssh neueos-vm 'export XDG_RUNTIME_DIR=/run/user/1000 RUST_LOG=info; unset WAYLAND_DISPLAY
-  setsid nohup ~/neueos/target/release/neue-comp --tty >/tmp/comp.log 2>&1 </dev/null &
-  sleep 3; . ~/neueos/docs/vm-env.sh; export WGPU_BACKEND=gl RUST_LOG=info NEUE_GALLERY_PAGE=6
-  setsid nohup ~/neueos/target/release/neue-gallery >/tmp/gallery.log 2>&1 </dev/null &
-  sleep 4; neuectl windows; grep -E "WARN|ERROR" /tmp/gallery.log; neuectl screenshot /tmp/m1.png'
-scp 'neueos-vm:/tmp/m*.png' ~/Desktop/neueos-shots/
-```
-Expected: no `WARN` or `ERROR`; `m1.png` shows "Right-click here" and a text field.
-
-**2. Keyboard:** click into the text field (its position is in `m1.png`, in screenshot
-pixels):
-```sh
-ssh neueos-vm '. ~/neueos/docs/vm-env.sh; export YDOTOOL_SOCKET=/tmp/.ydotool_socket
-  click_at() { ydotool mousemove --absolute -x $(($1 / 2)) -y $(($2 / 2)); sleep 0.2; ydotool mousemove -x 1 -y 0; ydotool click 0xC0; }
-  click_at X Y'
-```
-Then:
-```sh
-ssh neueos-vm '. ~/neueos/docs/vm-env.sh; export YDOTOOL_SOCKET=/tmp/.ydotool_socket
-  ydotool key 42:1 68:1 68:0 42:0; sleep 0.5; neuectl screenshot /tmp/m2.png
-  ydotool key 20:1 20:0; ydotool key 106:1 106:0; sleep 0.5; neuectl screenshot /tmp/m3.png
-  ydotool key 108:1 108:0 28:1 28:0; sleep 0.5; neuectl screenshot /tmp/m4.png
-  grep -E "new Masonry layer|WARN|ERROR" /tmp/gallery.log | tail -5'
-```
-(Shift-F10; T and Right; Down and Return.) Expected: `m2.png` shows the menu at the field's
-middle with Cut highlighted, the field's focus ring gone; `m3.png` shows the Text Size
-submenu to the right of the menu, Small highlighted (a second `new Masonry layer` line:
-it nests on the first popup); `m4.png` shows both menus closed, the status line
-`Pressed “Regular”` and the text field focused again (caret blinking).
-
-**3. Pointer:** with `move_to` and `click_at` as in §4 and positions from `m1.png`,
-right-click "Right-click here" (`ydotool click 0xC1`), take `/tmp/m5.png`, move over
-"Text Size", take `/tmp/m6.png`, click "Large", take `/tmp/m7.png`. Then right-click again
-and click outside the menu, and take `/tmp/m8.png`. Expected: `m5.png` the menu at the
-pointer, nothing highlighted; `m6.png` the submenu open beside it; `m7.png` both closed and
-`Pressed “Large”`; `m8.png` no menu, the status line unchanged. Right-click near the right
-edge of the screen: the menu slides or flips to stay on screen (the submenu flips over its
-parent: a known gap, ADR 0045).
-
-**4. macOS (owner):** `cargo xtask gallery`, open "Menus". Right-click (two-finger click)
-the area: the menu opens at the pointer; press-drag-release onto an item chooses it;
-hovering Text Size opens the submenu; type "w" to jump to Wrap Lines; Escape closes. In the
-text field, Shift-F10 opens the menu and Escape gives focus back to the field. Shortcuts
-show ⌘ here (⌃ on Linux).
+Not run yet. The owner's steps are in `docs/checks/phase-2-owner.md`, Part 4 and 16.8.
 
 ## 9. Checking pop-up buttons, combo boxes and the edit menu (task 2.17b)
-Not run yet (the agent had no VM). Steps 1–3 run in the VM, set up as in
-`docs/dev-setup.md` §1.3; step 4 is on the Mac. The gallery's "Pop-ups" page is page 7.
-The helpers are those of §8.
-
-**1. Build and open the page:** as §8 step 1 with `NEUE_GALLERY_PAGE=7`, screenshot
-`/tmp/p1.png`. Expected: no `WARN` or `ERROR`; `p1.png` shows a pop-up button ("Medium"),
-a pull-down ("Actions"), disabled copies of both, two combo boxes (the second disabled), a
-text field and a text view.
-
-**2. Pop-up button:** click the pop-up button (`click_at X Y` from §8, positions from
-`p1.png`) and take `/tmp/p2.png`. Expected: a menu over the button with "Medium" checked,
-highlighted and level with where the button was; the button's cap dark. Move the pointer to
-"Large" and click: `p3.png` shows the menu gone and the button reading "Large", the status
-line `Size: “Large”`. Open it again, press Escape: no change, and the pop-up focus ring is
-back after Tab. Wayland: near the top of the screen the popup may be moved down by the
-compositor, so the chosen item no longer lines up with the button (a known gap).
-
-**3. Pull-down and combo box:** click "Actions" (`p4.png`: a menu right below it, nothing
-highlighted), click "Rename" (`Pressed “Rename”`). Click the combo box's arrow (`p5.png`:
-a menu below the field, as wide as the field, the arrow button dark), click "Large": the
-field reads "Large". Type into the field: the status line follows. Click into the field,
-press Down: the menu opens with its first item highlighted. Right-click the text field
-(`p6.png`): Cut, Copy and Select All; Select All selects everything and keeps focus in
-the field; the same on the text view. Shift-F10 in the field opens it too.
-
-**4. macOS (owner):** `cargo xtask gallery`, open "Pop-ups". Press and hold the pop-up,
-drag to an item, release: it chooses. Click the pop-up, release, click an item. Tab to a
-pop-up: Space, Return and Down open it; type "s" while it is closed. Two-finger click a text
-field: the edit menu; Cut and Copy put text on the clipboard (paste it into another app);
-Paste is missing on purpose (ADR 0046).
+Not run yet. The owner's steps are in `docs/checks/phase-2-owner.md`, 5.1–5.7 and 16.9–16.10.
 
 ## 10. Checking the DBusMenu export (task 2.18)
-Not run yet (the agent had no VM). Run in the VM, set up as in `docs/dev-setup.md` §1.3.
-The gallery exports a menu bar: View (Dark Appearance, Graphite Accent, Increase
-Contrast, Reduce Motion, Next Zoom) and Pages (one radio item per page). Item ids are the
-menu model's depth-first ids plus one, so View is 1 and Dark Appearance is 2. The session
-bus is the user's (`$XDG_RUNTIME_DIR/bus`); check it exists first.
-
-**1. Build, start, and read the address:**
-```sh
-rsync -az --delete --exclude target --exclude .git ./ neueos-vm:neueos/
-ssh neueos-vm 'cd neueos && cargo build --release -p neue-comp -p neuectl --no-default-features --features tty && cargo build --release -p neue-gallery'
-ssh neueos-vm 'export XDG_RUNTIME_DIR=/run/user/1000 RUST_LOG=info; unset WAYLAND_DISPLAY
-  test -S $XDG_RUNTIME_DIR/bus || echo "NO SESSION BUS"
-  setsid nohup ~/neueos/target/release/neue-comp --tty >/tmp/comp.log 2>&1 </dev/null &
-  sleep 3; . ~/neueos/docs/vm-env.sh; export WGPU_BACKEND=gl RUST_LOG=info
-  setsid nohup ~/neueos/target/release/neue-gallery >/tmp/gallery.log 2>&1 </dev/null &
-  sleep 4; neuectl windows; grep -E "WARN|ERROR" /tmp/gallery.log; neuectl screenshot /tmp/d1.png'
-```
-Expected: the gallery's line ends in `[menu dbusmenu :1.N /org/neueos/MenuBar/0]`; no
-`WARN` or `ERROR` (in particular no "no session bus").
-
-**2. Introspect, read the layout, and choose an item:**
-```sh
-ssh neueos-vm '. ~/neueos/docs/vm-env.sh
-  svc=$(neuectl --json windows | jq -r ".[0].menu.service"); p=/org/neueos/MenuBar/0
-  gdbus introspect --session --dest $svc --object-path $p | grep -A3 "interface com.canonical.dbusmenu"
-  gdbus call --session --dest $svc --object-path $p --method com.canonical.dbusmenu.GetLayout -- 0 -1 "[]" | cut -c1-400
-  gdbus call --session --dest $svc --object-path $p --method com.canonical.dbusmenu.Event -- 2 clicked "<0>" 0
-  sleep 1; neuectl screenshot /tmp/d2.png
-  gdbus call --session --dest $svc --object-path $p --method com.canonical.dbusmenu.GetLayout -- 1 1 "[\"label\",\"toggle-state\"]"'
-scp 'neueos-vm:/tmp/d*.png' ~/Desktop/neueos-shots/
-```
-Expected: the introspection shows `com.canonical.dbusmenu` with `GetLayout`; the first
-layout starts `(uint32 1, (0, …` with `'View'` and `'Pages'` and the page items' `radio`
-toggles; `d2.png` shows the gallery in the dark appearance; the last call starts
-`(uint32 2,` and Dark Appearance has `'toggle-state': <1>`.
+Not run yet. The owner's steps are in `docs/checks/phase-2-owner.md`, Part 14.
 
 ## 11. Checking the table (task 2.19a)
 Run by the owner on 2026-11-04: steps 1–4 pass (VM and macOS). `t1.png` showed both tables
 as expected; the page's blurb runs past the window's right edge (cosmetic). Steps 1–3 run
 in the VM, set up as in
 `docs/dev-setup.md` §1.3; step 4 is on the Mac. The gallery's "Tables" page is page 8.
-The helpers are those of §8.
 
-**1. Build and open the page:** as §8 step 1 with `NEUE_GALLERY_PAGE=8`, screenshot
+
+**1. Build and open the page:** start the gallery with `gallery 8` (`docs/vm-env.sh`), screenshot
 `/tmp/t1.png`. Expected: no `WARN` or `ERROR`; `t1.png` shows two bordered tables: files
 (Name, Size, Kind; striped; a triangle in the Name title) and tasks (#, Task, Done with
 checkboxes).
@@ -608,490 +451,55 @@ table: it is announced as a table of 10 rows and 3 columns; moving with Down rea
 the titles read as column headers, the sorted one with its order.
 
 ## 12. Checking the outline view (task 2.19b)
-Not run yet. Steps 1–3 run in the VM, set up as in `docs/dev-setup.md` §1.3; step 4 is on
-the Mac. The outline is the last section of the gallery's "Tables" page (page 8). The
-helpers are those of §8.
-
-**1. Build and open the page:** as §8 step 1 with `NEUE_GALLERY_PAGE=8`, screenshot
-`/tmp/o1.png`; scroll the page down (wheel) to the "Outline (folders)" section and take
-`/tmp/o2.png`. Expected: no `WARN` or `ERROR`; the outline shows Documents open (Work,
-Letters under it), then Pictures, Music, Field Notes.txt and Recipes.md, with triangles on
-the folders only and the files' names lined up with the folders'.
-
-**2. Mouse:** click the triangle of Pictures: it opens (Beach Photo.jpg, Screenshot.png),
-nothing is selected and the status line doesn't change. Click it again: it closes.
-Option-click the triangle of Documents (`ydotool key 56:1`, click, `ydotool key 56:0`):
-it closes with everything below; click it plain: only Work and Letters show, both closed.
-Option-click again: every level is open. Click "Budget 2026.ods": `1 row selected`, the
-row blue with white text. Close Documents by its triangle: Documents turns blue instead
-(`1 row selected`).
-
-**3. Keys:** Tab to the outline (or click a row). Press Right on a closed folder: it
-opens; Right again: the selection moves to its first child; Left: back to the folder; Left
-again: it closes. Option-Right opens every level, Option-Left closes them. Type "mu": Music.
-Expected: the focus ring round the table throughout, and the status line counting the
-selected rows (it doesn't change when a row only moves because a folder above it opened).
-
-**4. macOS (owner):** `cargo xtask gallery`, open "Tables" and repeat steps 2 and 3. With
-VoiceOver on (Cmd-F5), Tab to the outline: it is announced as an outline (a tree grid) with
-its rows; folders read as collapsed or expanded with their level, VO-Right/Left (or
-VO-Shift-Down) opens and closes a folder.
+Not run yet. The owner's steps are in `docs/checks/phase-2-owner.md`, Part 6 and 16.12–16.13.
 
 ## 13. Checking the source list (task 2.19c)
-Not run yet. Steps 1–3 run in the VM, set up as in `docs/dev-setup.md` §1.3; step 4 is on
-the Mac. The page is "Sidebar" (page 9). The helpers are those of §8.
-
-**1. Build and open the page:** as §8 step 1 with `NEUE_GALLERY_PAGE=9`, screenshot
-`/tmp/s1.png`. Expected: no `WARN` or `ERROR`; two sidebars, light blue-grey with a line
-down the right edge. The left: FAVORITES (Documents selected in grey, Pictures, Music with
-a triangle, Starred with the badge 12) and DEVICES (Disk, Recent with the badge 3). The
-right: Music open (Albums, Artists), Devices closed. Icons are the same grey as the text;
-no row has a stripe, a header row or a border round the list.
-
-**2. Mouse:** click Pictures: the blue gradient with white text, status `Selected
-“Pictures”`. Click the FAVORITES title: nothing changes. Move the pointer over the
-FAVORITES row: Hide appears at the right end in blue; click it: Documents to Starred
-disappear, the selection is gone (`Nothing selected`); click Show: they are back. Move the
-pointer to a row: Hide goes away. Click the triangle of Music: Albums and Artists open and
-nothing is selected. Double-click Disk: `Opened “Disk”`. Click Starred: its badge turns
-white with blue digits.
-
-**3. Keys:** Tab to the list (or click an item). Down and Up step from item to item and
-skip DEVICES; Home and End go to the first and last item; Right on Music opens it, Right
-again moves to Albums, Left moves back, Left again closes it, and Left on Pictures does
-nothing. Type "st": Starred. Switch the window's focus away (Alt-Tab) and the selection
-turns grey with dark text; switch back and it is blue again. Expected: no focus ring
-anywhere.
-
-**4. macOS (owner):** `cargo xtask gallery`, open "Sidebar" and repeat steps 2 and 3. With
-VoiceOver on (Cmd-F5), Tab to the list: it is announced as an outline with its items; items
-read their label (and the badge as a description) with their level, groups read as
-collapsed or expanded, and VO-Right/Left or VO-Shift-Down opens and closes them.
+Not run yet. The owner's steps are in `docs/checks/phase-2-owner.md`, Part 7 and 16.14–16.15.
 
 ## 14. Checking the icons (task 2.20a)
-Not run yet. Steps 1 and 2 run in the VM, set up as in `docs/dev-setup.md` §1.3; step 3 is
-on the Mac. The page is "Icons" (page 10). The helpers are those of §8.
-
-**1. Build and open the page:** as §8 step 1 with `NEUE_GALLERY_PAGE=10`, screenshot
-`/tmp/i1.png`. Expected: no `WARN` or `ERROR`; a row of six dark-grey glyphs (folder,
-page, picture, note, star, clock) and, under it, a blue disc with a light tick at three
-sizes (16, 32, 48 px).
-
-**2. Appearance and scale:** switch to dark (the gallery's appearance switch), screenshot
-`/tmp/i2.png`. Expected: the glyphs and ticks turn light, the disc a lighter blue; nothing
-else changes. Set the scale to 2x: all of it stays sharp, with no blur at the edges.
-
-**3. macOS (owner):** `cargo xtask gallery`, open "Icons" and repeat step 2. With VoiceOver
-on (Cmd-F5), move over the glyphs: each is read as an image with its name ("Folder", ...);
-the vector icons are read as "Done".
+Not run yet. The owner's steps are in `docs/checks/phase-2-owner.md`, 8.1–8.2 and 16.16–16.17.
 
 ## 15. Checking the virtual grid (task 2.20b)
-Not run yet. Runs in the VM, set up as in `docs/dev-setup.md` §1.3; the helpers are those
-of §8. The page is "Scrolling" (the gallery's page for scroll views).
-
-**1. Build and open the page:** as §8 step 1 with the "Scrolling" page's number in
-`NEUE_GALLERY_PAGE`, screenshot `/tmp/g1.png`. Expected: no `WARN` or `ERROR`; a fourth
-section "Virtual grid (1,000,000 items)" with 4 columns of numbers (1 to 4 in the top
-row), 160 px wide.
-
-**2. Scroll far:** wheel over the grid, screenshot `/tmp/g2.png`. Expected: the numbers
-climb in steps of 4 per row; the grid stays responsive; the scroller's knob is at its
-minimum length.
-
-**3. Resize (owner, macOS or VM):** make the gallery window narrower and wider; the grid
-is a fixed 160 px, so check the column count only if a later task makes it fill its width
-(2.20c's collection view does).
+Not run yet. The owner's steps are in `docs/checks/phase-2-owner.md`, Part 3.
 
 ## 16. Checking the collection view (task 2.20c)
-Not run yet. Steps 1 to 3 run in the VM, set up as in `docs/dev-setup.md` §1.3; step 4 is
-on the Mac. The page is "Icons" (page 10). The helpers are those of §8.
-
-**1. Build and open the page:** as §8 step 1 with `NEUE_GALLERY_PAGE=10`, screenshot
-`/tmp/c1.png`. Expected: no `WARN` or `ERROR`; under the icons, two collections side by
-side: 32 px icons (1,000 items, labels like "Documents", "Pictures 7") and 64 px icons
-(12 items), labels under the icons, long labels cut with an ellipsis.
-
-**2. Selection and keys:** click an item, press Right, Down, End, Home; Shift-click
-another item; Cmd- or Ctrl-click one; type "pic"; press Return; double-click an item;
-screenshot after each as `/tmp/c2-N.png`. Expected: the selected item's icon gets a
-rounded grey backdrop and its label a blue pill with white text; arrows move over the grid
-and scroll the selection into view; Shift selects a range in order, Cmd/Ctrl toggles; the
-status line says "N items selected" and `Opened "…"` for Return and a double-click. Click
-on the empty area of a short last row: the selection clears.
-
-**3. Focus, size and scale:** Tab away from the collection: the blue pill turns grey with
-dark text. Narrow and widen the window: the columns change and the items stay centred in
-their cells. Switch to dark and to 2x: all stays sharp.
-
-**4. macOS (owner):** `cargo xtask gallery`, open "Icons" and repeat steps 2 and 3. With
-VoiceOver on (Cmd-F5), move into the collection: it is read as a grid with its row and
-column counts, and each item as a cell with its label and whether it is selected.
+Not run yet. The owner's steps are in `docs/checks/phase-2-owner.md`, Part 8 and 16.16–16.17.
 
 ## 17. Checking the split view (task 2.21a)
-Not run yet. Steps 1 to 3 run in the VM, set up as in `docs/dev-setup.md` §1.3; step 4 is
-on the Mac. The page is "Panes" (page 11). The helpers are those of §8.
-
-**1. Build and open the page:** as §8 step 1 with `NEUE_GALLERY_PAGE=11`, screenshot
-`/tmp/s1.png`. Expected: no `WARN` or `ERROR`; three 200 × 80 split views (thin, thick
-and stacked) with a "Sidebar" and a "Content" pane, and below them a 420 × 120 split of
-three panes with thick dividers.
-
-**2. Drag and collapse:** drag a divider right and left, far past both ends; double-click
-it twice; screenshot after each as `/tmp/s2-N.png`. Expected: the sidebar stops at 50
-(thin and thick) and at 120; dragged well below 50 it collapses (its label disappears and
-the divider sits at the edge); a double-click brings it back at its old length; the
-status line reads "Panes: 70 · 129" and so on; the cursor is a resize cursor over a
-divider.
-
-**3. Keys:** Tab to a split view (a blue ring around a divider); press Right and Left,
-Home, End, Return; in the three-pane split press Down and Up to pick the other divider.
-Expected: 10 px steps; Home collapses a collapsible pane; Return restores; the ring
-follows the picked divider. Switch to dark and to 2x: all stays sharp.
-
-**4. macOS (owner):** `cargo xtask gallery`, open "Panes" and repeat steps 2 and 3. With
-VoiceOver on (Cmd-F5), move to a divider: it is read as a splitter with its value, and
-Up and Down (VoiceOver's adjust) move it.
-
+Not run yet. The owner's steps are in `docs/checks/phase-2-owner.md`, 9.1–9.4, 9.9 and 16.18–16.19.
 
 ## 18. Checking the tab view (task 2.21b)
-Not run yet. Steps 1 to 3 run in the VM, set up as in `docs/dev-setup.md` §1.3; step 4 is
-on the Mac. The tab view is the last section of the "Panes" page (page 11). The helpers
-are those of §8.
-
-**1. Build and open the page:** as §8 step 1 with `NEUE_GALLERY_PAGE=11`, screenshot
-`/tmp/s1.png`. Expected: no `WARN` or `ERROR`; below the split views, two 260 × 110 tab
-views: "General", "Advanced" and a greyed "Hidden" tab, and "Fields" and "About".
-
-**2. Click:** click "Advanced", "Hidden", "General"; screenshot after each as
-`/tmp/s2-N.png`. Expected: the content follows the selected tab and the selected tab is
-blue gel with a white label; "Hidden" does nothing; the status line reads "Tab 2", "Tab 1".
-
-**3. Keys:** Tab to a strip (a blue ring around it); press Right, Left, Home, End. In the
-second view click into the "Name" field, then press Ctrl-Tab and Ctrl-Shift-Tab.
-Expected: the arrows skip "Hidden"; Ctrl-Tab switches tabs from inside the field, the
-focus moves to the strip, and the second tab's content shows. Alt-tab away from the
-window: the selected tab turns grey. Switch to dark and to 2x: all stays sharp.
-
-**4. macOS (owner):** `cargo xtask gallery`, open "Panes" and repeat steps 2 and 3. With
-VoiceOver on (Cmd-F5), move into a tab view: the tabs are read as a tab group with the
-selected one and its position ("2 of 3"), and the adjust gesture (Up and Down) changes tab.
-Clicking a tab through VoiceOver is not supported yet (ADR 0054).
+Not run yet. The owner's steps are in `docs/checks/phase-2-owner.md`, 9.5–9.9 and 16.18–16.19.
 
 ## 19. Checking the kit window chrome (task 2.22b)
-Not run yet. Steps 1 to 4 run in the VM, set up as in `docs/dev-setup.md` §1.3; step 5 is
-on the Mac. The gallery window now draws its own chrome, with the theme switches in a
-unified toolbar. Its resize edges (task 2.22d) are checked in §21. The helpers are those
-of §8.
-
-**1. Build and open the gallery:** as §8 step 1 with `NEUE_GALLERY_PAGE=0`, screenshot
-`/tmp/c1.png`. Expected: no `WARN` or `ERROR`; a single title bar (no compositor bar
-above it) of about 60 px with rounded top corners: the traffic lights and "Widget
-Gallery" in its top 22 px, the switch buttons under them on the same gradient, a dark
-line between the chrome and the content. `grep -i decoration /tmp/comp.log` shows the
-gallery asked for client-side decorations.
-
-**2. Traffic lights:** move the pointer over the lights, screenshot `/tmp/c2.png`; hold
-the button down on the yellow one, screenshot `/tmp/c3.png`, release on it.
-```sh
-ssh neueos-vm '. ~/neueos/docs/vm-env.sh; export YDOTOOL_SOCKET=/tmp/.ydotool_socket
-  move_to() { ydotool mousemove --absolute -x $(($1 / 2)) -y $(($2 / 2)); sleep 0.2; ydotool mousemove -x 1 -y 0; }
-  move_to X Y; sleep 0.3; neuectl screenshot /tmp/c2.png
-  move_to X2 Y; ydotool click 0x40; sleep 0.3; neuectl screenshot /tmp/c3.png; ydotool click 0x80
-  sleep 0.5; neuectl windows'
-```
-(X, Y: the close light's centre in `c1.png`, X2 the minimise light's, in screenshot
-pixels.) Expected: `c2.png` shows ×, − and + on all three lights; `c3.png` shows the
-yellow one darker; after release `neuectl windows --json` shows the gallery with
-`"minimized": true`. Bring it back with `neuectl action unminimize-window --window ID`
-(ID from `neuectl windows`), click the green light: the window fills the work area
-(`"zoomed": true`); click it again: it returns to its size.
-
-**3. Drag and double-click:** drag the bar's empty middle 200 px to the right
-(`move_to`, `ydotool click 0x40`, `ydotool mousemove -x 100 -y 0`, `ydotool click 0x80`),
-then double-click an empty part of the toolbar row (`ydotool click 0xC0` twice, quickly).
-Expected: the window follows the drag (`neuectl windows --json`: x grows by about 200),
-the double-click maximises it; a click on a switch button changes the theme and does not
-move the window.
-
-**4. Inactive look and close:** open a second window (`foot &`), screenshot
-`/tmp/c4.png`; then click the gallery's red light. Expected: in `c4.png` the gallery's
-bar, title and lights are pale grey; the red light closes the gallery and
-`/tmp/gallery.log` has no `ERROR`. Switch to dark and to 2x first: all stays sharp.
-
-**5. macOS (owner):** `cargo xtask gallery`. Expected: no native title or buttons; our
-bar and toolbar under the native shadow and corners. Check that the lights hover, press
-and act, that dragging the bar moves the window and a double-click zooms it, and that
-the bar turns pale when another app is in front. Note whether the native title-bar area
-(the top 28 px) takes the clicks for itself: winit's full-size content view may handle
-drag and double-click there natively. With VoiceOver on (Cmd-F5), the three lights are
-read as buttons "Close", "Minimise" and "Zoom", and VO-Space on them acts.
+Not run yet. The owner's steps are in `docs/checks/phase-2-owner.md`, Part 12, 16.1–16.3 and 16.25.
 
 ## 20. Checking the toolbar items (task 2.22c)
-Not run yet. Steps 1 to 3 run in the VM, set up as in `docs/dev-setup.md` §1.3; step 4 is
-on the Mac. The page is "Toolbar" (page 12). Its toolbars sit on the page background, not
-on the chrome gradient; the same items in a real unified toolbar are in the goldens
-`toolbar-items-*`. The helpers are those of §8 and §19 (`move_to`).
-
-**1. Build and open the page:** as §8 step 1 with `NEUE_GALLERY_PAGE=12`, screenshot
-`/tmp/t1.png`. Expected: no `WARN` or `ERROR`; a "Display mode" segmented control and
-three toolbars: Open, Favourite and a greyed Share (icon over label), a separator, a
-List/Icons segmented control, then a search field at the far right. The second toolbar
-shows icons only, the third labels only.
-
-**2. Press and keys:** hold the button down on "Favourite" in the first toolbar,
-screenshot `/tmp/t2.png`, release; click greyed "Share". Click "Open" (it takes focus),
-press Tab once (`ydotool key 15:1 15:0`), screenshot `/tmp/t3.png`; Tab again,
-`/tmp/t4.png`. The buttons send no message here, so this checks looks only. Expected:
-`t2.png` shows a dark pill behind "Favourite" while held, and nothing for "Share"; `t3.png`
-has the focus ring on "Favourite" (the greyed "Share" and the separator take no focus);
-`t4.png` has it on the List/Icons control.
-
-**3. Display mode:** click "Icon only" in the Display mode control, screenshot
-`/tmp/t5.png`, then "Text only", `/tmp/t6.png`. Expected: only the first toolbar changes,
-and the page below it moves up with it: icons alone (the bar is shorter), then labels
-alone (shorter still).
-
-**4. macOS (owner):** `cargo xtask gallery`, page "Toolbar" (click it in the list: the
-Cmd shortcuts reach pages 1 to 9 only). With VoiceOver on (Cmd-F5), each toolbar is
-read as a toolbar, its buttons by their label (also in the icon-only toolbar), and
-VO-Space on one presses it.
+Not run yet. The owner's steps are in `docs/checks/phase-2-owner.md`, Part 10 and 16.20.
 
 ## 21. Checking resize edges for client-side windows (task 2.22d)
-Not run yet. All steps run in the VM, set up as in `docs/dev-setup.md` §1.3. The gallery
-(client-side chrome, no compositor bar) is the test window. The helpers are those of §8
-and §19 (`move_to`).
-
-**1. Open the gallery and find its edge:** as §8 step 1, `neuectl windows --json`: note
-its x, y, width, height (client geometry; the chrome is inside it). Move the pointer
-2 px right of the right edge, at mid height: `neuectl` can't read the cursor, so
-screenshot `/tmp/r1.png`. Expected: a horizontal resize cursor (↔) in `r1.png` if the
-capture includes the cursor; otherwise go on to step 2.
-
-**2. Drag the edges:** press on the right edge, drag 100 px right, release; then press on
-the bottom-right corner, drag 50 px down, release; then the left edge, 100 px left.
-Expected: `neuectl windows --json` shows width +100, then height +50, then width +100 and
-x −100; the content re-lays out and stays sharp; a drag from inside the toolbar still
-moves the window and does not resize it.
-
-**3. No edges when they don't apply:** zoom the window (green light): the pointer 2 px
-outside it does nothing. Open `foot` and check its edges still work (compositor bar).
+Not run yet. The owner's steps are in `docs/checks/phase-2-owner.md`, Part 13.
 
 ## 22. Checking popovers (task 2.23a)
-Not run yet. Steps 1 to 4 run in the VM, set up as in `docs/dev-setup.md` §1.3; step 5 is
-on the Mac. The page is "Popovers" (page 13). The helpers are those of §8 (`click_at`)
-and §19 (`move_to`).
-
-**1. Build and open the page:** as §8 step 1 with `NEUE_GALLERY_PAGE=13`, screenshot
-`/tmp/p1.png`. Expected: no `WARN` or `ERROR`; four buttons: Below, Above, Left, Right.
-
-**2. Each side:** click "Below", screenshot `/tmp/p2.png`, press Escape
-(`ydotool key 1:1 1:0`); repeat with "Above" (`/tmp/p3.png`), "Left" (`/tmp/p4.png`)
-and "Right" (`/tmp/p5.png`). Expected: a light panel ("Popover", a line of text, Done)
-on that side of its button, its arrow touching the button's middle and its shadow
-outside it; after each Escape the panel is gone and the status line reads "Popover
-closed". `RUST_LOG=neue_platform=debug` in `/tmp/gallery.log` shows "popup configured"
-with a position, not "painting the layer inline".
-
-**3. Closing:** click "Below" then somewhere on the page background: it closes ("Popover
-closed"). Click "Below", then "Below" again: it closes and does not reopen. Click
-"Below", then Done: it closes and the status reads "Popover done". Click "Below", press
-Tab (`ydotool key 15:1 15:0`), screenshot `/tmp/p6.png`. Expected: the focus ring on
-Done in `p6.png`.
-
-**4. Flip at the screen edge:** move the gallery window so that the "Above" button is
-within 60 px of the top of the screen (drag its title bar up), click "Above", screenshot
-`/tmp/p7.png`. Expected: the popover is below the button instead, its arrow on its top
-side pointing at the button. Repeat with the window dragged to the left edge and "Left":
-the popover is on the right. Switch to dark (the toolbar's appearance switch) and
-reopen one: the panel is dark.
-
-**5. macOS (owner):** `cargo xtask gallery`, page "Popovers" (click it in the list). Each
-button shows its popover on its side; Escape, a click outside, the button again and Done
-close it. With VoiceOver on (Cmd-F5), opening one moves VoiceOver into a dialog, and
-VO-Right reaches "Popover", the text and Done.
+Not run yet. The owner's steps are in `docs/checks/phase-2-owner.md`, 11.1–11.6 and 16.21–16.22.
 
 ## 23. Checking sheets (task 2.23b)
-Not run yet. Steps 1 to 4 run in the VM, set up as in `docs/dev-setup.md` §1.3; step 5 is
-on the Mac. The button is on the "Popovers" page (page 13), under "Sheets". The helpers
-are those of §8 (`click_at`) and §19 (`move_to`). The sheet's placement is checked in §24.
-
-**1. Build and open the page:** as §8 step 1 with `NEUE_GALLERY_PAGE=13`. Then
-`neuectl windows --json > /tmp/s0.json`. Expected: no `WARN` or `ERROR`; a "Save…" button
-under "Show a sheet"; one gallery window.
-
-**2. Open it:** click "Save…", then `neuectl windows --json > /tmp/s1.json` and
-`neuectl screenshot /tmp/s1.png`. Expected: a second window from the gallery, with no
-title bar (no server-side bar in `s1.png`): "Save changes to “Notes”?", a line of text,
-Cancel and a pulsing blue Save in its bottom right corner, a darker band fading down its
-top edge. `/tmp/gallery.log` has no "no xdg-dialog" warning.
-
-**3. Keys and the parent:** press Return (`ydotool key 28:1 28:0`): the sheet closes and
-the status line reads "Sheet: saved". Open it again and press Escape
-(`ydotool key 1:1 1:0`): "Sheet: cancelled". Open it again, press Tab three times
-(`ydotool key 15:1 15:0`) and screenshot `/tmp/s2.png` after each: the focus ring moves
-Cancel → Save → Cancel, never into the gallery window. Click a control in the gallery
-window (a sidebar page): nothing happens; Escape closes the sheet, and the click works
-again.
-
-**4. Dark:** switch to dark (the toolbar's appearance switch), open the sheet, screenshot
-`/tmp/s3.png`: the sheet is dark, its text light.
-
-**5. macOS (owner):** `cargo xtask gallery`, page "Popovers", "Save…". Expected: the sheet
-appears inside the gallery window, centred, its top edge under the toolbar, with a shadow
-beside and below it; clicks on the page under it do nothing; Return, Escape and Tab behave
-as in step 3; the toolbar's buttons still work (known, ADR 0057). With VoiceOver on
-(Cmd-F5), opening it moves VoiceOver into a dialog named "Save".
+Not run yet. The owner's steps are in `docs/checks/phase-2-owner.md`, 11.7–11.9, 11.13 and 16.23–16.24.
 
 ## 24. Checking sheet placement (task 2.23c)
-Not run yet. In the VM, set up as in `docs/dev-setup.md` §1.3, with the gallery open on
-the "Popovers" page as §23 step 1. The helpers are those of §8 (`click_at`) and §19
-(`move_to`). `wins` prints every window's geometry and parent:
-```sh
-wins() { neuectl --json windows | jq -c '.[] | {id,title,x,y,width,height,parent}'; }
-```
-
-**1. Open it:** click "Save…", then `wins` and `neuectl screenshot /tmp/sp1.png`.
-Expected: the sheet is the window whose `parent` is the gallery's `id`; its `y` equals the
-gallery's `y`, and its `x` equals gallery `x + (gallery width − sheet width) / 2`. In
-`sp1.png` the sheet hangs from the top of the gallery window, centred, under its chrome.
-
-**2. Follow a move:** `neuectl action move-window --window <gallery id> --x 100 --y 200`,
-then `wins` and screenshot `/tmp/sp2.png`. Expected: the sheet moved by
-the same amount and is still centred at the top; it is still above the gallery.
-
-**3. Follow a drag and a resize:** drag the gallery by its title area
-(`move_to` the title, `ydotool click 0x40`, `move_to` 300 px right, `ydotool click 0x80`)
-and screenshot `/tmp/sp3.png`; then
-`neuectl action resize-window --window <gallery id> --width 1000 --height 700` and
-screenshot `/tmp/sp4.png`. Expected: the sheet follows during the drag and is centred on
-the wider window afterwards.
-
-**4. The sheet stays put:** `neuectl action move-window --window <sheet id> --x 0 --y 0`
-changes nothing, and the sheet's edges show no resize cursor (`move_to` its right edge).
-Escape closes the sheet.
+Not run yet. The owner's steps are in `docs/checks/phase-2-owner.md`, 11.10–11.12.
 
 ## 25. Checking the HUD window (task 2.23d)
-Not run yet. In the VM, set up as in `docs/dev-setup.md` §1.3, with the gallery open on
-the "Popovers" page as §23 step 1; `wins` as in §24.
-
-**1. Open it:** click "Inspector" under "HUD panel", then `wins` and
-`neuectl screenshot /tmp/hud1.png`. Expected: a second window titled "Inspector", 240 × 120,
-whose `parent` is the gallery's `id`, listed above the gallery. In `hud1.png` it is a dark
-rounded panel with a small close disc at the top left, the title centred, three lines of
-light text, and no compositor title bar. The gallery's title bar still has its focused
-look (coloured traffic lights), although the panel has the keyboard.
-
-**2. Focus:** click the gallery's content, then the panel again; take a screenshot each
-time. Expected: the gallery's bar looks focused in both; the panel looks the same in both.
-Switch to another app's window (`foot`): both go inactive.
-
-**3. Move and close:** drag the panel by its bar (`move_to` the title, `ydotool click 0x40`,
-`move_to` 200 px right, `ydotool click 0x80`); a double-click on the bar does nothing.
-Hover the disc: a cross appears. Click it. Expected: the panel closes (`wins` lists only
-the gallery) and the gallery stays.
-
-**4. With the parent:** open the panel again, then close the gallery from its close button.
-Expected: both windows close.
+Not run yet. The owner's steps are in `docs/checks/phase-2-owner.md`, 11.14–11.18.
 
 ## 26. Checking the path control (task 2.24a)
-Not run yet. In the VM, set up as in `docs/dev-setup.md` §1.3, with the gallery open on
-the "Pop-ups" page (`NEUE_GALLERY_PAGE=7`).
-
-**1. Look:** `neuectl screenshot /tmp/path1.png`. Expected: under "Path control", a row
-"Macintosh HD › Users › sophie" with grey chevrons and no frame, and next to it a pop-up
-button that shows "sophie".
-
-**2. Pointer:** hover "Users", then hold the button down on it (`ydotool click 0x40`),
-and screenshot each time. Expected: a soft grey fill behind "Users", darker while held.
-Release over it: the status line shows "Path: Users". Press on "Users", move off it,
-release: nothing is sent.
-
-**3. Keyboard:** Tab to the row. Expected: a focus ring around "sophie". Left twice, then
-Return: the ring moves to "Macintosh HD" and the status line shows "Path: Macintosh HD".
-
-**4. Popup style:** click the pop-up button. Expected: a menu with "sophie" over the
-button, then "Users", then "Macintosh HD". Choose "Users": the status line shows
-"Path: Users".
+Not run yet. The owner's steps are in `docs/checks/phase-2-owner.md`, 5.8–5.11 and 16.11.
 
 ## 27. Checking the colour well (task 2.24b)
-Not run yet. In the VM, set up as in `docs/dev-setup.md` §1.3, with the gallery open on
-the "Pop-ups" page (`NEUE_GALLERY_PAGE=7`).
-
-**1. Look:** `neuectl screenshot /tmp/well1.png`. Expected: under "Colour well", a grey
-bevelled button with a translucent orange swatch over a faint checkerboard, and a second,
-dimmed one beside it.
-
-**2. Open:** click the first well, then screenshot. Expected: a popover under the well,
-its arrow pointing at it, with a rainbow area (a white fade towards the bottom) and a
-round knob near the top left, "Brightness" and "Opacity" sliders and a "Hex" field
-showing `#FF8C1A99`. Click the well again: the panel closes.
-
-**3. Drag:** open it and drag across the area with the button held (`ydotool mousemove`
-and `click 0x40`). Expected: the knob follows, the swatch and the hex field change while
-dragging, and the status line shows "Colour: “#…”" for each step. Move the brightness
-slider to the left: the swatch goes black; back to the right: the same hue returns.
-
-**4. Hex:** click the hex field, select all, type `#336699`. Expected: the swatch turns
-blue as soon as it is valid, the status line shows `#33669999`, the brightness slider
-moves. Type `zz` and press Return: the field goes back to the colour's hex.
-
-**5. Keyboard:** Tab to the first well, press Space. Expected: the panel opens and takes
-the focus; Tab goes to the area, and Left, Right, Up and Down move the knob. Escape closes
-the panel and the focus ring is back on the well.
+Not run yet. The owner's steps are in `docs/checks/phase-2-owner.md`, 5.12–5.16 and 16.11.
 
 ## 28. Checking the date picker (task 2.24c)
-Not run yet. In the VM, set up as in `docs/dev-setup.md` §1.3, with the gallery open on
-the "Pop-ups" page (`NEUE_GALLERY_PAGE=7`).
-
-**1. Look:** `neuectl screenshot /tmp/date1.png`. Expected: under "Date picker", a field
-reading `DD/MM/YYYY` with a stepper to its right (today's day in the VM is not used by the
-field: it shows 05/11/2026), a dimmed copy under it, and to the right a calendar, "November
-2026", with the day 5 filled blue, 20 November ringed, and the days of October and December
-grey at the ends of the page.
-
-**2. Segments:** click the field, then press Up: the day segment is highlighted blue and
-goes to 06, and the status line shows "Date: 2026-11-06". Press Right, then Down: the month
-becomes 10. Press Right and type `2031`: the year changes with the fourth digit only.
-
-**3. Stepper:** click the upper half of the stepper: the selected segment goes up by one;
-the lower half goes down.
-
-**4. Calendar:** click the day 17: it fills blue and the status line shows "Date: 2026-11-17".
-Click the right arrow in the header: the page turns to December and the status line says
-nothing new. Click the circle between the arrows: the page returns to the month of 20
-November (the specimen's "today") and selects it.
-
-**5. Keyboard:** Tab to the calendar. Left and Right move the selection a day, Up and Down a
-week, Page Up and Page Down a month, Home to 20 November; the page follows the selection
-and the status line shows each date.
+Not run yet. The owner's steps are in `docs/checks/phase-2-owner.md`, 5.17–5.21 and 16.11.
 
 ## 29. Checking the primary selection from text fields (task 2.28)
-Not run yet. In the VM, set up as in `docs/dev-setup.md` §1.3, with the gallery open on the
-"Fields" page as in §6 step 1 (no IME probe needed). The Name field is at (271,168) in
-window coordinates.
-
-**1. A Shift selection in the gallery, pasted into foot with a middle click:**
-```sh
-ssh neueos-vm '. ~/neueos/docs/vm-env.sh; export YDOTOOL_SOCKET=/tmp/.ydotool_socket; rm -f /tmp/pasted
-  move_to() { ydotool mousemove --absolute -x $(($1 / 2)) -y $(($2 / 2)); sleep 0.2; ydotool mousemove -x 1 -y 0; sleep 0.1; }
-  click_in_window 271 168; sleep 0.5; ydotool type neuepick; sleep 0.3
-  ydotool key 42:1 102:1 102:0 42:0; sleep 0.3
-  setsid nohup foot sh -c "cat > /tmp/pasted" >/dev/null 2>&1 </dev/null &
-  sleep 2; F=$(neuectl --json windows | jq -r ".[] | select(.app_id==\"foot\") | .id")
-  neuectl action resize-window --window $F --width 440 --height 160; neuectl action move-window --window $F --x 292 --y 540; sleep 0.5
-  move_to 500 640; ydotool click 0xC2; sleep 0.5; ydotool key 28:1 28:0; sleep 0.5
-  echo "foot got: $(cat /tmp/pasted)"'
-```
-Expected: `foot got: neuepick`.
-
-**2. A pointer selection (drag), and nothing from the secure field:** close foot, then drag
-across the Name field's text with the primary button (`ydotool mousemove` to the start,
-`ydotool click 0x40`, move to the end, `ydotool click 0x80`) and repeat the foot paste of
-step 1: the dragged text arrives. Then type in the Password field, select it with Shift-Home
-and middle-click in foot: it pastes the previous selection (the Name field's), not the
-password.
-
-**3. Middle click inside the gallery:** select text in the Name field, click in the "Note"
-field and middle-click: the selected text is inserted there.
-
-**4. Clean up:** give the console back as in `docs/dev-setup.md` §1.3 step 4.
+Not run yet. The owner's steps are in `docs/checks/phase-2-owner.md`, Part 1.

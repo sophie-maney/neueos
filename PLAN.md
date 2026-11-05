@@ -426,7 +426,9 @@ The split and tab views (2.21) are split into the split view (2.21a) and the tab
 client-side windows in neue-comp (2.22d). Sheet, popover and HUD panel (2.23) are split into the
 popover (2.23a), the kit sheet (2.23b), sheet placement in neue-comp (2.23c) and the HUD
 panel (2.23d). Colour well, date picker and path control (2.24) are split into the path
-control (2.24a), the colour well (2.24b) and the date picker (2.24c).
+control (2.24a), the colour well (2.24b) and the date picker (2.24c). The owner's VM and
+macOS run of 2026-11-05 added fixes 2.30–2.38 (before the exit check, 2.26); 2.29 was
+withdrawn, as its glitch occurs only in the VM (now 2.30).
 - **Exit:** the gallery shows the whole widget set, in light and dark, identically on
   macOS and in the VM.
 
