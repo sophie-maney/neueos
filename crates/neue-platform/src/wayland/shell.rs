@@ -3,7 +3,6 @@
 use masonry_core::core::PointerEvent as MasonryPointer;
 use masonry_core::kurbo::Point;
 use smithay_client_toolkit::compositor::CompositorHandler;
-use smithay_client_toolkit::output::{OutputHandler, OutputState};
 use smithay_client_toolkit::shell::WaylandSurface;
 use smithay_client_toolkit::shell::wlr_layer::{
     LayerShellHandler, LayerSurface, LayerSurfaceConfigure,
@@ -87,15 +86,6 @@ impl CompositorHandler for State {
         _: &wl_output::WlOutput,
     ) {
     }
-}
-
-impl OutputHandler for State {
-    fn output_state(&mut self) -> &mut OutputState {
-        &mut self.outputs
-    }
-    fn new_output(&mut self, _: &Connection, _: &QueueHandle<Self>, _: wl_output::WlOutput) {}
-    fn update_output(&mut self, _: &Connection, _: &QueueHandle<Self>, _: wl_output::WlOutput) {}
-    fn output_destroyed(&mut self, _: &Connection, _: &QueueHandle<Self>, _: wl_output::WlOutput) {}
 }
 
 impl ShmHandler for State {

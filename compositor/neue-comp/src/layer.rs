@@ -91,6 +91,18 @@ impl WlrLayerShellHandler for State {
 }
 
 impl State {
+    /// Every mapped layer surface as (namespace, output name), output by output.
+    pub fn layer_surfaces(&self) -> Vec<(String, String)> {
+        self.outputs()
+            .flat_map(|output| {
+                let map = layer_map_for_output(output);
+                map.layers()
+                    .map(|layer| (layer.namespace().to_owned(), output.name()))
+                    .collect::<Vec<_>>()
+            })
+            .collect()
+    }
+
     /// The layer surface (and its output) that `surface`, or a popup or subsurface of it,
     /// belongs to.
     pub fn layer_for_surface(&self, surface: &WlSurface) -> Option<(DesktopLayer, Output)> {

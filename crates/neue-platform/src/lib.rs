@@ -12,6 +12,9 @@
 //! shared `gpu` module: vello_gpu into an offscreen texture, then a blit to the window's
 //! wgpu surface. [`run`] is the host's driver.
 //!
+//! [`desktop`] carries what only the shell uses: outputs and the compositor's window list
+//! (task 3.2a, ADR 0067).
+//!
 //! App crates never use this crate directly; neue-kit wraps it (task 2.7).
 
 use std::sync::Arc;
@@ -20,6 +23,7 @@ use masonry_core::core::DefaultProperties;
 use masonry_core::peniko::Blob;
 
 mod app;
+pub mod desktop;
 mod gpu;
 mod popover;
 #[cfg(target_os = "linux")]

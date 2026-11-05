@@ -51,7 +51,7 @@ their goldens and the gallery's "Shell" page run on macOS.
 - [ ] **3.2 `neue-shell` skeleton, menu bar and desktop background**, split into 3.2a–c
       (the platform had no per-output layers and no way for the shell to use 3.1's
       protocol on its one connection).
-- [ ] **3.2a Shell surfaces in platform and kit** · Opus. `neue-platform` tells the app
+- [x] **3.2a Shell surfaces in platform and kit** · Opus. `neue-platform` tells the app
       which outputs exist (added and removed, with name, logical size and scale) and
       `LayerSpec` takes an output. The Wayland driver binds `neue_shell_manager_v1` when it
       is offered and passes its window list (identifier, title, app id, state, closed) and
@@ -63,6 +63,9 @@ their goldens and the gallery's "Shell" page run on macOS.
       *Accept:* headless `neue-comp` tests run the real driver on a socket pair: a layer
       surface lands on the second output, and window and active-window events arrive and
       requests take effect; kit unit tests with the fake host.
+      *Done:* ADR 0067. `neue_platform::desktop` (re-exported as `neue_kit::desktop`);
+      `Ctx::keep_alive` / `Cx::keep_alive` keeps the shell running with no surface open.
+      Tests: `neue-comp/tests/platform_shell.rs`, `neue-kit/src/tests/desktop.rs`.
 - [ ] **3.2b `neue-shell` skeleton and menu bar** · Opus. After 3.2a. New crate
       `shell/neue-shell`: one process, several layer surfaces, shared state (window list
       from 3.1, settings, later the app registry); widgets in portable modules, the binary
