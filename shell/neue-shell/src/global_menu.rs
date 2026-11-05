@@ -1,5 +1,6 @@
-//! The global menu's DBusMenu side (task 3.7a, ADR 0005, ADR 0076): a worker thread that
-//! owns `com.canonical.AppMenu.Registrar`, follows the active window's exported menus and
+//! The global menu's D-Bus side (tasks 3.7a and 3.8, ADR 0005, ADR 0076, ADR 0078): a
+//! worker thread that owns `com.canonical.AppMenu.Registrar`, follows the active window's
+//! exported menus (DBusMenu, or GTK's GMenuModel and actions) and
 //! passes on what the user does with them, and the conversion of those menus into the
 //! bar's titles.
 //!
@@ -8,11 +9,15 @@
 //! the menus they came from, so a click on a title that was just replaced never reaches
 //! the wrong app.
 
+use std::collections::HashMap;
 use std::sync::mpsc;
 use std::time::Duration;
 
 use neue_dbus::zbus::blocking::Connection;
-use neue_dbus::{MenuChanged, MenuClient, MenuNode, MenuSignals, NodeKind, Registrar};
+use neue_dbus::{
+    Activation, GMenuAddress, GMenuClient, GMenuSignals, MenuChanged, MenuClient, MenuNode,
+    MenuSignals, NodeKind, Registrar,
+};
 use neue_dbus::{Toggle, ToggleState};
 use neue_kit::desktop::{MenuTitle, ToplevelMenu};
 use neue_kit::{CheckState, Menu, MenuItem, Shortcut};
@@ -20,23 +25,37 @@ use neue_kit::{CheckState, Menu, MenuItem, Shortcut};
 /// How long the shell waits for an app to answer before giving up on a call.
 const CALL_TIMEOUT: Duration = Duration::from_secs(2);
 
-/// A DBusMenu address: the exporting connection and the object path.
+/// Where a window's menus are exported.
 #[derive(Debug, Clone, PartialEq, Eq)]
-pub struct Address {
-    pub service: String,
-    pub path: String,
+pub enum Address {
+    /// `com.canonical.dbusmenu`: the exporting connection and the object path.
+    DbusMenu { service: String, path: String },
+    /// GTK's `org.gtk.Menus` and `org.gtk.Actions`.
+    GMenu(GMenuAddress),
 }
 
 impl Address {
-    /// The DBusMenu address of a window's menus, if they are one.
+    /// The address of a window's menus, if it exports any.
     pub fn of(menu: &ToplevelMenu) -> Option<Self> {
         match menu {
-            ToplevelMenu::DbusMenu { service, path } => Some(Self {
+            ToplevelMenu::DbusMenu { service, path } => Some(Self::DbusMenu {
                 service: service.clone(),
                 path: path.clone(),
             }),
-            // GMenuModel menus are task 3.8.
-            ToplevelMenu::GMenu { .. } | ToplevelMenu::None => None,
+            ToplevelMenu::GMenu {
+                bus_name,
+                menubar_path,
+                app_menu_path,
+                application_path,
+                window_path,
+            } => Some(Self::GMenu(GMenuAddress {
+                bus_name: bus_name.clone(),
+                menubar_path: menubar_path.clone(),
+                app_menu_path: app_menu_path.clone(),
+                application_path: application_path.clone(),
+                window_path: window_path.clone(),
+            })),
+            ToplevelMenu::None => None,
         }
     }
 }
@@ -61,35 +80,62 @@ pub struct MenuEvent {
 /// What the worker is told.
 #[derive(Debug)]
 pub enum Input {
-    /// Follow these menus from now on (`None`: the active window has no DBusMenu).
+    /// Follow these menus from now on (`None`: the active window exports none).
     Follow(Option<Address>),
     Event(MenuEvent),
     /// A menu on the bus changed (from the signal thread).
     Changed(MenuChanged),
 }
 
-/// The app's menus as last read: the menu-bar titles and everything under them. Empty when
-/// the window has none or they couldn't be read.
+/// The app's menus as last read: the menu-bar titles and everything under them, and the
+/// items of the app menu (GTK 3's, shown under the app's name). Empty when the window has
+/// none or they couldn't be read.
 #[derive(Debug, Clone, PartialEq, Eq)]
 pub struct Menus {
     pub generation: u64,
     pub titles: Vec<MenuNode>,
+    pub app_menu: Vec<MenuNode>,
+}
+
+impl Menus {
+    /// No menus, as of `generation`.
+    pub fn empty(generation: u64) -> Self {
+        Self {
+            generation,
+            titles: Vec::new(),
+            app_menu: Vec::new(),
+        }
+    }
+}
+
+/// The menus being followed, by the protocol they use.
+enum Source {
+    Dbus(MenuClient),
+    GMenu {
+        client: GMenuClient,
+        /// What each item of the last read does.
+        activations: HashMap<i32, Activation>,
+    },
 }
 
 /// The menus being followed.
 struct Followed {
     generation: u64,
-    client: Option<MenuClient>,
+    source: Option<Source>,
 }
 
 impl Followed {
     /// Whether `change` is about the followed menu. Signals always come from a unique name;
     /// an address with a well-known name is matched on the path alone.
     fn is_changed_by(&self, change: &MenuChanged) -> bool {
-        self.client.as_ref().is_some_and(|c| {
-            c.path() == change.path
-                && (c.service() == change.sender || !c.service().starts_with(':'))
-        })
+        match &self.source {
+            Some(Source::Dbus(c)) => {
+                c.path() == change.path
+                    && (c.service() == change.sender || !c.service().starts_with(':'))
+            }
+            Some(Source::GMenu { client, .. }) => client.is_changed_by(change),
+            None => false,
+        }
     }
 
     /// Handles `input`; true if the menus must be read again.
@@ -97,8 +143,8 @@ impl Followed {
         match input {
             Input::Follow(address) => {
                 self.generation += 1;
-                self.client = address.and_then(|a| {
-                    MenuClient::new(conn, &a.service, &a.path)
+                self.source = address.and_then(|a| {
+                    connect(conn, &a)
                         .map_err(|err| tracing::warn!(%err, ?a, "bad menu address"))
                         .ok()
                 });
@@ -106,8 +152,22 @@ impl Followed {
             }
             Input::Changed(change) => self.is_changed_by(&change),
             Input::Event(event) if event.generation == self.generation => {
-                let Some(client) = &self.client else {
-                    return false;
+                let client = match &self.source {
+                    Some(Source::Dbus(client)) => client,
+                    Some(Source::GMenu {
+                        client,
+                        activations,
+                    }) => {
+                        // No AboutToShow here; the app says by itself when menus change.
+                        if event.event == ItemEvent::Clicked
+                            && let Some(activation) = activations.get(&event.id)
+                            && let Err(err) = client.activate(activation)
+                        {
+                            tracing::debug!(%err, id = event.id, "action failed");
+                        }
+                        return false;
+                    }
+                    None => return false,
                 };
                 let name = match event.event {
                     ItemEvent::Clicked => "clicked",
@@ -131,18 +191,44 @@ impl Followed {
         }
     }
 
-    fn read(&self) -> Menus {
-        let titles = self.client.as_ref().map_or_else(Vec::new, |client| {
-            client.fetch().unwrap_or_else(|err| {
-                tracing::warn!(%err, service = client.service(), "can't read the app's menus");
-                Vec::new()
-            })
-        });
-        Menus {
-            generation: self.generation,
-            titles,
+    fn read(&mut self) -> Menus {
+        let mut menus = Menus::empty(self.generation);
+        match &mut self.source {
+            Some(Source::Dbus(client)) => match client.fetch() {
+                Ok(titles) => menus.titles = titles,
+                Err(err) => {
+                    tracing::warn!(%err, service = client.service(), "can't read the app's menus");
+                }
+            },
+            Some(Source::GMenu {
+                client,
+                activations,
+            }) => match client.fetch() {
+                Ok(read) => {
+                    menus.titles = read.titles;
+                    menus.app_menu = read.app_menu;
+                    *activations = read.activations;
+                }
+                Err(err) => {
+                    tracing::warn!(%err, address = ?client.address(), "can't read the app's menus");
+                    activations.clear();
+                }
+            },
+            None => {}
         }
+        menus
     }
+}
+
+/// A client for the menus at `address`. Nothing is sent yet.
+fn connect(conn: &Connection, address: &Address) -> Result<Source, neue_dbus::Error> {
+    Ok(match address {
+        Address::DbusMenu { service, path } => Source::Dbus(MenuClient::new(conn, service, path)?),
+        Address::GMenu(address) => Source::GMenu {
+            client: GMenuClient::new(conn, address.clone())?,
+            activations: HashMap::new(),
+        },
+    })
 }
 
 /// Runs the worker until the shell drops its sender: owns the registrar, reads the
@@ -159,19 +245,13 @@ pub fn run(
         .map_err(|err| tracing::warn!(%err, "can't own the menu registrar"))
         .ok();
     let signals = MenuSignals::new(&conn)?;
-    std::thread::Builder::new()
-        .name("dbusmenu-signals".into())
-        .spawn(move || {
-            for change in signals {
-                if tx.send(Input::Changed(change)).is_err() {
-                    return;
-                }
-            }
-        })
-        .map_err(|err| neue_dbus::Error::Dbus(err.into()))?;
+    let gtk_signals = GMenuSignals::new(&conn)?;
+    let gtk_tx = tx.clone();
+    forward("dbusmenu-signals", signals, tx)?;
+    forward("gmenu-signals", gtk_signals, gtk_tx)?;
     let mut followed = Followed {
         generation: 0,
-        client: None,
+        source: None,
     };
     while let Ok(input) = inputs.recv() {
         let mut again = followed.handle(&conn, input);
@@ -183,6 +263,25 @@ pub fn run(
             break;
         }
     }
+    Ok(())
+}
+
+/// Sends each change of `signals` to the worker, on a thread of its own.
+fn forward(
+    name: &str,
+    signals: impl Iterator<Item = MenuChanged> + Send + 'static,
+    tx: mpsc::Sender<Input>,
+) -> Result<(), neue_dbus::Error> {
+    std::thread::Builder::new()
+        .name(name.into())
+        .spawn(move || {
+            for change in signals {
+                if tx.send(Input::Changed(change)).is_err() {
+                    return;
+                }
+            }
+        })
+        .map_err(|err| neue_dbus::Error::Dbus(err.into()))?;
     Ok(())
 }
 
@@ -208,6 +307,16 @@ pub fn bar_titles<M: Clone + 'static>(
                 .on_close(message(event(t.id, ItemEvent::Closed)))
         })
         .collect()
+}
+
+/// The kit menu under the app's name for the app menu `items`: each item chosen sends
+/// `message(event)`.
+pub fn app_menu<M: 'static>(
+    items: &[MenuNode],
+    generation: u64,
+    message: impl Fn(MenuEvent) -> M + Clone + 'static,
+) -> Menu<M> {
+    menu(items, generation, &message)
 }
 
 /// A kit menu for `items`.
@@ -331,7 +440,7 @@ mod tests {
         };
         assert_eq!(
             Address::of(&dbus),
-            Some(Address {
+            Some(Address::DbusMenu {
                 service: ":1.4".into(),
                 path: "/MenuBar/1".into()
             })
@@ -340,11 +449,34 @@ mod tests {
     }
 
     #[test]
+    fn addresses_come_from_gmenu_windows_too() {
+        let gmenu = ToplevelMenu::GMenu {
+            bus_name: ":1.5".into(),
+            menubar_path: Some("/app/menubar".into()),
+            app_menu_path: None,
+            application_path: Some("/app".into()),
+            window_path: Some("/app/window/1".into()),
+        };
+        assert_eq!(
+            Address::of(&gmenu),
+            Some(Address::GMenu(GMenuAddress {
+                bus_name: ":1.5".into(),
+                menubar_path: Some("/app/menubar".into()),
+                app_menu_path: None,
+                application_path: Some("/app".into()),
+                window_path: Some("/app/window/1".into()),
+            }))
+        );
+    }
+
+    #[test]
     fn changes_match_the_followed_menu() {
         let (_service, client) = neue_dbus::testing::pair().unwrap();
         let followed = |service: &str| Followed {
             generation: 1,
-            client: Some(MenuClient::new(&client, service, "/m").unwrap()),
+            source: Some(Source::Dbus(
+                MenuClient::new(&client, service, "/m").unwrap(),
+            )),
         };
         let change = |sender: &str, path: &str| MenuChanged {
             sender: sender.into(),

@@ -141,10 +141,21 @@ impl Shell {
         })
     }
 
+    /// The menu under the app's name: the app menu GTK apps export, else nothing.
+    fn app_name_menu(&self) -> neue_kit::Menu<Message> {
+        self.global_menu
+            .shown
+            .as_ref()
+            .map_or_else(neue_kit::Menu::new, |m| {
+                global_menu::app_menu(&m.app_menu, m.generation, Message::AppMenu)
+            })
+    }
+
     /// Shows the app's menus on every bar.
     fn sync_menus(&self, cx: &mut Cx<'_, Message>) {
         for bar in self.bars.values() {
             bar.handles.bar.set_menus(cx, self.app_titles());
+            bar.handles.app.set_menu(cx, self.app_name_menu());
         }
     }
 
@@ -168,11 +179,7 @@ impl Shell {
         self.global_menu.generation += 1;
         // The old app's menus go at once; the new ones follow when read.
         if self.global_menu.shown.is_some() {
-            let empty = Menus {
-                generation: self.global_menu.generation,
-                titles: Vec::new(),
-            };
-            self.show_menus(cx, empty);
+            self.show_menus(cx, Menus::empty(self.global_menu.generation));
         }
         self.global_menu.send(Input::Follow(address));
     }

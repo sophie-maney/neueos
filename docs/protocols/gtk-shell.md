@@ -8,7 +8,7 @@ GTK's private Wayland extension. We implement the part GTK apps use to announce 
   (fetched 2026-11-04, version 7 in the file). Licence: LGPL-2.1-or-later.
 - **Offered:** `gtk_shell1` version 5.
 - **Implemented:** `gtk_surface1.set_dbus_properties` (stored per toplevel, shown by
-  `neuectl windows` as `menu`), and `gtk_shell1.capabilities` (always 0 for now).
+  `neuectl windows` as `menu`), and `gtk_shell1.capabilities` (`global_app_menu | global_menu_bar`, ADR 0078).
 - **Accepted and ignored:** every other request.
 - **Bindings:** `neue_protocols::gtk_shell::{server, client}`, behind the `server` and
   `client` features.
