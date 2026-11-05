@@ -9,9 +9,9 @@ use masonry_core::accesskit::{Action, ActionData, Node, Orientation, Role};
 use masonry_core::core::keyboard::{Key, NamedKey};
 use masonry_core::core::{
     AccessCtx, AccessEvent, ChildrenIds, CursorIcon, EventCtx, LayoutCtx, MeasureCtx, NewWidget,
-    PaintCtx, PointerButtonEvent, PointerEvent, PointerUpdate, PropertiesMut, PropertiesRef,
-    QueryCtx, RegisterCtx, TextEvent, Update, UpdateCtx, UsesProperty, Widget, WidgetMut,
-    WidgetPod,
+    NoAction, PaintCtx, PointerButtonEvent, PointerEvent, PointerUpdate, PropertiesMut,
+    PropertiesRef, QueryCtx, RegisterCtx, TextEvent, Update, UpdateCtx, UsesProperty, Widget,
+    WidgetMut, WidgetPod,
 };
 use masonry_core::imaging::Painter;
 use masonry_core::kurbo::{Axis, Insets, Point, Rect, RoundedRect, Size};
@@ -19,7 +19,7 @@ use masonry_core::layout::{LenReq, Length};
 use neue_paint::Scene;
 use neue_paint::imaging::ImagingReplayer;
 use neue_paint::materials::{DividerStyle, focus_ring, split_divider};
-use neue_theme::materials::split::{COLLAPSE_AT, DISABLED_OPACITY, KEY_STEP, MIN_PANE};
+use neue_theme::materials::split::{COLLAPSE_AT, DISABLED_OPACITY, KEY_STEP, MIN_PANE, THIN_GRAB};
 use neue_theme::metrics::control::FOCUS_RING;
 
 use crate::Cx;
@@ -193,6 +193,54 @@ struct Drag {
     first: f64,
 }
 
+/// The strip over a divider that a press grabs: wider than a thin divider is drawn, and in
+/// front of the panes so that the pointer lands on it, not on what a pane has there. It
+/// only gives the resize cursor; the split view handles the press (events bubble up).
+#[derive(Debug)]
+struct GrabWidget(CursorIcon);
+
+impl Widget for GrabWidget {
+    type Action = NoAction;
+
+    fn register_children(&mut self, _ctx: &mut RegisterCtx<'_>) {}
+
+    fn measure(
+        &mut self,
+        _ctx: &mut MeasureCtx<'_>,
+        _props: &PropertiesRef<'_>,
+        _axis: Axis,
+        _len_req: LenReq,
+        _cross_length: Option<Length>,
+    ) -> Length {
+        Length::ZERO
+    }
+
+    fn layout(&mut self, _ctx: &mut LayoutCtx<'_>, _props: &PropertiesRef<'_>, _size: Size) {}
+
+    fn paint(&mut self, _ctx: &mut PaintCtx<'_>, _props: &PropertiesRef<'_>, _: &mut Painter<'_>) {}
+
+    fn get_cursor(&self, _ctx: &QueryCtx<'_>, _pos: Point) -> CursorIcon {
+        self.0
+    }
+
+    fn accessibility_role(&self) -> Role {
+        Role::GenericContainer
+    }
+
+    fn accessibility(
+        &mut self,
+        _ctx: &mut AccessCtx<'_>,
+        _props: &PropertiesRef<'_>,
+        node: &mut Node,
+    ) {
+        node.set_hidden();
+    }
+
+    fn children_ids(&self) -> ChildrenIds {
+        ChildrenIds::new()
+    }
+}
+
 /// The Masonry widget behind [`crate::SplitView`].
 #[derive(Debug)]
 pub(crate) struct SplitWidget {
@@ -200,6 +248,8 @@ pub(crate) struct SplitWidget {
     axis: Axis,
     style: DividerStyle,
     panes: Vec<WidgetPod<dyn Widget>>,
+    /// The grab strip over each divider, in front of the panes.
+    grabs: Vec<WidgetPod<GrabWidget>>,
     specs: Vec<Pane>,
     sizes: Vec<f64>,
     collapsed: Vec<bool>,
@@ -209,6 +259,8 @@ pub(crate) struct SplitWidget {
     sized: bool,
     /// The dividers' rectangles from the last layout.
     dividers: Vec<Rect>,
+    /// Where a press grabs each divider: the divider, wider for the thin style.
+    grab_rects: Vec<Rect>,
     drag: Option<Drag>,
     /// The divider the keyboard moves.
     active: usize,
@@ -229,12 +281,14 @@ impl SplitWidget {
             axis,
             style,
             panes: Vec::new(),
+            grabs: Vec::new(),
             specs: Vec::new(),
             sizes: Vec::new(),
             collapsed: Vec::new(),
             restore: Vec::new(),
             sized: false,
             dividers: Vec::new(),
+            grab_rects: Vec::new(),
             drag: None,
             active: 0,
             fixed: (None, None),
@@ -245,6 +299,13 @@ impl SplitWidget {
     pub(crate) fn push(&mut self, child: NewWidget<dyn Widget>, pane: Pane) {
         let pane = pane.sane();
         self.panes.push(child.to_pod());
+        if self.panes.len() > 1 {
+            let cursor = match self.axis {
+                Axis::Horizontal => CursorIcon::ColResize,
+                Axis::Vertical => CursorIcon::RowResize,
+            };
+            self.grabs.push(NewWidget::new(GrabWidget(cursor)).to_pod());
+        }
         self.sizes.push(pane.initial.unwrap_or(0.0));
         self.collapsed.push(pane.collapsed);
         self.restore.push(pane.initial.unwrap_or(0.0));
@@ -351,7 +412,7 @@ impl SplitWidget {
 
     /// The divider under `pos` (local), if any.
     fn divider_at(&self, pos: Point) -> Option<usize> {
-        self.dividers.iter().position(|r| r.contains(pos))
+        self.grab_rects.iter().position(|r| r.contains(pos))
     }
 
     fn changed(&mut self, ctx: &mut EventCtx<'_>) {
@@ -537,6 +598,9 @@ impl Widget for SplitWidget {
         for pane in &mut self.panes {
             ctx.register_child(pane);
         }
+        for grab in &mut self.grabs {
+            ctx.register_child(grab);
+        }
     }
 
     fn update(&mut self, ctx: &mut UpdateCtx<'_>, _props: &mut PropertiesMut<'_>, event: &Update) {
@@ -624,6 +688,11 @@ impl Widget for SplitWidget {
 
         let width = self.style.width();
         self.dividers.clear();
+        self.grab_rects.clear();
+        let grab = match self.style {
+            DividerStyle::Thin => THIN_GRAB,
+            _ => 0.0,
+        };
         let mut offset = 0.0_f64;
         let last = self.panes.len().saturating_sub(1);
         for (i, pane) in self.panes.iter_mut().enumerate() {
@@ -647,6 +716,17 @@ impl Widget for SplitWidget {
                     Axis::Vertical => Rect::new(0.0, at, cross, at + width),
                 });
                 offset += width;
+            }
+        }
+        for (i, divider) in self.dividers.iter().enumerate() {
+            let rect = match self.axis {
+                Axis::Horizontal => divider.inflate(grab, 0.0),
+                Axis::Vertical => divider.inflate(0.0, grab),
+            };
+            self.grab_rects.push(rect);
+            if let Some(pod) = self.grabs.get_mut(i) {
+                ctx.run_layout(pod, rect.size());
+                ctx.place_child(pod, rect.origin());
             }
         }
         // `offset` carries each divider on after the rounded end of the pane before it.
@@ -737,7 +817,12 @@ impl Widget for SplitWidget {
     }
 
     fn children_ids(&self) -> ChildrenIds {
-        self.panes.iter().map(WidgetPod::id).collect()
+        // The grabs come last: they are in front of the panes.
+        self.panes
+            .iter()
+            .map(WidgetPod::id)
+            .chain(self.grabs.iter().map(WidgetPod::id))
+            .collect()
     }
 
     fn accepts_focus(&self) -> bool {

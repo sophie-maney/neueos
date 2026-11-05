@@ -2411,6 +2411,9 @@ pub mod split {
     pub const THIN: f64 = 1.0;
     /// Width of a thick divider.
     pub const THICK: f64 = 9.0;
+    /// How far either side of a thin divider a press grabs it, and the resize cursor
+    /// shows. (A thick divider is grabbed by the bar itself.)
+    pub const THIN_GRAB: f64 = 3.0;
     /// Diameter of one dot of the grip.
     pub const GRIP_DOT: f64 = 2.0;
     /// Distance between the centres of two grip dots.

@@ -188,6 +188,41 @@ fn dragging_a_divider_resizes_within_the_limits() {
 }
 
 #[test]
+fn a_press_just_beside_a_thin_divider_drags_it_and_shows_the_resize_cursor() {
+    use masonry_core::core::CursorIcon;
+    let (mut runner, mut host) = setup();
+    let s = split(&runner);
+    // The line is 1 px wide; 2 px either side of it is over a pane's label area.
+    for side in [-2.0, 2.0] {
+        let at = divider(&mut host, s, 0);
+        let beside = Point::new(at.x + side, 20.0);
+        host.only().mouse_move(beside);
+        assert_eq!(host.only().cursor_icon(), CursorIcon::ColResize, "{side}");
+        let before = lengths(&mut host, s)[0];
+        drag(
+            &mut runner,
+            &mut host,
+            beside,
+            &[Point::new(beside.x + 30.0, 20.0)],
+        );
+        assert_eq!(lengths(&mut host, s)[0], before + 30.0, "{side}");
+    }
+    // Further away it is the pane's, not the divider's.
+    let at = divider(&mut host, s, 0);
+    let far = Point::new(at.x + 10.0, 20.0);
+    host.only().mouse_move(far);
+    assert_eq!(host.only().cursor_icon(), CursorIcon::Default);
+    let before = lengths(&mut host, s);
+    drag(
+        &mut runner,
+        &mut host,
+        far,
+        &[Point::new(far.x + 30.0, 20.0)],
+    );
+    assert_eq!(lengths(&mut host, s), before);
+}
+
+#[test]
 fn dragging_far_enough_collapses_a_collapsible_pane_and_dragging_back_restores_it() {
     let (mut runner, mut host) = setup();
     let s = split(&runner);

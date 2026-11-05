@@ -20,6 +20,8 @@ enum Msg {
     Popup(usize),
     /// Script: the app shows another path.
     Shorten,
+    /// Script: the app shows the three-level path of the gallery.
+    ThreeSegments,
     /// Script: the app disables the control.
     Disable,
 }
@@ -55,6 +57,9 @@ impl Application for Paths {
     fn update(&mut self, cx: &mut Cx<'_, Msg>, message: Msg) {
         match message {
             Msg::Shorten => self.path.set_segments(cx, ["Macintosh HD", "Applications"]),
+            Msg::ThreeSegments => self
+                .path
+                .set_segments(cx, ["Macintosh HD", "Users", "sophie"]),
             Msg::Disable => self.path.set_enabled(cx, false),
             _ => self.log.push(message),
         }
@@ -171,6 +176,44 @@ fn the_keyboard_moves_between_segments_and_chooses() {
         runner.app().log,
         [Msg::Path(3), Msg::Path(1), Msg::Path(0), Msg::Path(3)]
     );
+}
+
+#[test]
+fn tabbing_in_focuses_the_last_segment_and_left_twice_reaches_the_first_of_three() {
+    // Step 5.10 of the owner runbook: a three-segment path reached with Tab.
+    for width in [0, 300, 260, 200, 150] {
+        let (mut runner, mut host) = setup_in(width);
+        let path = id(&runner.app().path);
+        runner.send(&mut host, Msg::ThreeSegments);
+        let _ = host.only().render();
+        named(&mut runner, &mut host, NamedKey::Tab);
+        assert_eq!(host.only().focused_widget_id(), Some(path));
+        named(&mut runner, &mut host, NamedKey::ArrowLeft);
+        named(&mut runner, &mut host, NamedKey::ArrowLeft);
+        named(&mut runner, &mut host, NamedKey::Enter);
+        assert_eq!(runner.app().log, [Msg::Path(0)], "width {width}");
+    }
+}
+
+#[test]
+fn tabbing_in_after_a_press_that_left_the_segment_still_starts_on_the_current_level() {
+    // Runbook 5.9 then 5.10: press on "Users", move off, release; later Tab in.
+    let (mut runner, mut host) = setup();
+    let path = id(&runner.app().path);
+    let on = centre_of(&mut host, path, 1);
+    let off = centre_of(&mut host, path, 2);
+    let harness = host.only();
+    harness.mouse_move(on);
+    harness.mouse_button_press(Some(PointerButton::Primary));
+    harness.mouse_move(off);
+    harness.mouse_button_release(Some(PointerButton::Primary));
+    deliver(&mut runner, &mut host);
+    // Leave the control, then Tab back in (the window has the popup button after it).
+    host.only().focus_on(None);
+    named(&mut runner, &mut host, NamedKey::Tab);
+    assert_eq!(host.only().focused_widget_id(), Some(path));
+    named(&mut runner, &mut host, NamedKey::Enter);
+    assert_eq!(runner.app().log, [Msg::Path(3)]);
 }
 
 #[test]

@@ -47,6 +47,9 @@ pub(crate) struct PathWidget {
     rects: Vec<Rect>,
     /// The segment that Return and Space choose and that carries the focus ring.
     focus: usize,
+    /// The control is about to take the keyboard focus because of a press, which has
+    /// already chosen the segment; a keyboard entry (Tab) starts on the current level.
+    pointer_focus: bool,
     /// The drawn segment under the pointer.
     hovered: Option<usize>,
     /// The drawn segment held down.
@@ -111,6 +114,7 @@ impl PathWidget {
             replayer: ImagingReplayer::new(),
             visible: Vec::new(),
             rects: Vec::new(),
+            pointer_focus: false,
             hovered: None,
             pressed: None,
             node_ids: Vec::new(),
@@ -198,6 +202,7 @@ impl Widget for PathWidget {
                 if let Some(Some(i)) = at.map(|v| self.visible[v]) {
                     self.focus = i;
                 }
+                self.pointer_focus = !ctx.is_focus_target();
                 ctx.capture_pointer();
                 ctx.request_focus();
                 ctx.request_paint_only();
@@ -268,9 +273,17 @@ impl Widget for PathWidget {
 
     fn update(&mut self, ctx: &mut UpdateCtx<'_>, _props: &mut PropertiesMut<'_>, event: &Update) {
         match event {
-            Update::DisabledChanged(_) | Update::ActiveChanged(_) | Update::FocusChanged(_) => {
+            Update::FocusChanged(focused) => {
+                // Entering with the keyboard starts on the current level, whatever an
+                // earlier press left behind; a press picked its segment itself.
+                if *focused && !self.pointer_focus {
+                    self.focus = self.lines.len().saturating_sub(1);
+                    ctx.request_accessibility_update();
+                }
+                self.pointer_focus = false;
                 ctx.request_paint_only();
             }
+            Update::DisabledChanged(_) | Update::ActiveChanged(_) => ctx.request_paint_only(),
             Update::HoveredChanged(false) => {
                 self.hovered = None;
                 ctx.request_paint_only();
