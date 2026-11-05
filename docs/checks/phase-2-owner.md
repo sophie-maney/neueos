@@ -289,9 +289,12 @@ Date picker:
   nothing; status `Tab 2`, then `Tab 1`.
 - [ ] **9.6 Do:** press Tab until a blue ring sits round the first tab strip, then Right,
   Left, Home, End. Expected: the selected tab follows; the arrows skip "Hidden".
-- [ ] **9.7 Do:** in the second tab view click into the "Name" field, press Ctrl-Tab, then
-  Ctrl-Shift-Tab. Expected: the tab switches from inside the field and the focus moves to
-  the strip.
+- [ ] **9.7 Do:** in the second tab view click into the "Name" field, press Ctrl-Cmd-Tab,
+  then Ctrl-Cmd-Shift-Tab (Parallels takes plain Ctrl-Tab on the Mac). Expected: the tab
+  switches from inside the field and the focus moves to the strip. Or, from ssh, send
+  the keys inside the VM: `ssh neueos-vm 'export YDOTOOL_SOCKET=/tmp/.ydotool_socket;
+  ydotool key 29:1 15:1 15:0 29:0'` for Ctrl-Tab, and `ydotool key 29:1 42:1 15:1 15:0
+  42:0 29:0` for Ctrl-Shift-Tab.
 - [ ] **9.8 Run** `ssh neueos-vm '. ~/neueos/docs/vm-env.sh; term'`. Expected: the selected
   tabs turn grey. Close foot.
 - [ ] **9.9 Do:** Dark and 2×: the dividers, tabs and rings stay sharp. Set both back.
@@ -327,10 +330,14 @@ Popover:
 - [ ] **11.4 Do:** click "Below", then the page background: it closes (`Popover closed`).
   Click "Below" twice: it closes and doesn't reopen. Click "Below", then Done: `Popover
   done`. Click "Below", press Tab: the focus ring is on Done. Escape.
-- [ ] **11.5 Do:** drag the gallery up by its title bar until the "Above" button is near
-  the top of the screen, click "Above". Expected: the popover opens below the button,
-  arrow on its top side. Drag the gallery to the left edge and click "Left": it opens on
-  the right. Drag the gallery back to the middle.
+- [ ] **11.5 Do:** move the gallery to the top with a command (a drag can't get "Above"
+  near enough to the top):
+  ```sh
+  ssh neueos-vm '. ~/neueos/docs/vm-env.sh; neuectl action move-window --window $(win_id) --y 0; sleep 0.5'
+  ```
+  Then click "Above". Expected: the popover opens below the button, arrow on its top side.
+  Drag the gallery to the left edge and click "Left": it opens on the right. Drag the
+  gallery back to the middle.
 - [ ] **11.6 Do:** Dark, open a popover: the panel is dark. Escape, set Light back.
 
 Sheet:
@@ -379,8 +386,10 @@ HUD panel:
   ```
   Expected: a window `Inspector`, 240 × 120, whose `parent` is the gallery's `id`.
 - [ ] **11.16 Do:** click the gallery's page area, then the panel. Expected: the gallery's
-  bar looks focused both times, the panel looks the same both times. **Run**
-  `ssh neueos-vm '. ~/neueos/docs/vm-env.sh; term'`: both go inactive. Close foot.
+  bar looks focused both times, and the panel looks the same both times (the HUD has no
+  focused look, by design). **Run**
+  `ssh neueos-vm '. ~/neueos/docs/vm-env.sh; term'`: the gallery's bar goes inactive, and
+  the panel still looks the same. Close foot.
 - [ ] **11.17 Do:** drag the panel by its top bar: it moves. Double-click its bar: nothing
   happens. Hover the disc: a cross appears. Click it: the panel closes, the gallery stays.
 - [ ] **11.18 Do:** click "Inspector" again, then the gallery's red traffic light.
