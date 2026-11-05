@@ -204,23 +204,32 @@ their goldens and the gallery's "Shell" page run on macOS.
       `appearance.toml`.
 
 ## B. Menu bar
-- [ ] **3.7 Global menu A: registrar and DBusMenu** · Opus. After 3.2b. In `neue-dbus`
-      (ADR 0005 §1): `com.canonical.AppMenu.Registrar` owned by the shell, and a DBusMenu
-      client (layout, properties, `AboutToShow`, events, toggles, shortcuts, icons,
-      updates). The menu bar shows the focused window's menus as kit menus opened from the
-      layer surface; mouse and keyboard navigation across menus, Escape, a shortcut to
-      focus the menu bar.
+- [ ] **3.7a Global menu A: registrar and DBusMenu** · Opus. After 3.2b. Split from 3.7
+      on 2026-11-05. In `neue-dbus` (ADR 0005 §1): `com.canonical.AppMenu.Registrar`
+      owned by the shell, and a DBusMenu client (layout, properties, `AboutToShow`,
+      events, toggles, shortcuts, icons, updates). The Wayland driver passes each window's
+      menu address (`menu_dbusmenu`/`menu_gmenu`/`menu_none`) to the shell. The menu bar
+      shows the active window's menus as kit menus opened from the layer surface; their
+      items act. Navigation inside an open menu is the kit's as before.
       *Accept:* tests against neue-kit's own DBusMenu export (`neue-dbus` `testing`); in
       the VM the gallery's and a Qt6 app's menus show and their items act.
       *Owner:* Chromium and LibreOffice menus on the PC.
-- [ ] **3.8 Global menu B: GMenuModel** · Sonnet. After 3.7. An `org.gtk.Menus` +
+- [ ] **3.7b Global menu A: menu-bar navigation** · Opus. After 3.7a. Hover-switching
+      between open menus, Left/Right across the bar's menus, Escape, and a shortcut to
+      focus the menu bar: a `neue_shell_v1` event (`focus_menu_bar`, version bump) sent by
+      a compositor action, bound to Ctrl+F2 by default; the shell opens the first menu
+      from the keyboard. ADR for the protocol change.
+      *Accept:* kit tests for switching and Left/Right; a headless compositor test for the
+      action reaching a scripted shell; in the VM, Ctrl+F2 then arrows walk the gallery's
+      menus.
+- [ ] **3.8 Global menu B: GMenuModel** · Sonnet. After 3.7a. An `org.gtk.Menus` +
       `org.gtk.Actions` client in `neue-dbus`, the same menu rendering, and the
       `gtk_shell1` capabilities in `appmenu.rs` switched on (ADR 0025 §7: the enum values
       are not bit flags).
       *Accept:* in the VM, `gtk3-demo` and `gtk4-demo` (`GtkApplication`) show their menus
       in the bar and hide their in-window menu bar; a GTK app with no exported menus keeps
       working.
-- [ ] **3.9 Fallback menu and menu search** · Sonnet. After 3.7 and 3.10. ADR 0005 §4:
+- [ ] **3.9 Fallback menu and menu search** · Sonnet. After 3.7b and 3.10. ADR 0005 §4:
       App, File, Edit, Window and Help for windows with no menu address. Edit items send
       key chords through `neue-shell-v1`; Window items run compositor actions; New Window
       uses the entry's `new-window` action (3.3) or is disabled. Help's search field finds
@@ -249,8 +258,8 @@ their goldens and the gallery's "Shell" page run on macOS.
       *Accept:* unit tests against a mock NetworkManager; in the VM the wired connection
       shows and can be toggled.
       *Owner:* Wi-Fi list and joining a saved network on the PC.
-- [ ] **3.13 Status-icon tray** · Sonnet. After 3.7. `StatusNotifierWatcher` and a host in
-      `neue-dbus`; icons by name or pixmap, tooltips, activation, and menus through the 3.7
+- [ ] **3.13 Status-icon tray** · Sonnet. After 3.7a. `StatusNotifierWatcher` and a host in
+      `neue-dbus`; icons by name or pixmap, tooltips, activation, and menus through the 3.7a
       DBusMenu client.
       *Accept:* unit tests; in the VM a tray app (`nm-applet --indicator` or a test SNI
       item) shows, its menu opens and its items act.
