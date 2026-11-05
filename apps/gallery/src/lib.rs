@@ -225,7 +225,6 @@ impl Application for Gallery {
         let main = Stack::column()
             .padding(spacing::L)
             .spacing(spacing::M)
-            .with(switches)
             .with(
                 Label::new("Press a specimen…")
                     .secondary()
@@ -233,7 +232,10 @@ impl Application for Gallery {
             )
             .with(Zoom::new(ZOOMS[self.zoom], content).bind(&mut self.zoomed));
         let root = Stack::row().with(sidebar).with(main);
-        let window = Window::new("Widget Gallery", (860, 560), root).menu_bar(self.menu_bar(theme));
+        // The theme switches sit in a unified toolbar (task 2.22b).
+        let window = Window::new("Widget Gallery", (860, 600), root)
+            .toolbar(switches)
+            .menu_bar(self.menu_bar(theme));
         self.window = Some(cx.open_window(window));
     }
 

@@ -776,3 +776,53 @@ window: the selected tab turns grey. Switch to dark and to 2x: all stays sharp.
 VoiceOver on (Cmd-F5), move into a tab view: the tabs are read as a tab group with the
 selected one and its position ("2 of 3"), and the adjust gesture (Up and Down) changes tab.
 Clicking a tab through VoiceOver is not supported yet (ADR 0054).
+
+## 19. Checking the kit window chrome (task 2.22b)
+Not run yet. Steps 1 to 4 run in the VM, set up as in `docs/dev-setup.md` §1.3; step 5 is
+on the Mac. The gallery window now draws its own chrome, with the theme switches in a
+unified toolbar. Resize edges for client-side windows come with 2.22d; until then the
+gallery can't be resized from its edges in the VM. The helpers are those of §8.
+
+**1. Build and open the gallery:** as §8 step 1 with `NEUE_GALLERY_PAGE=0`, screenshot
+`/tmp/c1.png`. Expected: no `WARN` or `ERROR`; a single title bar (no compositor bar
+above it) of about 60 px with rounded top corners: the traffic lights and "Widget
+Gallery" in its top 22 px, the switch buttons under them on the same gradient, a dark
+line between the chrome and the content. `grep -i decoration /tmp/comp.log` shows the
+gallery asked for client-side decorations.
+
+**2. Traffic lights:** move the pointer over the lights, screenshot `/tmp/c2.png`; hold
+the button down on the yellow one, screenshot `/tmp/c3.png`, release on it.
+```sh
+ssh neueos-vm '. ~/neueos/docs/vm-env.sh; export YDOTOOL_SOCKET=/tmp/.ydotool_socket
+  move_to() { ydotool mousemove --absolute -x $(($1 / 2)) -y $(($2 / 2)); sleep 0.2; ydotool mousemove -x 1 -y 0; }
+  move_to X Y; sleep 0.3; neuectl screenshot /tmp/c2.png
+  move_to X2 Y; ydotool click 0x40; sleep 0.3; neuectl screenshot /tmp/c3.png; ydotool click 0x80
+  sleep 0.5; neuectl windows'
+```
+(X, Y: the close light's centre in `c1.png`, X2 the minimise light's, in screenshot
+pixels.) Expected: `c2.png` shows ×, − and + on all three lights; `c3.png` shows the
+yellow one darker; after release `neuectl windows --json` shows the gallery with
+`"minimized": true`. Bring it back with `neuectl action unminimize-window --window ID`
+(ID from `neuectl windows`), click the green light: the window fills the work area
+(`"zoomed": true`); click it again: it returns to its size.
+
+**3. Drag and double-click:** drag the bar's empty middle 200 px to the right
+(`move_to`, `ydotool click 0x40`, `ydotool mousemove -x 100 -y 0`, `ydotool click 0x80`),
+then double-click an empty part of the toolbar row (`ydotool click 0xC0` twice, quickly).
+Expected: the window follows the drag (`neuectl windows --json`: x grows by about 200),
+the double-click maximises it; a click on a switch button changes the theme and does not
+move the window.
+
+**4. Inactive look and close:** open a second window (`foot &`), screenshot
+`/tmp/c4.png`; then click the gallery's red light. Expected: in `c4.png` the gallery's
+bar, title and lights are pale grey; the red light closes the gallery and
+`/tmp/gallery.log` has no `ERROR`. Switch to dark and to 2x first: all stays sharp.
+
+**5. macOS (owner):** `cargo xtask gallery`. Expected: no native title or buttons; our
+bar and toolbar under the native shadow and corners. Check that the lights hover, press
+and act, that dragging the bar moves the window and a double-click zooms it, and that
+the bar turns pale when another app is in front. Note whether the native title-bar area
+(the top 28 px) takes the clicks for itself: winit's full-size content view may handle
+drag and double-click there natively. With VoiceOver on (Cmd-F5), the three lights are
+read as buttons "Close", "Minimise" and "Zoom", and VO-Space on them acts.
+

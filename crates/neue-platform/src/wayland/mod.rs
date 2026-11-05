@@ -86,8 +86,8 @@ use wayland_protocols_plasma::appmenu::client::{
 use crate::app::{DriverWindow, Registry};
 use crate::gpu::{Gpu, GpuError, SurfaceTarget};
 use crate::{
-    Anchor, App, Ctx, LayerKeyboard, LayerSpec, MenuAddress, Options, ShellLayer, Waker, WindowId,
-    WindowKind, WindowSpec,
+    Anchor, App, Ctx, Decorations, LayerKeyboard, LayerSpec, MenuAddress, Options, ShellLayer,
+    Waker, WindowId, WindowKind, WindowSpec,
 };
 use access::{Access, AccessEvent};
 use clipboard::Clipboard;
@@ -579,10 +579,12 @@ impl State {
                 Shell::Layer(create_layer(layer_shell, &qh, wl, &layer, size))
             }
             _ => {
-                let window =
-                    self.g
-                        .xdg
-                        .create_window(wl.clone(), WindowDecorations::ServerDefault, &qh);
+                let decorations = match spec.decorations {
+                    Decorations::Server => WindowDecorations::ServerDefault,
+                    // neue-comp grants an explicit client-side request (ADR 0013, ADR 0055).
+                    Decorations::Client => WindowDecorations::RequestClient,
+                };
+                let window = self.g.xdg.create_window(wl.clone(), decorations, &qh);
                 window.set_title(spec.title);
                 if !spec.app_id.is_empty() {
                     window.set_app_id(spec.app_id);

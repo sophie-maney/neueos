@@ -11,10 +11,10 @@
 use std::time::Duration;
 
 use neue_gallery::specimens::{
-    self, BEVEL_SIZE, COLLECTION_SIZE, COMBO_SIZE, FIELD_SIZE, ICONS_SIZE, MENU_SIZE, OUTLINE_SIZE,
-    POPUP_SIZE, PROGRESS_SIZE, PULL_DOWN_SIZE, PUSH_BUTTON_SIZE, SCROLL_SIZE, SEGMENTED_SIZE,
-    SIDEBAR_SIZE, SLIDER_SIZE, SPINNER_SIZE, SPLIT_SIZE, STEPPER_SIZE, SUBMENU_SIZE, TABLE_SIZE,
-    TABS_SIZE, TEXT_VIEW_SIZE, TOGGLE_SIZE,
+    self, BEVEL_SIZE, CHROME_SIZE, COLLECTION_SIZE, COMBO_SIZE, FIELD_SIZE, ICONS_SIZE, MENU_SIZE,
+    OUTLINE_SIZE, POPUP_SIZE, PROGRESS_SIZE, PULL_DOWN_SIZE, PUSH_BUTTON_SIZE, SCROLL_SIZE,
+    SEGMENTED_SIZE, SIDEBAR_SIZE, SLIDER_SIZE, SPINNER_SIZE, SPLIT_SIZE, STEPPER_SIZE,
+    SUBMENU_SIZE, TABLE_SIZE, TABS_SIZE, TEXT_VIEW_SIZE, TOGGLE_SIZE,
 };
 use neue_kit::testing::{
     self, DISABLED, FOCUSED, Fixture, Goldens, INACTIVE, NORMAL, NavKey, PRESSED, State,
@@ -318,4 +318,49 @@ control_goldens! {
 
     context_menu: "context-menu", MENU_SIZE, &[MENU_OPEN, MENU_HIGHLIGHTED], specimens::context_menu(|_| (), specimens::ctrl);
     context_submenu: "context-menu", SUBMENU_SIZE, &[MENU_SUBMENU], specimens::context_menu(|_| (), specimens::ctrl);
+}
+
+/// The pointer over the traffic lights (between close and minimise): every glyph shows.
+const LIGHTS_HOVERED: State = ("lights-hovered", |f: &mut Fixture| {
+    f.hover_at(
+        LIGHTS_X / f64::from(CHROME_SIZE.0),
+        LIGHTS_Y / f64::from(CHROME_SIZE.1),
+    );
+});
+/// The pointer held down on the close button.
+const CLOSE_PRESSED: State = ("close-pressed", |f: &mut Fixture| {
+    f.press_at(
+        CLOSE_X / f64::from(CHROME_SIZE.0),
+        LIGHTS_Y / f64::from(CHROME_SIZE.1),
+    );
+});
+/// Centre of the close button, the gap after it, and the lights' midline (logical pixels).
+const CLOSE_X: f64 = 14.0;
+const LIGHTS_X: f64 = 24.0;
+const LIGHTS_Y: f64 = 11.0;
+
+// A window's own title bar (task 2.22b): at rest, inactive, the lights hovered, close held.
+#[test]
+fn window_chrome() {
+    testing::check_window_states(
+        &goldens(),
+        "window-chrome",
+        Theme::default(),
+        &[NORMAL, INACTIVE, LIGHTS_HOVERED, CLOSE_PRESSED],
+        specimens::window_chrome::<()>,
+    )
+    .unwrap();
+}
+
+// A unified title bar and toolbar, at rest and inactive.
+#[test]
+fn window_toolbar() {
+    testing::check_window_states(
+        &goldens(),
+        "window-toolbar",
+        Theme::default(),
+        &[NORMAL, INACTIVE],
+        specimens::window_toolbar::<()>,
+    )
+    .unwrap();
 }

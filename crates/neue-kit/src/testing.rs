@@ -31,6 +31,7 @@ pub use neue_paint::golden::{Goldens, Mismatch};
 use neue_theme::metrics::spacing;
 use neue_theme::{Appearance, Theme};
 
+use crate::app::Window;
 use crate::element::Element;
 use crate::theme::default_properties;
 use crate::widgets::{RootWidget, StackWidget};
@@ -84,6 +85,24 @@ impl Fixture {
         stack.padding = spacing::S;
         stack.push(widget);
         let root = RootWidget::new(NewWidget::new(stack).erased());
+        Self::with_root(root, Some(target), theme, scale, size)
+    }
+
+    /// `window` as it opens, filling a window of its size drawn at `scale`: its content
+    /// under its chrome, if it has some. The target is the window's root.
+    pub fn window<M>(window: Window<M>, theme: Theme, scale: f64) -> Self {
+        crate::menu::command_is_ctrl_here();
+        let (root, size) = window.into_root();
+        Self::with_root(root, None, theme, scale, size)
+    }
+
+    fn with_root(
+        root: RootWidget,
+        target: Option<WidgetId>,
+        theme: Theme,
+        scale: f64,
+        size: (u32, u32),
+    ) -> Self {
         #[expect(
             clippy::cast_possible_truncation,
             clippy::cast_sign_loss,
@@ -102,7 +121,10 @@ impl Fixture {
             .render_root()
             .register_fonts(Blob::new(Arc::new(neue_paint::text::ui_font_data())));
         harness.set_focus_fallback(Some(root_id));
-        Self { harness, target }
+        Self {
+            harness,
+            target: target.unwrap_or(root_id),
+        }
     }
 
     /// Puts the pointer over the widget.
@@ -296,13 +318,39 @@ pub fn check_states<M>(
     states: &[State],
     make: impl Fn() -> Element<M>,
 ) -> Result<(), Error> {
+    check(goldens, name, theme, states, |theme, scale| {
+        Fixture::new(make(), theme, scale, size)
+    })
+}
+
+/// [`check_states`] for a whole window, chrome and all ([`Fixture::window`]), at its own
+/// size.
+pub fn check_window_states<M>(
+    goldens: &Goldens,
+    name: &str,
+    theme: Theme,
+    states: &[State],
+    make: impl Fn() -> Window<M>,
+) -> Result<(), Error> {
+    check(goldens, name, theme, states, |theme, scale| {
+        Fixture::window(make(), theme, scale)
+    })
+}
+
+fn check(
+    goldens: &Goldens,
+    name: &str,
+    theme: Theme,
+    states: &[State],
+    fixture: impl Fn(Theme, f64) -> Fixture,
+) -> Result<(), Error> {
     let mut mismatches = Vec::new();
     for &(state, enter) in states {
         for (appearance, a) in [(Appearance::Light, "light"), (Appearance::Dark, "dark")] {
             for scale in [1_u8, 2] {
                 let mut theme = theme;
                 theme.variant.appearance = appearance;
-                let mut fixture = Fixture::new(make(), theme, f64::from(scale), size);
+                let mut fixture = fixture(theme, f64::from(scale));
                 enter(&mut fixture);
                 let pixmap = fixture.render()?;
                 if let Err(m) = goldens.check(&format!("{name}-{state}-{a}@{scale}x"), pixmap) {

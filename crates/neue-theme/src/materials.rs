@@ -606,6 +606,10 @@ pub mod title_bar {
     pub const GLYPH_REACH: f64 = 2.6;
     /// Line width of the glyphs.
     pub const GLYPH_WIDTH: f64 = 1.5;
+    /// Space between a unified toolbar and the window's left and right edges.
+    pub const TOOLBAR_INSET: f64 = 8.0;
+    /// Space between a unified toolbar's items and the bottom of the chrome.
+    pub const TOOLBAR_BOTTOM: f64 = 6.0;
 
     /// Colours of the bar.
     #[derive(Clone, Copy, Debug, PartialEq)]

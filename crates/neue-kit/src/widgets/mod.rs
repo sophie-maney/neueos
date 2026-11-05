@@ -5,6 +5,7 @@
 
 mod bevel;
 mod button;
+mod chrome;
 mod collection;
 mod context;
 mod edit_menu;
@@ -43,6 +44,9 @@ use neue_theme::metrics::spacing;
 pub use bevel::BevelButton;
 pub(crate) use bevel::BevelWidget;
 pub(crate) use button::{ButtonWidget, Pressed};
+pub(crate) use chrome::Chrome;
+#[cfg(test)]
+pub(crate) use chrome::WindowRequest;
 pub(crate) use collection::CollectionItemWidget;
 pub use collection::{Collection, Item};
 pub use context::ContextMenu;

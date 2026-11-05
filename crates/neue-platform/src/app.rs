@@ -56,9 +56,12 @@ pub struct WindowSpec {
     pub width: u32,
     pub height: u32,
     pub root: NewWidget<dyn Widget>,
-    /// Cleared to before the widgets paint. Opaque: windows aren't transparent.
+    /// Cleared to before the widgets paint. Opaque, except for windows with
+    /// [`Decorations::Client`], whose rounded top corners need alpha (ADR 0055).
     pub background: Color,
     pub kind: WindowKind,
+    /// Who draws a toplevel's title bar. Ignored for layer surfaces.
+    pub decorations: Decorations,
     /// The window this one belongs to (`xdg_toplevel.set_parent`): the compositor keeps it
     /// above its parent. Toplevels only; Wayland only for now.
     pub parent: Option<WindowId>,
@@ -82,11 +85,25 @@ impl WindowSpec {
             root,
             background: Color::from_rgb8(0xec, 0xec, 0xec),
             kind: WindowKind::Toplevel,
+            decorations: Decorations::Server,
             parent: None,
             modal: false,
             focus_fallback: None,
         }
     }
+}
+
+/// Who draws a toplevel's title bar (ADR 0055).
+#[derive(Debug, Clone, Copy, Default, PartialEq, Eq)]
+pub enum Decorations {
+    /// The compositor (xdg-decoration, server-side by default); the native title bar on
+    /// macOS.
+    #[default]
+    Server,
+    /// The window draws its own chrome. On Wayland it asks for client-side decorations
+    /// through xdg-decoration; on macOS the title bar is transparent and full-size, with
+    /// the native title and buttons hidden, so the native shadow, corners and resizing stay.
+    Client,
 }
 
 /// What kind of surface a window is.
