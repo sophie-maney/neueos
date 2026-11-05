@@ -78,3 +78,4 @@ Don't edit an accepted ADR's decision; supersede it with a new one.
 | [0066](0066-neue-shell-protocol.md) | `neue_shell_v1`: the compositor spawns the shell on a private socket, restarts it, and is the only one to offer it windows, actions, key chords and system keys | Accepted |
 | [0067](0067-shell-surfaces-in-platform-and-kit.md) | Shell surfaces: the platform reports outputs, places layer surfaces on them, binds `neue_shell_v1` for the shell and can run with no window; the kit exposes them | Accepted |
 | [0068](0068-shell-skeleton-and-menu-bar.md) | The shell skeleton and menu bar: `MenuBar`/`MenuTitle` in the kit, DejaVu Sans Bold, jiff for the clock, logind for lock/restart/shut down, Log Out as the compositor's `quit` | Accepted |
+| [0069](0069-desktop-background.md) | The desktop background: a `neue-desktop` background layer per output, a vector default picture, photos through the texture cache, `shell.toml`, `png` and `zune-jpeg` | Accepted |

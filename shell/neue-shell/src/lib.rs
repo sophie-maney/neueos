@@ -10,4 +10,5 @@
 pub mod about;
 pub mod bar;
 pub mod clock;
+pub mod picture;
 pub mod windows;

@@ -14,9 +14,13 @@ publish.workspace = true
 [dependencies]
 anyhow.workspace = true
 jiff.workspace = true
+neue-config.workspace = true
 neue-kit.workspace = true
+png.workspace = true
+thiserror.workspace = true
 tracing.workspace = true
 tracing-subscriber.workspace = true
+zune-jpeg.workspace = true
 
 [target.'cfg(target_os = "linux")'.dependencies]
 neue-dbus.workspace = true

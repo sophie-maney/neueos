@@ -6,8 +6,8 @@ use neue_theme::{Appearance, Theme, Variant};
 
 use crate::widgets::{
     BevelWidget, ButtonWidget, CalendarWidget, CellWidget, CollectionItemWidget, ColorWellWidget,
-    ColumnHeaderWidget, DateFieldWidget, FieldWidget, HeaderWidget, HsAreaWidget, IconWidget,
-    LabelWidget, MenuBarWidget, MenuRowWidget, MenuTitleWidget, MenuWidget, PathWidget,
+    ColumnHeaderWidget, DateFieldWidget, DesktopWidget, FieldWidget, HeaderWidget, HsAreaWidget,
+    IconWidget, LabelWidget, MenuBarWidget, MenuRowWidget, MenuTitleWidget, MenuWidget, PathWidget,
     PopoverWidget, ProgressWidget, RootWidget, RowsWidget, ScrollWidget, ScrollerWidget,
     SegmentedWidget, SeparatorWidget, SheetWidget, SliderWidget, SpecimenWidget, SpinnerWidget,
     SplitWidget, StackWidget, StepperWidget, TabViewWidget, TextViewWidget, ToggleWidget,
@@ -44,6 +44,7 @@ pub(crate) fn default_properties(theme: Theme) -> DefaultProperties {
     props.insert::<SheetWidget, _>(ThemeProp(theme));
     props.insert::<MenuRowWidget, _>(ThemeProp(theme));
     props.insert::<MenuBarWidget, _>(ThemeProp(theme));
+    props.insert::<DesktopWidget, _>(ThemeProp(theme));
     props.insert::<MenuTitleWidget, _>(ThemeProp(theme));
     props.insert::<ButtonWidget, _>(ThemeProp(theme));
     props.insert::<BevelWidget, _>(ThemeProp(theme));

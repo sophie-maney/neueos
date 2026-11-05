@@ -17,6 +17,7 @@
 
 mod chord;
 pub mod compositor;
+pub mod shell;
 
 use std::fmt;
 use std::path::{Path, PathBuf};
@@ -27,6 +28,7 @@ use toml::{Table, Value};
 
 pub use chord::{Chord, ChordError};
 pub use compositor::{CompositorConfig, TitleBarDoubleClick, WindowsConfig};
+pub use shell::{DesktopConfig, PictureFit, ShellConfig};
 
 /// Directory name inside each config root.
 const DIR_NAME: &str = "neueos";

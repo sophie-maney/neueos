@@ -976,3 +976,48 @@ pub fn shell_bar<M: 'static>(
             &mut handles,
         ))
 }
+
+/// The desktop background specimens' size: a 16:10 output, small.
+const DESKTOP_SPECIMEN: (f64, f64) = (320.0, 200.0);
+
+/// Golden window size for them: the specimen and the window's padding.
+pub const SHELL_DESKTOP_SIZE: (u32, u32) = (336, 216);
+
+/// The built-in desktop picture.
+pub fn shell_desktop() -> neue_kit::desktop::Desktop {
+    neue_kit::desktop::Desktop::new().size(DESKTOP_SPECIMEN.0, DESKTOP_SPECIMEN.1)
+}
+
+/// A stand-in for a photo: 96 × 48 pixels, a blue-to-orange diagonal with a white border,
+/// so every edge and the proportions are visible under each [`Fit`].
+#[allow(
+    clippy::expect_used,
+    reason = "the sides are the constants the pixels were generated for"
+)]
+pub fn demo_picture() -> neue_kit::desktop::Picture {
+    let (w, h) = (96_u32, 48_u32);
+    let mut rgba = Vec::new();
+    for y in 0..h {
+        for x in 0..w {
+            let t = f64::from(x + y) / f64::from(w + h - 2);
+            let border = x < 2 || y < 2 || x >= w - 2 || y >= h - 2;
+            let channel = |from: f64, to: f64| (255.0 * (from + (to - from) * t)).round() as u8;
+            rgba.extend(if border {
+                [255, 255, 255, 255]
+            } else {
+                [
+                    channel(0.1, 0.95),
+                    channel(0.3, 0.55),
+                    channel(0.8, 0.15),
+                    255,
+                ]
+            });
+        }
+    }
+    neue_kit::desktop::Picture::from_rgba8(w, h, &rgba).expect("the sides match the pixels")
+}
+
+/// The desktop background showing [`demo_picture`] under `fit`.
+pub fn shell_desktop_photo(fit: neue_kit::desktop::Fit) -> neue_kit::desktop::Desktop {
+    shell_desktop().photo(demo_picture(), fit)
+}
