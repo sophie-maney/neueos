@@ -25,6 +25,7 @@ mod tabs;
 mod text_field;
 pub mod title_bar;
 mod toggle;
+mod toolbar;
 
 pub use aqua_button::{ButtonState, PushButton, aqua_button, push_button, push_button_outline};
 pub use bevel_button::{
@@ -62,3 +63,4 @@ pub use text_field::{
 };
 pub use title_bar::{window_chrome, window_chrome_titled};
 pub use toggle::{Mark, Toggle, ToggleKind, toggle, toggle_outline};
+pub use toolbar::{ToolbarItem, toolbar_item, toolbar_item_outline, toolbar_separator};

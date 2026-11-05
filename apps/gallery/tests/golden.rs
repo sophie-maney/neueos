@@ -20,7 +20,7 @@ use neue_kit::testing::{
     self, DISABLED, FOCUSED, Fixture, Goldens, INACTIVE, NORMAL, NavKey, PRESSED, State,
 };
 use neue_kit::tokens::motion::DEFAULT_BUTTON_PULSE;
-use neue_kit::{Accent, DividerStyle, Element, MaterialTile, Theme, Variant};
+use neue_kit::{Accent, DisplayMode, DividerStyle, Element, MaterialTile, Theme, Variant};
 
 fn goldens() -> Goldens {
     Goldens::new(
@@ -361,6 +361,53 @@ fn window_toolbar() {
         Theme::default(),
         &[NORMAL, INACTIVE],
         specimens::window_toolbar::<()>,
+    )
+    .unwrap();
+}
+
+/// The pointer held down on the first toolbar button.
+const TOOLBAR_BUTTON_PRESSED: State = ("button-pressed", |f: &mut Fixture| {
+    let (x, y) = specimens::TOOLBAR_FIRST_BUTTON;
+    f.press_at(
+        x / f64::from(specimens::TOOLBAR_ITEMS_SIZE.0),
+        y / f64::from(specimens::TOOLBAR_ITEMS_SIZE.1),
+    );
+});
+
+// Toolbar items (task 2.22c): buttons with icon and label (at rest, inactive window, the
+// first held down, the first focused), icon only, label only.
+#[test]
+fn toolbar_items_icon_and_text() {
+    testing::check_window_states(
+        &goldens(),
+        "toolbar-items",
+        Theme::default(),
+        &[NORMAL, INACTIVE, TOOLBAR_BUTTON_PRESSED, FOCUSED],
+        || specimens::window_toolbar_items::<()>(DisplayMode::IconAndText),
+    )
+    .unwrap();
+}
+
+#[test]
+fn toolbar_items_icon_only() {
+    testing::check_window_states(
+        &goldens(),
+        "toolbar-items-icons",
+        Theme::default(),
+        &[NORMAL],
+        || specimens::window_toolbar_items::<()>(DisplayMode::IconOnly),
+    )
+    .unwrap();
+}
+
+#[test]
+fn toolbar_items_text_only() {
+    testing::check_window_states(
+        &goldens(),
+        "toolbar-items-text",
+        Theme::default(),
+        &[NORMAL],
+        || specimens::window_toolbar_items::<()>(DisplayMode::TextOnly),
     )
     .unwrap();
 }

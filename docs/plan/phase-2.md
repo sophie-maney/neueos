@@ -475,10 +475,24 @@ the paper and leather materials move to Phase 6/7 (Widgets, Write).
         steps in `docs/checks/phase-2.md` §19, not run; macOS checked only by build and
         tests (no interactive run). Not yet: a title-changing API, title ellipsis (the
         title is clipped).
-  - [ ] **2.22c Toolbar items** · Sonnet. `Toolbar` items: icon-and-label buttons,
+  - [x] **2.22c Toolbar items** · Sonnet. `Toolbar` items: icon-and-label buttons,
         segmented control, search field, flexible and fixed space, separator; display modes
         (icon and text, icon only, text only); keyboard and the AccessKit `Toolbar` role.
         *Accept:* tests for layout and keys; goldens; a gallery page.
+        *Done:* `Toolbar` (a row, centred vertically, with `with(item)`, `space`,
+        `flexible_space`, `separator`, `display_mode`; `Handle::set_display_mode`) and
+        `ToolbarButton` (icon over label, no chrome until pressed; Space or a click presses,
+        AccessKit button always labelled; `set_label`, `set_icon`, `set_enabled`), with
+        `DisplayMode`. The segmented control and the search field are the existing widgets,
+        passed to `with`. Material `neue_paint::materials::{toolbar_item,
+        toolbar_separator}`, tokens `neue_theme::materials::toolbar`. The AccessKit role of
+        the row is `Toolbar`; Tab moves through the items (disabled ones, spaces and
+        separators take no focus). 11 end-to-end tests (`tests/toolbar.rs`); 28 goldens
+        `toolbar-items{,-icons,-text}-…` (macOS only; Linux not run); gallery: a "Toolbar"
+        page (page 12). Steps for the VM in `docs/checks/phase-2.md` §20, not run. Not yet:
+        labels under the segmented control and the search field, arrow-key movement
+        between items, toggle buttons, overflow, and the window's inactive look for the
+        labels (they keep their colour; only the bar goes pale).
   - [ ] **2.22d neue-comp: resize edges for client-side windows** · Sonnet.
         `State::chrome_hit_at` gives the 5 px resize edges to every resizable toplevel, not
         only to windows with a server-side bar.

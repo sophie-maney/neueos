@@ -8,6 +8,7 @@ use neue_kit::{
     Slider, SortOrder, SourceList, Specimen, Spinner, Stack, Stepper, Table, TextField, TextView,
     VectorIcon, VirtualGrid, VirtualList,
 };
+use neue_kit::{DisplayMode, Toolbar, ToolbarButton};
 use neue_kit::{DividerStyle, Pane, SplitView, TabView, Window};
 
 /// Golden window size for one push button (logical pixels): the button with the fixture's
@@ -754,4 +755,30 @@ pub fn window_toolbar<M: 'static>() -> Window<M> {
         .with(Button::new("Forward"))
         .with(Label::new("Documents"));
     Window::new("Documents", TOOLBAR_SIZE, pane_label("Content")).toolbar(toolbar)
+}
+
+/// Golden window size for a window whose toolbar holds every kind of item.
+pub const TOOLBAR_ITEMS_SIZE: (u32, u32) = (440, 96);
+
+/// Where the first toolbar button's middle is in a [`TOOLBAR_ITEMS_SIZE`] window (logical
+/// pixels), for pressing it.
+pub const TOOLBAR_FIRST_BUTTON: (f64, f64) = (34.0, 46.0);
+
+/// A toolbar with every kind of item: three buttons (the last disabled), a separator, a
+/// segmented control, a flexible space and a search field.
+pub fn toolbar_items<M: Clone + 'static>(mode: DisplayMode) -> Toolbar<M> {
+    Toolbar::new()
+        .with(ToolbarButton::new("Open", Glyph::Folder))
+        .with(ToolbarButton::new("Favourite", Glyph::Star))
+        .with(ToolbarButton::new("Share", Glyph::Document).disabled(true))
+        .separator()
+        .with(Segmented::new(["List", "Icons"]))
+        .flexible_space()
+        .with(TextField::search().width(120.0))
+        .display_mode(mode)
+}
+
+/// A window with a unified title bar and a toolbar of every kind of item.
+pub fn window_toolbar_items<M: Clone + 'static>(mode: DisplayMode) -> Window<M> {
+    Window::new("Documents", TOOLBAR_ITEMS_SIZE, pane_label("Content")).toolbar(toolbar_items(mode))
 }

@@ -35,6 +35,7 @@ mod split;
 mod table;
 mod tabs;
 mod textview;
+mod toolbar;
 mod values;
 
 use crate::app::{Host, Runner};
