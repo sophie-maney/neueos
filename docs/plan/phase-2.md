@@ -734,29 +734,25 @@ findings need no code: 9.7 (Parallels takes Ctrl-Tab; Ctrl-Cmd-Tab reaches the V
 16.3 (macOS doesn't take clicks or drags in the top 28 px; they behave like the rest of
 the toolbar).
 
-- [ ] **2.30 VM: the window goes see-through while a menu or popover is hovered** · Opus
+- [x] **2.30 VM: the window goes see-through while a menu or popover is hovered** · Opus
       (hard debugging). Steps 4.2 and 11.2. In the VM, hovering the items of an open menu
-      or popover makes the gallery window flash: in the owner's recording (frame 139 and
-      frames 329–347 at 60 fps) the whole window is see-through for one or more frames,
-      with garbled pixels in its top-left corner, while the menu itself draws correctly.
-      Never seen with the gallery running natively on macOS.
-      *Hypothesis:* `Gpu` (`neue-platform/src/gpu.rs`) keeps one
-      `masonry_imaging::texture_render::Renderer`, so one vello_hybrid renderer, for every
-      surface. On Wayland a menu or popover is its own xdg-popup surface, so the renderer
-      draws the window and the popup in turn, at different sizes, and its internal state
-      (alpha and clip-slot textures, the size uniform written with `queue.write_buffer`)
-      is shared between them. On macOS (winit) menus are layers inside the window, so
-      there is only one surface: this matches the glitch being VM-only, and why 2.29's
-      single-surface offscreen test never reproduced it.
-      *Steps:* 1. Write a failing test first: on a headless wgpu device, render a large
-      target and a small one in turn through one `Renderer` and check the large target's
-      pixels stay opaque (the CPU-side readback is enough). 2. Give every `SurfaceTarget`
-      its own `Renderer` (keep the device and queue shared). 3. If the test can't
-      reproduce it, log frame numbers around `render_to_texture`, the blit and `present`
-      in the VM and compare with the bad frames before trying more.
-      *Accept:* the test fails before the fix and passes after; a one-minute recording of
-      menu and popover hovering in the VM has no dip in mean brightness (`ffmpeg -vf
-      signalstats`). Re-run: 4.2, 11.2.
+      or popover made the gallery window flash: for one or more frames the window lost its
+      background and chrome, with garbled pixels in its top-left corner, while the menu
+      itself drew correctly. Never seen with the gallery running natively on macOS.
+      *Fix:* `Gpu` (`neue-platform/src/gpu.rs`) kept one vello_hybrid renderer for every
+      surface; on Wayland a menu or popover is its own xdg-popup surface, drawn right
+      after the window. Every `SurfaceTarget` now has its own `Renderer` (device and
+      queue stay shared). The exact fault inside vello_gpu is unknown. A new renderer
+      compiles all of vello_gpu's shaders (about 250 ms on virgl), so closed surfaces hand
+      theirs back to a small pool in `Gpu`, and one spare is built after the first frame.
+      *Diverged from the plan:* an offscreen test (a large and a small target in turn
+      through one renderer, with no waits) never failed: not on Metal, llvmpipe GL or the
+      VM's virgl GL. The bug needs the real surfaces and present. The owner accepted the
+      scripted VM check instead: `sweep menu` and `sweep popover` (`docs/vm-env.sh`, 30 s
+      each) screenshot in a loop while the pointer sweeps the popup and count see-through
+      shots. Before: menu 42/3015 and 51/2994, popover 15/2827 and 24/2841. After, with
+      the pool: menu 0/2992, popover 0/2858 (without the pool, menus stalled on every open
+      and the menu sweep got only about 1000 shots). Re-run: 4.2, 11.2.
 - [x] **2.31 Menus flipped at a screen edge leave a gap** · Sonnet (follows 2.23a). Steps
       4.7 and 5.5. A context menu flipped to the left of the pointer, or a combo box's
       menu flipped above the field, sits about two shadow widths away from its anchor.

@@ -387,7 +387,7 @@ impl Driver<'_> {
                 &overlays,
             );
             let handle = &win.handle;
-            gpu.render(&win.target, frame, || handle.pre_present_notify());
+            gpu.render(&mut win.target, frame, || handle.pre_present_notify());
         } else {
             tracing::warn!(%id, "paint produced no root scene");
         }

@@ -74,3 +74,36 @@ gallery_menu() {
     neuectl --json windows |
         jq -r 'first(.[] | select(.title == "Widget Gallery")) | .menu.service // empty'
 }
+
+# Task 2.30 check: open a menu (`sweep menu`) or a popover (`sweep popover`) in the gallery,
+# sweep the pointer over it for SECONDS (default 30) while taking screenshots in a loop,
+# then print how many shots show the window see-through (mean luma of a patch of the
+# window the popup never covers below 150; the window is about 220, the desktop about 50).
+# Needs ydotoold (docs/dev-setup.md §1.4). Output scale 1.
+sweep() {
+    local kind="${1:-menu}" secs="${2:-30}" x0 x1 y0 y1 end i=0 y shots
+    export YDOTOOL_SOCKET=/tmp/.ydotool_socket
+    _mv() { ydotool mousemove --absolute -x $(($1 / 2)) -y $(($2 / 2)); ydotool mousemove -x 1 -y 0; }
+    case "$kind" in
+        menu) gallery 6 >/dev/null; _mv 300 238; ydotool click 0xC1; x0=310 x1=410 y0=245 y1=365 ;;
+        popover) gallery 13 >/dev/null; _mv 288 240; ydotool click 0xC0; x0=200 x1=380 y0=262 y1=360 ;;
+        *) echo "usage: sweep menu|popover [seconds]"; return 1 ;;
+    esac
+    rm -rf /tmp/sweep; mkdir -p /tmp/sweep
+    end=$((SECONDS + secs))
+    ( n=0; while [ $SECONDS -lt $end ]; do n=$((n + 1))
+        timeout 5 neuectl screenshot /tmp/sweep/$(printf %05d $n).png >/dev/null 2>&1; done ) &
+    shots=$!
+    while [ $SECONDS -lt $end ]; do
+        for y in $(seq $y0 8 $y1); do
+            _mv $((i % 2 ? x0 : x1)) $y; sleep 0.02
+        done
+        i=$((i + 1))
+    done
+    wait $shots # not a bare `wait`: the gallery is a background job of this shell too
+    ydotool key 1:1 1:0
+    ffmpeg -v error -framerate 1 -i /tmp/sweep/%05d.png \
+        -vf "crop=300:280:620:360,signalstats,metadata=print:key=lavfi.signalstats.YAVG:file=/tmp/sweep/yavg.txt" \
+        -f null - 2>/dev/null
+    echo "$kind: $(ls /tmp/sweep/*.png | wc -l) shots, $(grep -o 'YAVG=[0-9.]*' /tmp/sweep/yavg.txt | awk -F= '$2 < 150' | wc -l) see-through"
+}

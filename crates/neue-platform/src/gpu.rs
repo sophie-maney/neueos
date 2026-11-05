@@ -2,22 +2,39 @@
 //! rendered by vello_gpu (`masonry_imaging`'s hybrid renderer) into an offscreen texture,
 //! then blitted to the surface, as `masonry_winit` does.
 
+use std::cell::{Cell, RefCell};
+use std::rc::Rc;
+
+use masonry_core::imaging::record::Scene;
+use masonry_core::peniko::Color;
 use masonry_imaging::PreparedFrame;
 use masonry_imaging::texture_render::{RenderTarget, Renderer};
 use wgpu::util::{TextureBlitter, TextureBlitterBuilder};
+
+/// Idle renderers that closed surfaces handed back, so the next menu or popover reuses
+/// one instead of building its own: a new renderer compiles all of vello_gpu's shaders,
+/// about 250 ms on the VM's virgl GL (task 2.30).
+type Pool = Rc<RefCell<Vec<Renderer>>>;
+
+/// Most idle renderers kept; more are dropped. A window and a menu with a submenu use
+/// three at once.
+const POOL_MAX: usize = 3;
 
 /// A wgpu failure: no adapter, no device, or no usable surface format.
 #[derive(Debug, thiserror::Error)]
 #[error("{0}")]
 pub(crate) struct GpuError(pub(crate) String);
 
-/// Adapter, device and the Masonry renderer, shared by every surface.
+/// Adapter and device, shared by every surface, and the pool of idle renderers. Each
+/// surface has a renderer of its own while it lives ([`SurfaceTarget`]).
 pub(crate) struct Gpu {
     pub(crate) instance: wgpu::Instance,
     adapter: wgpu::Adapter,
     device: wgpu::Device,
     queue: wgpu::Queue,
-    renderer: Renderer,
+    pool: Pool,
+    /// Whether the spare renderer was built (after the first frame; see [`Gpu::render`]).
+    spare_built: Cell<bool>,
 }
 
 impl std::fmt::Debug for Gpu {
@@ -54,16 +71,37 @@ impl Gpu {
             adapter,
             device,
             queue,
-            renderer: Renderer::new(),
+            pool: Pool::default(),
+            spare_built: Cell::new(false),
         })
+    }
+
+    /// Builds a renderer and draws an empty 1×1 frame with it, which compiles its shaders,
+    /// then puts it in the pool for the first menu or popover.
+    fn build_spare(&self) {
+        let (texture, view) = offscreen(&self.device, 1, 1);
+        let target = RenderTarget {
+            adapter: &self.adapter,
+            device: &self.device,
+            queue: &self.queue,
+            texture: &texture,
+            view: &view,
+        };
+        let empty = Scene::new();
+        let frame = PreparedFrame::new(1, 1, 1.0, Color::TRANSPARENT, &empty, &[]);
+        let mut renderer = Renderer::new();
+        match renderer.render_to_texture(target, frame) {
+            Ok(()) => self.pool.borrow_mut().push(renderer),
+            Err(err) => tracing::warn!(%err, "building the spare renderer failed"),
+        }
     }
 
     /// Renders `frame` into `target` and presents it. `pre_present` runs right before the
     /// present (winit wants `Window::pre_present_notify` there). Returns whether the frame
     /// was presented (Wayland: whether the surface was committed).
     pub(crate) fn render(
-        &mut self,
-        target: &SurfaceTarget,
+        &self,
+        target: &mut SurfaceTarget,
         frame: PreparedFrame<'_>,
         pre_present: impl FnOnce(),
     ) -> bool {
@@ -99,7 +137,7 @@ impl Gpu {
             texture: &target.texture,
             view: &target.view,
         };
-        if let Err(err) = self.renderer.render_to_texture(render_target, frame) {
+        if let Err(err) = target.renderer.render_to_texture(render_target, frame) {
             tracing::error!(%err, "rendering Masonry content failed");
             return false;
         }
@@ -117,13 +155,27 @@ impl Gpu {
         self.queue.submit([encoder.finish()]);
         pre_present();
         self.queue.present(texture);
+        // Once the first frame is on screen, so it isn't delayed by the shader compile.
+        if !self.spare_built.replace(true) {
+            self.build_spare();
+        }
         true
     }
 }
 
-/// A configured wgpu surface plus its offscreen target. Recreated on every resize.
+/// A configured wgpu surface plus its offscreen target and its own renderer.
+///
+/// One renderer per live surface, not one per device: vello_gpu's renderer keeps state
+/// (glyph atlas, paint and strip uploads, the viewport size) between frames. On Wayland a
+/// window and its menu or popover are separate surfaces drawn in turn, and with a shared
+/// renderer the window's frame sometimes drew from state the popup's frame had just left:
+/// the window went see-through with atlas pixels in its top-left corner, in the VM's
+/// virgl GL (task 2.30). The renderer comes from the [`Gpu`]'s pool and goes back to it
+/// when the surface is dropped, so two live surfaces never share one.
 pub(crate) struct SurfaceTarget {
     surface: wgpu::Surface<'static>,
+    renderer: Renderer,
+    pool: Pool,
     texture: wgpu::Texture,
     view: wgpu::TextureView,
     blitter: TextureBlitter,
@@ -207,8 +259,11 @@ impl SurfaceTarget {
         };
         surface.configure(&gpu.device, &config);
         let (texture, view) = offscreen(&gpu.device, width, height);
+        let renderer = gpu.pool.borrow_mut().pop().unwrap_or_default();
         Ok(Self {
             surface,
+            renderer,
+            pool: gpu.pool.clone(),
             texture,
             view,
             blitter,
@@ -225,6 +280,15 @@ impl SurfaceTarget {
         self.config.height = height;
         self.surface.configure(&gpu.device, &self.config);
         (self.texture, self.view) = offscreen(&gpu.device, width, height);
+    }
+}
+
+impl Drop for SurfaceTarget {
+    fn drop(&mut self) {
+        let mut pool = self.pool.borrow_mut();
+        if pool.len() < POOL_MAX {
+            pool.push(std::mem::take(&mut self.renderer));
+        }
     }
 }
 
