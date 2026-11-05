@@ -4,7 +4,7 @@
 > skeuomorphic design of OS X Mountain Lion with modern technology. Every first-party
 > component is written in Rust.
 
-Status: **planning** · Last updated: 2026-11-03 · Licence: GPL-3.0-or-later
+Status: **planning** · Last updated: 2026-11-05 · Licence: GPL-3.0-or-later
 
 ---
 
@@ -433,18 +433,13 @@ withdrawn, as its glitch occurs only in the VM (now 2.30).
   macOS and in the VM.
 
 ### Phase 3: Shell MVP and session (L)
-- [ ] Menu bar: global menu pipeline (and flip `gtk_shell1` capabilities in
-      `appmenu.rs`, ADR 0025), fallback menu, menu extras (clock, volume via
-      pipewire-rs, network, Bluetooth, battery), SNI tray.
-- [ ] Backdrop-blur protocol (`ext-background-effect-v1` or private; ADR 0002 §7) and
-      blur in neue-comp, used by the menu bar, menus, sheets and HUDs.
-- [ ] Dock: shelf, magnification, indicators, minimise targets, Trash.
-- [ ] Notifications server and banners. OSDs.
-- [ ] Greeter (greetd), lock screen, polkit agent.
-- [ ] Portal backend v0: Settings, Screenshot, ScreenCast, FileChooser (simple).
-- [ ] `neue-settingsd` and Preferences v0 (Appearance, Dock, Displays, Sound, Keyboard,
-      Trackpad).
-- [ ] Packages plus `neueos-desktop`. A dev ISO with a CLI install script.
+The `neue-shell-v1` protocol, the shell with menu bar (global menu, fallback menu, menu
+extras, tray), backdrop blur, notifications and OSDs, the dock, lock screen, greeter and
+polkit agent, `neue-settingsd`, the portal backend v0, Preferences v0, packages with
+`neueos-desktop`, and an x86_64 dev ISO with a CLI installer. Super acts as ⌘ (Q1). Tasks:
+[`docs/plan/phase-3.md`](docs/plan/phase-3.md). Owner checks are collected in one runbook
+at the end of the phase (3.29), which also carries Phase 2's exit check (2.26); fixes from
+it are numbered from 3.31.
 - **Exit:** log in from the greeter on your PC and use neueOS as the daily desktop.
 
 ### Phase 4: Overview and Spaces (L)
@@ -517,9 +512,9 @@ plugin API, AirDrop-like local sharing, Handoff-like phone integration, and a sc
 ---
 
 ## 11. Open questions (non-blocking)
-1. **⌘ semantics:** should Super act as ⌘ globally, with the compositor remapping Super+C
-   to Ctrl+C for third-party apps (except in terminals)? Recommendation: yes, with a
-   per-app exceptions list.
+1. **⌘ semantics:** *decided: yes* (2026-11-05). Super acts as ⌘; the compositor remaps
+   Super+C to Ctrl+C for third-party apps, with a per-app exceptions list (terminals by
+   default). Task 3.10.
 2. **UI font:** *decided: DejaVu Sans* (ADR 0038). The monospace face for Terminal is
    still open (JetBrains Mono or Fira Code).
 3. **Final product names** (§2) and the neueOS logo and boot splash.

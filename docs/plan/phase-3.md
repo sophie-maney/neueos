@@ -1,0 +1,289 @@
+# Phase 3: Shell MVP and session
+
+Task list for Phase 3 of the roadmap in `PLAN.md` §8. Architecture and decisions
+live in `PLAN.md` and `docs/adr/`.
+
+One task = one thread = one PR, as before. Order: the foundations 3.1–3.6 first (3.1 before
+3.2; 3.3, 3.4 and 3.6 can run alongside them). Then the menu bar (3.7–3.15), the dock
+(3.16–3.17), the session (3.18–3.20) and the portal and Preferences (3.21–3.26) mostly run
+in parallel, each after the foundations it names. 3.27–3.30 close the phase.
+
+## How checks work in this phase
+- **No task waits for the owner.** Every task verifies itself: unit, golden and headless
+  compositor tests, plus the VM, which the agent drives itself over ssh with `neuectl`,
+  `ydotool` and `neuectl screenshot` (`docs/vm-env.sh`, `docs/dev-setup.md`).
+- **What only the owner can check goes on the task's *Owner:* line**: the real PC (install,
+  NVIDIA, performance), sound you have to hear, Bluetooth and Wi-Fi hardware, VoiceOver,
+  and whether something looks right. Write each as a concrete check with what to expect;
+  3.29 turns them into runbook steps.
+- **3.29 writes `docs/checks/phase-3-owner.md`** in the format of
+  `docs/checks/phase-2-owner.md` (Run/Do/Expected, STOP AND REPORT, Note, one report at
+  the end). It also carries Phase 2's open owner steps (2.26, the exit check).
+- **The owner runs it in one sitting** and reports every failed step in one message. Each
+  fix becomes a new task from **3.31** onward, with the step numbers it answers and which
+  steps to re-run. 3.30 closes the phase after the fixes.
+
+Shell widgets follow the widget rules in `AGENTS.md` (gallery page, goldens, AccessKit,
+keyboard). The `neue-shell` process is Linux-only; its widgets live in portable modules so
+their goldens and the gallery's "Shell" page run on macOS.
+
+## A. Foundations
+- [ ] **3.1 `neue-shell-v1` protocol** · Opus. The private protocol between the
+      compositor and the shell (`crates/neue-protocols/`, `docs/protocols/`), with an
+      ADR. Events: the focused toplevel, and per window its app id, title, minimised and
+      attention state, `xdg-toplevel-icon` and the global-menu address (ADR 0005, 0025),
+      matched to `ext-foreign-toplevel-list` and `neuectl` ids. Requests: activate,
+      minimise, unminimise, close, a minimise-target rectangle per window (for Phase 4's
+      genie), send a key chord to the focused surface (fallback Edit menu, ADR 0005 §4),
+      run a compositor action, and get media, volume and brightness keys routed to the
+      shell. The ADR also decides who may bind it (only the shell; never sandboxed
+      clients) and how the shell is started and restarted after a crash (PLAN.md §3.3,
+      §9: the compositor spawning it on a private socket, or a systemd unit; ADR 0027's
+      "revisit").
+      *Accept:* headless tests with a scripted client cover every event and request,
+      including a refused bind from a second client; `neuectl` unchanged or extended
+      additively.
+- [ ] **3.2 `neue-shell` skeleton, menu bar and desktop background** · Opus. New crate
+      `neue-shell`: one process, several layer surfaces, shared state (window list from
+      3.1, settings, later the app registry). A menu bar on every output (top layer,
+      exclusive zone, height from `neue-theme`), translucent gradient material with the
+      opaque fallback until 3.5; the logo menu (About, Preferences…, Lock Screen, Log
+      Out, Restart, Shut Down; logind over zbus), the focused app's name in bold, and the
+      clock extra. A `background` layer surface per output with a procedural default
+      picture and an optional image from config. Starting and restarting as decided in
+      3.1. Gallery "Shell" page with the bar's pieces.
+      *Accept:* goldens of the bar (light/dark × scale 1 and 2); in the VM the name
+      follows focus, the clock ticks, Log Out ends the session, `pkill neue-shell` brings
+      the shell back within a second, all checked by the agent with screenshots.
+      *Owner:* the bar on the PC at its native scale and on a second display.
+- [ ] **3.3 `neue-desktop` v0** · Sonnet. New portable crate: desktop entries (parsing,
+      localisation, `Actions` including `new-window`, `NoDisplay`, `OnlyShowIn`), matching
+      an app id to its entry (`StartupWMClass`, Flatpak ids, the file name), icon theme
+      lookup (index.theme, sizes and scales, hicolor, Papirus as fallback), loading SVG
+      and PNG icons into the kit `Icon` type (ADR 0051; check `resvg` and `png` licences),
+      launching an entry with an `XDG_ACTIVATION_TOKEN`, and Trash state (empty or full,
+      empty it; freedesktop trash spec).
+      *Accept:* unit tests against fixture directories, on macOS and Linux.
+- [ ] **3.4 Backdrop blur: compositor** · Opus. ADR choosing the protocol:
+      `ext-background-effect-v1` if our pinned wayland-protocols and Smithay have it,
+      else a private one (ADR 0002 §7). A dual-Kawase blur pass in the GLES renderer for
+      toplevels, popups and layer surfaces with a blur region: damage widened by the blur
+      radius, the blurred background cached while nothing behind changes, off for
+      direct-scanout and full-screen windows.
+      *Accept:* a headless test renders a client with a blur region over a pattern and
+      checks the pixels behind it; a VM screenshot; no extra frames when idle (ADR 0019).
+      *Owner:* on the PC (AMD/Intel and NVIDIA), dragging a blurred window stays smooth at
+      the display's refresh rate.
+- [ ] **3.5 Backdrop blur: clients** · Sonnet. After 3.4. `neue-platform`'s Wayland
+      driver asks for blur on surfaces whose root material is translucent (menus,
+      popovers, HUD panels, the menu bar), and translucent materials (ADR 0039) switch
+      from the opaque tinted fallback to translucent when the compositor offers blur. The
+      winit driver keeps the fallback.
+      *Accept:* existing goldens unchanged; new goldens of the translucent variants; a VM
+      screenshot of a gallery menu over a coloured window.
+      *Owner:* the menu bar and a menu over a busy window look right, light and dark.
+- [ ] **3.6 `neue-settingsd` v0** · Opus. The settings service (PLAN.md §3.4) on
+      tokio + zbus, ADR for the interface: `org.neueos.Settings1` with typed keys from the
+      `neue-config` schema (get, set, a changed signal), writing the compositor config
+      (hot-reloaded already), GTK `settings.ini` (colour scheme, fonts, cursor) and dconf
+      keys through `ca.desrt.dconf.Writer` over D-Bus. A mock backend so Preferences runs
+      on macOS. New keys keep defaults (AGENTS.md).
+      *Accept:* unit tests on macOS; in the VM, setting dark mode through `busctl` changes
+      the compositor config, `settings.ini` and `gsettings get
+      org.gnome.desktop.interface color-scheme`.
+
+## B. Menu bar
+- [ ] **3.7 Global menu A: registrar and DBusMenu** · Opus. After 3.2. In `neue-dbus`
+      (ADR 0005 §1): `com.canonical.AppMenu.Registrar` owned by the shell, and a DBusMenu
+      client (layout, properties, `AboutToShow`, events, toggles, shortcuts, icons,
+      updates). The menu bar shows the focused window's menus as kit menus opened from the
+      layer surface; mouse and keyboard navigation across menus, Escape, a shortcut to
+      focus the menu bar.
+      *Accept:* tests against neue-kit's own DBusMenu export (`neue-dbus` `testing`); in
+      the VM the gallery's and a Qt6 app's menus show and their items act.
+      *Owner:* Chromium and LibreOffice menus on the PC.
+- [ ] **3.8 Global menu B: GMenuModel** · Sonnet. After 3.7. An `org.gtk.Menus` +
+      `org.gtk.Actions` client in `neue-dbus`, the same menu rendering, and the
+      `gtk_shell1` capabilities in `appmenu.rs` switched on (ADR 0025 §7: the enum values
+      are not bit flags).
+      *Accept:* in the VM, `gtk3-demo` and `gtk4-demo` (`GtkApplication`) show their menus
+      in the bar and hide their in-window menu bar; a GTK app with no exported menus keeps
+      working.
+- [ ] **3.9 Fallback menu and menu search** · Sonnet. After 3.7 and 3.10. ADR 0005 §4:
+      App, File, Edit, Window and Help for windows with no menu address. Edit items send
+      key chords through `neue-shell-v1`; Window items run compositor actions; New Window
+      uses the entry's `new-window` action (3.3) or is disabled. Help's search field finds
+      items in the current menus, whatever their source.
+      *Accept:* in the VM, Copy and Paste from the fallback menu work in foot and Firefox;
+      menu search finds and runs an item in the gallery.
+- [ ] **3.10 Super as ⌘** · Opus. PLAN.md Q1, decided yes on 2026-11-05. The compositor
+      remaps Super+key chords to Ctrl+key for third-party apps, except an exceptions list
+      in config (terminals by default), and leaves them alone for neue-kit apps, which
+      take Super themselves. Menus show shortcuts with ⌘. ADR.
+      *Accept:* headless tests: Super+C reaches a scripted client as Ctrl+C, an exempt app
+      gets Super+C, compositor bindings still win; in the VM, Super+C/Super+V copy and
+      paste in Firefox and the gallery, and foot gets Ctrl-Shift-C semantics unchanged.
+- [ ] **3.11 Menu extras: battery and Bluetooth** · Sonnet. After 3.2. zbus proxies for
+      UPower and BlueZ (not `bluer`, which links libdbus). Battery: icon with charge and
+      state, menu with percentage and time left, hidden without a battery. Bluetooth:
+      on/off, paired devices with connect and disconnect, hidden without an adapter.
+      *Accept:* unit tests against mock D-Bus services; VM screenshots with mocked
+      services where the VM lacks the hardware.
+      *Owner:* battery on a laptop if one is available; pairing and connecting a device on
+      the PC.
+- [ ] **3.12 Menu extra: network** · Sonnet. After 3.2. NetworkManager over zbus: wired
+      and Wi-Fi state in the icon, the Wi-Fi list with signal and lock, Wi-Fi on/off, join
+      a saved or open network, disconnect. Joining a new protected network needs a secret
+      agent and is deferred (`nmtui` until then; note it in the plan).
+      *Accept:* unit tests against a mock NetworkManager; in the VM the wired connection
+      shows and can be toggled.
+      *Owner:* Wi-Fi list and joining a saved network on the PC.
+- [ ] **3.13 Status-icon tray** · Sonnet. After 3.7. `StatusNotifierWatcher` and a host in
+      `neue-dbus`; icons by name or pixmap, tooltips, activation, and menus through the 3.7
+      DBusMenu client.
+      *Accept:* unit tests; in the VM a tray app (`nm-applet --indicator` or a test SNI
+      item) shows, its menu opens and its items act.
+- [ ] **3.14 Volume, brightness and OSDs** · Opus. After 3.1 and 3.2. ADR for
+      `pipewire-rs` (a C dependency, also used by 3.22). The volume extra (slider, mute,
+      output device), media and volume keys routed by `neue-shell-v1`, brightness through
+      logind `SetBrightness` on the backlight, and the rounded-square HUD OSD for both
+      (springs, reduced motion; ADR 0059 material).
+      *Accept:* goldens of the OSD; in the VM the volume keys (sent with `ydotool`) change
+      the sink volume shown by `wpctl` and show the OSD.
+      *Owner:* the volume you hear follows the keys and the slider; brightness keys on a
+      laptop if available.
+- [ ] **3.15 Notifications** · Sonnet. After 3.2. An `org.freedesktop.Notifications`
+      server in the shell (interface in `neue-dbus`): banners at the top right under the
+      menu bar, sliding in with a spring, stacking, timing out; alerts for critical or
+      persistent ones; default action on click and action buttons, with an activation
+      token; app icon from the entry or `image-data`; Do Not Disturb in config with a menu
+      item. The Notification Center panel is Phase 6.
+      *Accept:* goldens of banner and alert states; in the VM, `notify-send` with actions,
+      urgency and replace-id behaves as expected.
+
+## C. Dock
+- [ ] **3.16 Dock A: shelf, launching and running apps** · Opus. After 3.1–3.3. The
+      glass shelf material in `neue-paint` (procedural, light and dark, reflections;
+      goldens) and the dock layer surface at the bottom: pinned apps from config, launch
+      on click, running indicators, click to activate (and cycle its windows), launch
+      bounce and attention bounce (springs, reduced motion), and minimise-target
+      rectangles sent to the compositor.
+      *Accept:* goldens of the dock; in the VM launching foot from the dock, its indicator,
+      activation and an attention bounce (`xdg-system-bell`), checked by screenshots.
+      *Owner:* the shelf's look on the PC, light and dark.
+- [ ] **3.17 Dock B: magnification, edges and editing** · Sonnet. After 3.16.
+      Magnification, the 2D dock on the left and right edges, drag to rearrange, drag off
+      to remove, Keep in Dock, context menus with the app's windows and Quit, the Trash
+      tile (empty/full, Empty Trash; 3.3), and tiles for minimised windows (a thumbnail via
+      toplevel capture, ADR 0023; click restores).
+      *Accept:* goldens; in the VM each behaviour checked with `ydotool` and screenshots.
+      *Owner:* magnification feels right with a real mouse and trackpad.
+
+## D. Session
+- [ ] **3.18 Lock screen** · Opus. After 3.2. An `ext-session-lock-v1` client on linen
+      (ADR 0015 §3): user picture and name, password field, a shake on a wrong password
+      (reduced motion). ADR for the PAM binding (a C dependency) and for where the locker
+      lives (in the shell or its own binary). Locks from the logo menu, a shortcut, idle
+      (`ext-idle-notify`, timeout in config), logind's `Lock` signal and before sleep
+      (a delay inhibitor).
+      *Accept:* goldens; in the VM: lock, a wrong password shakes, the right one unlocks;
+      killing the locker leaves the session locked and a new one can unlock;
+      `loginctl lock-session` locks.
+      *Owner:* lock before suspend and unlock after resume on the PC.
+- [ ] **3.19 Greeter** · Sonnet. After 3.18 (reuses its look). `neue-greeter` speaks the
+      greetd IPC (check the `greetd_ipc` licence) and runs under a minimal
+      `neue-comp --greeter` mode (no shell; exits when the greeter does). User list (UID
+      ≥ 1000), password, errors, Shut Down, Restart, Sleep (logind). Replaces `agreety` in
+      `session/greetd/config.toml`.
+      *Accept:* in the VM, a reboot shows the greeter; a wrong password shows an error, the
+      right one starts the neueOS session.
+      *Owner:* the greeter on the PC, including on the NVIDIA card.
+- [ ] **3.20 Polkit agent** · Sonnet. After 3.2. `neue-polkit-agent` registers as the
+      session's authentication agent over zbus, runs polkit's own
+      `polkit-agent-helper-1` as a subprocess (not linked), and shows a kit dialog: lock
+      icon, message, user, password, Cancel and Authenticate, details disclosure, a shake
+      on failure.
+      *Accept:* in the VM, `pkexec true` asks, a wrong password fails, the right one
+      succeeds; Cancel fails the action.
+
+## E. Portal and Preferences
+- [ ] **3.21 Portal A: skeleton, Settings and Screenshot** · Sonnet. After 3.6.
+      `xdg-desktop-portal-neue`: the `.portal` file, `neueos-portals.conf` (ours first,
+      gtk as the fallback for the rest), the Settings portal (colour scheme, accent
+      colour, contrast from `neue-settingsd`) and Screenshot (output capture, ADR 0022;
+      PNG into `~/Pictures`).
+      *Accept:* in the VM, `gdbus` calls to both portals return the expected results; a
+      GTK4 app follows dark mode when it is switched through `neue-settingsd`.
+- [ ] **3.22 Portal B: ScreenCast** · Opus. After 3.14 (the `pipewire-rs` ADR) and 3.21.
+      A PipeWire video stream from output and toplevel capture (ADR 0022, 0023), shm
+      buffers first (dmabuf later), cursor modes, and a source picker dialog.
+      *Accept:* in the VM, `gst-launch-1.0 pipewiresrc` on the portal's node shows
+      frames (a test script in `docs/vm-env.sh`).
+      *Owner:* screen sharing in a browser call on the PC.
+- [ ] **3.23 Portal C: FileChooser (simple)** · Sonnet. After 3.21. Open, open multiple,
+      save and choose folder, as a kit window parented through xdg-foreign: sidebar (Home,
+      Desktop, Documents, Downloads), table view of the folder, path control, filters
+      popup, name field for save, hidden files toggle.
+      *Accept:* golden of the dialog; in the VM `GTK_USE_PORTAL=1 gtk4-demo` opens and
+      saves through it.
+      *Owner:* open and save from a Flatpak app on the PC.
+- [ ] **3.24 Preferences v0: app, Appearance and Dock** · Opus. After 3.6. The
+      Preferences app (PLAN.md §3.5): pane grid, Show All, back and forward, talking to
+      `neue-settingsd` (the mock on macOS). Appearance: light/dark, accent, increased
+      contrast, reduced motion. Dock: size, magnification, position. Sets the pattern for
+      first-party apps.
+      *Accept:* goldens of both panes; runs on macOS; in the VM a change shows at once in
+      the shell and the gallery.
+      *Owner:* VoiceOver on macOS reads the pane grid and both panes.
+- [ ] **3.25 Preferences: Displays, Keyboard and Trackpad** · Sonnet. After 3.24. Keys
+      the compositor config already has: outputs (mode, scale, position as a list),
+      keyboard (layouts, options, repeat rate and delay), touchpad and pointer (tap to
+      click, natural scroll, speed, click method).
+      *Accept:* goldens; in the VM each change reaches the compositor (`neuectl outputs`,
+      key repeat, a pointer setting).
+      *Owner:* scale and refresh rate on the PC's display; trackpad settings on a laptop
+      if available.
+- [ ] **3.26 Preferences: Sound** · Sonnet. After 3.14 and 3.24. Output and input device,
+      output volume and mute, input level.
+      *Accept:* golden; in the VM the pane and `wpctl` agree.
+      *Owner:* switching output device on the PC.
+
+## F. Distribution and exit
+- [ ] **3.27 Packages, user units and `neueos-desktop`** · Sonnet. PKGBUILDs following
+      ADR 0028 for `neue-shell`, `neue-settingsd`, `xdg-desktop-portal-neue`,
+      `neue-greeter`, `neue-polkit-agent` and `neue-preferences`; user units in
+      `neue-session.target` (or D-Bus activation where it fits); the greetd config; and
+      the `neueos-desktop` meta-package (PipeWire, WirePlumber, NetworkManager, BlueZ,
+      UPower, greetd, polkit, xwayland-satellite, Papirus, DejaVu, Flatpak,
+      xdg-desktop-portal and the gtk fallback). `cargo xtask package` knows them all.
+      *Accept:* packages build for aarch64 and x86_64; in the VM, installing
+      `neueos-desktop` and rebooting gives the greeter and a session with every service
+      running (`systemctl --user status`, checked by the agent).
+- [ ] **3.28 Dev ISO and `neue-install-core`** · Sonnet. x86_64 only (decided
+      2026-11-05; the aarch64 VM keeps updating through packages). An archiso profile in
+      `distro/iso/` with our packages in a local repo, `cargo xtask iso`, and
+      `neue-install-core` (PLAN.md §5.3) with a CLI driven by a TOML answer file: Btrfs
+      subvolumes, pacstrap, systemd-boot, microcode, a user, `neueos-desktop`. No LUKS
+      and no GPU detection yet (Phase 8). The installer is Rust, not a shell script.
+      *Accept:* the ISO builds; in x86_64 QEMU (OrbStack amd64) it boots, the CLI installs
+      into a disk image from an answer file, and the installed system boots to the
+      greeter.
+      *Owner:* install from a USB stick on the PC (wipes the target disk: use a spare
+      one).
+- [ ] **3.29 Owner runbook** · Sonnet. After every task above. Writes
+      `docs/checks/phase-3-owner.md` in the format of `docs/checks/phase-2-owner.md`
+      from every task's *Owner:* line, plus Phase 2's open owner steps (2.26: the gallery
+      in light and dark, identical on macOS and in the VM; 2.4 IME and VoiceOver). Parts
+      in the order the owner does them: the PC install, the VM, daily use on the PC,
+      macOS. Ends with a single report-back.
+      *Accept:* every *Owner:* line maps to a step; every step has a command or action and
+      an Expected.
+- [ ] **3.30 Exit check** · Sonnet, plus the owner. After the runbook's fixes (3.31 on).
+      The owner re-runs the failed steps, then logs in from the greeter on the PC and uses
+      neueOS as the daily desktop for a day, noting anything that forced a switch back.
+      Tick Phase 3 (and Phase 2's 2.26) in `PLAN.md` §8.
+
+## Fixes from the owner run
+Added after the owner reports back on 3.29, numbered from 3.31.
+
+- **Exit:** log in from the greeter on your PC and use neueOS as the daily desktop.
