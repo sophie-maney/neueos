@@ -336,7 +336,7 @@ impl State {
         debug!("the shell bound neue_shell_manager_v1");
         let first = self.neue_shell.managers.is_empty();
         if first {
-            let focus = self.keyboard.current_focus();
+            let focus = self.keyboard_focus();
             self.neue_shell.active = self.shell_active_window(focus.as_ref(), None);
         }
         let mut manager = Manager {
@@ -510,7 +510,7 @@ impl State {
     /// changes, and where focus is dropped without `focus_changed`. Must not run while
     /// Smithay holds the keyboard's lock (use [`Self::shell_focus_changed`] there).
     pub(crate) fn shell_refresh_active(&mut self) {
-        let focus = self.keyboard.current_focus();
+        let focus = self.keyboard_focus();
         self.shell_focus_changed(focus.as_ref());
     }
 
@@ -636,7 +636,7 @@ impl State {
         let Some(surface) = window.toplevel().map(|t| t.wl_surface().clone()) else {
             return;
         };
-        if self.keyboard.current_focus().as_ref() != Some(&surface) {
+        if self.keyboard_focus().as_ref() != Some(&surface) {
             self.focus_window(&window);
         }
         let keyboard = self.keyboard.clone();

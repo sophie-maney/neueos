@@ -24,6 +24,8 @@ pub struct CompositorConfig {
     pub touchpad: TouchpadConfig,
     /// `[windows]`: title-bar behaviour.
     pub windows: WindowsConfig,
+    /// `[super-as-command]`: Super acting as ⌘ in third-party apps.
+    pub super_as_command: SuperAsCommandConfig,
     /// `[keybindings]`: key chord (`"Super+Q"`) to action name. Action names are those of
     /// `neuectl actions`. The value `"none"` removes a binding that a lower layer (or the
     /// built-in defaults) made.
@@ -39,6 +41,7 @@ impl Default for CompositorConfig {
             pointer: PointerConfig::default(),
             touchpad: TouchpadConfig::default(),
             windows: WindowsConfig::default(),
+            super_as_command: SuperAsCommandConfig::default(),
             keybindings: BTreeMap::from([
                 (
                     Chord {
@@ -135,6 +138,56 @@ impl KeyboardConfig {
     /// `options` as xkb's comma-separated `options` string.
     pub fn xkb_options(&self) -> String {
         self.options.join(",")
+    }
+}
+
+/// `[super-as-command]` (PLAN.md Q1, ADR 0079): Super is the command key (⌘). neue-kit
+/// apps take Super themselves; other apps get Super+key chords as Ctrl+key, so Super+C
+/// copies and Super+T opens a tab in them too. Compositor key bindings come first.
+#[derive(Debug, Clone, PartialEq, Serialize, Deserialize)]
+#[serde(default, rename_all = "kebab-case")]
+pub struct SuperAsCommandConfig {
+    /// Turn Super into Ctrl for apps outside the exceptions. Off: every app gets Super as
+    /// it is.
+    pub enabled: bool,
+    /// App ids (compared ignoring case) that get Super as it is: terminals by default,
+    /// where Ctrl+C interrupts and copying is Ctrl+Shift+C. An app's id is the `app-id`
+    /// column of `neuectl windows`. The list replaces the default one.
+    pub exceptions: Vec<String>,
+}
+
+impl Default for SuperAsCommandConfig {
+    fn default() -> Self {
+        Self {
+            enabled: true,
+            exceptions: [
+                "foot",
+                "footclient",
+                "Alacritty",
+                "kitty",
+                "org.wezfurlong.wezterm",
+                "com.mitchellh.ghostty",
+                "org.gnome.Console",
+                "org.gnome.Ptyxis",
+                "org.gnome.Terminal",
+                "org.kde.konsole",
+                "xfce4-terminal",
+                "XTerm",
+            ]
+            .map(str::to_owned)
+            .to_vec(),
+        }
+    }
+}
+
+impl SuperAsCommandConfig {
+    /// Whether Super+key reaches the app `app_id` (empty when unset) as Ctrl+key.
+    pub fn remaps(&self, app_id: &str) -> bool {
+        self.enabled
+            && !self
+                .exceptions
+                .iter()
+                .any(|exempt| exempt.eq_ignore_ascii_case(app_id))
     }
 }
 
@@ -414,6 +467,28 @@ adaptive-sync = "fullscreen"
         );
         assert_eq!(c.windows.title_bar_double_click, TitleBarDoubleClick::Zoom);
         assert!(loaded.unknown_keys.is_empty(), "{:?}", loaded.unknown_keys);
+    }
+
+    #[test]
+    fn super_as_command_exempts_terminals_and_can_be_changed() {
+        let defaults = SuperAsCommandConfig::default();
+        assert!(defaults.remaps("firefox"));
+        assert!(defaults.remaps(""));
+        assert!(!defaults.remaps("foot"));
+        assert!(!defaults.remaps("xterm"), "case is ignored");
+
+        let c = load_text("[super-as-command]\nexceptions = [\"org.gnome.TextEditor\"]\n")
+            .unwrap()
+            .config
+            .super_as_command;
+        assert!(c.remaps("foot"), "the list replaces the default one");
+        assert!(!c.remaps("org.gnome.TextEditor"));
+
+        let off = load_text("[super-as-command]\nenabled = false\n")
+            .unwrap()
+            .config
+            .super_as_command;
+        assert!(!off.remaps("firefox"));
     }
 
     #[test]

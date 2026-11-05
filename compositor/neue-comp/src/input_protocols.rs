@@ -214,7 +214,7 @@ impl State {
     /// Activate the pointer constraint that applies now and deactivate the one that no
     /// longer does. Called when the pointer moves, focus changes and constraints are made.
     pub fn refresh_pointer_constraint(&mut self) {
-        let focus = self.keyboard.current_focus();
+        let focus = self.keyboard_focus();
         self.refresh_pointer_constraint_for(focus.as_ref());
     }
 

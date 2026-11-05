@@ -53,6 +53,7 @@ use smithay::wayland::xdg_activation::{
 };
 use tracing::{debug, warn};
 
+use crate::command_key::KeyFocus;
 use crate::state::{Backend, ClientState, DndIcon, State};
 
 impl CompositorHandler for State {
@@ -245,7 +246,7 @@ impl DmabufHandler for State {
 }
 
 impl SeatHandler for State {
-    type KeyboardFocus = WlSurface;
+    type KeyboardFocus = KeyFocus;
     type PointerFocus = WlSurface;
     type TouchFocus = WlSurface;
 
@@ -262,7 +263,8 @@ impl SeatHandler for State {
         }
     }
 
-    fn focus_changed(&mut self, seat: &Seat<Self>, focused: Option<&WlSurface>) {
+    fn focus_changed(&mut self, seat: &Seat<Self>, focused: Option<&KeyFocus>) {
+        let focused = focused.map(|f| &f.0);
         // The clipboard follows keyboard focus.
         let dh = &self.display_handle;
         let client = focused.and_then(|s| dh.get_client(s.id()).ok());
@@ -505,7 +507,7 @@ impl XdgShellHandler for State {
             debug!("popup grab ignored: its root is neither a window nor a layer surface");
             return;
         }
-        let mut grab = match self.popups.grab_popup(root, kind, &seat, serial) {
+        let mut grab = match self.popups.grab_popup(KeyFocus(root), kind, &seat, serial) {
             Ok(grab) => grab,
             Err(err) => {
                 debug!(?err, "popup grab refused");
@@ -580,8 +582,7 @@ impl XdgActivationHandler for State {
     /// accepted so that refused activations can still ask for attention.
     fn token_created(&mut self, _token: XdgActivationToken, data: XdgActivationTokenData) -> bool {
         let focused_client = self
-            .keyboard
-            .current_focus()
+            .keyboard_focus()
             .and_then(|s| s.client())
             .map(|c| c.id());
         let from_focused = data.client_id.is_some() && data.client_id == focused_client;

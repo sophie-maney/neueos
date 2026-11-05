@@ -441,7 +441,8 @@ polkit agent, `neue-settingsd`, the portal backend v0, Preferences v0, packages 
 at the end of the phase (3.29), which also carries Phase 2's exit check (2.26); fixes from
 it are numbered from 3.31. The shell skeleton (3.2) is split into shell surfaces in
 neue-platform and neue-kit (3.2a), the shell and its menu bar (3.2b) and the desktop
-background (3.2c).
+background (3.2c). Super as ⌘ is split into the compositor remap (3.10a), the kit's
+command key (3.10b) and ⌘ in third-party menus (3.10c).
 - **Exit:** log in from the greeter on your PC and use neueOS as the daily desktop.
 
 ### Phase 4: Overview and Spaces (L)
@@ -516,7 +517,7 @@ plugin API, AirDrop-like local sharing, Handoff-like phone integration, and a sc
 ## 11. Open questions (non-blocking)
 1. **⌘ semantics:** *decided: yes* (2026-11-05). Super acts as ⌘; the compositor remaps
    Super+C to Ctrl+C for third-party apps, with a per-app exceptions list (terminals by
-   default). Task 3.10.
+   default). Tasks 3.10a–c.
 2. **UI font:** *decided: DejaVu Sans* (ADR 0038). The monospace face for Terminal is
    still open (JetBrains Mono or Fira Code).
 3. **Final product names** (§2) and the neueOS logo and boot splash.

@@ -62,8 +62,7 @@ fn toplevel(client: &mut TestClient, title: &str) -> Toplevel {
 fn layer_has_keyboard(server: &Server) -> bool {
     server.with_state(|state| {
         state
-            .keyboard
-            .current_focus()
+            .keyboard_focus()
             .is_some_and(|focus| state.layer_for_surface(&focus).is_some())
     })
 }
@@ -246,7 +245,7 @@ fn session_lock_locks_gives_the_lock_surface_input_and_unlocks() {
     let under = server.with_state(|s| s.surface_under((300.0, 300.0).into()));
     let lock_id = surface.surface.id().protocol_id();
     assert!(under.is_some_and(|(s, _)| s.id().protocol_id() == lock_id));
-    let focused = server.with_state(|s| s.keyboard.current_focus().map(|f| f.id().protocol_id()));
+    let focused = server.with_state(|s| s.keyboard_focus().map(|f| f.id().protocol_id()));
     assert_eq!(focused, Some(lock_id));
     assert_eq!(server.with_state(|s| s.focused_window_id()), None);
 

@@ -34,6 +34,7 @@ use tracing::debug;
 
 use neue_ipc::{Event, WindowInfo};
 
+use crate::command_key::KeyFocus;
 use crate::grabs::{self, Edges, MoveGrab, ResizeGrab};
 use crate::placement::{self, NewWindow, Rect};
 use crate::state::State;
@@ -248,7 +249,7 @@ impl State {
         let serial = SERIAL_COUNTER.next_serial();
         let surface = target.toplevel().map(|t| t.wl_surface().clone());
         let keyboard = self.keyboard.clone();
-        keyboard.set_focus(self, surface, serial);
+        keyboard.set_focus(self, surface.map(KeyFocus), serial);
         let was_asking = Self::with_wm_data(window, |d| std::mem::take(&mut d.demands_attention));
         self.send_pending_configures();
         if was_asking {
@@ -311,7 +312,7 @@ impl State {
 
     /// Whether `window` (or one of its children) has keyboard focus.
     fn has_focus_in_family(&self, window: &Window) -> bool {
-        let Some(focus) = self.keyboard.current_focus() else {
+        let Some(focus) = self.keyboard_focus() else {
             return false;
         };
         let mut current = self.window_for_surface(&focus);
@@ -376,7 +377,7 @@ impl State {
     /// it and move focus on.
     pub(crate) fn window_destroyed(&mut self, window: &Window) {
         let was_focused =
-            self.keyboard.current_focus().as_ref() == window.toplevel().map(|t| t.wl_surface());
+            self.keyboard_focus().as_ref() == window.toplevel().map(|t| t.wl_surface());
         let parent = self.parent_window(window);
         let client = client_of(window);
         self.chrome_window_gone(window);
@@ -726,8 +727,7 @@ impl State {
 
     /// Mark `window` as wanting focus it wasn't given (the dock will bounce its icon).
     pub fn request_attention(&mut self, window: &Window) {
-        let focused =
-            self.keyboard.current_focus().as_ref() == window.toplevel().map(|t| t.wl_surface());
+        let focused = self.keyboard_focus().as_ref() == window.toplevel().map(|t| t.wl_surface());
         if !focused {
             Self::with_wm_data(window, |d| d.demands_attention = true);
             self.notify_window_changed(window);
@@ -750,7 +750,7 @@ impl State {
         {
             return;
         }
-        let focus = self.keyboard.current_focus();
+        let focus = self.keyboard_focus();
         let Some(info) = self.window_info(window, focus.as_ref()) else {
             return;
         };
