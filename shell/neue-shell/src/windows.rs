@@ -33,6 +33,8 @@ impl Windows {
             ShellEvent::ActionFailed { name, message } => {
                 tracing::warn!(%name, %message, "compositor action failed");
             }
+            // The bars handle it (`Shell::shell`).
+            ShellEvent::FocusMenuBar { .. } => {}
         }
     }
 

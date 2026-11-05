@@ -14,10 +14,12 @@
 //!
 //! Rendering and pointer hit-testing live in `render.rs` and [`State::surface_under`].
 
+use smithay::backend::input::InputTime;
 use smithay::desktop::{
-    LayerSurface as DesktopLayer, PopupKind, WindowSurfaceType, layer_map_for_output,
+    LayerSurface as DesktopLayer, PopupKind, PopupManager, WindowSurfaceType, layer_map_for_output,
 };
 use smithay::output::Output;
+use smithay::reexports::wayland_server::Resource;
 use smithay::reexports::wayland_server::protocol::wl_output::WlOutput;
 use smithay::reexports::wayland_server::protocol::wl_surface::WlSurface;
 use smithay::utils::{Logical, Point, SERIAL_COUNTER};
@@ -244,6 +246,48 @@ impl State {
             return true;
         }
         above
+    }
+
+    /// After a popup went away: if it was the last menu of a layer surface that takes no
+    /// keyboard focus (the shell's menu bar), end its grab and give the keyboard to the
+    /// active window (else the topmost one). Smithay would hand it to the layer surface,
+    /// which then swallows the next key. Called from an idle callback, so the client has
+    /// finished destroying the popup.
+    pub(crate) fn release_layer_grab(&mut self) {
+        if self.is_locked() {
+            return;
+        }
+        let grabbed_root = self.keyboard.grab_start_data().and_then(|d| d.focus);
+        let Some(root) = grabbed_root.or_else(|| self.keyboard.current_focus()) else {
+            return;
+        };
+        let Some((layer, _)) = self.layer_for_surface(&root) else {
+            return;
+        };
+        if layer.wl_surface() != &root || layer.can_receive_keyboard_focus() {
+            return;
+        }
+        self.popups.cleanup();
+        if PopupManager::popups_for_surface(&root).any(|(popup, _)| popup.wl_surface().is_alive()) {
+            return; // a menu is still up (a submenu closed, or the bar switched menus)
+        }
+        let keyboard = self.keyboard.clone();
+        if keyboard.is_grabbed() {
+            keyboard.unset_grab(self);
+        }
+        let pointer = self.pointer.clone();
+        if pointer
+            .grab_start_data()
+            .and_then(|d| d.focus)
+            .is_some_and(|(focus, _)| focus == root)
+        {
+            pointer.unset_grab(self, SERIAL_COUNTER.next_serial(), InputTime::now());
+        }
+        debug!("a layer surface's menus closed; the keyboard goes back to the windows");
+        match self.shell_active().filter(|w| !self.is_minimized(w)) {
+            Some(window) => self.focus_window(&window),
+            None => self.focus_topmost(),
+        }
     }
 
     /// Frame callbacks for the layer surfaces of `output`.

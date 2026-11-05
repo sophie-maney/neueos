@@ -52,6 +52,8 @@ pub(super) struct NeueShellData {
     /// Identifier of each `active` event's window (`None` for null), in order.
     active: Vec<Option<String>>,
     keys: Vec<(SystemKey, KeyState, Modifiers)>,
+    /// `(serial, has an output)` of every `focus_menu_bar`.
+    focus_menu_bar: Vec<(u32, bool)>,
     /// Outcomes of `run_action`, in order.
     actions: Vec<Result<(), String>>,
     /// `(key, pressed)` of every `wl_keyboard.key` (evdev codes).
@@ -76,7 +78,7 @@ impl TestClient {
     pub fn bind_neue_shell(&mut self) -> NeueShellManagerV1 {
         let manager: NeueShellManagerV1 = self
             ._globals
-            .bind(&self.qh, 1..=1, ())
+            .bind(&self.qh, 1..=2, ())
             .expect("binding neue_shell_manager_v1");
         self.data.neue_shell.manager = Some(manager.clone());
         self.roundtrip();
@@ -118,6 +120,11 @@ impl TestClient {
     /// Every `active` event so far (identifiers; `None` for null).
     pub fn shell_active(&self) -> &[Option<String>] {
         &self.data.neue_shell.active
+    }
+
+    /// Every `focus_menu_bar` event so far: `(serial, has an output)`.
+    pub fn shell_focus_menu_bar(&self) -> &[(u32, bool)] {
+        &self.data.neue_shell.focus_menu_bar
     }
 
     /// Every `system_key` event so far.
@@ -223,6 +230,9 @@ impl Dispatch<NeueShellManagerV1, ()> for ClientData {
                 state: WEnum::Value(state),
                 modifiers: WEnum::Value(modifiers),
             } => shell.keys.push((key, state, modifiers)),
+            neue_shell_manager_v1::Event::FocusMenuBar { serial, output } => {
+                shell.focus_menu_bar.push((serial, output.is_some()));
+            }
             _ => {}
         }
     }

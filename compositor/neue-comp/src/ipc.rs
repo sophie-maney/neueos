@@ -103,6 +103,12 @@ const ACTIONS: &[(&str, &str, WindowArg, &[&str])] = &[
         WindowArg::Optional,
         &["width", "height"],
     ),
+    (
+        "focus-menu-bar",
+        "Open the menu bar's first menu from the keyboard (the shell's)",
+        WindowArg::None,
+        &[],
+    ),
 ];
 
 /// One client of the socket.
@@ -526,6 +532,9 @@ impl State {
             "reload-config" => self
                 .reload_config()
                 .map_err(|info| ErrorBody::new(ErrorCode::ConfigError, info.to_string())),
+            "focus-menu-bar" => self
+                .shell_focus_menu_bar()
+                .map_err(|message| ErrorBody::new(ErrorCode::Internal, message)),
             "close-window" => {
                 let window = self.window_arg(params.window, WindowArg::Optional)?;
                 if let Some(toplevel) = window.toplevel() {

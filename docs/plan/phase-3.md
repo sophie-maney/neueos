@@ -221,7 +221,7 @@ their goldens and the gallery's "Shell" page run on macOS.
       `neue-dbus` tests; not clicked in the VM, because ydotool input didn't reach the
       session in that run (not even Tab in the gallery), so it is on the *Owner:* line.
       Icons are parsed but not drawn; Super shows as the kit's command key until 3.10.
-- [ ] **3.7b Global menu A: menu-bar navigation** · Opus. After 3.7a. Hover-switching
+- [x] **3.7b Global menu A: menu-bar navigation** · Opus. After 3.7a. Hover-switching
       between open menus, Left/Right across the bar's menus, Escape, and a shortcut to
       focus the menu bar: a `neue_shell_v1` event (`focus_menu_bar`, version bump) sent by
       a compositor action, bound to Ctrl+F2 by default; the shell opens the first menu
@@ -229,6 +229,16 @@ their goldens and the gallery's "Shell" page run on macOS.
       *Accept:* kit tests for switching and Left/Right; a headless compositor test for the
       action reaching a scripted shell; in the VM, Ctrl+F2 then arrows walk the gallery's
       menus.
+      *Done (ADR 0077):* in the VM, Ctrl+F2 opens the logo menu, Right/Left walk to View
+      and Pages and back (skipping the app-name title, which opens nothing until 3.9),
+      Escape gives the gallery the keyboard back, pointing at Pages with View open
+      switches, and choosing Pages ▸ Values acts (the 3.7a *Owner:* item for the
+      gallery). Two fixes it needed: neue-comp now grabs for popups of layer surfaces and
+      hands the keyboard back when the bar's last menu closes; and neue-platform adopts
+      seats before its first roundtrip (since 3.5, kit apps on a compositor with blur had
+      no keyboard or pointer, which is why 3.7a's VM input failed). Known gap: the app's
+      window draws inactive while a bar menu has the keyboard.
+      *Owner:* on the PC, Ctrl+F2 and the arrows over a Qt app's menus (KWrite).
 - [ ] **3.8 Global menu B: GMenuModel** · Sonnet. After 3.7a. An `org.gtk.Menus` +
       `org.gtk.Actions` client in `neue-dbus`, the same menu rendering, and the
       `gtk_shell1` capabilities in `appmenu.rs` switched on (ADR 0025 §7: the enum values

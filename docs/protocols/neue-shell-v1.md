@@ -3,7 +3,8 @@
 Our private Wayland extension between neue-comp and neue-shell (task 3.1, ADR 0066).
 
 - **XML:** `crates/neue-protocols/protocols/neue-shell-v1.xml`. Licence: GPL-3.0-or-later.
-- **Offered:** `neue_shell_manager_v1` version 1, only to the shell: the client that
+- **Offered:** `neue_shell_manager_v1` version 2 (ADR 0077 added `focus_menu_bar`), only
+  to the shell: the client that
   `neue-comp --shell <command>` spawned with `WAYLAND_SOCKET`. Others don't see it, and
   binding it anyway is a protocol error.
 - **Bindings:** `neue_protocols::neue_shell::{server, client}`, behind the `server` and
@@ -18,6 +19,11 @@ Our private Wayland extension between neue-comp and neue-shell (task 3.1, ADR 00
 - Event `system_key(key, state, modifiers)`: volume, mute, mic mute, screen and keyboard
   brightness, play, pause, next, previous, stop, eject; pressed and released. They skip
   the focused client while a shell is bound; a compositor binding for the key wins.
+- Event `focus_menu_bar(serial, wl_output or null)` (version 2): the `focus-menu-bar`
+  action (Ctrl+F2 by default) ran. Open the first menu of the bar on that output from
+  the keyboard, as a popup grabbing with `serial`. The output is the active window's,
+  else the pointer's. When the bar's last menu closes, the compositor gives the
+  keyboard back to the active window.
 - Request `run_action(new neue_shell_action_v1, name, toplevel or null)`: a `neuectl`
   action; null is the active window. The result object gets `done` or `failed(message)`
   after the request's dispatch.

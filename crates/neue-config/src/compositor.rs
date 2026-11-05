@@ -39,16 +39,29 @@ impl Default for CompositorConfig {
             pointer: PointerConfig::default(),
             touchpad: TouchpadConfig::default(),
             windows: WindowsConfig::default(),
-            keybindings: BTreeMap::from([(
-                Chord {
-                    logo: true,
-                    ctrl: false,
-                    alt: false,
-                    shift: false,
-                    key: "Q".to_owned(),
-                },
-                "quit".to_owned(),
-            )]),
+            keybindings: BTreeMap::from([
+                (
+                    Chord {
+                        logo: true,
+                        ctrl: false,
+                        alt: false,
+                        shift: false,
+                        key: "Q".to_owned(),
+                    },
+                    "quit".to_owned(),
+                ),
+                // The menu bar from the keyboard (task 3.7b).
+                (
+                    Chord {
+                        logo: false,
+                        ctrl: true,
+                        alt: false,
+                        shift: false,
+                        key: "F2".to_owned(),
+                    },
+                    "focus-menu-bar".to_owned(),
+                ),
+            ]),
             outputs: BTreeMap::new(),
         }
     }
@@ -442,8 +455,10 @@ adaptive-sync = "fullscreen"
         let c = load::<CompositorConfig>(&Layers::from_dirs([a, b]))
             .unwrap()
             .config;
-        assert_eq!(c.keybindings.len(), 1);
-        assert_eq!(c.keybindings.values().next().unwrap(), "quit");
+        let q = "Super+Q".parse::<Chord>().unwrap();
+        // The other default (Ctrl+F2) plus the one merged Super+Q.
+        assert_eq!(c.keybindings.len(), 2);
+        assert_eq!(c.keybindings[&q], "quit");
     }
 
     #[test]

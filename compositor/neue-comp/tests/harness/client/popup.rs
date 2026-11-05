@@ -6,6 +6,7 @@ use wayland_protocols::xdg::shell::client::{
     xdg_popup::XdgPopup, xdg_positioner::XdgPositioner, xdg_surface::XdgSurface,
 };
 
+use super::shell::LayerHandle;
 use super::{ClientData, TestClient, Toplevel, ToplevelEvents};
 
 /// A mapped popup. Its configure serials go into [`ClientData::toplevels`] like a
@@ -48,6 +49,56 @@ impl TestClient {
             popup,
             buffer,
         }
+    }
+
+    /// Open a `size` popup of the layer surface `parent`, grabbing with `serial` (if
+    /// any), ack its configure and map it with a buffer: a shell menu.
+    pub fn create_layer_popup(
+        &mut self,
+        parent: &LayerHandle,
+        size: (i32, i32),
+        grab: Option<u32>,
+    ) -> Popup {
+        let index = self.data.toplevels.len();
+        self.data.toplevels.push(ToplevelEvents::default());
+
+        let surface = self.compositor.create_surface(&self.qh, ());
+        let xdg_surface = self.wm_base.get_xdg_surface(&surface, &self.qh, index);
+        let positioner = self.wm_base.create_positioner(&self.qh, ());
+        positioner.set_size(size.0, size.1);
+        positioner.set_anchor_rect(0, 0, 1, 1);
+        let popup = xdg_surface.get_popup(None, &positioner, &self.qh, ());
+        positioner.destroy();
+        parent.layer_surface.get_popup(&popup);
+        if let Some(serial) = grab {
+            popup.grab(&self.seat, serial);
+        }
+        surface.commit();
+        self.roundtrip();
+
+        let serial = self.data.toplevels[index]
+            .configure_serial
+            .expect("no initial popup configure after the first commit");
+        xdg_surface.ack_configure(serial);
+        let buffer = self.shm_buffer(size);
+        surface.attach(Some(&buffer), 0, 0);
+        surface.commit();
+        self.roundtrip();
+        Popup {
+            surface,
+            xdg_surface,
+            popup,
+            buffer,
+        }
+    }
+
+    /// Close a menu: destroy the popup, its `xdg_surface` and `wl_surface`.
+    pub fn close_popup(&mut self, popup: Popup) {
+        popup.popup.destroy();
+        popup.xdg_surface.destroy();
+        popup.surface.destroy();
+        popup.buffer.destroy();
+        self.roundtrip();
     }
 
     /// Close a menu the way GTK does: destroy the `xdg_popup` and `xdg_surface`, then

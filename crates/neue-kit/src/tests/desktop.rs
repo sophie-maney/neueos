@@ -67,7 +67,7 @@ impl Application for MiniShell {
                 self.windows.remove(&id);
             }
             ShellEvent::Active(id) => self.active = id,
-            ShellEvent::ActionFailed { .. } => {}
+            ShellEvent::ActionFailed { .. } | ShellEvent::FocusMenuBar { .. } => {}
         }
     }
 }

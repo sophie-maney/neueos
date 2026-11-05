@@ -3,14 +3,20 @@
 //! the app's name, a menu extra such as the clock) opens its menu right below itself and
 //! stays highlighted while the menu is up. The active app's menus (task 3.7a, ADR 0076)
 //! are a group of titles after the fixed ones that the shell replaces as apps change.
+//!
+//! Moving between menus (task 3.7b, ADR 0077) is the bar's: while a menu is up, pointing
+//! at another title on the left opens that one's menu instead; Left and Right in a menu
+//! go to the previous and next title (wrapping, skipping titles that open nothing), and
+//! between titles that have keyboard focus; Escape leaves. The menu extras on the right
+//! take part in neither.
 
 use masonry_core::accesskit::{Action, HasPopup, Node, Role};
 use masonry_core::core::keyboard::{Key, NamedKey};
 use masonry_core::core::{
-    AccessCtx, AccessEvent, ChildrenIds, EventCtx, LayoutCtx, MeasureCtx, NewWidget, NoAction,
-    PaintCtx, PointerButton, PointerButtonEvent, PointerEvent, PropertiesMut, PropertiesRef,
-    RegisterCtx, TextEvent, Update, UpdateCtx, UsesProperty, Widget, WidgetId, WidgetMut,
-    WidgetPod,
+    AccessCtx, AccessEvent, ActionCtx, ChildrenIds, ErasedAction, EventCtx, LayoutCtx, MeasureCtx,
+    MutateCtx, NewWidget, NoAction, PaintCtx, PointerButton, PointerButtonEvent, PointerEvent,
+    PointerUpdate, PropertiesMut, PropertiesRef, RegisterCtx, TextEvent, Update, UpdateCtx,
+    UsesProperty, Widget, WidgetId, WidgetMut, WidgetPod,
 };
 use masonry_core::imaging::Painter;
 use masonry_core::kurbo::{Affine, Axis, Point, Rect, Size, Vec2};
@@ -36,8 +42,21 @@ pub(crate) struct MenuBarWidget {
     /// The active app's menus, after `leading`.
     menus: Vec<WidgetPod<dyn Widget>>,
     trailing: Vec<WidgetPod<dyn Widget>>,
+    /// The title on the left whose menu is up, as its open and close actions report it.
+    open: Option<WidgetId>,
+    /// Each title on the left's horizontal extent, from the last layout.
+    spans: Vec<(f64, f64)>,
     backdrop: Backdrop,
     replayer: ImagingReplayer,
+}
+
+/// Which title a switch goes to.
+#[derive(Debug, Clone, Copy)]
+enum Target {
+    /// The one at this index on the left (the pointer is over it).
+    Index(usize),
+    /// The next (`true`) or previous title that opens a menu, wrapping around.
+    Step(bool),
 }
 
 impl std::fmt::Debug for MenuBarWidget {
@@ -56,6 +75,98 @@ impl MenuBarWidget {
         self.leading.iter_mut().chain(&mut self.menus)
     }
 
+    fn left_ids(&self) -> impl Iterator<Item = WidgetId> {
+        self.leading.iter().chain(&self.menus).map(WidgetPod::id)
+    }
+
+    /// Runs `f` on the title on the left at index `i`, if it is a [`MenuTitleWidget`].
+    fn with_title<R>(
+        this: &mut WidgetMut<'_, Self>,
+        i: usize,
+        f: impl FnOnce(&mut WidgetMut<'_, MenuTitleWidget>) -> R,
+    ) -> Option<R> {
+        let n = this.widget.leading.len();
+        let pod = match this.widget.leading.get_mut(i) {
+            Some(pod) => pod,
+            None => this.widget.menus.get_mut(i - n)?,
+        };
+        let mut child = this.ctx.get_mut(pod);
+        let mut title = child.try_downcast::<MenuTitleWidget>()?;
+        Some(f(&mut title))
+    }
+
+    /// Whether the title at `i` would open a menu.
+    fn can_open(this: &mut WidgetMut<'_, Self>, i: usize) -> bool {
+        Self::with_title(this, i, |t| t.widget.can_open(&t.ctx)).unwrap_or(false)
+    }
+
+    /// Opens the menu of the title at `i` (see [`MenuTitleWidget::open_menu`]).
+    fn open_at(
+        this: &mut WidgetMut<'_, Self>,
+        i: usize,
+        keyboard: bool,
+        return_focus: Option<Option<WidgetId>>,
+    ) {
+        Self::with_title(this, i, |t| {
+            t.widget.open_menu(&mut t.ctx, keyboard, None, return_focus);
+        });
+    }
+
+    /// Opens the first menu that has items, from the keyboard, unless one is up already:
+    /// the shortcut that moves focus to the menu bar.
+    fn open_first(this: &mut WidgetMut<'_, Self>) {
+        if this.widget.open.is_some() {
+            return;
+        }
+        let n = this.widget.left_ids().count();
+        if let Some(i) = (0..n).find(|&i| Self::can_open(this, i)) {
+            Self::open_at(this, i, true, None);
+        }
+    }
+
+    /// Replaces the menu of title `from` with the menu of `to`, if `from`'s is still up
+    /// and `to` opens one. `keyboard`: highlight the new menu's first item.
+    fn switch(this: &mut WidgetMut<'_, Self>, from: WidgetId, to: Target, keyboard: bool) {
+        let ids: Vec<WidgetId> = this.widget.left_ids().collect();
+        let n = ids.len();
+        let Some(i) = ids.iter().position(|&id| id == from) else {
+            return;
+        };
+        if Self::with_title(this, i, |t| t.widget.open) != Some(true) {
+            return; // it closed, or another switch replaced it already
+        }
+        let order: Vec<usize> = match to {
+            Target::Index(j) => vec![j],
+            Target::Step(forward) => (1..n)
+                .map(|k| {
+                    if forward {
+                        (i + k) % n
+                    } else {
+                        (i + n - k) % n
+                    }
+                })
+                .collect(),
+        };
+        let Some(j) = order
+            .into_iter()
+            .find(|&j| j != i && j < n && Self::can_open(this, j))
+        else {
+            return;
+        };
+        let return_focus = Self::with_title(this, i, MenuTitleWidget::dismiss);
+        Self::open_at(this, j, keyboard, return_focus);
+    }
+
+    /// The index of the title on the left under `p` (bar coordinates).
+    fn title_at(&self, p: Point) -> Option<usize> {
+        if !(0.0..HEIGHT).contains(&p.y) {
+            return None;
+        }
+        self.spans
+            .iter()
+            .position(|&(x0, x1)| (x0..x1).contains(&p.x))
+    }
+
     fn edit_set_menus(this: &mut WidgetMut<'_, Self>, menus: Vec<NewWidget<dyn Widget>>) {
         for old in std::mem::take(&mut this.widget.menus) {
             this.ctx.remove_child(old);
@@ -69,6 +180,87 @@ impl UsesProperty<ThemeProp> for MenuBarWidget {}
 
 impl Widget for MenuBarWidget {
     type Action = NoAction;
+
+    /// Pointing at another title while a menu is up opens its menu instead.
+    fn on_pointer_event(
+        &mut self,
+        ctx: &mut EventCtx<'_>,
+        _props: &mut PropertiesMut<'_>,
+        event: &PointerEvent,
+    ) {
+        let PointerEvent::Move(PointerUpdate { current, .. }) = event else {
+            return;
+        };
+        let Some(open) = self.open else {
+            return;
+        };
+        let p = ctx.local_position(current.position);
+        let ids: Vec<WidgetId> = self.left_ids().collect();
+        if let Some(j) = self.title_at(p)
+            && ids.get(j) != Some(&open)
+        {
+            ctx.mutate_later(ctx.widget_id(), move |mut bar| {
+                Self::switch(&mut bar.downcast(), open, Target::Index(j), false);
+            });
+        }
+    }
+
+    /// Left and Right move focus between titles; Escape leaves the bar.
+    fn on_text_event(
+        &mut self,
+        ctx: &mut EventCtx<'_>,
+        _props: &mut PropertiesMut<'_>,
+        event: &TextEvent,
+    ) {
+        let TextEvent::Keyboard(key) = event else {
+            return;
+        };
+        if !key.state.is_down() {
+            return;
+        }
+        let ids: Vec<WidgetId> = self.left_ids().collect();
+        let Some(i) = ctx
+            .focus_target_id()
+            .and_then(|f| ids.iter().position(|&id| id == f))
+        else {
+            return;
+        };
+        let n = ids.len();
+        match &key.key {
+            Key::Named(NamedKey::ArrowRight) => ctx.set_focus(ids[(i + 1) % n]),
+            Key::Named(NamedKey::ArrowLeft) => ctx.set_focus(ids[(i + n - 1) % n]),
+            Key::Named(NamedKey::Escape) => ctx.resign_focus(),
+            _ => return,
+        }
+        ctx.set_handled();
+    }
+
+    /// Follows which title's menu is up, and moves to a neighbour on Left and Right.
+    fn on_action(
+        &mut self,
+        ctx: &mut ActionCtx<'_>,
+        _props: &mut PropertiesMut<'_>,
+        action: &ErasedAction,
+        source: WidgetId,
+    ) {
+        let Some(&action) = action.downcast_ref::<TitleAction>() else {
+            return;
+        };
+        if !self.left_ids().any(|id| id == source) {
+            return;
+        }
+        match action {
+            TitleAction::Opened => self.open = Some(source),
+            TitleAction::Closed if self.open == Some(source) => self.open = None,
+            TitleAction::Step(forward) => {
+                ctx.set_handled();
+                ctx.mutate_later(ctx.widget_id(), move |mut bar| {
+                    Self::switch(&mut bar.downcast(), source, Target::Step(forward), true);
+                });
+            }
+            _ => {}
+        }
+    }
 
     fn register_children(&mut self, ctx: &mut RegisterCtx<'_>) {
         for child in self
@@ -120,12 +312,15 @@ impl Widget for MenuBarWidget {
         let auto = SizeDef::new(LenDef::MaxContent, LenDef::Fixed(Length::px(HEIGHT)));
         let available = Size::new(size.width, HEIGHT);
         let mut x = EDGE_INSET;
+        let mut spans = Vec::new();
         for child in self.left() {
             let child_size = ctx.compute_size(child, auto, available.into());
             ctx.run_layout(child, child_size);
             ctx.place_child(child, Point::new(x, 0.0));
+            spans.push((x, x + child_size.width));
             x += child_size.width;
         }
+        self.spans = spans;
         // Extras from the right edge leftwards, the first one rightmost.
         let mut right = size.width - EDGE_INSET;
         for child in &mut self.trailing {
@@ -194,7 +389,41 @@ pub(crate) enum TitleAction {
     Chosen(usize),
     /// Its menu closed (after [`TitleAction::Chosen`], if an item was chosen).
     Closed,
+    /// The keyboard leaves its menu for the bar's next (`true`) or previous title; the
+    /// bar takes this one.
+    Step(bool),
 }
+
+/// What opening a title's menu needs: an event (a press, a key) or a mutation (the bar
+/// switching menus).
+trait TitleCtx: menu::Opener {
+    fn disabled(&self) -> bool;
+    /// The title's bottom-left corner, in window coordinates.
+    fn below(&self) -> Point;
+    fn report(&mut self, action: TitleAction);
+}
+
+macro_rules! title_ctx {
+    ($($ctx:ty),+) => {$(
+        impl TitleCtx for $ctx {
+            fn disabled(&self) -> bool {
+                self.is_disabled()
+            }
+            fn below(&self) -> Point {
+                let rect = self.border_box();
+                let origin = self.to_window(rect.origin());
+                Point::new(origin.x, origin.y + rect.height())
+            }
+            fn report(&mut self, action: TitleAction) {
+                self.submit_action::<TitleAction>(action);
+                self.request_paint_only();
+                self.request_accessibility_update();
+            }
+        }
+    )+};
+}
+
+title_ctx!(EventCtx<'_>, MutateCtx<'_>);
 
 /// The Masonry widget behind [`MenuTitle`].
 pub(crate) struct MenuTitleWidget {
@@ -233,14 +462,23 @@ impl MenuTitleWidget {
         }
     }
 
-    /// Opens the menu right below the title, its left edge at the title's.
-    fn open_menu(&mut self, ctx: &mut EventCtx<'_>, keyboard: bool, pointer: Option<Point>) {
-        if ctx.is_disabled() || self.spec.0.is_empty() {
+    fn can_open(&self, ctx: &impl TitleCtx) -> bool {
+        !ctx.disabled() && !self.spec.0.is_empty()
+    }
+
+    /// Opens the menu right below the title, its left edge at the title's. `return_focus`:
+    /// see [`Anchor::return_focus`].
+    fn open_menu(
+        &mut self,
+        ctx: &mut impl TitleCtx,
+        keyboard: bool,
+        pointer: Option<Point>,
+        return_focus: Option<Option<WidgetId>>,
+    ) {
+        if !self.can_open(ctx) {
             return;
         }
-        let rect = ctx.border_box();
-        let origin = ctx.to_window(rect.origin());
-        let at = Point::new(origin.x, origin.y + rect.height());
+        let at = ctx.below();
         let anchor = Anchor {
             at,
             pointer: pointer.unwrap_or(at),
@@ -248,6 +486,8 @@ impl MenuTitleWidget {
             highlight: None,
             on_closed: Some(closed),
             refocus: None,
+            on_step: Some(step),
+            return_focus,
         };
         menu::open(
             ctx,
@@ -257,10 +497,27 @@ impl MenuTitleWidget {
             &mut self.return_focus,
         );
         self.open = true;
-        ctx.submit_action::<TitleAction>(TitleAction::Opened);
-        ctx.request_paint_only();
-        ctx.request_accessibility_update();
+        ctx.report(TitleAction::Opened);
     }
+
+    /// Takes the menu down without giving focus back (another menu of the bar replaces
+    /// it) and returns what focus would have gone back to.
+    fn dismiss(this: &mut WidgetMut<'_, Self>) -> Option<WidgetId> {
+        if let Some(layer) = this.ctx.get_attached_layer::<menu::MenuWidget>() {
+            this.ctx.remove_layer(layer);
+        }
+        if std::mem::take(&mut this.widget.open) {
+            this.ctx.report(TitleAction::Closed);
+        }
+        this.widget.return_focus
+    }
+}
+
+/// The keyboard leaves the title's menus for a neighbour: the bar decides which.
+fn step(mut owner: WidgetMut<'_, dyn Widget>, forward: bool) {
+    let mut this = owner.downcast::<MenuTitleWidget>();
+    this.ctx
+        .submit_action::<TitleAction>(TitleAction::Step(forward));
 }
 
 /// The title's menu closed (`chosen`: the item, if one was chosen).
@@ -297,7 +554,7 @@ impl Widget for MenuTitleWidget {
             // closing: pressing the title again closes it rather than reopening it.
             if ctx.get_attached_layer::<menu::MenuWidget>().is_none() {
                 let at = ctx.to_window(ctx.local_position(state.position));
-                self.open_menu(ctx, false, Some(at));
+                self.open_menu(ctx, false, Some(at), None);
             }
             ctx.set_handled();
         }
@@ -317,7 +574,7 @@ impl Widget for MenuTitleWidget {
                     _ => false,
                 };
                 if opens {
-                    self.open_menu(ctx, true, None);
+                    self.open_menu(ctx, true, None, None);
                     ctx.set_handled();
                 }
             }
@@ -333,7 +590,7 @@ impl Widget for MenuTitleWidget {
         event: &AccessEvent,
     ) {
         if event.action == Action::Click {
-            self.open_menu(ctx, true, None);
+            self.open_menu(ctx, true, None, None);
         }
     }
 
@@ -513,6 +770,8 @@ impl<M> MenuBar<M> {
                 leading: Vec::new(),
                 menus: Vec::new(),
                 trailing: Vec::new(),
+                open: None,
+                spans: Vec::new(),
                 backdrop: Backdrop::Opaque,
                 replayer: ImagingReplayer::new(),
             }),
@@ -585,6 +844,13 @@ impl<M> From<MenuBar<M>> for Element<M> {
 }
 
 impl<M: 'static> Handle<MenuBar<M>> {
+    /// Opens the bar's first menu from the keyboard, its first item highlighted, unless
+    /// one of its menus is up: the shortcut that moves focus to the menu bar (Ctrl+F2,
+    /// `ShellEvent::FocusMenuBar`). Left, Right and Escape go on from there.
+    pub fn open_first_menu(&self, cx: &mut Cx<'_, M>) {
+        cx.edit::<MenuBarWidget, _>(self, |mut bar| MenuBarWidget::open_first(&mut bar));
+    }
+
     /// Replaces the active app's menus (the titles added with [`MenuBar::with_menu`]).
     /// Don't replace a title while its menu is up: wait for its close message
     /// ([`MenuTitle::on_close`]).
@@ -709,6 +975,7 @@ fn title_handler<M: 'static>(
         TitleAction::Opened => on_open.as_mut().map(|make| make()),
         TitleAction::Closed => on_close.as_mut().map(|make| make()),
         TitleAction::Chosen(i) => items.get_mut(i)?.as_mut().map(|make| make()),
+        TitleAction::Step(_) => None,
     })
 }
 

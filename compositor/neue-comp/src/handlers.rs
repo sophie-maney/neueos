@@ -481,7 +481,10 @@ impl XdgShellHandler for State {
         surface.send_repositioned(token);
     }
 
-    /// Popup grabs: menus get the keyboard and close on a click outside them.
+    /// Popup grabs: menus get the keyboard and close on a click outside them. The root
+    /// is a window or a layer surface (the shell's menu bar, task 3.7b). When the last
+    /// menu of a layer surface that takes no keyboard focus closes, the keyboard goes
+    /// back to the windows ([`State::release_layer_grab`]).
     /// Adapted from Smithay's `anvil` (MIT): `anvil/src/shell/xdg.rs`.
     fn grab(&mut self, surface: PopupSurface, seat: wl_seat::WlSeat, serial: Serial) {
         let Some(seat) = Seat::<State>::from_resource(&seat) else {
@@ -491,21 +494,30 @@ impl XdgShellHandler for State {
         let Ok(root) = find_popup_root_surface(&kind) else {
             return;
         };
-        if self
+        let is_window = self
             .space
             .elements()
-            .all(|w| w.toplevel().is_none_or(|t| t.wl_surface() != &root))
-        {
+            .any(|w| w.toplevel().is_some_and(|t| t.wl_surface() == &root));
+        let is_layer = self
+            .layer_for_surface(&root)
+            .is_some_and(|(layer, _)| layer.wl_surface() == &root);
+        if !is_window && !is_layer {
+            debug!("popup grab ignored: its root is neither a window nor a layer surface");
             return;
         }
-        let Ok(mut grab) = self.popups.grab_popup(root, kind, &seat, serial) else {
-            return;
+        let mut grab = match self.popups.grab_popup(root, kind, &seat, serial) {
+            Ok(grab) => grab,
+            Err(err) => {
+                debug!(?err, "popup grab refused");
+                return;
+            }
         };
         if let Some(keyboard) = seat.get_keyboard() {
             if keyboard.is_grabbed()
                 && !(keyboard.has_grab(serial)
                     || keyboard.has_grab(grab.previous_serial().unwrap_or(serial)))
             {
+                debug!("popup grab refused: another keyboard grab is active");
                 grab.ungrab(PopupUngrabStrategy::All);
                 return;
             }
@@ -522,6 +534,13 @@ impl XdgShellHandler for State {
             }
             pointer.set_grab(self, PopupPointerGrab::new(&grab), serial, Focus::Keep);
         }
+    }
+
+    /// A menu of a layer surface may have been the last: give the keyboard back once the
+    /// client is done destroying it.
+    fn popup_destroyed(&mut self, _surface: PopupSurface) {
+        self.loop_handle
+            .insert_idle(|state| state.release_layer_grab());
     }
 }
 

@@ -16,7 +16,9 @@ use masonry::core::{ErasedAction, NewWidget, WidgetId};
 use masonry::peniko::Blob;
 use masonry::widgets::Label;
 use neue_comp::WindowInfo;
-use neue_platform::desktop::{OutputEvent, ShellEvent, ShellRequest, Toplevel, ToplevelId};
+use neue_platform::desktop::{
+    OutputEvent, OutputId, ShellEvent, ShellRequest, Toplevel, ToplevelId,
+};
 use neue_platform::{Anchor, App, Ctx, LayerSpec, Options, Waker, WindowId, WindowSpec};
 use wayland_client::Connection;
 
@@ -105,6 +107,8 @@ struct Driver {
     active: Vec<Option<ToplevelId>>,
     outputs: Vec<OutputEvent>,
     failures: Vec<String>,
+    /// The output of every `ShellEvent::FocusMenuBar`.
+    focus_menu_bar: Vec<Option<OutputId>>,
 }
 
 impl Driver {
@@ -135,6 +139,7 @@ impl Driver {
             active: Vec::new(),
             outputs: Vec::new(),
             failures: Vec::new(),
+            focus_menu_bar: Vec::new(),
         };
         (driver, shell)
     }
@@ -161,6 +166,9 @@ impl Driver {
                 Ok(Report::Shell(ShellEvent::Active(id))) => self.active.push(id),
                 Ok(Report::Shell(ShellEvent::ActionFailed { name, .. })) => {
                     self.failures.push(name);
+                }
+                Ok(Report::Shell(ShellEvent::FocusMenuBar { output })) => {
+                    self.focus_menu_bar.push(output);
                 }
                 Ok(Report::Started { .. }) => panic!("started twice"),
                 Err(_) => panic!("timed out waiting for {what}; got {:#?}", self.toplevels),
@@ -245,6 +253,18 @@ fn the_driver_as_shell_gets_outputs_and_windows_and_acts_on_them() {
         window: None,
     });
     driver.until("the action to fail", |d| !d.failures.is_empty());
+
+    // focus-menu-bar (Ctrl+F2) reaches the shell with the active window's output.
+    driver.send(ShellRequest::RunAction {
+        name: "focus-menu-bar".into(),
+        window: None,
+    });
+    driver.until("focus_menu_bar", |d| !d.focus_menu_bar.is_empty());
+    let first = driver.outputs.iter().find_map(|e| match e {
+        OutputEvent::Added(info) if info.name == "HEADLESS-1" => Some(info.id),
+        _ => None,
+    });
+    assert_eq!(driver.focus_menu_bar, [first]);
 
     // Unplugging an output tells the app, and its bar goes with it.
     server

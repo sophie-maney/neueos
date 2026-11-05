@@ -1,6 +1,8 @@
 //! The shell's menu bar (3.2b) on the fake host: titles on the left, extras on the right,
 //! a title's menu opening below it, choosing, the keyboard, and changing a title; the
-//! active app's menus being replaced, and their open and close messages (3.7a).
+//! active app's menus being replaced, and their open and close messages (3.7a); moving
+//! between menus by pointing and with Left and Right, and opening the first menu from the
+//! keyboard (3.7b).
 
 use masonry_core::accesskit::{Action, Role};
 use masonry_core::core::PointerButton;
@@ -21,6 +23,8 @@ enum Msg {
     Rename(&'static str),
     /// Script: the app's menus become these titles, each with one item named after it.
     SetMenus(Vec<&'static str>),
+    /// Script: the shell was asked to focus the menu bar (Ctrl+F2).
+    FocusBar,
     Opened(&'static str),
     Closed(&'static str),
     Item(&'static str),
@@ -80,6 +84,7 @@ impl Application for Bar {
     fn update(&mut self, cx: &mut Cx<'_, Msg>, message: Msg) {
         match message {
             Msg::Rename(name) => self.app.set_text(cx, name),
+            Msg::FocusBar => self.bar.open_first_menu(cx),
             Msg::SetMenus(names) => {
                 self.bar
                     .set_menus(cx, names.into_iter().map(app_menu).collect());
@@ -311,4 +316,108 @@ fn the_bar_asks_for_a_plain_blur_and_turns_translucent_when_it_is_offered() {
 
     // The harness paints over a backdrop of its own, so the two tints differ in colour.
     assert_ne!(translucent, opaque, "the bar draws the translucent tint");
+}
+
+/// Moves the pointer to the centre of the title labelled `label`.
+fn point_at(runner: &mut Runner<Bar>, host: &mut FakeHost, label: &str) {
+    let at = title(host, label).unwrap().center();
+    host.only().mouse_move(at);
+    deliver(runner, host);
+}
+
+#[test]
+fn pointing_at_another_title_while_a_menu_is_up_switches_menus() {
+    let (mut runner, mut host) = setup();
+    // Nothing is up: pointing opens nothing.
+    point_at(&mut runner, &mut host, "Edit");
+    assert_eq!(menus_open(&mut host), 0);
+
+    let files = id(&runner.app().app);
+    click_widget(&mut runner, &mut host, files);
+    assert_eq!(expanded(&mut host, "Files"), Some(true));
+    point_at(&mut runner, &mut host, "Edit");
+    assert_eq!(menus_open(&mut host), 1);
+    assert_eq!(expanded(&mut host, "Files"), Some(false));
+    assert_eq!(expanded(&mut host, "Edit"), Some(true));
+    let menu = find(&mut host, Role::Menu, None)[0].bounds;
+    let edit = title(&mut host, "Edit").unwrap();
+    assert!((menu.x0 - edit.x0).abs() < 1.5, "below Edit: {menu:?}");
+    assert_eq!(runner.app().log, [Msg::Opened("Edit")]);
+
+    // The extras on the right take no part.
+    point_at(&mut runner, &mut host, "10:09");
+    assert_eq!(expanded(&mut host, "Edit"), Some(true));
+
+    // Back to the logo; the new menu works like one opened by a click.
+    point_at(&mut runner, &mut host, "System");
+    assert_eq!(expanded(&mut host, "System"), Some(true));
+    assert_eq!(menus_open(&mut host), 1);
+    click_item(&mut runner, &mut host, "About");
+    assert_eq!(
+        runner.app().log,
+        [Msg::Opened("Edit"), Msg::Closed("Edit"), Msg::About]
+    );
+    assert_eq!(menus_open(&mut host), 0);
+}
+
+#[test]
+fn left_and_right_walk_the_menus_and_wrap() {
+    let (mut runner, mut host) = setup();
+    let logo = id(&runner.app().logo);
+    host.only().focus_on(Some(logo));
+    named(&mut runner, &mut host, NamedKey::ArrowDown);
+    assert_eq!(focused(&mut host).as_deref(), Some("About"));
+
+    named(&mut runner, &mut host, NamedKey::ArrowRight);
+    assert_eq!(focused(&mut host).as_deref(), Some("Quit Files"));
+    named(&mut runner, &mut host, NamedKey::ArrowRight);
+    assert_eq!(focused(&mut host).as_deref(), Some("Edit item"));
+    assert_eq!(menus_open(&mut host), 1);
+    // Past the last app menu: back to the logo (the clock extra is skipped).
+    named(&mut runner, &mut host, NamedKey::ArrowRight);
+    assert_eq!(focused(&mut host).as_deref(), Some("About"));
+    named(&mut runner, &mut host, NamedKey::ArrowLeft);
+    assert_eq!(focused(&mut host).as_deref(), Some("Edit item"));
+    assert_eq!(
+        runner.app().log,
+        [
+            Msg::Opened("Edit"),
+            Msg::Closed("Edit"),
+            Msg::Opened("Edit")
+        ]
+    );
+
+    // Escape closes the menu, and focus goes back to where it was before the first one.
+    named(&mut runner, &mut host, NamedKey::Escape);
+    assert_eq!(menus_open(&mut host), 0);
+    assert_eq!(focused(&mut host).as_deref(), Some("System"));
+
+    // Between focused titles, Left and Right move focus; Escape leaves the bar.
+    named(&mut runner, &mut host, NamedKey::ArrowLeft);
+    assert_eq!(focused(&mut host).as_deref(), Some("Edit"));
+    named(&mut runner, &mut host, NamedKey::ArrowRight);
+    assert_eq!(focused(&mut host).as_deref(), Some("System"));
+    named(&mut runner, &mut host, NamedKey::Escape);
+    assert_ne!(focused(&mut host).as_deref(), Some("System"));
+    assert_eq!(menus_open(&mut host), 0);
+}
+
+#[test]
+fn the_shortcut_opens_the_first_menu_from_the_keyboard() {
+    let (mut runner, mut host) = setup();
+    runner.send(&mut host, Msg::FocusBar);
+    deliver(&mut runner, &mut host);
+    assert_eq!(menus_open(&mut host), 1);
+    assert_eq!(expanded(&mut host, "System"), Some(true));
+    assert_eq!(focused(&mut host).as_deref(), Some("About"));
+    // Again while it is up: nothing changes.
+    runner.send(&mut host, Msg::FocusBar);
+    deliver(&mut runner, &mut host);
+    assert_eq!(menus_open(&mut host), 1);
+    assert_eq!(focused(&mut host).as_deref(), Some("About"));
+
+    named(&mut runner, &mut host, NamedKey::ArrowRight);
+    assert_eq!(focused(&mut host).as_deref(), Some("Quit Files"));
+    named(&mut runner, &mut host, NamedKey::Escape);
+    assert_eq!(menus_open(&mut host), 0);
 }

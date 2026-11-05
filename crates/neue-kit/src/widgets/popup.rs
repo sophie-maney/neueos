@@ -147,6 +147,8 @@ impl PopUpWidget {
             highlight: (self.kind == PopUpKind::PopUp).then_some(self.selected),
             on_closed: Some(closed),
             refocus: None,
+            on_step: None,
+            return_focus: None,
         };
         menu::open(
             ctx,
