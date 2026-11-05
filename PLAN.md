@@ -423,7 +423,9 @@ into the icon type (2.20a), grid virtualisation (2.20b) and the collection view 
 The split and tab views (2.21) are split into the split view (2.21a) and the tab view
 (2.21b). Window chrome (2.22) is split into the unified chrome material and the ADR
 (2.22a), kit window chrome (2.22b), toolbar items (2.22c) and resize edges for
-client-side windows in neue-comp (2.22d).
+client-side windows in neue-comp (2.22d). Sheet, popover and HUD panel (2.23) are split into the
+popover (2.23a), the kit sheet (2.23b), sheet placement in neue-comp (2.23c) and the HUD
+panel (2.23d).
 - **Exit:** the gallery shows the whole widget set, in light and dark, identically on
   macOS and in the VM.
 

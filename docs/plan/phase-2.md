@@ -507,8 +507,34 @@ the paper and leather materials move to Phase 6/7 (Widgets, Write).
         `create_decorated_toplevel_with`. Checked on Linux aarch64; VM steps in
         `docs/checks/phase-2.md` §21, not run. Not yet: edges for clients whose surface
         extends past their window geometry (shadows), which the surface hides.
-- [ ] **2.23 Sheet, popover, HUD panel** · Opus. Sheets map to xdg-dialog; popovers are
-      xdg-popups with an arrow.
+- [ ] **2.23 Sheet, popover, HUD panel**. Sheets map to xdg-dialog; popovers are
+      xdg-popups with an arrow. Split into four PRs:
+  - [ ] **2.23a Popover** · Opus. Material `neue_paint::materials::popover` (rounded
+        panel with an arrow on any edge, light and dark, tokens) and a `Popover` element
+        anchored to a widget, opened as a Masonry layer (an xdg-popup on Wayland). The
+        positioner prefers one edge and lets the compositor flip; the arrow's side and
+        offset follow where the popup actually lands, so a flipped popover still points at
+        its anchor. Outside click or Esc closes it; focus moves in and back; AccessKit
+        `Dialog` role.
+        *Accept:* tests for placement and arrow side (including a flip), keys and
+        dismissal; goldens (4 arrow edges × light/dark × 1×/2×); a gallery page; ADR.
+  - [ ] **2.23b Sheet (kit)** · Opus. `Sheet`: a modal panel with no title bar, the sheet
+        material (window background, inner shadow at the top), default and cancel buttons
+        (Return, Esc). On Wayland a modal xdg-dialog child window; on macOS (winit) an
+        in-window overlay under the parent's chrome that blocks input to the content (the
+        sheet widget is shared, only the host differs).
+        *Accept:* end-to-end tests (open, Return/Esc, parent input blocked); goldens; a
+        gallery button that opens one; ADR.
+  - [ ] **2.23c neue-comp: place modal dialogs as sheets** · Opus. A modal dialog's
+        toplevel is centred horizontally on its parent with its top under the parent's
+        chrome (the server-side bar, or the top of a client-side window's geometry), and
+        moves with the parent. No slide animation (Phase 4).
+        *Accept:* headless tests (placement, following a parent move); VM steps.
+  - [ ] **2.23d HUD panel** · Sonnet (follows 2.22b). `Window::hud()`: dark HUD chrome
+        with a small title bar and a close button only, the existing HUD material, a
+        utility window with a parent that does not take the parent's activation look.
+        *Accept:* end-to-end tests; goldens; a gallery button. Not in scope: dark controls
+        inside the HUD (a per-subtree theme override, its own task).
 - [ ] **2.24 Colour well, date picker, path control** · Sonnet.
 - [ ] **2.25 `docs/design/` specs** · Sonnet. Token reference, materials spec, motion
       spec.
