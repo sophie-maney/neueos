@@ -8,6 +8,10 @@
 //! over any of them, darken while pressed, and act when released over the button they were
 //! pressed on. Dragging the bar moves the window, and a double-click zooms it. While the
 //! window is inactive, the bar, the lights and the title take their unfocused look.
+//!
+//! A HUD window ([`crate::Window::hud`]) has the other kind of chrome: the dark HUD panel
+//! fills the whole window, with a small title bar that has a close button and a title
+//! and nothing else. It looks the same whether the window is focused or not.
 
 use masonry_core::accesskit::{Action, Node, Role};
 use masonry_core::core::{
@@ -18,11 +22,15 @@ use masonry_core::core::{
 use masonry_core::imaging::Painter;
 use masonry_core::kurbo::{Affine, Axis, Point, Rect, Size};
 use masonry_core::layout::{LenDef, LenReq, Length, SizeDef};
-use neue_paint::Scene;
 use neue_paint::imaging::ImagingReplayer;
+use neue_paint::materials::hud::{CloseState, HUD_TITLE_HEIGHT, close_rect, hud, hud_close_button};
 use neue_paint::materials::title_bar::{
     MIN_WIDTH, TITLE_BAR_HEIGHT, TitleBarStyle, TrafficLight, title_max_width, title_x,
     window_chrome,
+};
+use neue_paint::{Backdrop, Scene};
+use neue_theme::materials::hud::{
+    Palette as HudPalette, TITLE_BASELINE as HUD_TITLE_BASELINE, TITLE_INSET as HUD_TITLE_INSET,
 };
 use neue_theme::materials::title_bar::{
     BarPalette, TITLE_BASELINE, TITLE_EMBOSS_OFFSET, TITLE_FONT_SIZE, TOOLBAR_BOTTOM, TOOLBAR_INSET,
@@ -58,24 +66,85 @@ impl From<TrafficLight> for WindowRequest {
     }
 }
 
-/// The three traffic lights together: hovering anywhere in here shows every glyph.
-fn lights_rect() -> Rect {
-    TrafficLight::Close.rect().union(TrafficLight::Zoom.rect())
+/// Which chrome a window draws.
+#[derive(Clone, Copy, Debug, Default, PartialEq, Eq)]
+pub(crate) enum ChromeKind {
+    /// The title bar, with the three traffic lights and perhaps a toolbar.
+    #[default]
+    Standard,
+    /// The dark HUD panel with a small title bar and a close button.
+    Hud,
 }
 
-fn light_at(pos: Point) -> Option<TrafficLight> {
-    TrafficLight::ALL
-        .into_iter()
-        .find(|light| light.rect().contains(pos))
+/// The narrowest a HUD window gets: room for the close button and a short title.
+const HUD_MIN_WIDTH: f64 = 80.0;
+
+impl ChromeKind {
+    /// The buttons in the title bar.
+    fn buttons(self) -> &'static [TrafficLight] {
+        match self {
+            Self::Standard => &TrafficLight::ALL,
+            Self::Hud => &[TrafficLight::Close],
+        }
+    }
+
+    fn rect(self, light: TrafficLight) -> Rect {
+        match self {
+            Self::Standard => light.rect(),
+            Self::Hud => close_rect(),
+        }
+    }
+
+    /// Height of the title row.
+    fn title_height(self) -> f64 {
+        match self {
+            Self::Standard => TITLE_BAR_HEIGHT,
+            Self::Hud => HUD_TITLE_HEIGHT,
+        }
+    }
+
+    fn min_width(self) -> f64 {
+        match self {
+            Self::Standard => MIN_WIDTH,
+            Self::Hud => HUD_MIN_WIDTH,
+        }
+    }
+
+    fn title_style(self) -> TextStyle {
+        match self {
+            Self::Standard => TextStyle::Body,
+            Self::Hud => TextStyle::Small,
+        }
+    }
+
+    /// The buttons together: hovering anywhere in here shows every glyph.
+    fn buttons_rect(self) -> Rect {
+        self.buttons()
+            .iter()
+            .map(|&light| self.rect(light))
+            .reduce(|a, b| a.union(b))
+            .unwrap_or_default()
+    }
+
+    fn button_at(self, pos: Point) -> Option<TrafficLight> {
+        self.buttons()
+            .iter()
+            .copied()
+            .find(|&light| self.rect(light).contains(pos))
+    }
 }
 
 /// A window's chrome, owned by its root widget.
 #[derive(Debug)]
 pub(crate) struct Chrome {
+    kind: ChromeKind,
     title: TextLine,
     toolbar: Option<WidgetPod<dyn Widget>>,
     /// AccessKit buttons over the lights, which the chrome paints itself.
-    lights: [WidgetPod<TrafficLightWidget>; 3],
+    lights: Vec<(TrafficLight, WidgetPod<TrafficLightWidget>)>,
+    /// Paint the focused look even when the window isn't focused: a HUD window that belongs
+    /// to this one has the keyboard.
+    keep_active: bool,
     /// Height of the bar, from the last layout.
     height: f64,
     /// The pointer is over the traffic lights.
@@ -89,19 +158,44 @@ pub(crate) struct Chrome {
 }
 
 impl Chrome {
-    pub(crate) fn new(title: String, toolbar: Option<NewWidget<dyn Widget>>) -> Self {
+    /// A HUD window has no toolbar: `toolbar` is dropped.
+    pub(crate) fn new(
+        kind: ChromeKind,
+        title: String,
+        toolbar: Option<NewWidget<dyn Widget>>,
+    ) -> Self {
+        let toolbar = toolbar.filter(|_| kind == ChromeKind::Standard);
         Self {
-            title: TextLine::new(title, TextStyle::Body),
+            kind,
+            title: TextLine::new(title, kind.title_style()),
             toolbar: toolbar.map(NewWidget::to_pod),
-            lights: TrafficLight::ALL
-                .map(|light| NewWidget::new(TrafficLightWidget(light)).to_pod()),
-            height: TITLE_BAR_HEIGHT,
+            lights: kind
+                .buttons()
+                .iter()
+                .map(|&light| {
+                    let size = kind.rect(light).size();
+                    (
+                        light,
+                        NewWidget::new(TrafficLightWidget(light, size)).to_pod(),
+                    )
+                })
+                .collect(),
+            keep_active: false,
+            height: kind.title_height(),
             hover: false,
             pressed: None,
             replayer: ImagingReplayer::new(),
             #[cfg(test)]
             requests: Vec::new(),
         }
+    }
+
+    pub(crate) fn is_hud(&self) -> bool {
+        self.kind == ChromeKind::Hud
+    }
+
+    pub(crate) fn set_keep_active(&mut self, keep: bool) -> bool {
+        std::mem::replace(&mut self.keep_active, keep) != keep
     }
 
     /// Height of the bar (title row plus toolbar), as last laid out.
@@ -157,11 +251,12 @@ impl Chrome {
                     return;
                 }
                 ctx.set_handled();
-                if let Some(light) = light_at(pos) {
+                if let Some(light) = self.kind.button_at(pos) {
                     self.pressed = Some((light, true));
                     ctx.capture_pointer();
                     ctx.request_paint_only();
-                } else if state.count == 2 {
+                } else if state.count == 2 && self.kind == ChromeKind::Standard {
+                    // A HUD panel has no zoom button, so double-clicking its bar doesn't zoom.
                     self.request(ctx, WindowRequest::Zoom);
                 } else {
                     self.request(ctx, WindowRequest::Move);
@@ -170,23 +265,23 @@ impl Chrome {
             PointerEvent::Move(PointerUpdate { current, .. }) => {
                 let pos = ctx.local_position(current.position);
                 if let Some((light, over)) = self.pressed {
-                    let now = light.rect().contains(pos);
+                    let now = self.kind.rect(light).contains(pos);
                     if now != over {
                         self.pressed = Some((light, now));
                         ctx.request_paint_only();
                     }
                 }
-                self.set_hover(ctx, lights_rect().contains(pos));
+                self.set_hover(ctx, self.kind.buttons_rect().contains(pos));
             }
             PointerEvent::Up(PointerButtonEvent { state, .. }) => {
                 if let Some((light, _)) = self.pressed.take() {
                     ctx.set_handled();
                     ctx.request_paint_only();
                     let pos = ctx.local_position(state.position);
-                    if light.rect().contains(pos) {
+                    if self.kind.rect(light).contains(pos) {
                         self.request(ctx, light.into());
                     }
-                    self.set_hover(ctx, lights_rect().contains(pos));
+                    self.set_hover(ctx, self.kind.buttons_rect().contains(pos));
                 }
             }
             PointerEvent::Cancel(..) | PointerEvent::Leave(..) => {
@@ -208,8 +303,7 @@ impl Chrome {
         let light = self
             .lights
             .iter()
-            .zip(TrafficLight::ALL)
-            .find_map(|(pod, light)| (pod.id() == target).then_some(light));
+            .find_map(|(light, pod)| (pod.id() == target).then_some(*light));
         if let Some(light) = light {
             ctx.set_handled();
             self.request(ctx, light.into());
@@ -222,7 +316,7 @@ impl Chrome {
     }
 
     pub(crate) fn register_children(&mut self, ctx: &mut RegisterCtx<'_>) {
-        for light in &mut self.lights {
+        for (_, light) in &mut self.lights {
             ctx.register_child(light);
         }
         if let Some(toolbar) = &mut self.toolbar {
@@ -233,7 +327,7 @@ impl Chrome {
     pub(crate) fn children_ids(&self) -> impl Iterator<Item = WidgetId> + '_ {
         self.lights
             .iter()
-            .map(WidgetPod::id)
+            .map(|(_, pod)| pod.id())
             .chain(self.toolbar.as_ref().map(WidgetPod::id))
     }
 
@@ -248,8 +342,8 @@ impl Chrome {
     ) -> Length {
         let Some(toolbar) = &mut self.toolbar else {
             return Length::px(match axis {
-                Axis::Horizontal => MIN_WIDTH,
-                Axis::Vertical => TITLE_BAR_HEIGHT,
+                Axis::Horizontal => self.kind.min_width(),
+                Axis::Vertical => self.kind.title_height(),
             });
         };
         let inset = Length::px(2.0 * TOOLBAR_INSET);
@@ -268,12 +362,12 @@ impl Chrome {
     /// Lays the chrome out across a window `width` wide; returns its height.
     pub(crate) fn layout(&mut self, ctx: &mut LayoutCtx<'_>, width: f64, height: f64) -> f64 {
         self.title.size(ctx.text_contexts());
-        for (pod, light) in self.lights.iter_mut().zip(TrafficLight::ALL) {
-            let rect = light.rect();
+        for (light, pod) in &mut self.lights {
+            let rect = self.kind.rect(*light);
             ctx.run_layout(pod, rect.size());
             ctx.place_child(pod, rect.origin());
         }
-        self.height = TITLE_BAR_HEIGHT;
+        self.height = self.kind.title_height();
         if let Some(toolbar) = &mut self.toolbar {
             let inner = Size::new((width - 2.0 * TOOLBAR_INSET).max(0.0), height);
             let def = SizeDef::new(LenDef::Fixed(Length::px(inner.width)), LenDef::MaxContent);
@@ -283,12 +377,27 @@ impl Chrome {
             ctx.place_child(toolbar, Point::new(TOOLBAR_INSET, TITLE_BAR_HEIGHT));
             self.height += size.height + TOOLBAR_BOTTOM;
         }
-        self.height = self.height.min(height.max(TITLE_BAR_HEIGHT));
+        self.height = self.height.min(height.max(self.kind.title_height()));
         self.height
     }
 
-    /// Paints the bar and the title across a window `width` wide.
+    /// Paints the chrome across a window `size` big: the bar and the title, or for a HUD
+    /// window the whole panel. `focused` is whether the window has the keyboard.
     pub(crate) fn paint(
+        &mut self,
+        painter: &mut Painter<'_>,
+        theme: Theme,
+        focused: bool,
+        size: Size,
+        scale: f64,
+    ) {
+        match self.kind {
+            ChromeKind::Standard => self.paint_standard(painter, theme, focused, size.width, scale),
+            ChromeKind::Hud => self.paint_hud(painter, theme, size, scale),
+        }
+    }
+
+    fn paint_standard(
         &mut self,
         painter: &mut Painter<'_>,
         theme: Theme,
@@ -296,6 +405,7 @@ impl Chrome {
         width: f64,
         scale: f64,
     ) {
+        let focused = focused || self.keep_active;
         let style = self.style(theme, focused);
         let mut scene = Scene::new(width.max(1.0), self.height);
         window_chrome(&mut scene, width, self.height, style);
@@ -315,6 +425,41 @@ impl Chrome {
         painter.pop_clip();
     }
 
+    /// The HUD panel over the whole window, its close button and its title. There is no
+    /// blur behind a kit window yet, so the panel is the opaque tint.
+    fn paint_hud(&mut self, painter: &mut Painter<'_>, theme: Theme, size: Size, scale: f64) {
+        let mut scene = Scene::new(size.width.max(1.0), size.height.max(1.0));
+        hud(
+            &mut scene,
+            Rect::new(0.0, 0.0, size.width, size.height),
+            theme.variant,
+            Backdrop::Opaque,
+        );
+        hud_close_button(
+            &mut scene,
+            theme.variant,
+            CloseState {
+                hover: self.hover || self.pressed.is_some(),
+                pressed: self.pressed.is_some_and(|(_, over)| over),
+            },
+        );
+        self.replayer.replay(&scene, scale, painter);
+
+        let palette = HudPalette::new(theme.variant, Backdrop::Opaque);
+        let room = (size.width - 2.0 * HUD_TITLE_INSET).max(0.0);
+        let x = HUD_TITLE_INSET + (room - self.title.width()).max(0.0) / 2.0;
+        let top = HUD_TITLE_BASELINE - self.title.baseline();
+        painter.push_fill_clip(Rect::new(
+            HUD_TITLE_INSET,
+            0.0,
+            HUD_TITLE_INSET + room,
+            HUD_TITLE_HEIGHT,
+        ));
+        self.title
+            .paint(painter, Affine::translate((x, top)), palette.label);
+        painter.pop_clip();
+    }
+
     /// The window's title, for its accessibility node.
     pub(crate) fn title(&self) -> &str {
         self.title.text()
@@ -324,7 +469,7 @@ impl Chrome {
 /// A traffic light as AccessKit sees it: a button the chrome paints and handles. It takes
 /// no pointer input, so the pointer reaches the chrome under it.
 #[derive(Debug)]
-pub(crate) struct TrafficLightWidget(TrafficLight);
+pub(crate) struct TrafficLightWidget(TrafficLight, Size);
 
 impl Widget for TrafficLightWidget {
     type Action = NoAction;
@@ -339,7 +484,7 @@ impl Widget for TrafficLightWidget {
         _len_req: LenReq,
         _cross_length: Option<Length>,
     ) -> Length {
-        let size = self.0.rect().size();
+        let size = self.1;
         Length::px(match axis {
             Axis::Horizontal => size.width,
             Axis::Vertical => size.height,

@@ -846,6 +846,26 @@ pub fn sheet<M: Clone + 'static>(save: M, cancel: M) -> Sheet<M> {
         .cancel_button("Cancel", cancel)
 }
 
+/// Size of the gallery's HUD window.
+pub const HUD_SIZE: (u32, u32) = (240, 120);
+
+/// The gallery's HUD window: an inspector with two lines of light text on the dark panel.
+/// Open it with a parent to make it a utility window.
+pub fn hud_window<M: 'static>() -> Window<M> {
+    let content = Stack::column()
+        .padding(neue_kit::tokens::metrics::spacing::M)
+        .spacing(neue_kit::tokens::metrics::spacing::XS)
+        .with(Label::new("Width  240").on_hud())
+        .with(Label::new("Height  120").on_hud())
+        .with(
+            Label::new("Drag the bar to move it")
+                .style(TextStyle::Small)
+                .on_hud()
+                .secondary(),
+        );
+    Window::new("Inspector", HUD_SIZE, content).hud()
+}
+
 /// A window with a title bar for [`sheet`] to hang from.
 pub fn sheet_parent<M: 'static>() -> Window<M> {
     Window::new("Notes", SHEET_PARENT_SIZE, pane_label("Content")).chrome()

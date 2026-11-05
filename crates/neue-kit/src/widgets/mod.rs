@@ -47,9 +47,9 @@ use neue_theme::metrics::spacing;
 pub use bevel::BevelButton;
 pub(crate) use bevel::BevelWidget;
 pub(crate) use button::{ButtonWidget, Pressed};
-pub(crate) use chrome::Chrome;
 #[cfg(test)]
 pub(crate) use chrome::WindowRequest;
+pub(crate) use chrome::{Chrome, ChromeKind};
 pub(crate) use collection::CollectionItemWidget;
 pub use collection::{Collection, Item};
 pub use context::ContextMenu;
@@ -131,6 +131,14 @@ impl Label {
     #[must_use]
     pub fn secondary(mut self) -> Self {
         self.inner.widget.set_secondary(true);
+        self
+    }
+
+    /// Light text for a label on a HUD window ([`crate::Window::hud`]), which is dark in
+    /// both appearances.
+    #[must_use]
+    pub fn on_hud(mut self) -> Self {
+        self.inner.widget.set_on_hud(true);
         self
     }
 

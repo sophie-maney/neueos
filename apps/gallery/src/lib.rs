@@ -21,6 +21,8 @@ const ZOOMS: [f64; 3] = [1.0, 1.5, 2.0];
 #[derive(Debug, Default)]
 pub struct Gallery {
     window: Option<WindowId>,
+    /// The HUD window of the Popovers page, if it was opened.
+    hud: Option<WindowId>,
     page: usize,
     zoom: usize,
     page_buttons: Vec<Handle<Button<Message>>>,
@@ -80,6 +82,8 @@ pub enum Message {
     ShowSheet,
     SheetSave,
     SheetCancel,
+    /// The Popovers page: show the HUD window.
+    ShowHud,
     OpenFile(usize),
     SortFiles(usize, neue_kit::SortOrder),
 }
@@ -367,6 +371,16 @@ impl Application for Gallery {
                         window,
                         specimens::sheet(Message::SheetSave, Message::SheetCancel),
                     );
+                }
+            }
+            Message::ShowHud => {
+                let open = self.hud.is_some_and(|hud| cx.windows().contains(&hud));
+                if !open {
+                    let mut hud = specimens::hud_window();
+                    if let Some(window) = self.window {
+                        hud = hud.parent(window);
+                    }
+                    self.hud = Some(cx.open_window(hud));
                 }
             }
             Message::SheetSave | Message::SheetCancel => {

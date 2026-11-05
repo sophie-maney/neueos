@@ -445,6 +445,29 @@ const SHEET_ATTACHED: State = ("attached", |f: &mut Fixture| {
     f.show_sheet(specimens::sheet((), ()));
 });
 
+// HUD windows (task 2.23d): the dark panel with its small title bar and a line of light text,
+// whatever the appearance.
+const CLOSE_HOVERED: State = ("close-hovered", |f: &mut Fixture| {
+    use neue_kit::tokens::materials::hud::{CLOSE_INSET, CLOSE_SIZE, TITLE_HEIGHT};
+    let (w, h) = specimens::HUD_SIZE;
+    f.hover_at(
+        (CLOSE_INSET + CLOSE_SIZE / 2.0) / f64::from(w),
+        TITLE_HEIGHT / 2.0 / f64::from(h),
+    );
+});
+
+#[test]
+fn hud_window() {
+    testing::check_window_states(
+        &goldens(),
+        "hud",
+        Theme::default(),
+        &[NORMAL, INACTIVE, CLOSE_HOVERED],
+        specimens::hud_window::<()>,
+    )
+    .unwrap();
+}
+
 #[test]
 fn sheet_attached() {
     testing::check_window_states(
