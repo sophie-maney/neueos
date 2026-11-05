@@ -430,7 +430,7 @@ the paper and leather materials move to Phase 6/7 (Widgets, Write).
         and x86_64 not run); gallery: a "Tab view" section on the "Panes" page. Steps for
         the VM in `docs/checks/phase-2.md` §18, not run. Not yet: the items under "Not in
         scope", a strip wider than the view, clickable tabs for assistive technology.
-- [ ] **2.22 Window chrome and unified toolbar** · Opus. Split into 2.22a to 2.22d. Kit
+- [x] **2.22 Window chrome and unified toolbar** · Opus. Split into 2.22a to 2.22d. Kit
       windows draw their own chrome (client-side), from neue-paint's title-bar pieces
       (PLAN §3.1); the ADR in 2.22a records why not a private protocol that extends the
       server-side bar (ADR 0013). Order: a → b → c; d any time before 2.22b's VM check.
@@ -493,10 +493,20 @@ the paper and leather materials move to Phase 6/7 (Widgets, Write).
         labels under the segmented control and the search field, arrow-key movement
         between items, toggle buttons, overflow, and the window's inactive look for the
         labels (they keep their colour; only the bar goes pale).
-  - [ ] **2.22d neue-comp: resize edges for client-side windows** · Sonnet.
+  - [x] **2.22d neue-comp: resize edges for client-side windows** · Sonnet.
         `State::chrome_hit_at` gives the 5 px resize edges to every resizable toplevel, not
         only to windows with a server-side bar.
         *Accept:* a headless test: a client-side window resizes from its edge; VM check.
+        *Done:* `State::chrome_hit_at` now also covers windows without a server bar: it
+        returns `ChromeHit::Edge` for the 5 px strips outside the frame (new
+        `interaction::edge_hit`, split out of `hit_test`), never `TitleBar` or `Button`.
+        No edges for full-screen, zoomed or fixed-size windows (equal non-zero min and
+        max size; this now applies to server-side windows too). 3 headless tests in
+        `tests/chrome.rs` (resize from the right and top edges with the cursor; the top
+        of the window is not a bar; a fixed-size window has no edges); harness
+        `create_decorated_toplevel_with`. Checked on Linux aarch64; VM steps in
+        `docs/checks/phase-2.md` §21, not run. Not yet: edges for clients whose surface
+        extends past their window geometry (shadows), which the surface hides.
 - [ ] **2.23 Sheet, popover, HUD panel** · Opus. Sheets map to xdg-dialog; popovers are
       xdg-popups with an arrow.
 - [ ] **2.24 Colour well, date picker, path control** · Sonnet.

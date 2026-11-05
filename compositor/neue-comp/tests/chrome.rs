@@ -78,7 +78,7 @@ fn bar(window: &WindowInfo) -> (f64, f64) {
 }
 
 fn cursor(server: &Server) -> CursorImageStatus {
-    server.with_state(|state| state.cursor_status.clone())
+    server.with_state(move |state| state.cursor_status.clone())
 }
 
 fn hover(server: &Server) -> Option<Hover> {
@@ -408,4 +408,108 @@ fn a_window_in_front_hides_the_chrome_behind_it() {
     release(&server);
     let behind = info(&server, "behind");
     assert_eq!((behind.x, behind.y), (100, 100));
+}
+
+/// A client-side 300×200 window (it asked for `ClientSide`) called `title`, with its
+/// client at (`x`, `y`): the client's own chrome is part of the 300×200.
+fn csd_window(
+    server: &Server,
+    client: &mut TestClient,
+    title: &str,
+    (x, y): (i32, i32),
+) -> Toplevel {
+    let t = client.create_decorated_toplevel(
+        title,
+        APP,
+        (300, 200),
+        Some(harness::XdgMode::ClientSide),
+    );
+    let id = info(server, title).id;
+    server.with_state(move |state| {
+        let window = state.window_by_id(id).expect("window is mapped");
+        state.move_window_to(&window, (x, y).into());
+    });
+    t
+}
+
+#[test]
+fn a_client_side_window_resizes_from_its_edges() {
+    let server = Server::start();
+    let mut client = server.connect();
+    let t = csd_window(&server, &mut client, "csd", (100, 100));
+    let i = info(&server, "csd");
+
+    // Right edge, just outside the window.
+    let (x, y) = (f64::from(i.x + i.width + 2), f64::from(i.y + 100));
+    pointer_to(&server, x, y);
+    assert_eq!(
+        cursor(&server),
+        CursorImageStatus::Named(CursorIcon::EResize)
+    );
+    press(&server);
+    pointer_to(&server, x + 50.0, y);
+    client.roundtrip();
+    assert_eq!(client.events(&t).size, (350, 200));
+    release(&server);
+    let mut t = t;
+    client.ack_and_commit(&mut t);
+    assert_eq!(info(&server, "csd").width, 350);
+
+    // Top edge: there is no server bar, so the edge is right above the client.
+    let i = info(&server, "csd");
+    let (x, y) = (f64::from(i.x + 150), f64::from(i.y - 2));
+    pointer_to(&server, x, y);
+    assert_eq!(
+        cursor(&server),
+        CursorImageStatus::Named(CursorIcon::NResize)
+    );
+    press(&server);
+    pointer_to(&server, x, y - 20.0);
+    client.roundtrip();
+    assert_eq!(client.events(&t).size, (350, 220));
+    release(&server);
+    client.ack_and_commit(&mut t);
+
+    // Off the edge, the arrow is back.
+    pointer_to(&server, 1900.0, 1000.0);
+    assert_eq!(cursor(&server), CursorImageStatus::default_named());
+}
+
+#[test]
+fn the_top_of_a_client_side_window_is_not_a_title_bar() {
+    let server = Server::start();
+    let mut client = server.connect();
+    csd_window(&server, &mut client, "csd", (100, 100));
+    let i = info(&server, "csd");
+    // Inside the client's own bar: the client gets the pointer, we draw nothing there.
+    pointer_to(&server, f64::from(i.x + 150), f64::from(i.y + 5));
+    client.roundtrip();
+    assert!(client.pointer_enter_serial().is_some());
+    assert_eq!(cursor(&server), CursorImageStatus::default_named());
+    let (x, y) = (f64::from(i.x + 150), f64::from(i.y + 5));
+    assert!(
+        server
+            .with_state(move |state| state.chrome_hit_at(Point::from((x, y))))
+            .is_none()
+    );
+}
+
+#[test]
+fn a_fixed_size_client_side_window_has_no_edges() {
+    let server = Server::start();
+    let mut client = server.connect();
+    let t = client.create_decorated_toplevel_with(
+        "fixed",
+        APP,
+        (300, 200),
+        Some(harness::XdgMode::ClientSide),
+        |t| {
+            t.set_min_size(300, 200);
+            t.set_max_size(300, 200);
+        },
+    );
+    let i = info(&server, "fixed");
+    pointer_to(&server, f64::from(i.x + i.width + 2), f64::from(i.y + 100));
+    assert_eq!(cursor(&server), CursorImageStatus::default_named());
+    drop(t);
 }
