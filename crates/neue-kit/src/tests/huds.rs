@@ -40,6 +40,11 @@ impl Application for Huds {
 }
 
 fn setup(with_parent: bool) -> (Runner<Huds>, FakeHost) {
+    setup_with(with_parent, false)
+}
+
+/// `blur`: the compositor offers backdrop blur.
+fn setup_with(with_parent: bool, blur: bool) -> (Runner<Huds>, FakeHost) {
     let mut runner = Runner::new(
         Huds {
             with_parent,
@@ -47,7 +52,10 @@ fn setup(with_parent: bool) -> (Runner<Huds>, FakeHost) {
         },
         Settings::default(),
     );
-    let mut host = FakeHost::default();
+    let mut host = FakeHost {
+        blur,
+        ..FakeHost::default()
+    };
     runner.start(&mut host, Arc::new(|| {}));
     for harness in host.windows.values_mut() {
         let _ = harness.render();
@@ -266,4 +274,29 @@ fn a_hud_window_without_a_parent_stays_when_the_other_window_closes() {
     let (parent, hud) = (parent(&runner), hud(&runner));
     runner.close_requested(&mut host, parent);
     assert!(host.windows.contains_key(&hud));
+}
+
+#[test]
+fn a_hud_window_asks_for_blur_with_rounded_corners_when_the_compositor_offers_it() {
+    let (runner, host) = setup_with(false, true);
+    let blur = host.blurs[&hud(&runner)];
+    assert_eq!(blur.corner_radius, neue_theme::materials::hud::RADIUS);
+    // Only the HUD's material is translucent.
+    assert_eq!(host.blurs.len(), 1);
+}
+
+#[test]
+fn nothing_asks_for_blur_without_the_compositor_offering_it() {
+    let (_, host) = setup_with(false, false);
+    assert!(host.blurs.is_empty());
+}
+
+#[test]
+fn the_hud_panel_is_translucent_over_blur_and_opaque_without() {
+    let (runner, mut host) = setup_with(false, true);
+    let blurred = pixel(&mut host, hud(&runner), 100, 3);
+    let (runner, mut host) = setup_with(false, false);
+    let plain = pixel(&mut host, hud(&runner), 100, 3);
+    // In the title bar; the harness paints over a backdrop of its own, so the tints differ.
+    assert_ne!(blurred, plain, "the HUD draws the translucent tint");
 }

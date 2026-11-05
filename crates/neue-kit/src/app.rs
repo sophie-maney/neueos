@@ -10,8 +10,10 @@ use masonry_core::app::RenderRoot;
 use masonry_core::core::{ErasedAction, FromDynWidget, NewWidget, Widget, WidgetId, WidgetMut};
 use masonry_core::peniko::{Blob, Color};
 use neue_platform::desktop::{OutputEvent, OutputInfo, ShellEvent, ShellRequest};
-use neue_platform::{Decorations, LayerSpec, MenuAddress, WindowId, WindowKind, WindowSpec};
+use neue_platform::{Blur, Decorations, LayerSpec, MenuAddress, WindowId, WindowKind, WindowSpec};
 use neue_theme::Theme;
+use neue_theme::materials::Backdrop;
+use neue_theme::materials::hud::RADIUS as HUD_RADIUS;
 
 use crate::element::{Element, Handle, Handler, Wiring};
 use crate::menu::Menu;
@@ -98,6 +100,8 @@ pub struct Window<M> {
     toolbar: Option<Element<M>>,
     /// A layer-shell surface instead of a toplevel.
     layer: Option<LayerSpec>,
+    /// The window's material is translucent: ask for blur behind it when offered.
+    blur_behind: bool,
 }
 
 impl<M> std::fmt::Debug for Window<M> {
@@ -112,6 +116,7 @@ impl<M> std::fmt::Debug for Window<M> {
             .field("hud", &self.hud)
             .field("toolbar", &self.toolbar.is_some())
             .field("layer", &self.layer)
+            .field("blur_behind", &self.blur_behind)
             .finish_non_exhaustive()
     }
 }
@@ -131,6 +136,7 @@ impl<M> Window<M> {
             hud: false,
             toolbar: None,
             layer: None,
+            blur_behind: false,
         }
     }
 
@@ -204,6 +210,16 @@ impl<M> Window<M> {
         self
     }
 
+    /// The window's root material is translucent (the menu bar, say): the compositor blurs
+    /// what is behind it when it can ([`Cx::has_blur`]), and the window then paints the
+    /// translucent tint ([`Cx::backdrop`] says which to use). A HUD panel does this by
+    /// itself. Without blur, or with increased contrast, nothing is asked for.
+    #[must_use]
+    pub fn blur_behind(mut self) -> Self {
+        self.blur_behind = true;
+        self
+    }
+
     /// The window's menu bar: its items are the menu titles, each a submenu. Shown in the
     /// global menu bar on neueOS (exported over D-Bus, ADR 0047); not shown on macOS
     /// hosts yet. Change it with [`Cx::set_menu_bar`].
@@ -221,12 +237,14 @@ fn root_widget<M>(
     content: Element<M>,
     chrome: Option<ChromeKind>,
     toolbar: Option<Element<M>>,
+    backdrop: Backdrop,
 ) -> (RootWidget, Wiring<M>, Option<Wiring<M>>) {
     let (content, wiring) = content.into_parts();
     let (toolbar, toolbar_wiring) = toolbar.map(Element::into_parts).unzip();
     let root = match chrome {
         Some(kind) => {
-            RootWidget::with_chrome(content, Chrome::new(kind, title.to_owned(), toolbar))
+            let chrome = Chrome::new(kind, title.to_owned(), toolbar).with_backdrop(backdrop);
+            RootWidget::with_chrome(content, chrome)
         }
         None => RootWidget::new(content),
     };
@@ -252,7 +270,7 @@ impl<M> Window<M> {
     /// The root widget the window opens with, and its size; message handlers are dropped.
     pub(crate) fn into_root(self) -> (RootWidget, (u32, u32)) {
         let kind = self.chrome_kind();
-        let (root, ..) = root_widget(&self.title, self.root, kind, self.toolbar);
+        let (root, ..) = root_widget(&self.title, self.root, kind, self.toolbar, Backdrop::Opaque);
         (root, self.size)
     }
 }
@@ -297,6 +315,8 @@ pub(crate) trait Host {
     fn keep_alive(&mut self);
     fn outputs(&self) -> Vec<OutputInfo>;
     fn has_shell(&self) -> bool;
+    /// Whether the compositor blurs behind windows that ask ([`neue_platform::Ctx::has_blur`]).
+    fn has_blur(&self) -> bool;
     fn shell(&mut self, request: ShellRequest);
 }
 
@@ -333,6 +353,9 @@ impl Host for neue_platform::Ctx<'_> {
     }
     fn has_shell(&self) -> bool {
         neue_platform::Ctx::has_shell(self)
+    }
+    fn has_blur(&self) -> bool {
+        neue_platform::Ctx::has_blur(self)
     }
     fn shell(&mut self, request: ShellRequest) {
         neue_platform::Ctx::shell(self, request);
@@ -414,8 +437,19 @@ impl<M> Cx<'_, M> {
     /// widgets work from then on.
     pub fn open_window(&mut self, window: Window<M>) -> WindowId {
         let kind = window.chrome_kind();
+        // A HUD's material is translucent; other windows say so themselves.
+        let blur = if window.blur_behind || kind == Some(ChromeKind::Hud) {
+            self.blur_request(kind == Some(ChromeKind::Hud))
+        } else {
+            None
+        };
+        let backdrop = if blur.is_some() {
+            Backdrop::Translucent
+        } else {
+            Backdrop::Opaque
+        };
         let (root, wiring, toolbar_wiring) =
-            root_widget(&window.title, window.root, kind, window.toolbar);
+            root_widget(&window.title, window.root, kind, window.toolbar, backdrop);
         let chrome_height = root.chrome_height();
         let root = NewWidget::new(root);
         let root_id = root.id();
@@ -427,6 +461,7 @@ impl<M> Cx<'_, M> {
             .unwrap_or_else(|| self.kit.settings.app_id.clone());
         spec.parent = window.parent;
         spec.modal = window.modal;
+        spec.blur = blur;
         spec.default_properties =
             Some(Arc::new(theme::default_properties(self.kit.settings.theme)));
         if let Some(layer) = window.layer {
@@ -453,6 +488,31 @@ impl<M> Cx<'_, M> {
             self.set_menu_bar(id, menu);
         }
         id
+    }
+
+    /// Whether the compositor blurs what is behind windows that ask (Wayland with
+    /// `ext-background-effect-v1`). Always false on macOS.
+    pub fn has_blur(&self) -> bool {
+        self.host.has_blur()
+    }
+
+    /// The backdrop a translucent material should draw for a window that asked for
+    /// [`Window::blur_behind`]: [`Backdrop::Translucent`] when the compositor blurs and the
+    /// theme allows transparency, else the opaque tint.
+    pub fn backdrop(&self) -> Backdrop {
+        if self.has_blur() {
+            Backdrop::Translucent.for_variant(self.kit.settings.theme.variant)
+        } else {
+            Backdrop::Opaque
+        }
+    }
+
+    /// What to ask the driver for a window that wants blur behind it: nothing unless the
+    /// compositor offers it and the theme isn't increased contrast.
+    fn blur_request(&self, rounded: bool) -> Option<Blur> {
+        (self.backdrop() == Backdrop::Translucent).then_some(Blur {
+            corner_radius: if rounded { HUD_RADIUS } else { 0.0 },
+        })
     }
 
     /// Replaces `window`'s menu bar (see [`Window::menu_bar`]); an empty menu removes it.

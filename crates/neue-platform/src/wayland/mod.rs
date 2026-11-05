@@ -18,9 +18,11 @@
 //!   parent windows and modal dialogs (xdg-dialog);
 //! - AccessKit through `accesskit_unix` (AT-SPI);
 //! - the menu-bar address for the global menu (`org_kde_kwin_appmenu`, ADR 0047);
-//! - where a window's own chrome ends, for sheets (`neue_window_v1`, ADR 0064).
+//! - where a window's own chrome ends, for sheets (`neue_window_v1`, ADR 0064);
+//! - backdrop blur for windows that ask (`ext-background-effect-v1`, ADR 0072).
 
 mod access;
+mod blur;
 mod clipboard;
 mod desktop;
 mod handle;
@@ -31,6 +33,7 @@ mod seat;
 mod shell;
 
 use std::sync::Arc;
+use std::sync::atomic::AtomicBool;
 use std::sync::mpsc::{self, Receiver};
 use std::time::Instant;
 
@@ -91,8 +94,8 @@ use wayland_protocols_plasma::appmenu::client::{
 use crate::app::{DriverWindow, Registry};
 use crate::gpu::{Gpu, GpuError, SurfaceTarget};
 use crate::{
-    Anchor, App, ChromeHeight, Ctx, Decorations, LayerKeyboard, LayerSpec, MenuAddress, Options,
-    PopoverAnchor, ShellLayer, Waker, WindowId, WindowKind, WindowSpec,
+    Anchor, App, Blur, ChromeHeight, Ctx, Decorations, LayerKeyboard, LayerSpec, MenuAddress,
+    Options, PopoverAnchor, ShellLayer, Waker, WindowId, WindowKind, WindowSpec,
 };
 use access::{Access, AccessEvent};
 use clipboard::Clipboard;
@@ -111,6 +114,8 @@ pub enum Error {
     Global(#[from] smithay_client_toolkit::error::GlobalError),
     #[error("wgpu: {0}")]
     Gpu(String),
+    #[error("Wayland dispatch: {0}")]
+    Dispatch(#[from] wayland_client::DispatchError),
     #[error("event loop: {0}")]
     Loop(String),
 }
@@ -134,13 +139,10 @@ pub fn run_with_connection(
     app: &mut dyn App,
     options: Options,
 ) -> Result<(), Error> {
-    let (globals, queue) = registry_queue_init::<State>(&conn)?;
+    let (globals, mut queue) = registry_queue_init::<State>(&conn)?;
     let qh = queue.handle();
     let mut event_loop: EventLoop<'static, State> =
         EventLoop::try_new().map_err(|e| Error::Loop(e.to_string()))?;
-    WaylandSource::new(conn.clone(), queue)
-        .insert(event_loop.handle())
-        .map_err(|e| Error::Loop(e.to_string()))?;
 
     // AccessKit's adapters call in from their own thread.
     let (access_tx, access_rx) = calloop_channel::channel();
@@ -164,12 +166,14 @@ pub fn run_with_connection(
     let instance = wgpu::Instance::new(wgpu::InstanceDescriptor::new_with_display_handle_from_env(
         Box::new(handle::Display(conn.clone())),
     ));
+    let reg = Registry::new(waker);
+    let g = Globals::bind(&globals, &qh, &reg.blur)?;
     let mut state = State {
-        reg: Registry::new(waker),
+        reg,
         events: Vec::new(),
         gpu: None,
         instance,
-        g: Globals::bind(&globals, &qh)?,
+        g,
         shm: Shm::bind(&globals, &qh)?,
         clipboard: Clipboard::bind(&globals, &qh),
         access_tx,
@@ -190,6 +194,13 @@ pub fn run_with_connection(
         options,
     };
     state.reg.has_shell = state.desktop.has_shell();
+    if state.g.blur.is_some() {
+        // The manager sends its capabilities on bind; apps ask `Ctx::has_blur` in `on_start`.
+        queue.roundtrip(&mut state)?;
+    }
+    WaylandSource::new(conn.clone(), queue)
+        .insert(event_loop.handle())
+        .map_err(|e| Error::Loop(e.to_string()))?;
     // sctk binds the seats that exist at start-up without calling `new_seat` for them.
     let seats: Vec<_> = state.seats.seats().collect();
     for seat in seats {
@@ -228,10 +239,15 @@ struct Globals {
     dialog: Option<XdgWmDialogV1>,
     appmenu: Option<OrgKdeKwinAppmenuManager>,
     window: Option<NeueWindowManagerV1>,
+    blur: Option<blur::BlurManager>,
 }
 
 impl Globals {
-    fn bind(globals: &GlobalList, qh: &QueueHandle<State>) -> Result<Self, Error> {
+    fn bind(
+        globals: &GlobalList,
+        qh: &QueueHandle<State>,
+        blur_available: &Arc<AtomicBool>,
+    ) -> Result<Self, Error> {
         let optional = |name: &str, present: bool| {
             if !present {
                 tracing::warn!("compositor lacks {name}");
@@ -245,6 +261,12 @@ impl Globals {
         let dialog = globals.bind(qh, 1..=1, NoEvents).ok();
         let appmenu = globals.bind(qh, 1..=2, NoEvents).ok();
         let window = globals.bind(qh, 1..=1, NoEvents).ok();
+        let blur_flag = Arc::clone(blur_available);
+        let blur = globals
+            .bind(qh, 1..=1, blur::Capabilities::new(&blur_flag))
+            .ok()
+            .map(|manager| blur::BlurManager::new(manager, blur_flag));
+        optional("ext_background_effect_manager_v1", blur.is_some());
         optional("zwlr_layer_shell_v1", layer_shell.is_some());
         optional("wp_fractional_scale_manager_v1", fractional.is_some());
         optional("wp_viewporter", viewporter.is_some());
@@ -265,6 +287,7 @@ impl Globals {
             dialog,
             appmenu,
             window,
+            blur,
         })
     }
 }
@@ -447,6 +470,8 @@ struct Win {
     chrome_height: Option<ChromeHeight>,
     chrome_sent: Option<u32>,
     neue_window: Option<NeueWindowV1>,
+    /// The window's blur request, if the compositor offered blur when it opened.
+    blur: Option<blur::WindowBlur>,
 }
 
 impl Win {
@@ -517,6 +542,9 @@ impl Drop for Win {
         }
         if let Some(window) = self.neue_window.take() {
             window.destroy();
+        }
+        if let Some(blur) = self.blur.take() {
+            blur.destroy();
         }
     }
 }
@@ -719,7 +747,11 @@ impl State {
             tracing::warn!(%id, "focus fallback isn't in the window's tree");
         }
         let base_root = root.get_layer_root(0).id();
-        tracing::debug!(%id, ?size, "opened window");
+        let blur = spec.blur.and_then(|Blur { corner_radius }| {
+            let effect = self.g.blur.as_ref()?.effect(&surf.wl, &qh)?;
+            Some(blur::WindowBlur::new(effect, corner_radius))
+        });
+        tracing::debug!(%id, ?size, blurred = blur.is_some(), "opened window");
         self.reg.windows.insert(
             id,
             Win {
@@ -748,6 +780,7 @@ impl State {
                 chrome_height: spec.chrome_height.filter(|_| toplevel),
                 chrome_sent: None,
                 neue_window: None,
+                blur,
             },
         );
         Ok(())
@@ -807,6 +840,9 @@ impl State {
         };
         w.surf.size = size;
         w.surf.apply(gpu, w.scale, fractional);
+        if let Some(blur) = &w.blur {
+            blur.set_size(&self.g.compositor, size);
+        }
         let (pw, ph) = w.surf.physical(w.scale);
         w.root
             .handle_window_event(WindowEvent::Resize(PhysicalSize::new(pw, ph)));

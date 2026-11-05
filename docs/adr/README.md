@@ -81,3 +81,4 @@ Don't edit an accepted ADR's decision; supersede it with a new one.
 | [0069](0069-desktop-background.md) | The desktop background: a `neue-desktop` background layer per output, a vector default picture, photos through the texture cache, `shell.toml`, `png` and `zune-jpeg` | Accepted |
 | [0070](0070-neue-desktop-v0.md) | `neue-desktop` v0: desktop entries, app id matching, icon theme lookup, raster icons from PNG and SVG (`resvg`), launching with an activation token, the trash | Accepted |
 | [0071](0071-backdrop-blur.md) | Backdrop blur: `ext-background-effect-v1`, a dual-Kawase framebuffer-effect element below each blurred surface, cached while nothing behind changes | Accepted |
+| [0072](0072-backdrop-blur-clients.md) | Backdrop blur in clients: windows ask through `WindowSpec::blur`, the kit paints the translucent tint when the compositor offers blur, popups stay opaque | Accepted |

@@ -176,3 +176,49 @@ fn a_title_with_no_menu_opens_nothing_and_text_can_change() {
         1
     );
 }
+
+/// A bar that is translucent over a blur, as the shell's.
+struct BlurBar;
+
+impl Application for BlurBar {
+    type Message = Msg;
+
+    fn start(&mut self, cx: &mut Cx<'_, Msg>) {
+        let bar = MenuBar::new()
+            .with(MenuTitle::new("Files", Menu::new()))
+            .backdrop(cx.backdrop());
+        let layer = LayerSpec::new("test-bar", Anchor::TOP_EDGE);
+        cx.open_window(
+            Window::new("Bar", (WIDTH, HEIGHT as u32), bar)
+                .layer(layer)
+                .blur_behind(),
+        );
+    }
+
+    fn update(&mut self, _cx: &mut Cx<'_, Msg>, _message: Msg) {}
+}
+
+fn blur_bar(blur: bool) -> FakeHost {
+    let mut runner = Runner::new(BlurBar, Settings::default());
+    let mut host = FakeHost {
+        blur,
+        ..FakeHost::default()
+    };
+    runner.start(&mut host, Arc::new(|| {}));
+    host
+}
+
+#[test]
+fn the_bar_asks_for_a_plain_blur_and_turns_translucent_when_it_is_offered() {
+    let mut host = blur_bar(true);
+    let blur = host.blurs.values().next().copied();
+    assert_eq!(blur.map(|b| b.corner_radius), Some(0.0));
+    let translucent = host.only().render().get_pixel(250, 10).0;
+
+    let mut host = blur_bar(false);
+    assert!(host.blurs.is_empty());
+    let opaque = host.only().render().get_pixel(250, 10).0;
+
+    // The harness paints over a backdrop of its own, so the two tints differ in colour.
+    assert_ne!(translucent, opaque, "the bar draws the translucent tint");
+}

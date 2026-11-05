@@ -974,6 +974,8 @@ pub fn shell_bar<M: 'static>(
             &shell_bar_content(app_name),
             send,
             &mut handles,
+            // Inside a gallery window, nothing is blurred behind the bar.
+            neue_kit::desktop::Backdrop::Opaque,
         ))
 }
 
