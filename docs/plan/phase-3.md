@@ -102,7 +102,7 @@ their goldens and the gallery's "Shell" page run on macOS.
       built-in picture, all by screenshot after `pkill neue-shell`.
       *Owner:* the background on the PC at native scale and on a second display; a real
       photo (JPEG) looks sharp, and every `fit` value does what it says.
-- [ ] **3.3 `neue-desktop` v0** · Sonnet. New portable crate: desktop entries (parsing,
+- [x] **3.3 `neue-desktop` v0** · Sonnet. New portable crate: desktop entries (parsing,
       localisation, `Actions` including `new-window`, `NoDisplay`, `OnlyShowIn`), matching
       an app id to its entry (`StartupWMClass`, Flatpak ids, the file name), icon theme
       lookup (index.theme, sizes and scales, hicolor, Papirus as fallback), loading SVG
@@ -110,6 +110,12 @@ their goldens and the gallery's "Shell" page run on macOS.
       launching an entry with an `XDG_ACTIVATION_TOKEN`, and Trash state (empty or full,
       empty it; freedesktop trash spec).
       *Accept:* unit tests against fixture directories, on macOS and Linux.
+      *Done:* ADR 0070. `neue-desktop` (`entry`, `apps`, `icon_theme`, `icon_load`, `launch`,
+      `trash`); `neue_paint::icon::Icon::raster` (a `Picture` drawn through the texture cache)
+      because theme SVGs are not filled paths, and `Icon::has_own_colors`. 28 tests on
+      fixture directories (macOS and the OrbStack arm64 machine). `resvg` 0.47 with default features off. Not run in the VM
+      (nothing consumes the crate until 3.16). Not in v0: other volumes' trash (needs the
+      mount table, 3.16), D-Bus activation, MIME, thumbnails, recent files, autostart.
 - [ ] **3.4 Backdrop blur: compositor** · Opus. ADR choosing the protocol:
       `ext-background-effect-v1` if our pinned wayland-protocols and Smithay have it,
       else a private one (ADR 0002 §7). A dual-Kawase blur pass in the GLES renderer for

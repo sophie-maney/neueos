@@ -82,29 +82,43 @@ impl Picture {
     /// A picture from straight-alpha RGBA8 pixels, row by row from the top left. `None` if
     /// a side is zero, a side is over 65535 or `rgba` has the wrong length.
     pub fn from_rgba8(width: u32, height: u32, rgba: &[u8]) -> Option<Self> {
-        let len = usize::try_from(u64::from(width) * u64::from(height) * 4).ok()?;
-        if width == 0 || height == 0 || width > 65535 || height > 65535 || rgba.len() != len {
-            return None;
-        }
-        let mut pixels = rgba.to_vec();
-        let mut opaque = true;
+        let mut pixels = Self::checked_pixels(width, height, rgba)?;
         for px in pixels.as_chunks_mut::<4>().0 {
             let a = u16::from(px[3]);
             if a != 255 {
-                opaque = false;
                 for c in &mut px[..3] {
                     // (c * a + 127) / 255 is at most 255.
                     *c = ((u16::from(*c) * a + 127) / 255) as u8;
                 }
             }
         }
-        Some(Self {
+        Some(Self::from_checked(width, height, pixels))
+    }
+
+    /// A picture from premultiplied RGBA8 pixels (what a rasteriser such as `resvg` makes),
+    /// with the same limits as [`Picture::from_rgba8`].
+    pub fn from_premultiplied_rgba8(width: u32, height: u32, rgba: &[u8]) -> Option<Self> {
+        let pixels = Self::checked_pixels(width, height, rgba)?;
+        Some(Self::from_checked(width, height, pixels))
+    }
+
+    fn checked_pixels(width: u32, height: u32, rgba: &[u8]) -> Option<Vec<u8>> {
+        let len = usize::try_from(u64::from(width) * u64::from(height) * 4).ok()?;
+        if width == 0 || height == 0 || width > 65535 || height > 65535 || rgba.len() != len {
+            return None;
+        }
+        Some(rgba.to_vec())
+    }
+
+    fn from_checked(width: u32, height: u32, pixels: Vec<u8>) -> Self {
+        let opaque = pixels.as_chunks::<4>().0.iter().all(|px| px[3] == 255);
+        Self {
             width,
             height,
             pixels: pixels.into(),
             opaque,
             id: NEXT_ID.fetch_add(1, Ordering::Relaxed),
-        })
+        }
     }
 
     /// Width in pixels.
@@ -115,6 +129,16 @@ impl Picture {
     /// Height in pixels.
     pub fn height(&self) -> u32 {
         self.height
+    }
+
+    /// Tells the backends' texture caches this picture from every other.
+    pub(crate) fn id(&self) -> u64 {
+        self.id
+    }
+
+    /// Whether every pixel is opaque.
+    pub(crate) fn is_opaque(&self) -> bool {
+        self.opaque
     }
 
     /// The premultiplied pixel at (`x`, `y`) as floats, clamped to the edges.
@@ -134,7 +158,7 @@ impl Picture {
 
     /// The picture's colour at (`u`, `v`) pixels (bilinear, pixel centres at +0.5),
     /// averaged over a `radius`-pixel box when it is shrunk a lot.
-    fn sample(&self, u: f64, v: f64, radius: i64) -> [f32; 4] {
+    pub(crate) fn sample(&self, u: f64, v: f64, radius: i64) -> [f32; 4] {
         if radius <= 1 {
             let (x, y) = (u - 0.5, v - 0.5);
             let (x0, y0) = (x.floor(), y.floor());

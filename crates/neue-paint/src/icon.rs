@@ -3,16 +3,21 @@
 //!
 //! An [`Icon`] is drawn into a square (or any) rectangle with [`icon`]: glyphs follow the
 //! colour given, a [`VectorIcon`]'s shapes either follow it too ([`IconPaint::Current`]) or
-//! have their own colours for light and dark ([`IconPaint::Fixed`]).
+//! have their own colours for light and dark ([`IconPaint::Fixed`]). A raster icon
+//! ([`Icon::raster`], task 3.3) is a [`Picture`]: the pixels of an icon-theme PNG, or of an
+//! SVG that `neue-desktop` rasterised at the size it will be drawn; it keeps its own colours
+//! and is resampled for the device scale like the desktop picture.
 
 use std::sync::Arc;
 
 use thiserror::Error;
 use vello_common::kurbo::{Affine, BezPath, Circle, Line, Point, Rect, Stroke};
-use vello_common::peniko::Color;
+use vello_common::peniko::{Color, ImageAlphaType};
+use vello_common::pixmap::{PixelMetadata, Pixmap};
 
 use crate::Variant;
-use crate::scene::Scene;
+use crate::materials::desktop::Picture;
+use crate::scene::{ProceduralTexture, Scene, TextureBrush};
 
 /// The named glyphs: original flat shapes on a 16-unit grid, drawn in one colour so they
 /// follow the surrounding text.
@@ -162,6 +167,7 @@ pub struct Icon(Repr);
 enum Repr {
     Glyph(Glyph),
     Vector(Arc<VectorIcon>),
+    Raster(Picture),
 }
 
 impl Icon {
@@ -169,25 +175,45 @@ impl Icon {
     pub fn glyph(&self) -> Option<Glyph> {
         match self.0 {
             Repr::Glyph(g) => Some(g),
-            Repr::Vector(_) => None,
+            Repr::Vector(_) | Repr::Raster(_) => None,
         }
     }
 
     /// The vector icon, if this is one.
     pub fn vector(&self) -> Option<&VectorIcon> {
         match &self.0 {
-            Repr::Glyph(_) => None,
             Repr::Vector(v) => Some(v),
+            Repr::Glyph(_) | Repr::Raster(_) => None,
         }
+    }
+
+    /// An icon made of the pixels of `picture` (kept as they are, in their own colours).
+    pub fn raster(picture: Picture) -> Self {
+        Self(Repr::Raster(picture))
+    }
+
+    /// The picture, if this is a raster icon.
+    pub fn picture(&self) -> Option<&Picture> {
+        match &self.0 {
+            Repr::Raster(p) => Some(p),
+            Repr::Glyph(_) | Repr::Vector(_) => None,
+        }
+    }
+
+    /// Whether the icon has colours of its own (a vector icon with fixed paints, or a
+    /// raster one) rather than following the colour it is drawn in.
+    pub fn has_own_colors(&self) -> bool {
+        !matches!(self.0, Repr::Glyph(_))
     }
 }
 
-/// Glyphs compare by value; vector icons by identity (clones of one are equal).
+/// Glyphs compare by value; vector and raster icons by identity (clones of one are equal).
 impl PartialEq for Icon {
     fn eq(&self, other: &Self) -> bool {
         match (&self.0, &other.0) {
             (Repr::Glyph(a), Repr::Glyph(b)) => a == b,
             (Repr::Vector(a), Repr::Vector(b)) => Arc::ptr_eq(a, b),
+            (Repr::Raster(a), Repr::Raster(b)) => a.id() == b.id(),
             _ => false,
         }
     }
@@ -224,6 +250,75 @@ pub fn icon(scene: &mut Scene, rect: Rect, icon: &Icon, color: Color, variant: V
                 scene.fill(&path, paint.resolve(color, variant));
             }
         }
+        Repr::Raster(picture) => draw_raster(scene, rect, picture),
+    }
+}
+
+/// Draws a raster icon centred in `rect` at the largest whole-logical-pixel size that fits,
+/// keeping its aspect. The texture is resampled from the picture at the device scale.
+fn draw_raster(scene: &mut Scene, rect: Rect, picture: &Picture) {
+    let (pw, ph) = (f64::from(picture.width()), f64::from(picture.height()));
+    let k = (rect.width() / pw).min(rect.height() / ph);
+    // Sizes are below 65536 (a picture's sides are), so the casts keep their value.
+    let w = (pw * k).round().clamp(1.0, 65535.0);
+    let h = (ph * k).round().clamp(1.0, 65535.0);
+    let x = (rect.x0 + (rect.width() - w) / 2.0).round();
+    let y = (rect.y0 + (rect.height() - h) / 2.0).round();
+    let brush = TextureBrush {
+        texture: Arc::new(RasterTexture {
+            picture: picture.clone(),
+            size: (w as u16, h as u16),
+        }),
+        transform: Affine::translate((x, y)),
+    };
+    scene.fill(&Rect::new(x, y, x + w, y + h), brush);
+}
+
+/// A raster icon placed at a size in logical pixels: what the backends cache and draw.
+struct RasterTexture {
+    picture: Picture,
+    size: (u16, u16),
+}
+
+impl ProceduralTexture for RasterTexture {
+    fn cache_key(&self) -> u64 {
+        // Distinct from the desktop picture's keys by the top bit; the id is unique per
+        // picture and the size places it.
+        (1 << 63)
+            ^ (self.picture.id() << 32)
+            ^ (u64::from(self.size.0) << 16)
+            ^ u64::from(self.size.1)
+    }
+
+    fn tile_size(&self) -> (u16, u16) {
+        self.size
+    }
+
+    fn render(&self, scale: f64) -> Pixmap {
+        let to_px = |logical: u16| (f64::from(logical) * scale).round().clamp(1.0, 65535.0) as u32;
+        let (w, h) = (to_px(self.size.0), to_px(self.size.1));
+        let pic = &self.picture;
+        let (sx, sy) = (
+            f64::from(pic.width()) / f64::from(w),
+            f64::from(pic.height()) / f64::from(h),
+        );
+        let radius = sx.min(sy).floor().max(1.0) as i64;
+        let mut data = Vec::with_capacity(w as usize * h as usize * 4);
+        for y in 0..h {
+            for x in 0..w {
+                let c = pic.sample((f64::from(x) + 0.5) * sx, (f64::from(y) + 0.5) * sy, radius);
+                data.extend(c.map(|v| (v + 0.5).clamp(0.0, 255.0) as u8));
+            }
+        }
+        Pixmap::from_parts(
+            data,
+            w as u16,
+            h as u16,
+            PixelMetadata {
+                may_have_transparency: !pic.is_opaque(),
+                alpha_type: ImageAlphaType::AlphaPremultiplied,
+            },
+        )
     }
 }
 
@@ -433,5 +528,36 @@ mod tests {
             assert!(small > 0, "{glyph:?} draws something");
             assert!(!glyph.name().is_empty());
         }
+    }
+
+    #[test]
+    fn raster_icons_keep_their_colours_and_aspect() {
+        // A 2×1 picture: red, then half-transparent blue (straight alpha in).
+        let pic = Picture::from_rgba8(2, 1, &[255, 0, 0, 255, 0, 0, 255, 128]).unwrap();
+        let icon_ = Icon::raster(pic.clone());
+        assert!(icon_.has_own_colors() && icon_.picture().is_some());
+        assert_eq!(icon_, Icon::raster(pic));
+        assert!(icon_.glyph().is_none() && icon_.vector().is_none());
+
+        // Drawn into a 16×16 box it is 16×8, centred vertically.
+        let mut scene = Scene::new(16.0, 16.0);
+        icon(
+            &mut scene,
+            Rect::new(0.0, 0.0, 16.0, 16.0),
+            &icon_,
+            Color::BLACK,
+            Variant::default(),
+        );
+        let out = crate::cpu::CpuRenderer::new(crate::cpu::Quality::Reference)
+            .render(&scene, 1.0)
+            .unwrap();
+        let px = |x: usize, y: usize| {
+            let i = (y * 16 + x) * 4;
+            out.data_as_u8_slice()[i..i + 4].to_vec()
+        };
+        assert_eq!(px(2, 8), [255, 0, 0, 255]);
+        let blue = px(13, 8);
+        assert!(blue[2] > 120 && blue[3] > 120 && blue[3] < 136, "{blue:?}");
+        assert_eq!(px(2, 2), [0, 0, 0, 0], "above the picture is clear");
     }
 }

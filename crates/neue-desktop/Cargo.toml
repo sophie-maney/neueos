@@ -1,0 +1,22 @@
+[package]
+name = "neue-desktop"
+description = "freedesktop specs for neueOS: desktop entries, icon themes, launching, trash"
+version.workspace = true
+edition.workspace = true
+rust-version.workspace = true
+license.workspace = true
+repository.workspace = true
+publish.workspace = true
+
+[dependencies]
+neue-paint.workspace = true
+png.workspace = true
+resvg.workspace = true
+thiserror.workspace = true
+tracing.workspace = true
+
+[dev-dependencies]
+tempfile.workspace = true
+
+[lints]
+workspace = true

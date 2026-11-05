@@ -79,3 +79,4 @@ Don't edit an accepted ADR's decision; supersede it with a new one.
 | [0067](0067-shell-surfaces-in-platform-and-kit.md) | Shell surfaces: the platform reports outputs, places layer surfaces on them, binds `neue_shell_v1` for the shell and can run with no window; the kit exposes them | Accepted |
 | [0068](0068-shell-skeleton-and-menu-bar.md) | The shell skeleton and menu bar: `MenuBar`/`MenuTitle` in the kit, DejaVu Sans Bold, jiff for the clock, logind for lock/restart/shut down, Log Out as the compositor's `quit` | Accepted |
 | [0069](0069-desktop-background.md) | The desktop background: a `neue-desktop` background layer per output, a vector default picture, photos through the texture cache, `shell.toml`, `png` and `zune-jpeg` | Accepted |
+| [0070](0070-neue-desktop-v0.md) | `neue-desktop` v0: desktop entries, app id matching, icon theme lookup, raster icons from PNG and SVG (`resvg`), launching with an activation token, the trash | Accepted |
