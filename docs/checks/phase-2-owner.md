@@ -252,7 +252,7 @@ Date picker:
 - [ ] **8.1 Do:** click "Icons". Expected: six dark-grey glyphs (folder, page, picture,
   note, star, clock); under them a blue disc with a light tick at three sizes; under that
   two collections side by side: small icons (1,000 items, labels like "Documents",
-  "Pictures 7") and large icons (12 items), labels under the icons, long ones cut with
+  "Pictures 7") and large icons (11 items), labels under the icons, long ones cut with
   "…".
 - [ ] **8.2 Do:** Dark and 2×. Expected: glyphs and ticks turn light, the disc a lighter
   blue; everything sharp, no blurry edges. Set both back.

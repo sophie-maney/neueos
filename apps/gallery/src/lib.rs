@@ -246,7 +246,7 @@ impl Application for Gallery {
                     .bind(&mut self.status),
             )
             .with(Zoom::new(ZOOMS[self.zoom], content).bind(&mut self.zoomed));
-        let root = Stack::row().with(sidebar).with(main);
+        let root = Stack::row().with(sidebar).with_flex(main);
         // The theme switches sit in a unified toolbar (task 2.22b).
         let window = Window::new("Widget Gallery", (860, 600), root)
             .toolbar(switches)

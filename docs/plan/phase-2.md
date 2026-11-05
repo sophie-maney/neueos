@@ -819,7 +819,7 @@ the toolbar).
       there; the runner's `set_keep_active` logic was right and its test stands. Tests: a
       sheet opened in Dark paints dark, and follows a switch while open. **Not yet checked
       in the VM:** re-run 11.13, 11.16.
-- [ ] **2.34 Collection view after scrolling, and the Icons page layout** · Sonnet.
+- [x] **2.34 Collection view after scrolling, and the Icons page layout** · Sonnet.
       - Step 8.6: after scrolling either collection, rows that come into view have a grey
         background; a click repaints them correctly until the next scroll. The background
         fill in `collection.rs` (`paint`, `self.window`) is stale after a scroll: repaint
@@ -832,6 +832,18 @@ the toolbar).
       *Accept:* a test that scrolls a collection and checks the newly visible area paints
       the content background; a test that the column count changes with the width; gallery
       goldens updated after inspecting the diff. Re-run: 8.3–8.8.
+      **Done.** *Scroll:* `RowsWidget::set_window` didn't ask for a repaint, so a scroll
+      that stayed inside the rows already built (no row built or dropped) kept the old
+      background fill and the newly visible strip showed the window's grey; a collection
+      now repaints when its window moves. *Width:* Stack had no way to share a length, so
+      the page never took the window's width. New `Stack::with_flex`: flexible children
+      split what the others leave along the stack, and the stack takes the length it is
+      offered. The gallery's root row (sidebar, then the page) and the two collections use
+      it; the collections' fixed widths are gone. *Items:* the large collection has 11
+      items (runbook 8.1 text updated). Tests: a 4 px wheel scroll paints the content
+      background in the new strip (fails without the fix); a collection's columns follow
+      the window; two flex collections split a row after a label and follow a resize. No
+      golden changed. **Not yet checked in the VM or by eye on macOS:** re-run 8.3–8.8.
 - [ ] **2.35 Sheets hang under the parent's toolbar: private protocol** · Opus. Step 11.7.
       On Wayland the compositor places a sheet at the top of the parent's window geometry
       (2.23c), over its toolbar, because it can't know where a client-side toolbar ends.
