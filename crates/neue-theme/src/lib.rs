@@ -12,8 +12,8 @@
 //! algorithm rather than to the look (noise periods, hash seeds, proportions of a shape
 //! relative to its own size) stay with the material that uses them.
 //!
-//! Design decisions: ADR 0031. The human-readable token reference arrives with task 2.25
-//! (`docs/design/`).
+//! Design decisions: ADR 0031. The human-readable specs (token reference, materials and
+//! motion) are in `docs/design/`; keep them in step with this crate.
 //!
 //! Portable crate: must build and pass tests on macOS and Linux.
 
