@@ -11,10 +11,11 @@
 use std::time::Duration;
 
 use neue_gallery::specimens::{
-    self, BEVEL_SIZE, CHROME_SIZE, COLLECTION_SIZE, COMBO_SIZE, FIELD_SIZE, ICONS_SIZE, MENU_SIZE,
-    OUTLINE_SIZE, PATH_SIZE, POPOVER_SIZE, POPUP_SIZE, PROGRESS_SIZE, PULL_DOWN_SIZE,
-    PUSH_BUTTON_SIZE, SCROLL_SIZE, SEGMENTED_SIZE, SIDEBAR_SIZE, SLIDER_SIZE, SPINNER_SIZE,
-    SPLIT_SIZE, STEPPER_SIZE, SUBMENU_SIZE, TABLE_SIZE, TABS_SIZE, TEXT_VIEW_SIZE, TOGGLE_SIZE,
+    self, BEVEL_SIZE, CHROME_SIZE, COLLECTION_SIZE, COLOR_PANEL_SIZE, COLOR_WELL_SIZE, COMBO_SIZE,
+    FIELD_SIZE, ICONS_SIZE, MENU_SIZE, OUTLINE_SIZE, PATH_SIZE, POPOVER_SIZE, POPUP_SIZE,
+    PROGRESS_SIZE, PULL_DOWN_SIZE, PUSH_BUTTON_SIZE, SCROLL_SIZE, SEGMENTED_SIZE, SIDEBAR_SIZE,
+    SLIDER_SIZE, SPINNER_SIZE, SPLIT_SIZE, STEPPER_SIZE, SUBMENU_SIZE, TABLE_SIZE, TABS_SIZE,
+    TEXT_VIEW_SIZE, TOGGLE_SIZE,
 };
 use neue_kit::testing::{
     self, DISABLED, FOCUSED, Fixture, Goldens, INACTIVE, NORMAL, NavKey, PRESSED, State,
@@ -251,6 +252,7 @@ control_goldens! {
     segmented_first: "segmented-first", SEGMENTED_SIZE, &[NORMAL, PRESSED], specimens::segmented(0);
     segmented_last: "segmented-last", SEGMENTED_SIZE, &[NORMAL], specimens::segmented(2);
     path_control: "path-control", PATH_SIZE, &[NORMAL, PATH_HOVERED, PATH_PRESSED, FOCUSED, DISABLED], specimens::path_control();
+    color_well: "color-well", COLOR_WELL_SIZE, &[NORMAL, PRESSED, FOCUSED, DISABLED], specimens::color_well();
 
     // The pointer goes down on the middle of the slider: the knob at 0.5 doesn't move.
     slider: "slider", SLIDER_SIZE, &[NORMAL, PRESSED, FOCUSED, DISABLED], specimens::slider(0.5);
@@ -442,6 +444,25 @@ fn popover() {
         Theme::default(),
         &[POPOVER_BOTTOM, POPOVER_TOP, POPOVER_LEFT, POPOVER_RIGHT],
         || specimens::popover_anchor::<()>().into(),
+    )
+    .unwrap();
+}
+
+// The colour well's panel (task 2.24b): opened from the keyboard, under its well.
+const PANEL_OPEN: State = ("open", |f: &mut Fixture| {
+    f.focus();
+    f.press_key(NavKey::Return);
+});
+
+#[test]
+fn color_panel() {
+    testing::check_states(
+        &goldens(),
+        "color-panel",
+        COLOR_PANEL_SIZE,
+        Theme::default(),
+        &[PANEL_OPEN],
+        || specimens::color_well_anchor::<()>().into(),
     )
     .unwrap();
 }

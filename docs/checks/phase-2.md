@@ -1013,3 +1013,29 @@ Return: the ring moves to "Macintosh HD" and the status line shows "Path: Macint
 button, then "Users", then "Macintosh HD". Choose "Users": the status line shows
 "Path: Users".
 
+## 27. Checking the colour well (task 2.24b)
+Not run yet. In the VM, set up as in `docs/dev-setup.md` §1.3, with the gallery open on
+the "Pop-ups" page (`NEUE_GALLERY_PAGE=7`).
+
+**1. Look:** `neuectl screenshot /tmp/well1.png`. Expected: under "Colour well", a grey
+bevelled button with a translucent orange swatch over a faint checkerboard, and a second,
+dimmed one beside it.
+
+**2. Open:** click the first well, then screenshot. Expected: a popover under the well,
+its arrow pointing at it, with a rainbow area (a white fade towards the bottom) and a
+round knob near the top left, "Brightness" and "Opacity" sliders and a "Hex" field
+showing `#FF8C1A99`. Click the well again: the panel closes.
+
+**3. Drag:** open it and drag across the area with the button held (`ydotool mousemove`
+and `click 0x40`). Expected: the knob follows, the swatch and the hex field change while
+dragging, and the status line shows "Colour: “#…”" for each step. Move the brightness
+slider to the left: the swatch goes black; back to the right: the same hue returns.
+
+**4. Hex:** click the hex field, select all, type `#336699`. Expected: the swatch turns
+blue as soon as it is valid, the status line shows `#33669999`, the brightness slider
+moves. Type `zz` and press Return: the field goes back to the colour's hex.
+
+**5. Keyboard:** Tab to the first well, press Space. Expected: the panel opens and takes
+the focus; Tab goes to the area, and Left, Right, Up and Down move the knob. Escape closes
+the panel and the focus ring is back on the well.
+
