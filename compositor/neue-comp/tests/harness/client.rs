@@ -35,6 +35,7 @@ mod appmenu;
 mod capture;
 mod decoration;
 mod input;
+mod neue_shell;
 mod neue_window;
 mod popup;
 mod presentation;
@@ -46,6 +47,7 @@ pub use decoration::{KdeDefaultMode, KdeMode, XdgMode};
 pub use input::{
     Constraint, ConstraintEvents, GestureSeen, InputMethodEvents, RelativeMotion, TextInputEvents,
 };
+pub use neue_shell::{ShellMenu, ShellWindow};
 pub use popup::Popup;
 pub use presentation::{Feedback, global_names};
 pub use selection::{Drag, read_all};
@@ -127,6 +129,8 @@ struct ClientData {
     appmenu: appmenu::AppmenuData,
     /// `neue_window_v1` objects (see `neue_window.rs`).
     window: neue_window::WindowData,
+    /// `neue_shell_v1` objects and events, and the keys an app got (see `neue_shell.rs`).
+    neue_shell: neue_shell::NeueShellData,
 }
 
 impl TestClient {
@@ -381,7 +385,7 @@ impl TestClient {
     }
 
     /// An ARGB8888 shm buffer of `size` with every pixel `argb` (`0xAARRGGBB`).
-    fn shm_buffer_filled(&mut self, (w, h): (i32, i32), argb: u32) -> WlBuffer {
+    pub(super) fn shm_buffer_filled(&mut self, (w, h): (i32, i32), argb: u32) -> WlBuffer {
         let stride = w * 4;
         let len = stride * h;
         let fd = rustix::fs::memfd_create("neue-comp-test", rustix::fs::MemfdFlags::CLOEXEC)
@@ -506,10 +510,17 @@ impl Dispatch<WlKeyboard, ()> for ClientData {
     ) {
         match event {
             wl_keyboard::Event::Enter { serial, .. } => data.enter_serial = Some(serial),
-            wl_keyboard::Event::Key {
-                state: wayland_client::WEnum::Value(wl_keyboard::KeyState::Pressed),
-                ..
-            } => data.key_presses += 1,
+            wl_keyboard::Event::Key { key, state, .. } => {
+                let pressed = state == wayland_client::WEnum::Value(wl_keyboard::KeyState::Pressed);
+                if pressed {
+                    data.key_presses += 1;
+                }
+                data.neue_shell.app_keys.push((key, pressed));
+            }
+            wl_keyboard::Event::Modifiers { mods_depressed, .. } => {
+                data.neue_shell.mods_depressed = mods_depressed;
+                data.neue_shell.mods_seen |= mods_depressed;
+            }
             _ => {}
         }
     }

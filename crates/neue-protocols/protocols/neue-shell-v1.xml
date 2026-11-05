@@ -1,0 +1,279 @@
+<?xml version="1.0" encoding="UTF-8"?>
+<protocol name="neue_shell_v1">
+  <copyright>
+    Copyright © 2026 the neueOS authors
+
+    This program is free software: you can redistribute it and/or modify it under the
+    terms of the GNU General Public License as published by the Free Software Foundation,
+    either version 3 of the License, or (at your option) any later version.
+
+    SPDX-License-Identifier: GPL-3.0-or-later
+  </copyright>
+
+  <description summary="what neue-comp and neue-shell tell each other">
+    A private neueOS protocol (docs/protocols/neue-shell-v1.md, ADR 0066) between the
+    compositor and the shell (menu bar, dock, OSDs). The compositor tells the shell
+    about the windows and which one is active, and routes the system keys (volume,
+    brightness, media) to it; the shell asks the compositor to activate, minimise and
+    close windows, to run compositor actions and to send key chords to the active
+    window.
+
+    Privileged: the global is only offered to the shell, the client the compositor
+    spawned on a private connection. No other client sees it, and binding it anyway is
+    a protocol error.
+  </description>
+
+  <interface name="neue_shell_manager_v1" version="1">
+    <description summary="the shell's view of the compositor">
+      On bind, the compositor sends a toplevel event for every window that is mapped or
+      minimised, each followed by that toplevel's state and done, then one active event.
+      After that it sends toplevel for each new window and active whenever the active
+      window changes.
+    </description>
+
+    <enum name="modifiers" bitfield="true">
+      <entry name="shift" value="1"/>
+      <entry name="ctrl" value="2"/>
+      <entry name="alt" value="4"/>
+      <entry name="logo" value="8"/>
+    </enum>
+
+    <enum name="system_key">
+      <description summary="keys the compositor hands to the shell">
+        A version of this interface sends only the keys it lists.
+      </description>
+      <entry name="volume_up" value="1"/>
+      <entry name="volume_down" value="2"/>
+      <entry name="mute" value="3"/>
+      <entry name="mic_mute" value="4"/>
+      <entry name="brightness_up" value="5"/>
+      <entry name="brightness_down" value="6"/>
+      <entry name="keyboard_brightness_up" value="7"/>
+      <entry name="keyboard_brightness_down" value="8"/>
+      <entry name="play" value="9"/>
+      <entry name="pause" value="10"/>
+      <entry name="next" value="11"/>
+      <entry name="previous" value="12"/>
+      <entry name="stop" value="13"/>
+      <entry name="eject" value="14"/>
+    </enum>
+
+    <enum name="key_state">
+      <entry name="released" value="0"/>
+      <entry name="pressed" value="1"/>
+    </enum>
+
+    <request name="destroy" type="destructor">
+      <description summary="stop being the shell's view">
+        Toplevel objects made through this manager keep existing but get no more
+        events; the client should destroy them too.
+      </description>
+    </request>
+
+    <request name="run_action">
+      <description summary="run a compositor action">
+        Run the action called name, as `neuectl action` does (`neuectl actions` lists
+        them). toplevel is the window it acts on; null means the active window, or
+        none for actions that take no window. Actions that need further arguments
+        (move-window, resize-window) fail. The result object reports the outcome once.
+      </description>
+      <arg name="result" type="new_id" interface="neue_shell_action_v1"/>
+      <arg name="name" type="string"/>
+      <arg name="toplevel" type="object" interface="neue_shell_toplevel_v1"
+           allow-null="true"/>
+    </request>
+
+    <request name="send_shortcut">
+      <description summary="press a key chord in the active window">
+        Press the modifiers, then the key that produces keysym in the current keyboard
+        layout, then release them in reverse order, as if typed. The keys go to the
+        active window, which is given the keyboard first if something else (a shell
+        menu) has it. This is how the fallback Edit menu runs Undo, Cut, Copy, Paste
+        and Select All. Ignored when no window is active, when the layout has no key
+        for keysym, or while the session is locked.
+      </description>
+      <arg name="modifiers" type="uint" enum="modifiers"/>
+      <arg name="keysym" type="uint" summary="an XKB keysym, e.g. 0x63 for c"/>
+    </request>
+
+    <event name="toplevel">
+      <description summary="a window appeared">
+        A window was mapped, or existed when the manager was bound. Its state follows,
+        ending with done.
+      </description>
+      <arg name="toplevel" type="new_id" interface="neue_shell_toplevel_v1"/>
+    </event>
+
+    <event name="active">
+      <description summary="the active window changed">
+        The window whose app owns the menu bar: the one with keyboard focus, or, while
+        a layer surface (a shell menu), a popup or the lock screen has the keyboard, the
+        window that had it before. Null when no window is active (the desktop was
+        clicked, the last window closed or was minimised). Sent after the toplevel's
+        own events, so its state is known.
+      </description>
+      <arg name="toplevel" type="object" interface="neue_shell_toplevel_v1"
+           allow-null="true"/>
+    </event>
+
+    <event name="system_key">
+      <description summary="a system key was pressed or released">
+        The volume, brightness and media keys go to the shell instead of the focused
+        client, also while the session is locked or a client inhibits shortcuts. A
+        compositor key binding for the same key wins. Repeat is up to the shell (it
+        knows the rate from wl_keyboard.repeat_info). modifiers are the ones held.
+      </description>
+      <arg name="key" type="uint" enum="system_key"/>
+      <arg name="state" type="uint" enum="key_state"/>
+      <arg name="modifiers" type="uint" enum="modifiers"/>
+    </event>
+  </interface>
+
+  <interface name="neue_shell_toplevel_v1" version="1">
+    <description summary="one window, as the shell sees it">
+      State events are buffered and applied together on done. The first batch always
+      carries identifier, title, app_id, state, icon and one of the menu events; later
+      batches carry only what changed (an icon change sends icon and its icon_buffer
+      events again).
+    </description>
+
+    <enum name="state" bitfield="true">
+      <entry name="minimized" value="1" summary="hidden by minimise"/>
+      <entry name="attention" value="2"
+             summary="it asked for focus it was not given (the dock bounces)"/>
+    </enum>
+
+    <request name="destroy" type="destructor">
+      <description summary="forget this window">
+        Sent after closed, or when the shell no longer cares. The window is unaffected.
+      </description>
+    </request>
+
+    <request name="activate">
+      <description summary="raise and focus the window">
+        Restores it first if it is minimised.
+      </description>
+    </request>
+
+    <request name="minimize">
+      <description summary="minimise the window and its dialogs"/>
+    </request>
+
+    <request name="unminimize">
+      <description summary="restore and focus a minimised window"/>
+    </request>
+
+    <request name="close">
+      <description summary="ask the window to close">
+        The app may refuse or ask to save first.
+      </description>
+    </request>
+
+    <request name="set_minimize_rectangle">
+      <description summary="where the window minimises to">
+        The rectangle, in the surface's coordinates, that the window's minimise and
+        restore animation runs towards: the dock tile of its app. The surface must be
+        one of the shell's layer surfaces. A width or height of 0 unsets it. The
+        rectangle follows the surface when it moves.
+      </description>
+      <arg name="surface" type="object" interface="wl_surface"/>
+      <arg name="x" type="int"/>
+      <arg name="y" type="int"/>
+      <arg name="width" type="int"/>
+      <arg name="height" type="int"/>
+    </request>
+
+    <event name="identifier">
+      <description summary="the window's id">
+        Sent once, first. `window-N`, where N is the window's `neuectl` id; the same
+        string as the window's ext_foreign_toplevel_handle_v1 identifier.
+      </description>
+      <arg name="identifier" type="string"/>
+    </event>
+
+    <event name="title">
+      <arg name="title" type="string" summary="empty when unset"/>
+    </event>
+
+    <event name="app_id">
+      <arg name="app_id" type="string" summary="empty when unset"/>
+    </event>
+
+    <event name="state">
+      <arg name="state" type="uint" enum="state"/>
+    </event>
+
+    <event name="icon">
+      <description summary="the window's xdg-toplevel-icon starts here">
+        Replaces the icon. name is the icon theme name the app set, or null; the
+        icon_buffer events that follow before done are its images. Null with no
+        buffers: the app set no icon, and the shell uses the one for its app id.
+      </description>
+      <arg name="name" type="string" allow-null="true"/>
+    </event>
+
+    <event name="icon_buffer">
+      <description summary="one image of the icon">
+        A read-only, sealed memfd holding width × height pixels in ARGB8888 (premultiplied
+        alpha, little-endian, as wl_shm), rows of width × 4 bytes with no padding. scale
+        is the buffer scale the app gave it.
+      </description>
+      <arg name="data" type="fd"/>
+      <arg name="width" type="int"/>
+      <arg name="height" type="int"/>
+      <arg name="scale" type="int"/>
+    </event>
+
+    <event name="menu_dbusmenu">
+      <description summary="the menus are a DBusMenu">
+        The window exports com.canonical.dbusmenu at service and path (from the KDE
+        appmenu protocol). The strings passed a syntax check only (ADR 0025).
+      </description>
+      <arg name="service" type="string"/>
+      <arg name="path" type="string"/>
+    </event>
+
+    <event name="menu_gmenu">
+      <description summary="the menus are GTK's org.gtk.Menus">
+        The window exports its menus with GMenu at bus_name (from gtk_shell1). Paths
+        the app did not give are null. The strings passed a syntax check only.
+      </description>
+      <arg name="bus_name" type="string"/>
+      <arg name="menubar_path" type="string" allow-null="true"/>
+      <arg name="app_menu_path" type="string" allow-null="true"/>
+      <arg name="application_path" type="string" allow-null="true"/>
+      <arg name="window_path" type="string" allow-null="true"/>
+    </event>
+
+    <event name="menu_none">
+      <description summary="no exported menus: the shell shows the fallback menu"/>
+    </event>
+
+    <event name="done">
+      <description summary="apply the state events sent since the last done"/>
+    </event>
+
+    <event name="closed">
+      <description summary="the window is gone">
+        No more events follow. The client should destroy the object.
+      </description>
+    </event>
+  </interface>
+
+  <interface name="neue_shell_action_v1" version="1">
+    <description summary="the outcome of run_action">
+      Exactly one of its events is sent, and then the object is gone.
+    </description>
+
+    <event name="done" type="destructor">
+      <description summary="the action ran"/>
+    </event>
+
+    <event name="failed" type="destructor">
+      <description summary="the action did not run">
+        message says why (an unknown action, a missing window, a missing argument).
+      </description>
+      <arg name="message" type="string"/>
+    </event>
+  </interface>
+</protocol>

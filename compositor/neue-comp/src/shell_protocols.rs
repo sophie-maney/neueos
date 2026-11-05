@@ -6,6 +6,7 @@
 //! (`layer.rs`, `lock.rs`).
 
 use smithay::desktop::Window;
+use smithay::reexports::wayland_protocols::xdg::shell::server::xdg_toplevel::XdgToplevel;
 use smithay::reexports::wayland_server::Resource;
 use smithay::reexports::wayland_server::protocol::wl_surface::WlSurface;
 use smithay::wayland::compositor::with_states;
@@ -72,7 +73,11 @@ impl XdgDialogHandler for State {
 }
 
 impl XdgToplevelIconHandler for State {
-    // Icons are stored on the surface by Smithay; the dock reads them (Phase 3).
+    /// Smithay stores the icon on the surface; the commit that applies it passes it on to
+    /// the shell (`neue_shell.rs`).
+    fn set_icon(&mut self, _toplevel: XdgToplevel, wl_surface: WlSurface) {
+        self.shell_icon_set(&wl_surface);
+    }
 }
 
 impl XdgSystemBellHandler for State {

@@ -85,6 +85,7 @@ impl CompositorHandler for State {
                 window.on_commit();
                 if &root == surface {
                     self.window_committed(&window);
+                    self.shell_window_committed(&window);
                 }
             }
         }
@@ -272,6 +273,9 @@ impl SeatHandler for State {
         // A pointer constraint follows keyboard focus too.
         self.refresh_pointer_constraint_for(focused);
 
+        // Smithay holds the keyboard's lock here, so the shell is given the focus rather
+        // than asking for it.
+        self.shell_focus_changed(focused);
         // Tell `neuectl` subscribers, once per actual change.
         let window = focused
             .and_then(|s| self.window_for_surface(s))

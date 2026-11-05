@@ -28,7 +28,7 @@ keyboard). The `neue-shell` process is Linux-only; its widgets live in portable 
 their goldens and the gallery's "Shell" page run on macOS.
 
 ## A. Foundations
-- [ ] **3.1 `neue-shell-v1` protocol** · Opus. The private protocol between the
+- [x] **3.1 `neue-shell-v1` protocol** · Opus. The private protocol between the
       compositor and the shell (`crates/neue-protocols/`, `docs/protocols/`), with an
       ADR. Events: the focused toplevel, and per window its app id, title, minimised and
       attention state, `xdg-toplevel-icon` and the global-menu address (ADR 0005, 0025),
@@ -43,6 +43,11 @@ their goldens and the gallery's "Shell" page run on macOS.
       *Accept:* headless tests with a scripted client cover every event and request,
       including a refused bind from a second client; `neuectl` unchanged or extended
       additively.
+      *Done:* ADR 0066, `docs/protocols/neue-shell-v1.md`. The compositor spawns the shell
+      itself (`neue-comp --shell <cmd>`, private socket in `WAYLAND_SOCKET`) and restarts it
+      (at once after 10 s of life, else 250 ms doubling to 30 s); only that client sees the
+      global. `neuectl` unchanged. 3.2 adds `--shell /usr/bin/neue-shell` to
+      `neue-comp.service`.
 - [ ] **3.2 `neue-shell` skeleton, menu bar and desktop background** · Opus. New crate
       `neue-shell`: one process, several layer surfaces, shared state (window list from
       3.1, settings, later the app registry). A menu bar on every output (top layer,

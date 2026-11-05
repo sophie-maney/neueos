@@ -41,6 +41,8 @@ rustix = { version = "1", features = ["fs"] }
 # Hand-generated protocols (neue-protocols, ADR 0025). Versions match Smithay's.
 wayland-server = "0.31"
 wayland-backend = "0.3"
+# Bitfield enums in generated protocol code (neue-protocols); already in the tree via Smithay.
+bitflags = "2"
 wayland-scanner = "0.31"
 wayland-protocols-plasma = "0.3"
 
