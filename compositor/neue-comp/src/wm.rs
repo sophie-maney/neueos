@@ -296,6 +296,7 @@ impl State {
         keyboard.set_focus(self, None, serial);
         // Smithay does not call `focus_changed` when focus is dropped.
         self.refresh_pointer_constraint_for(None);
+        self.shell_refresh_active();
         self.send_pending_configures();
     }
 
@@ -367,6 +368,7 @@ impl State {
             Self::with_wm_data(&window, |d| d.reported = Some(info.clone()));
             self.emit(Event::WindowOpened(info));
         }
+        self.shell_window_opened(&window);
         self.focus_window(&window);
     }
 
@@ -390,6 +392,7 @@ impl State {
         self.retire_foreign_toplevel(window);
         self.space.unmap_elem(window);
         self.minimized.retain(|(w, _)| w != window);
+        self.shell_window_closed(window);
         if let Some(id) = self.window_id(window) {
             self.emit(Event::WindowClosed { window: id });
         }
@@ -398,6 +401,7 @@ impl State {
             // Smithay does not call `focus_changed` when the destroyed surface already
             // cleared the focus, so report it ourselves (a no-op if it was reported).
             self.report_focus(self.focused_window_id());
+            self.shell_refresh_active();
         }
     }
 
@@ -737,6 +741,8 @@ impl State {
         if Self::with_wm_data(window, |d| d.reported.is_none()) {
             return;
         }
+        // The shell diffs its own snapshot, so it hears about changes during a grab too.
+        self.shell_window_changed(window);
         if self.is_sheet(window)
             && self
                 .parent_window(window)

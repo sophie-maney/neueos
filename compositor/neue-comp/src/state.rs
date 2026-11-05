@@ -63,6 +63,7 @@ use crate::config::ConfigRuntime;
 use crate::decorations::Chrome;
 use crate::ipc::IpcServer;
 use crate::lock::SessionLockStatus;
+use crate::neue_shell::NeueShellState;
 use crate::neue_window::NeueWindowState;
 use crate::outputs::LaidOutOutput;
 use crate::presentation::TearingControlState;
@@ -196,6 +197,10 @@ pub struct State {
     pub appmenu_state: AppmenuState,
     /// `neue_window_v1`: where a window's own chrome ends, for sheets (ADR 0064).
     pub neue_window_state: NeueWindowState,
+    /// `neue_shell_v1`: the shell's window list, requests and system keys (ADR 0066).
+    pub neue_shell: NeueShellState,
+    /// The shell process, when `--shell` gave one (`shell_launch.rs`).
+    pub(crate) shell_launcher: Option<crate::shell_launch::ShellLauncher>,
     pub shortcuts_inhibit_state: KeyboardShortcutsInhibitState,
     /// The shortcut inhibitor of the focused surface, while it is active: key bindings are
     /// off.
@@ -327,6 +332,7 @@ impl State {
         let system_bell_state = XdgSystemBellState::new::<Self>(&dh);
         let appmenu_state = AppmenuState::new(&dh);
         let neue_window_state = NeueWindowState::new(&dh);
+        let neue_shell = NeueShellState::new(&dh);
         let shortcuts_inhibit_state = KeyboardShortcutsInhibitState::new::<Self>(&dh);
         let pointer_constraints_state = PointerConstraintsState::new::<Self>(&dh);
         let relative_pointer_state = RelativePointerManagerState::new::<Self>(&dh);
@@ -406,6 +412,8 @@ impl State {
             system_bell_state,
             appmenu_state,
             neue_window_state,
+            neue_shell,
+            shell_launcher: None,
             shortcuts_inhibit_state,
             active_inhibitor: None,
             pointer_constraints_state,
@@ -577,6 +585,8 @@ pub struct ClientState {
     pub compositor_state: CompositorClientState,
     /// The sandbox the client connected through, if any (see `security.rs`).
     pub security_context: Option<SecurityContext>,
+    /// The shell (`neue_shell.rs`): the only client that sees `neue_shell_manager_v1`.
+    pub shell: bool,
 }
 
 impl ClientData for ClientState {

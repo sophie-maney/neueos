@@ -5,6 +5,8 @@
 //!   announce their `org.gtk.Menus` address through it.
 //! * [`neue_window`]: our `neue_window_v1` (ADR 0064). A window that draws its own chrome
 //!   tells neue-comp where that chrome ends, so sheets hang under it.
+//! * [`neue_shell`]: our `neue_shell_v1` (ADR 0066). The compositor and the shell: the
+//!   window list, the active window, window requests, actions, key chords, system keys.
 //!
 //! Enable `server` for the compositor and `client` for scripted test clients.
 
@@ -84,5 +86,38 @@ pub mod neue_window {
         use self::__interfaces::*;
 
         wayland_scanner::generate_server_code!("./protocols/neue-window-v1.xml");
+    }
+}
+
+/// `neue_shell_v1` v1 (`protocols/neue-shell-v1.xml`, `docs/protocols/neue-shell-v1.md`).
+pub mod neue_shell {
+    #[cfg(feature = "client")]
+    pub mod client {
+        //! Client-side API (the shell, tests).
+        use wayland_client;
+        use wayland_client::protocol::*;
+
+        pub mod __interfaces {
+            use wayland_client::protocol::__interfaces::*;
+            wayland_scanner::generate_interfaces!("./protocols/neue-shell-v1.xml");
+        }
+        use self::__interfaces::*;
+
+        wayland_scanner::generate_client_code!("./protocols/neue-shell-v1.xml");
+    }
+
+    #[cfg(feature = "server")]
+    pub mod server {
+        //! Server-side API (the compositor).
+        use wayland_server;
+        use wayland_server::protocol::*;
+
+        pub mod __interfaces {
+            use wayland_server::protocol::__interfaces::*;
+            wayland_scanner::generate_interfaces!("./protocols/neue-shell-v1.xml");
+        }
+        use self::__interfaces::*;
+
+        wayland_scanner::generate_server_code!("./protocols/neue-shell-v1.xml");
     }
 }

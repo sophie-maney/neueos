@@ -44,6 +44,7 @@ pub mod interaction;
 mod ipc;
 mod layer;
 pub mod lock;
+mod neue_shell;
 mod neue_window;
 pub mod outputs;
 pub mod placement;
@@ -57,6 +58,7 @@ mod screencopy;
 mod security;
 pub mod session;
 mod sheets;
+mod shell_launch;
 mod shell_protocols;
 pub mod state;
 mod sync;
@@ -125,6 +127,9 @@ pub struct Options {
     /// Run as a `Type=notify` systemd user service (ADR 0027): once listening, import
     /// `WAYLAND_DISPLAY` and `DISPLAY` into the user manager and send `READY=1`.
     pub notify: bool,
+    /// The shell command (run through `sh -c`): started on a private connection, the only
+    /// client that may bind `neue_shell_v1`, and restarted when it exits (ADR 0066).
+    pub shell: Option<String>,
 }
 
 impl Options {
@@ -139,6 +144,7 @@ impl Options {
             headless_renderer: false,
             xwayland: Some(XwaylandOptions::default()),
             notify: false,
+            shell: None,
         }
     }
 }
@@ -232,6 +238,9 @@ impl Compositor {
         if let Some(xwayland) = &options.xwayland {
             state.init_xwayland(xwayland);
         }
+        if let Some(shell) = &options.shell {
+            state.init_shell(shell.clone());
+        }
 
         // Wake the loop when clients send requests. They are dispatched in the loop callback
         // of `run`, which owns the `Display`; this keeps the display out of `State` and
@@ -286,6 +295,7 @@ impl Compositor {
                 if let Err(err) = display.dispatch_clients(state) {
                     warn!(%err, "dispatching clients failed");
                 }
+                state.shell_send_action_results();
                 state.attach_sheets();
                 state.space.refresh();
                 state.popups.cleanup();
@@ -340,20 +350,8 @@ pub fn spawn(command: &str, state: &State) {
         );
         return;
     };
-    let mut process = Command::new("/bin/sh");
-    process
-        .arg("-c")
-        .arg(command)
-        .env("WAYLAND_DISPLAY", socket_name);
-    // Children reach X11 only through our on-demand satellite, never a foreign X server.
-    match state.xwayland_display() {
-        Some(display) => process.env("DISPLAY", display),
-        None => process.env_remove("DISPLAY"),
-    };
-    match state.ipc.path() {
-        Some(path) => process.env(neue_ipc::SOCKET_ENV, path),
-        None => process.env_remove(neue_ipc::SOCKET_ENV),
-    };
+    let mut process = client_command(command, state);
+    process.env("WAYLAND_DISPLAY", socket_name);
     let result = process.spawn();
     match result {
         Ok(mut child) => {
@@ -369,6 +367,27 @@ pub fn spawn(command: &str, state: &State) {
         }
         Err(err) => warn!(command, %err, "failed to spawn"),
     }
+}
+
+/// `sh -c command` with the environment our clients get: `DISPLAY` for X11, the
+/// `neuectl` socket, and `WAYLAND_DISPLAY` when we listen on a socket.
+pub(crate) fn client_command(command: &str, state: &State) -> Command {
+    let mut process = Command::new("/bin/sh");
+    process.arg("-c").arg(command);
+    match &state.socket_name {
+        Some(socket_name) => process.env("WAYLAND_DISPLAY", socket_name),
+        None => process.env_remove("WAYLAND_DISPLAY"),
+    };
+    // Children reach X11 only through our on-demand satellite, never a foreign X server.
+    match state.xwayland_display() {
+        Some(display) => process.env("DISPLAY", display),
+        None => process.env_remove("DISPLAY"),
+    };
+    match state.ipc.path() {
+        Some(path) => process.env(neue_ipc::SOCKET_ENV, path),
+        None => process.env_remove(neue_ipc::SOCKET_ENV),
+    };
+    process
 }
 
 #[cfg(test)]

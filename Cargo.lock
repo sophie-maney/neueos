@@ -2584,6 +2584,7 @@ dependencies = [
 name = "neue-protocols"
 version = "0.0.0"
 dependencies = [
+ "bitflags 2.13.2",
  "wayland-backend",
  "wayland-client",
  "wayland-scanner",

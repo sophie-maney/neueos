@@ -33,7 +33,7 @@ pub use client::{
     Anchor, CaptureFrame, CaptureSession, Constraint, ConstraintEvents, Drag, Feedback,
     ForeignToplevel, FrameState, GestureSeen, InputMethodEvents, KdeDefaultMode, KdeMode,
     KeyboardInteractivity, Layer, LayerHandle, Popup, RelativeMotion, SessionEvents, SessionLock,
-    TestClient, TextInputEvents, Toplevel, XdgMode, global_names, read_all,
+    ShellMenu, ShellWindow, TestClient, TextInputEvents, Toplevel, XdgMode, global_names, read_all,
 };
 
 /// How long [`Server::with_state`] waits for the compositor before failing the test.
@@ -68,7 +68,16 @@ impl Server {
         Self::start_with(None, true)
     }
 
+    /// Start a headless compositor that runs `command` as its shell (`--shell`).
+    pub fn start_with_shell(command: &str) -> Self {
+        Self::start_full(None, false, Some(command.to_owned()))
+    }
+
     fn start_with(config: Option<&str>, headless_renderer: bool) -> Self {
+        Self::start_full(config, headless_renderer, None)
+    }
+
+    fn start_full(config: Option<&str>, headless_renderer: bool, shell: Option<String>) -> Self {
         init_tracing();
         let socket_dir = tempfile::tempdir().expect("creating a temporary directory");
         let socket = socket_dir.path().join("comp.sock");
@@ -88,6 +97,7 @@ impl Server {
                     ipc_socket,
                     config: layers,
                     headless_renderer,
+                    shell,
                     ..Options::new(BackendKind::Headless)
                 };
                 let compositor = Compositor::new(&options)?;
@@ -153,6 +163,19 @@ impl Server {
     /// Connect a new scripted client.
     pub fn connect(&self) -> TestClient {
         TestClient::new(self.connect_raw())
+    }
+
+    /// Connect a new scripted client as the shell: the one that sees `neue_shell_v1`.
+    pub fn connect_shell(&self) -> TestClient {
+        let (ours, theirs) = UnixStream::pair().expect("creating a socket pair");
+        self.with_state(move |state| {
+            state
+                .insert_shell_client(theirs)
+                .map(drop)
+                .map_err(|err| err.to_string())
+        })
+        .expect("inserting the shell client");
+        TestClient::new(ours)
     }
 
     /// The client end of a new connection, for a client the harness doesn't script

@@ -75,3 +75,4 @@ Don't edit an accepted ADR's decision; supersede it with a new one.
 | [0063](0063-window-theme-and-focus-leave.md) | A window carries its own theme properties; the Wayland driver never drops a keyboard leave | Accepted |
 | [0064](0064-neue-window-protocol.md) | `neue_window_v1`: a window tells neue-comp where its own chrome ends, and sheets hang under it | Accepted |
 | [0065](0065-imaging-fork-layer-texture-size.md) | Patch `imaging` from our fork so vello_gpu's layer textures can grow past 4096 px | Accepted |
+| [0066](0066-neue-shell-protocol.md) | `neue_shell_v1`: the compositor spawns the shell on a private socket, restarts it, and is the only one to offer it windows, actions, key chords and system keys | Accepted |

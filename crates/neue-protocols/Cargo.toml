@@ -1,6 +1,6 @@
 [package]
 name = "neue-protocols"
-description = "neueOS Wayland protocol bindings generated from vendored XML (gtk_shell1, neue_window_v1)"
+description = "neueOS Wayland protocol bindings generated from vendored XML (gtk_shell1, neue_window_v1, neue_shell_v1)"
 version.workspace = true
 edition.workspace = true
 rust-version.workspace = true
@@ -16,6 +16,7 @@ server = ["dep:wayland-server"]
 client = ["dep:wayland-client"]
 
 [dependencies]
+bitflags.workspace = true
 wayland-backend.workspace = true
 wayland-scanner.workspace = true
 wayland-server = { workspace = true, optional = true }

@@ -30,6 +30,9 @@ pub enum KeyAction {
     CancelDrag,
     /// The release of a key whose press was a binding: dropped, not forwarded.
     Swallow,
+    /// A system key (volume, brightness, media) that went to the shell (`neue_shell.rs`);
+    /// nothing more to do.
+    ToShell,
 }
 
 /// The VT switch for `keysym`, if it is one.
@@ -127,6 +130,9 @@ impl State {
             |state, modifiers, handle| {
                 // Bindings fire on press and take the matching release with them.
                 if !pressed {
+                    if state.shell_system_key_release(keycode_raw, modifiers) {
+                        return FilterResult::Intercept(KeyAction::ToShell);
+                    }
                     return if state.config.swallowed.remove(&keycode_raw) {
                         FilterResult::Intercept(KeyAction::Swallow)
                     } else {
@@ -151,6 +157,11 @@ impl State {
                         state.config.swallowed.insert(keycode_raw);
                         FilterResult::Intercept(action)
                     }
+                    // A binding wins; otherwise the shell takes the system keys, also on
+                    // the lock screen and past a shortcut inhibitor (ADR 0066).
+                    None if state.shell_system_key_press(keycode_raw, sym, modifiers) => {
+                        FilterResult::Intercept(KeyAction::ToShell)
+                    }
                     None => FilterResult::Forward,
                 }
             },
@@ -162,7 +173,7 @@ impl State {
 
     fn run_key_action(&mut self, action: KeyAction) {
         match action {
-            KeyAction::Swallow => {}
+            KeyAction::Swallow | KeyAction::ToShell => {}
             KeyAction::CancelDrag => {
                 let serial = SERIAL_COUNTER.next_serial();
                 self.pointer
