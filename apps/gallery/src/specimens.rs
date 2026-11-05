@@ -3,10 +3,10 @@
 use neue_kit::tokens::Color;
 use neue_kit::{
     Align, BevelButton, Button, CheckState, Checkbox, Collection, ColorWell, Column, ComboBox,
-    ContextMenu, Entry, Glyph, Icon, IconImage, IconPaint, Item, Label, MaterialTile, Menu,
-    MenuItem, Outline, PathControl, PopUpButton, ProgressBar, PullDownButton, Radio, ScrollAxes,
-    ScrollView, Segmented, Shortcut, Slider, SortOrder, SourceList, Specimen, Spinner, Stack,
-    Stepper, Table, TextField, TextView, VectorIcon, VirtualGrid, VirtualList,
+    ContextMenu, Date, DatePicker, Entry, Glyph, Icon, IconImage, IconPaint, Item, Label,
+    MaterialTile, Menu, MenuItem, Outline, PathControl, PopUpButton, ProgressBar, PullDownButton,
+    Radio, ScrollAxes, ScrollView, Segmented, Shortcut, Slider, SortOrder, SourceList, Specimen,
+    Spinner, Stack, Stepper, Table, TextField, TextView, VectorIcon, VirtualGrid, VirtualList,
 };
 use neue_kit::{DisplayMode, Toolbar, ToolbarButton};
 use neue_kit::{DividerStyle, Pane, SplitView, TabView, Window};
@@ -919,4 +919,32 @@ pub const COLOR_PANEL_SIZE: (u32, u32) = (306, 440);
 /// A colour well with room around it for its panel (in a [`COLOR_PANEL_SIZE`] window).
 pub fn color_well_anchor<M: 'static>() -> Stack<M> {
     Stack::column().padding(COLOR_PANEL_ROOM).with(color_well())
+}
+
+/// Golden window size for the textual date picker.
+pub const DATE_SIZE: (u32, u32) = (150, 40);
+
+/// Golden window size for the calendar.
+pub const CALENDAR_SIZE: (u32, u32) = (220, 216);
+
+/// The date the specimens show.
+pub const DATE: Date = match Date::new(2026, 11, 5) {
+    Some(date) => date,
+    None => panic!("a real date"),
+};
+
+/// The day the calendar specimens call today (not the clock's, so goldens stay the same).
+pub const TODAY: Date = match Date::new(2026, 11, 20) {
+    Some(date) => date,
+    None => panic!("a real date"),
+};
+
+/// A textual date picker showing [`DATE`].
+pub fn date_picker<M: 'static>() -> DatePicker<M> {
+    DatePicker::new(DATE).label("Date")
+}
+
+/// A calendar with [`DATE`] selected and [`TODAY`] ringed.
+pub fn calendar<M: 'static>() -> neue_kit::CalendarPicker<M> {
+    DatePicker::calendar(DATE).today(TODAY).label("Calendar")
 }

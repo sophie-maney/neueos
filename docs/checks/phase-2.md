@@ -1039,3 +1039,28 @@ moves. Type `zz` and press Return: the field goes back to the colour's hex.
 the focus; Tab goes to the area, and Left, Right, Up and Down move the knob. Escape closes
 the panel and the focus ring is back on the well.
 
+## 28. Checking the date picker (task 2.24c)
+Not run yet. In the VM, set up as in `docs/dev-setup.md` §1.3, with the gallery open on
+the "Pop-ups" page (`NEUE_GALLERY_PAGE=7`).
+
+**1. Look:** `neuectl screenshot /tmp/date1.png`. Expected: under "Date picker", a field
+reading `DD/MM/YYYY` with a stepper to its right (today's day in the VM is not used by the
+field: it shows 05/11/2026), a dimmed copy under it, and to the right a calendar, "November
+2026", with the day 5 filled blue, 20 November ringed, and the days of October and December
+grey at the ends of the page.
+
+**2. Segments:** click the field, then press Up: the day segment is highlighted blue and
+goes to 06, and the status line shows "Date: 2026-11-06". Press Right, then Down: the month
+becomes 10. Press Right and type `2031`: the year changes with the fourth digit only.
+
+**3. Stepper:** click the upper half of the stepper: the selected segment goes up by one;
+the lower half goes down.
+
+**4. Calendar:** click the day 17: it fills blue and the status line shows "Date: 2026-11-17".
+Click the right arrow in the header: the page turns to December and the status line says
+nothing new. Click the circle between the arrows: the page returns to the month of 20
+November (the specimen's "today") and selects it.
+
+**5. Keyboard:** Tab to the calendar. Left and Right move the selection a day, Up and Down a
+week, Page Up and Page Down a month, Home to 20 November; the page follows the selection
+and the status line shows each date.

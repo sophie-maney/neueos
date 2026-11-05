@@ -599,7 +599,7 @@ the paper and leather materials move to Phase 6/7 (Widgets, Write).
         xtask check` on macOS, the HUD goldens on Linux aarch64; x86_64 not run. VM steps in
         `docs/checks/phase-2.md` §25, not run. Not yet: dark controls in a HUD, translucency
         (needs the blur protocol), a shadow (compositor shadows), a title-changing API.
-- [ ] **2.24 Colour well, date picker, path control** · Sonnet. Split into three PRs
+- [x] **2.24 Colour well, date picker, path control** · Sonnet. Split into three PRs
       (a and c are independent; b needs the popover from 2.23a). Decisions: the colour
       panel is a popover, not a HUD window (HUDs have no dark controls yet); dates use a
       small internal civil-date type, no new dependency.
@@ -647,13 +647,31 @@ the paper and leather materials move to Phase 6/7 (Widgets, Write).
         not run. VM steps in `docs/checks/phase-2.md` §27, not run. Not yet: the well
         drawn pressed while its panel is open, a panel that follows `set_color` while open,
         gradient tracks on the sliders, a swatch strip or colour names, an eyedropper.
-  - [ ] **2.24c Date picker** · Sonnet. Textual style (day/month/year segments, stepper
+  - [x] **2.24c Date picker** · Sonnet. Textual style (day/month/year segments, stepper
         arrows, Up/Down changes the focused segment) and graphical calendar style (month
         grid, previous/next month, today, selected day). Internal civil-date type; week
         starts on Monday (locale later). `on_change(Date)` message.
         *Accept:* date-math unit tests (month lengths, leap years); end-to-end tests
         (segment editing, month navigation, keys); goldens; AccessKit grid with cells; a
         gallery entry.
+        *Done:* ADR 0062. `Date` (year 1 to 9999; `weekday`, `add_days`, `add_months`,
+        `month_grid`, ISO `Display`), `DatePicker::new(date)` for the textual style and
+        `DatePicker::calendar(date)` for the graphical one (`CalendarPicker`, with
+        `.today(Date)`), each with `on_change(Date)`, `label`, handle `set_date` and
+        `set_enabled`. The textual field: day, month, year segments (Left and Right; Up and
+        Down or the stepper change one; typed digits, the year taking effect with its fourth
+        digit). The calendar: a header with previous, today and next buttons, Monday-first
+        weeks, neighbouring days dimmed, today ringed; arrows, Page Up and Page Down and Home
+        from the keyboard. AccessKit: spin buttons for the segments, a grid of rows and cells
+        for the calendar. Material `neue_paint::materials::date_picker`, tokens
+        `neue_theme::materials::date_picker`. 10 date-math unit tests, 3 segment unit tests,
+        4 material unit tests, 26 end-to-end tests in `src/tests/dates.rs` (15 textual, 11
+        calendar); 36 goldens `date-picker-{normal,stepper-pressed,focused,disabled}-…` and
+        `calendar-{normal,hovered,next-pressed,focused,disabled}-…`; shown on the gallery's
+        Pop-ups page. Checked: `cargo xtask check` on macOS; Linux and x86_64 not run. VM
+        steps in `docs/checks/phase-2.md` §28, not run. Not yet: locale (names, order, first
+        weekday), minimum and maximum dates, a time of day, local-zone today, repeat while
+        the stepper is held, the selection drawn unfocused in an inactive window.
 - [ ] **2.25 `docs/design/` specs** · Sonnet. Token reference, materials spec, motion
       spec.
 - [ ] **2.26 Exit check** · Sonnet, plus owner VM steps. Screenshot every gallery page

@@ -5,6 +5,7 @@
 mod aqua_button;
 mod bevel_button;
 mod color_well;
+mod date_picker;
 pub mod dock_shelf;
 mod focus_ring;
 mod groove;
@@ -39,6 +40,10 @@ pub use bevel_button::{
 pub use color_well::{
     ColorArea, ColorWell, Hsb, checkerboard, color_area, color_area_knob, color_area_value_at,
     color_hex, color_well, parse_hex,
+};
+pub use date_picker::{
+    Calendar, CalendarLayout, CalendarPart, DateField, calendar, calendar_cell_outline,
+    calendar_layout, calendar_size, date_field, date_field_outline,
 };
 pub use focus_ring::focus_ring;
 pub use linen::{Linen, fill_linen};

@@ -661,6 +661,121 @@ pub mod path_control {
     }
 }
 
+/// The date picker: the textual style (a field of day, month and year segments with a
+/// stepper beside it) and the graphical calendar (a month grid with its header).
+pub mod date_picker {
+    use crate::colors::SemanticColors;
+    use crate::{Appearance, Color, Variant, black, white};
+
+    /// Horizontal padding between the field's edge and its first segment, and its last
+    /// segment and the edge.
+    pub const FIELD_PADDING: f64 = 3.0;
+    /// Horizontal padding between a segment's highlight and its text.
+    pub const SEGMENT_PADDING: f64 = 2.0;
+    /// Vertical space between a segment's highlight and the field's top and bottom edges.
+    pub const SEGMENT_INSET: f64 = 2.0;
+    /// Corner radius of a segment's highlight.
+    pub const SEGMENT_RADIUS: f64 = 2.0;
+    /// Space between the field and its stepper.
+    pub const STEPPER_GAP: f64 = 4.0;
+
+    /// Width of a day cell in the calendar.
+    pub const CELL_WIDTH: f64 = 24.0;
+    /// Height of a day cell in the calendar.
+    pub const CELL_HEIGHT: f64 = 20.0;
+    /// Height of the calendar's header (the month and the buttons).
+    pub const HEADER_HEIGHT: f64 = 26.0;
+    /// Height of the row of weekday names.
+    pub const WEEKDAY_HEIGHT: f64 = 18.0;
+    /// Space between the calendar's edge and its content.
+    pub const PADDING: f64 = 6.0;
+    /// Side of the square hit area of the previous, today and next buttons.
+    pub const BUTTON_SIZE: f64 = 18.0;
+    /// Corner radius of the calendar's frame.
+    pub const RADIUS: f64 = 3.0;
+    /// Corner radius of a day's fill and of the buttons' hover fill.
+    pub const CELL_RADIUS: f64 = 3.0;
+    /// Width of the frame's border.
+    pub const BORDER: f64 = 1.0;
+    /// Stroke width of the arrows.
+    pub const ARROW_STROKE: f64 = 1.5;
+    /// Width of an arrow (a chevron pointing left or right).
+    pub const ARROW_WIDTH: f64 = 4.0;
+    /// Height of an arrow.
+    pub const ARROW_HEIGHT: f64 = 8.0;
+    /// Radius of the circle of the today button.
+    pub const TODAY_RADIUS: f64 = 4.0;
+    /// Stroke width of the ring around today's day.
+    pub const TODAY_RING: f64 = 1.5;
+    /// Opacity of a disabled picker.
+    pub const DISABLED_OPACITY: f32 = 0.5;
+
+    /// The calendar's paper.
+    pub fn background(variant: Variant) -> Color {
+        SemanticColors::new(variant).content_background
+    }
+
+    /// The frame around the calendar.
+    pub fn border(variant: Variant) -> Color {
+        let c = match variant.appearance {
+            Appearance::Light => black(0.35),
+            Appearance::Dark => black(0.7),
+        };
+        if variant.is_increased_contrast() {
+            c.with_alpha((c.components[3] + 0.3).min(1.0))
+        } else {
+            c
+        }
+    }
+
+    /// The hairline under the weekday names.
+    pub fn rule(variant: Variant) -> Color {
+        SemanticColors::new(variant).separator
+    }
+
+    /// The fill of a segment, the selected day: the selection colour.
+    pub fn selection(variant: Variant) -> Color {
+        SemanticColors::new(variant).selection
+    }
+
+    /// The arrows and the today button's circle.
+    pub fn arrow(variant: Variant) -> Color {
+        let c = match variant.appearance {
+            Appearance::Light => black(0.55),
+            Appearance::Dark => white(0.65),
+        };
+        if variant.is_increased_contrast() {
+            match variant.appearance {
+                Appearance::Light => black(0.8),
+                Appearance::Dark => white(0.9),
+            }
+        } else {
+            c
+        }
+    }
+
+    /// The ring around today's day.
+    pub fn today_ring(variant: Variant) -> Color {
+        SemanticColors::new(variant).accent
+    }
+
+    /// The fill of the day or button under the pointer.
+    pub fn hover_fill(variant: Variant) -> Color {
+        match variant.appearance {
+            Appearance::Light => black(0.08),
+            Appearance::Dark => white(0.12),
+        }
+    }
+
+    /// The fill of the day or button held down.
+    pub fn pressed_fill(variant: Variant) -> Color {
+        match variant.appearance {
+            Appearance::Light => black(0.18),
+            Appearance::Dark => white(0.24),
+        }
+    }
+}
+
 /// The colour well (a bevel button holding a swatch) and its panel: the hue and
 /// saturation area, and the checkerboard that shows opacity.
 pub mod color_well {

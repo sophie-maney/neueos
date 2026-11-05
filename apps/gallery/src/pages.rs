@@ -823,6 +823,7 @@ fn pop_ups(_: &mut PageHandles) -> Element<Message> {
              type to choose in a closed pop-up · the combo box takes your own text too · \
              right-click a field for Cut, Copy and Select All · click a path segment, or use \
              Left, Right and Return · press a colour well to choose a colour, drag in its panel \
+             · Up and Down or digits change a date segment, click a day in the calendar \
              · the status line shows what you chose",
         ))
         .with(
@@ -868,6 +869,21 @@ fn pop_ups(_: &mut PageHandles) -> Element<Message> {
                         .on_change(|c| Message::Field("Colour", specimens::hex(c))),
                 )
                 .with(specimens::color_well().disabled(true)),
+        ))
+        .with(section(
+            "Date picker (textual and graphical styles)",
+            Stack::row()
+                .spacing(spacing::L)
+                .with(
+                    Stack::column()
+                        .spacing(spacing::M)
+                        .with(
+                            specimens::date_picker()
+                                .on_change(|d| Message::Field("Date", d.to_string())),
+                        )
+                        .with(specimens::date_picker().disabled(true)),
+                )
+                .with(specimens::calendar().on_change(|d| Message::Field("Date", d.to_string()))),
         ))
         .with(section(
             "Combo box",
