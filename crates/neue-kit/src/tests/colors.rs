@@ -161,12 +161,9 @@ fn hex_text(runner: &Runner<Wells>, host: &mut FakeHost) -> String {
     hex_field(runner, host).1
 }
 
+/// The command key: Super (⌘) on every host (ADR 0080).
 fn command() -> Modifiers {
-    if cfg!(target_os = "macos") {
-        Modifiers::META
-    } else {
-        Modifiers::CONTROL
-    }
+    Modifiers::META
 }
 
 /// Clicks in the hex field, selects all of its text and types `text`.

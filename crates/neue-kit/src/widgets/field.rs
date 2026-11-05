@@ -486,13 +486,13 @@ impl FieldWidget {
     ) -> Option<bool> {
         let mac = cfg!(target_os = "macos");
         let shift = mods.shift();
-        // The command key acts on the clipboard and, on macOS, jumps to the ends of the
-        // line; the word key moves by words. A secure field has no words: its word moves
-        // go to the ends.
-        let command = if mac { mods.meta() } else { mods.ctrl() };
+        // The command key (Super, ⌘; ADR 0080) acts on the clipboard and jumps to the ends
+        // of the line; the word key (Option on macOS, Ctrl elsewhere) moves by words. A
+        // secure field has no words: its word moves go to the ends.
+        let command = mods.meta();
         let secure = self.kind == Kind::Secure;
         let word = if mac { mods.alt() } else { mods.ctrl() };
-        let to_end = (mac && command) || (word && secure);
+        let to_end = command || (word && secure);
         let word = word && !secure;
         let collapsed = self.editor.raw_selection().is_collapsed();
         let mut changed = false;

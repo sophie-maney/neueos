@@ -18,28 +18,9 @@
 //!     ));
 //! ```
 
-use std::cell::Cell;
 use std::sync::Arc;
 
 use crate::CheckState;
-
-thread_local! {
-    /// Overrides which key the command key is on this thread (goldens draw the same
-    /// shortcuts on every host).
-    static COMMAND_IS_CTRL: Cell<Option<bool>> = const { Cell::new(None) };
-}
-
-/// Makes the command key Ctrl on this thread, whatever the host.
-#[cfg(feature = "testing")]
-pub(crate) fn command_is_ctrl_here() {
-    COMMAND_IS_CTRL.with(|c| c.set(Some(true)));
-}
-
-fn command_is_ctrl() -> bool {
-    COMMAND_IS_CTRL
-        .with(Cell::get)
-        .unwrap_or(!cfg!(target_os = "macos"))
-}
 
 /// A list of items, separators and submenus.
 pub struct Menu<M> {
@@ -320,8 +301,8 @@ impl Shortcut {
         }
     }
 
-    /// The command key and `key`. The command key is Cmd on macOS hosts and Ctrl
-    /// elsewhere, as in text fields (ADR 0042).
+    /// The command key and `key`. The command key is Super (⌘) on every host, as in
+    /// text fields (ADR 0080).
     pub fn command(key: impl Into<String>) -> Self {
         Self {
             command: true,
@@ -343,7 +324,7 @@ impl Shortcut {
         self
     }
 
-    /// Adds Ctrl (Control on macOS, where it isn't the command key).
+    /// Adds Ctrl (Control, which isn't the command key).
     #[must_use]
     pub fn ctrl(mut self) -> Self {
         self.ctrl = true;
@@ -365,9 +346,8 @@ impl Shortcut {
 
     /// Ctrl, Alt, Shift and the command key, in display order, as (glyph, name).
     fn modifiers(&self) -> Vec<(&'static str, &'static str)> {
-        let ctrl = self.ctrl || (self.command && command_is_ctrl());
         let mut mods = Vec::new();
-        if ctrl {
+        if self.ctrl {
             mods.push(("⌃", "Ctrl"));
         }
         if self.alt {
@@ -376,7 +356,7 @@ impl Shortcut {
         if self.shift {
             mods.push(("⇧", "Shift"));
         }
-        if self.command && !command_is_ctrl() {
+        if self.command {
             mods.push(("⌘", "Cmd"));
         }
         mods
@@ -481,13 +461,10 @@ mod tests {
     #[test]
     fn shortcuts_show_glyphs_and_read_names() {
         let s = Shortcut::command("s").shift();
-        if cfg!(target_os = "macos") {
-            assert_eq!(s.label(), "⇧⌘S");
-            assert_eq!(s.spoken(), "Shift+Cmd+S");
-        } else {
-            assert_eq!(s.label(), "⌃⇧S");
-            assert_eq!(s.spoken(), "Ctrl+Shift+S");
-        }
+        assert_eq!(s.label(), "⇧⌘S");
+        assert_eq!(s.spoken(), "Shift+Cmd+S");
+        let s = Shortcut::command("s").ctrl().shift();
+        assert_eq!(s.label(), "⌃⇧⌘S");
         assert_eq!(Shortcut::new("F5").alt().label(), "⌥F5");
     }
 

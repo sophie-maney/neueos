@@ -281,11 +281,19 @@ their goldens and the gallery's "Shell" page run on macOS.
       binding quits the session, so ⌘Q never reaches apps.
       *Owner:* on the PC, Super+C/V in a GTK app (gedit) and a Qt app (KWrite); Super+C in
       an X11 app through xwayland-satellite.
-- [ ] **3.10b Super as ⌘ B: the kit's command key** · Sonnet. After 3.10a. neue-kit's
+- [x] **3.10b Super as ⌘ B: the kit's command key** · Sonnet. After 3.10a. neue-kit's
       command key is Super (META) on Linux as on macOS: text fields, text views, tables,
       Super+V paste in neue-platform's clipboard driver; kit menus draw ⌘. ADR 0042 amended.
       *Accept:* kit tests with META as the command key on every host; in the VM, Super+C and
       Super+V copy and paste in the gallery, and its menus show ⌘.
+      *Done (ADR 0080):* META is the command key on every host in fields, text views,
+      tables and collections; the Wayland driver pastes on Super+V (Ctrl+V no longer does);
+      `Shortcut::command` always draws ⌘ (the per-thread Ctrl override is gone, so the
+      menu goldens changed). ⌘←/→/⌫ also work on Linux; Ctrl stays the word key and
+      Ctrl+Home/End. In the VM, gallery: Super+A, Super+C copy (read back with `wl-paste`),
+      Super+V pastes into another field; Ctrl+A and Ctrl+C do nothing; the context menu
+      shows ⌘X ⌘C ⌘V.
+      *Owner:* none beyond 3.10a's: Super+C/V in a kit app on the PC.
 - [ ] **3.10c Super as ⌘ C: ⌘ in third-party menus** · Sonnet. After 3.10a. A
       `neue_shell_toplevel_v1` event (manager version 3) telling the shell whether Super
       reaches the window's app as Ctrl; neue-platform passes it on in `Toplevel`, and the

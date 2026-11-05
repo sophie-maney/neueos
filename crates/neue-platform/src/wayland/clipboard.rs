@@ -1,10 +1,10 @@
 //! Text clipboard (`wl_data_device`) and primary selection (`zwp_primary_selection_v1`)
 //! for the Wayland driver (task 2.6, ADR 0034 §2).
 //!
-//! - **Copy:** Masonry's text widgets handle Ctrl-C and Ctrl-X and send
-//!   `ClipboardStore`; the driver offers the text under the usual text MIME types and
+//! - **Copy:** neue-kit's text widgets handle Super-C and Super-X (Super is the command key,
+//!   ⌘; ADR 0080) and send `ClipboardStore`; the driver offers the text under the usual text MIME types and
 //!   answers `send` requests itself until another client takes the selection.
-//! - **Paste:** Ctrl-V and Shift-Insert never reach Masonry. The driver reads the
+//! - **Paste:** Super-V and Shift-Insert never reach Masonry. The driver reads the
 //!   selection through a pipe on the event loop (never blocking: the source may be slow,
 //!   or be us) and hands the text over as `TextEvent::ClipboardPaste`. Our own selection
 //!   is pasted straight from memory.
@@ -114,16 +114,16 @@ fn pick_text_mime(offered: &[String]) -> Option<&'static str> {
         .find(|mime| offered.iter().any(|o| o == mime))
 }
 
-/// Ctrl-V (Ctrl-Shift-V too, as in terminals) or Shift-Insert.
+/// Super-V (⌘V; Super-Shift-V too) or Shift-Insert. Ctrl-V is not paste: Ctrl is not the
+/// command key.
 pub(super) fn is_paste(key: &masonry_core::core::KeyboardEvent) -> bool {
     use masonry_core::core::keyboard::{Key, KeyState, NamedKey};
     let m = key.modifiers;
     key.state == KeyState::Down
         && !m.alt()
-        && !m.meta()
         && match &key.key {
-            Key::Character(c) => m.ctrl() && c.eq_ignore_ascii_case("v"),
-            Key::Named(NamedKey::Insert) => m.shift() && !m.ctrl(),
+            Key::Character(c) => m.meta() && !m.ctrl() && c.eq_ignore_ascii_case("v"),
+            Key::Named(NamedKey::Insert) => m.shift() && !m.ctrl() && !m.meta(),
             _ => false,
         }
 }
@@ -439,22 +439,24 @@ mod tests {
     #[test]
     fn paste_keys() {
         let v = || Key::Character("v".into());
-        assert!(is_paste(&key(v(), Modifiers::CONTROL)));
+        assert!(is_paste(&key(v(), Modifiers::META)));
         assert!(is_paste(&key(
             Key::Character("V".into()),
-            Modifiers::CONTROL | Modifiers::SHIFT
+            Modifiers::META | Modifiers::SHIFT
         )));
+        // Ctrl is not the command key.
+        assert!(!is_paste(&key(v(), Modifiers::CONTROL)));
         assert!(is_paste(&key(
             Key::Named(NamedKey::Insert),
             Modifiers::SHIFT
         )));
         assert!(!is_paste(&key(v(), Modifiers::empty())));
-        assert!(!is_paste(&key(v(), Modifiers::CONTROL | Modifiers::ALT)));
+        assert!(!is_paste(&key(v(), Modifiers::META | Modifiers::ALT)));
         assert!(!is_paste(&key(
             Key::Named(NamedKey::Insert),
             Modifiers::empty()
         )));
-        let mut up = key(v(), Modifiers::CONTROL);
+        let mut up = key(v(), Modifiers::META);
         up.state = KeyState::Up;
         assert!(!is_paste(&up));
     }

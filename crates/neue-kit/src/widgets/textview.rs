@@ -262,10 +262,12 @@ impl TextViewWidget {
     ) -> Option<bool> {
         let mac = cfg!(target_os = "macos");
         let shift = mods.shift();
-        // The command key acts on the clipboard and, on macOS, jumps to the ends of the
-        // line (Left, Right) or the text (Up, Down); elsewhere Ctrl with Home and End goes
-        // to the ends of the text, and with the arrows moves by words.
-        let command = if mac { mods.meta() } else { mods.ctrl() };
+        // The command key (Super, ⌘; ADR 0080) acts on the clipboard and jumps to the ends
+        // of the line (Left, Right) or the text (Up, Down); the word key (Option on macOS,
+        // Ctrl elsewhere) moves by words, and on Linux Ctrl with Home and End also goes to
+        // the ends of the text.
+        let command = mods.meta();
+        let ctrl_ends = !mac && mods.ctrl();
         let word = if mac { mods.alt() } else { mods.ctrl() };
         let editable = self.editable;
         let collapsed = self.editor.raw_selection().is_collapsed();
@@ -298,52 +300,50 @@ impl TextViewWidget {
                     changed = true;
                 }
             }
-            Key::Named(NamedKey::ArrowLeft) => {
-                self.drive(ctx, |d| match (mac && command, word, shift) {
-                    (true, _, false) => d.move_to_line_start(),
-                    (true, _, true) => d.select_to_line_start(),
-                    (_, true, false) => d.move_word_left(),
-                    (_, true, true) => d.select_word_left(),
-                    (_, _, false) => d.move_left(),
-                    (_, _, true) => d.select_left(),
-                })
-            }
-            Key::Named(NamedKey::ArrowRight) => {
-                self.drive(ctx, |d| match (mac && command, word, shift) {
-                    (true, _, false) => d.move_to_line_end(),
-                    (true, _, true) => d.select_to_line_end(),
-                    (_, true, false) => d.move_word_right(),
-                    (_, true, true) => d.select_word_right(),
-                    (_, _, false) => d.move_right(),
-                    (_, _, true) => d.select_right(),
-                })
-            }
-            Key::Named(NamedKey::ArrowUp) => self.drive(ctx, |d| match (mac && command, shift) {
+            Key::Named(NamedKey::ArrowLeft) => self.drive(ctx, |d| match (command, word, shift) {
+                (true, _, false) => d.move_to_line_start(),
+                (true, _, true) => d.select_to_line_start(),
+                (_, true, false) => d.move_word_left(),
+                (_, true, true) => d.select_word_left(),
+                (_, _, false) => d.move_left(),
+                (_, _, true) => d.select_left(),
+            }),
+            Key::Named(NamedKey::ArrowRight) => self.drive(ctx, |d| match (command, word, shift) {
+                (true, _, false) => d.move_to_line_end(),
+                (true, _, true) => d.select_to_line_end(),
+                (_, true, false) => d.move_word_right(),
+                (_, true, true) => d.select_word_right(),
+                (_, _, false) => d.move_right(),
+                (_, _, true) => d.select_right(),
+            }),
+            Key::Named(NamedKey::ArrowUp) => self.drive(ctx, |d| match (command, shift) {
                 (true, false) => d.move_to_text_start(),
                 (true, true) => d.select_to_text_start(),
                 (_, false) => d.move_up(),
                 (_, true) => d.select_up(),
             }),
-            Key::Named(NamedKey::ArrowDown) => self.drive(ctx, |d| match (mac && command, shift) {
+            Key::Named(NamedKey::ArrowDown) => self.drive(ctx, |d| match (command, shift) {
                 (true, false) => d.move_to_text_end(),
                 (true, true) => d.select_to_text_end(),
                 (_, false) => d.move_down(),
                 (_, true) => d.select_down(),
             }),
-            Key::Named(NamedKey::Home) => self.drive(ctx, |d| match (command, shift) {
-                (true, false) => d.move_to_text_start(),
-                (true, true) => d.select_to_text_start(),
-                (false, false) => d.move_to_line_start(),
-                (false, true) => d.select_to_line_start(),
-            }),
-            Key::Named(NamedKey::End) => self.drive(ctx, |d| match (command, shift) {
+            Key::Named(NamedKey::Home) => {
+                self.drive(ctx, |d| match (command || ctrl_ends, shift) {
+                    (true, false) => d.move_to_text_start(),
+                    (true, true) => d.select_to_text_start(),
+                    (false, false) => d.move_to_line_start(),
+                    (false, true) => d.select_to_line_start(),
+                })
+            }
+            Key::Named(NamedKey::End) => self.drive(ctx, |d| match (command || ctrl_ends, shift) {
                 (true, false) => d.move_to_text_end(),
                 (true, true) => d.select_to_text_end(),
                 (false, false) => d.move_to_line_end(),
                 (false, true) => d.select_to_line_end(),
             }),
             Key::Named(NamedKey::Backspace) if editable => {
-                let to_start = mac && command && collapsed;
+                let to_start = command && collapsed;
                 self.drive(ctx, |d| match (to_start, word) {
                     (true, _) => {
                         d.select_to_line_start();
@@ -355,7 +355,7 @@ impl TextViewWidget {
                 changed = true;
             }
             Key::Named(NamedKey::Delete) if editable => {
-                let to_end = mac && command && collapsed;
+                let to_end = command && collapsed;
                 self.drive(ctx, |d| match (to_end, word) {
                     (true, _) => {
                         d.select_to_line_end();

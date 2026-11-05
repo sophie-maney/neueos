@@ -77,8 +77,6 @@ impl Fixture {
         scale: f64,
         size: (u32, u32),
     ) -> Self {
-        // Shortcuts in goldens read the same on every host.
-        crate::menu::command_is_ctrl_here();
         let (widget, _wiring) = element.into().into_parts();
         let target = widget.id();
         let mut stack = StackWidget::new(Axis::Vertical, 0.0);
@@ -91,7 +89,6 @@ impl Fixture {
     /// `window` as it opens, filling a window of its size drawn at `scale`: its content
     /// under its chrome, if it has some. The target is the window's root.
     pub fn window<M>(window: Window<M>, theme: Theme, scale: f64) -> Self {
-        crate::menu::command_is_ctrl_here();
         let (root, size) = window.into_root();
         Self::with_root(root, None, theme, scale, size)
     }
@@ -194,7 +191,6 @@ impl Fixture {
 
     /// A sheet as a window of its own (as on Wayland), drawn at `scale`.
     pub fn sheet<M: Clone + 'static>(sheet: Sheet<M>, theme: Theme, scale: f64) -> Self {
-        crate::menu::command_is_ctrl_here();
         let parts = sheet.into_parts();
         let root = RootWidget::new(parts.widget.erased());
         Self::with_root(root, None, theme, scale, parts.size)
@@ -248,12 +244,7 @@ impl Fixture {
 
     /// Selects all of a focused text field's or text view's text (the command key and A).
     pub fn select_text(&mut self) {
-        let command = if cfg!(target_os = "macos") {
-            Modifiers::META
-        } else {
-            Modifiers::CONTROL
-        };
-        self.key(Key::Character("a".to_owned()), command);
+        self.key(Key::Character("a".to_owned()), Modifiers::META);
     }
 
     /// An input method's uncommitted text at the caret of the focused widget, with the

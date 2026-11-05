@@ -102,13 +102,9 @@ fn tap_named(runner: &mut Runner<Form>, host: &mut FakeHost, key: NamedKey) {
     deliver(runner, host);
 }
 
-/// The platform's command key: Cmd on macOS, Ctrl elsewhere.
+/// The command key: Super (⌘) on every host (ADR 0080).
 fn command() -> Modifiers {
-    if cfg!(target_os = "macos") {
-        Modifiers::META
-    } else {
-        Modifiers::CONTROL
-    }
+    Modifiers::META
 }
 
 fn focus(host: &mut FakeHost, field: &Handle<TextField<Msg>>) {
@@ -194,6 +190,18 @@ fn copy_cut_and_paste() {
         .process_text_event(TextEvent::ClipboardPaste("one\ntwo".into()));
     deliver(&mut runner, &mut host);
     assert_eq!(runner.app().log.last(), Some(&Msg::Name("one two".into())));
+}
+
+#[test]
+fn ctrl_is_not_the_command_key() {
+    let (mut runner, mut host) = setup();
+    focus(&mut host, &runner.app().name);
+    type_text(&mut runner, &mut host, "hello");
+    press(&mut host, Key::Character("a".into()), Modifiers::CONTROL);
+    press(&mut host, Key::Character("x".into()), Modifiers::CONTROL);
+    deliver(&mut runner, &mut host);
+    assert_eq!(host.only().clipboard_contents(), "");
+    assert_eq!(runner.app().log.last(), Some(&Msg::Name("hello".into())));
 }
 
 /// The window point `fx` of the way across `field`'s width, at its middle height.

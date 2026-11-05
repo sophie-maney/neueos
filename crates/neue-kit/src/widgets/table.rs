@@ -370,13 +370,9 @@ fn aligned(align: Align, (x0, x1): (f64, f64), width: f64, inset: f64) -> f64 {
     .round()
 }
 
-/// The command key: Cmd on macOS, Ctrl elsewhere.
+/// The command key: Super (⌘) on every host (ADR 0080).
 pub(super) fn command(mods: Modifiers) -> bool {
-    if cfg!(target_os = "macos") {
-        mods.meta()
-    } else {
-        mods.ctrl()
-    }
+    mods.meta()
 }
 
 // --- MARK: CELL
@@ -1778,7 +1774,7 @@ type OnSort<M> = Box<dyn FnMut(usize, SortOrder) -> M>;
 /// changes [`Handle::reload`] builds the visible rows again.
 ///
 /// A click selects a row; with [`multiple`](Self::multiple), Shift-click extends the
-/// selection and Cmd-click (Ctrl-click off macOS) adds or removes a row. With keyboard
+/// selection and Cmd-click adds or removes a row. With keyboard
 /// focus (Tab), Up and Down move the selection (Shift extends it), Home, End, Page Up and
 /// Page Down jump, typing selects the first row whose first column starts with what was
 /// typed, and Return or a double-click activates the selected row. A click on a sortable

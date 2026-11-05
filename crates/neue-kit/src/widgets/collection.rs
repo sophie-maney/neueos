@@ -784,7 +784,7 @@ type OnActivate<M, Id> = Box<dyn FnMut(&Id) -> M>;
 ///
 /// The cells' size follows the icon size ([`icon_size`](Self::icon_size)), and as many
 /// columns as fit the width are used. Clicking selects an item (Shift extends the selection
-/// from the item last clicked, in order, and Cmd, or Ctrl elsewhere, toggles one; both only
+/// from the item last clicked, in order, and Cmd toggles one; both only
 /// with [`multiple`](Self::multiple)); clicking between items clears it. The selection is
 /// the accent while the collection has keyboard focus and grey without. The arrow keys move
 /// the selection over the grid, Left and Right across the end of a row, Home and End go to

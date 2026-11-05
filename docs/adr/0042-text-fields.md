@@ -26,9 +26,9 @@ IME events and paste (ADR 0032, 0034).
    text scrolls sideways just enough to keep the caret inside the text area, and back as
    far as the text allows. Text is clipped to the well. Up and Home go to the start, Down
    and End to the end.
-4. **Keys.** The command key is Cmd on macOS hosts and Ctrl elsewhere (select all, copy,
-   cut; paste is the drivers'); words move with Option on macOS and Ctrl elsewhere;
-   Cmd-Left/Right and Cmd-Backspace/Delete reach the ends on macOS. Tab into a field
+4. **Keys.** The command key is Super (⌘) on every host (select all, copy, cut; paste is
+   the drivers'; amended by ADR 0080, it was Ctrl off macOS); words move with Option on
+   macOS and Ctrl elsewhere; Cmd-Left/Right and Cmd-Backspace/Delete reach the ends. Tab into a field
    selects all its text; a click places the caret, a double click selects a word, a
    triple click everything. Escape clears a search field that has text. Undo is not here.
 5. **Secure fields** keep the real text in the widget and give the editor one `•` per

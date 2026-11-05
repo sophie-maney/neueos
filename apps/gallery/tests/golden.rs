@@ -359,8 +359,8 @@ control_goldens! {
     shell_desktop_fill: "shell-desktop-fill", SHELL_DESKTOP_SIZE, &[NORMAL], specimens::shell_desktop_photo(neue_kit::desktop::Fit::Fill);
     shell_desktop_fit: "shell-desktop-fit", SHELL_DESKTOP_SIZE, &[NORMAL], specimens::shell_desktop_photo(neue_kit::desktop::Fit::Fit);
 
-    context_menu: "context-menu", MENU_SIZE, &[MENU_OPEN, MENU_HIGHLIGHTED], specimens::context_menu(|_| (), specimens::ctrl);
-    context_submenu: "context-menu", SUBMENU_SIZE, &[MENU_SUBMENU], specimens::context_menu(|_| (), specimens::ctrl);
+    context_menu: "context-menu", MENU_SIZE, &[MENU_OPEN, MENU_HIGHLIGHTED], specimens::context_menu(|_| (), specimens::command);
+    context_submenu: "context-menu", SUBMENU_SIZE, &[MENU_SUBMENU], specimens::context_menu(|_| (), specimens::command);
 }
 
 /// The pointer over the traffic lights (between close and minimise): every glyph shows.

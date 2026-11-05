@@ -187,12 +187,9 @@ pub(super) fn click_with<A: Application>(
     deliver(runner, host);
 }
 
+/// The command key: Super (⌘) on every host (ADR 0080).
 pub(super) fn command() -> Modifiers {
-    if cfg!(target_os = "macos") {
-        Modifiers::META
-    } else {
-        Modifiers::CONTROL
-    }
+    Modifiers::META
 }
 
 pub(super) fn key_with<A: Application>(

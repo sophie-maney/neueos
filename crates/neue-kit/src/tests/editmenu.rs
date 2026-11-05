@@ -87,12 +87,9 @@ fn right_click(runner: &mut Runner<Editors>, host: &mut FakeHost, id: WidgetId) 
     deliver(runner, host);
 }
 
+/// The command key: Super (⌘) on every host (ADR 0080).
 fn command() -> Modifiers {
-    if cfg!(target_os = "macos") {
-        Modifiers::META
-    } else {
-        Modifiers::CONTROL
-    }
+    Modifiers::META
 }
 
 fn disabled(host: &mut FakeHost, label: &str) -> bool {
