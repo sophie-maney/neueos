@@ -4,13 +4,15 @@
 
 use masonry_core::accesskit::Role;
 use masonry_core::core::WidgetId;
+use masonry_core::core::WindowEvent;
 use masonry_core::core::keyboard::{Key, Modifiers, NamedKey};
-use masonry_core::kurbo::Point;
+use masonry_core::dpi::PhysicalSize;
+use masonry_core::kurbo::{Point, Vec2};
 use neue_theme::materials::collection::cell_size;
 
 use super::table::{body, body_id, click_with, command, in_body, key, key_with, scroll};
 use super::*;
-use crate::{Collection, Glyph, Item};
+use crate::{Collection, Glyph, Item, Label, Stack};
 
 #[derive(Debug, Clone, PartialEq)]
 enum Msg {
@@ -259,6 +261,44 @@ fn shift_arrows_extend_and_the_keys_scroll_the_selection_into_view() {
 }
 
 #[test]
+fn the_columns_follow_the_window_width() {
+    let (mut runner, mut host) = setup();
+    let c = collection(&runner);
+    assert_eq!(columns(&mut host, c), 4);
+    for (width, expected) in [(224, 3), (440, 6), (296, 4)] {
+        host.only()
+            .render_root()
+            .handle_window_event(WindowEvent::Resize(PhysicalSize::new(width, 200)));
+        let _ = host.only().render();
+        deliver(&mut runner, &mut host);
+        assert_eq!(columns(&mut host, c), expected, "{width} px wide");
+    }
+}
+
+#[test]
+fn rows_scrolled_into_view_paint_the_content_background() {
+    let (mut runner, mut host) = setup();
+    let c = collection(&runner);
+    // A 4 px scroll stays inside the rows already built, so nothing else repaints the
+    // body: its background has to follow the window by itself. (The wheel changes no
+    // selection either.)
+    let at = item_point(&mut host, c, 0);
+    host.only().mouse_move(at);
+    host.only().mouse_wheel(Vec2::new(0.0, -4.0));
+    for _ in 0..2 {
+        let _ = host.only().render();
+        deliver(&mut runner, &mut host);
+    }
+    assert_eq!(scroll(&mut host, c).offset().y, 4.0);
+    // The bottom 4 px of the view are new, left of the cells' icons.
+    let image = host.only().render();
+    let (_, height) = image.dimensions();
+    let pixel = image.get_pixel(1, height - 3).0;
+    // The theme's light content background is white.
+    assert_eq!(pixel, [255, 255, 255, 255], "newly visible space");
+}
+
+#[test]
 fn typing_selects_the_first_item_whose_label_starts_with_it() {
     let (mut runner, mut host) = setup();
     let c = collection(&runner);
@@ -359,4 +399,64 @@ fn assistive_technology_sees_a_grid_of_cells() {
     a11y_click(host.only(), other);
     deliver(&mut runner, &mut host);
     assert_eq!(take_log(&mut runner), [Msg::Selected(vec![106])]);
+}
+
+/// Two collections in a row that share its width, after a label that keeps its own.
+#[derive(Default)]
+struct Pair {
+    first: Handle<Collection<Msg, u32>>,
+    second: Handle<Collection<Msg, u32>>,
+}
+
+impl Application for Pair {
+    type Message = Msg;
+
+    fn start(&mut self, cx: &mut Cx<'_, Msg>) {
+        let make = |count: u32| {
+            Collection::new(100..100 + count, |&id| {
+                Item::new(label(id)).icon(Glyph::Document)
+            })
+            .icon_size(ICON)
+            .height(100.0)
+        };
+        let row = Stack::row()
+            .spacing(0.0)
+            .with(Label::new("Side"))
+            .with_flex(make(30).bind(&mut self.first))
+            .with_flex(make(5).bind(&mut self.second));
+        cx.open_window(Window::new("Pair", (456, 120), row));
+    }
+
+    fn update(&mut self, _cx: &mut Cx<'_, Msg>, _message: Msg) {}
+}
+
+#[test]
+fn flexible_children_share_what_the_others_leave() {
+    let (mut runner, mut host, _) = start(Pair::default());
+    let _ = host.only().render();
+    deliver(&mut runner, &mut host);
+    let (first, second) = (id(&runner.app().first), id(&runner.app().second));
+    let width = |host: &mut FakeHost, c: WidgetId| {
+        host.only().get_widget_with_id(c).ctx().border_box().width()
+    };
+    let side = host
+        .only()
+        .get_widget_with_id(first)
+        .ctx()
+        .to_window(Point::ORIGIN)
+        .x;
+    assert!(side > 0.0, "the label keeps its width");
+    let room = 456.0 - side;
+    assert!((width(&mut host, first) - room / 2.0).abs() < 1.0);
+    assert!((width(&mut host, second) - room / 2.0).abs() < 1.0);
+    let before = columns(&mut host, first);
+    assert!(before >= 2, "several 72 px cells fit in half of the room");
+
+    host.only()
+        .render_root()
+        .handle_window_event(WindowEvent::Resize(PhysicalSize::new(228, 120)));
+    let _ = host.only().render();
+    deliver(&mut runner, &mut host);
+    assert!(width(&mut host, first) < 120.0, "narrower with the window");
+    assert!(columns(&mut host, first) < before);
 }

@@ -32,6 +32,9 @@ pub(crate) struct StackWidget {
     pub(crate) padding: f64,
     pub(crate) align: Align,
     children: Vec<WidgetPod<dyn Widget>>,
+    /// Which children share the room along the stack that the others leave (parallel to
+    /// `children`).
+    flex: Vec<bool>,
 }
 
 /// A size from lengths along and across `axis`.
@@ -50,19 +53,28 @@ impl StackWidget {
             padding: 0.0,
             align: Align::Start,
             children: Vec::new(),
+            flex: Vec::new(),
         }
     }
 
     pub(crate) fn push(&mut self, child: NewWidget<dyn Widget>) {
         self.children.push(child.to_pod());
+        self.flex.push(false);
+    }
+
+    /// Adds a child that shares the room along the stack that the others leave.
+    pub(crate) fn push_flex(&mut self, child: NewWidget<dyn Widget>) {
+        self.children.push(child.to_pod());
+        self.flex.push(true);
     }
 
     pub(crate) fn edit_push(this: &mut WidgetMut<'_, Self>, child: NewWidget<dyn Widget>) {
-        this.widget.children.push(child.to_pod());
+        this.widget.push(child);
         this.ctx.children_changed();
     }
 
     pub(crate) fn edit_clear(this: &mut WidgetMut<'_, Self>) {
+        this.widget.flex.clear();
         for child in std::mem::take(&mut this.widget.children) {
             this.ctx.remove_child(child);
         }
@@ -114,6 +126,13 @@ impl Widget for StackWidget {
                 length.max(child_length)
             };
         }
+        // Children that share the room take all of it when they are offered some.
+        if along
+            && self.flex.contains(&true)
+            && let LenReq::FitContent(space) = len_req
+        {
+            return space;
+        }
         length.saturating_add(used)
     }
 
@@ -134,9 +153,35 @@ impl Widget for StackWidget {
             Axis::Horizontal => SizeDef::new(LenDef::MaxContent, cross_def),
             Axis::Vertical => SizeDef::new(cross_def, LenDef::MaxContent),
         };
+        // Children that don't flex take what they ask for; the flexing ones share the rest.
+        let mut sizes: Vec<Option<Size>> = Vec::with_capacity(self.children.len());
+        let mut taken = 0.0;
+        for (child, &flex) in self.children.iter_mut().zip(&self.flex) {
+            if flex {
+                sizes.push(None);
+            } else {
+                let size = ctx.compute_size(child, auto, inner.into());
+                taken += size.get_coord(main_axis);
+                sizes.push(Some(size));
+            }
+        }
+        let flexing = self.flex.iter().filter(|&&f| f).count();
+        let gaps = self.gaps();
+        let share = if flexing == 0 {
+            0.0
+        } else {
+            ((inner.get_coord(main_axis) - taken - gaps) / flexing as f64).max(0.0)
+        };
+        let flex_auto = match main_axis {
+            Axis::Horizontal => SizeDef::new(LenDef::Fixed(Length::px(share)), cross_def),
+            Axis::Vertical => SizeDef::new(cross_def, LenDef::Fixed(Length::px(share))),
+        };
         let mut offset = self.padding;
-        for child in &mut self.children {
-            let mut child_size = ctx.compute_size(child, auto, inner.into());
+        for (child, size) in self.children.iter_mut().zip(sizes) {
+            let mut child_size = match size {
+                Some(size) => size,
+                None => ctx.compute_size(child, flex_auto, inner.into()),
+            };
             if self.align == Align::Fill {
                 child_size = size_along(main_axis, child_size.get_coord(main_axis), inner_cross);
             }

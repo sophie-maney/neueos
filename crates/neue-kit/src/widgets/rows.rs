@@ -168,6 +168,11 @@ impl RowsWidget {
     /// The scroll view moved or resized: build and drop rows to match. A grid's columns
     /// follow the width.
     pub(crate) fn set_window(this: &mut WidgetMut<'_, Self>, window: Rect) {
+        if this.widget.window != window && this.widget.collection.is_some() {
+            // A collection fills its background over the window only, so the fill moves
+            // with it.
+            this.ctx.request_paint_only();
+        }
         this.widget.window = window;
         let columns = this.widget.columns_for(window.width());
         if columns != this.widget.columns {

@@ -590,23 +590,21 @@ fn icons(_: &mut PageHandles) -> Element<Message> {
         .with(
             Stack::row()
                 .spacing(spacing::L)
-                .with(section(
+                .with_flex(section(
                     "Collection, 32 px icons, 1,000 items",
                     Stack::column().with(
                         specimens::collection_many(1000, 32.0)
                             .on_select(|ids| Message::CollectionSelected(ids.to_vec()))
                             .on_activate(|&id| Message::CollectionOpened(id))
-                            .width(330.0)
                             .height(250.0),
                     ),
                 ))
-                .with(section(
+                .with_flex(section(
                     "64 px icons",
                     Stack::column().with(
-                        specimens::collection_many(12, 64.0)
+                        specimens::collection_many(11, 64.0)
                             .on_select(|ids| Message::CollectionSelected(ids.to_vec()))
                             .on_activate(|&id| Message::CollectionOpened(id))
-                            .width(330.0)
                             .height(250.0),
                     ),
                 )),

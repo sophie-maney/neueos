@@ -368,7 +368,8 @@ impl<M> From<Specimen> for Element<M> {
 /// to none.
 pub struct Stack<M> {
     inner: NewWidget<StackWidget>,
-    children: Vec<Element<M>>,
+    /// Each child, and whether it shares the room the others leave.
+    children: Vec<(Element<M>, bool)>,
 }
 
 impl<M> std::fmt::Debug for Stack<M> {
@@ -401,7 +402,17 @@ impl<M> Stack<M> {
     /// Adds a child at the end.
     #[must_use]
     pub fn with(mut self, child: impl Into<Element<M>>) -> Self {
-        self.children.push(child.into());
+        self.children.push((child.into(), false));
+        self
+    }
+
+    /// Adds a child at the end that shares the room along the stack that the other
+    /// children leave, equally with the other flexible ones: the stack takes the length it
+    /// is offered, so the child follows the window. Use it for a pane that fills what a
+    /// sidebar leaves, or for views that split a row between them.
+    #[must_use]
+    pub fn with_flex(mut self, child: impl Into<Element<M>>) -> Self {
+        self.children.push((child.into(), true));
         self
     }
 
@@ -441,8 +452,13 @@ impl<M> From<Stack<M>> for Element<M> {
             children,
         } = stack;
         let mut wiring = Wiring::default();
-        for child in children {
-            inner.widget.push(wiring.adopt(child));
+        for (child, flex) in children {
+            let child = wiring.adopt(child);
+            if flex {
+                inner.widget.push_flex(child);
+            } else {
+                inner.widget.push(child);
+            }
         }
         Element::with_wiring(inner.erased(), wiring)
     }
