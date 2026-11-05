@@ -45,3 +45,5 @@ dependencies can be reconciled with ours. Task 2.1 (`docs/research/masonry-spike
   agree within tolerance, not bit for bit.
 - Every fork or `imaging` rev must stay reachable on GitHub; `cargo fetch --locked` uses
   them like any git dependency.
+- ADR 0065 patches `imaging` from `sophie-maney/imaging` (a `[patch]` on this rev) so
+  layer textures can grow past 4096 px.

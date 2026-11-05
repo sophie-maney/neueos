@@ -74,3 +74,4 @@ Don't edit an accepted ADR's decision; supersede it with a new one.
 | [0062](0062-date-picker.md) | Date picker: a kit civil-date type and two leaf widgets (textual field, calendar), each with its own builder and handle | Accepted |
 | [0063](0063-window-theme-and-focus-leave.md) | A window carries its own theme properties; the Wayland driver never drops a keyboard leave | Accepted |
 | [0064](0064-neue-window-protocol.md) | `neue_window_v1`: a window tells neue-comp where its own chrome ends, and sheets hang under it | Accepted |
+| [0065](0065-imaging-fork-layer-texture-size.md) | Patch `imaging` from our fork so vello_gpu's layer textures can grow past 4096 px | Accepted |

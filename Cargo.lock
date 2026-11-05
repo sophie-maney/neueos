@@ -1738,7 +1738,7 @@ checksum = "09e54e57b4c48b40f7aec75635392b12b3421fa26fe8b4332e63138ed278459c"
 [[package]]
 name = "imaging"
 version = "0.0.1"
-source = "git+https://github.com/forest-rs/imaging?rev=f3f932a8a0e233f5ab52863041b8a3d6cff9255b#f3f932a8a0e233f5ab52863041b8a3d6cff9255b"
+source = "git+https://github.com/sophie-maney/imaging?rev=b995a49983a6d1ad71448484a16829cbc7e3a6a4#b995a49983a6d1ad71448484a16829cbc7e3a6a4"
 dependencies = [
  "kurbo",
  "peniko",
@@ -1747,7 +1747,7 @@ dependencies = [
 [[package]]
 name = "imaging_vello_cpu"
 version = "0.0.2"
-source = "git+https://github.com/forest-rs/imaging?rev=f3f932a8a0e233f5ab52863041b8a3d6cff9255b#f3f932a8a0e233f5ab52863041b8a3d6cff9255b"
+source = "git+https://github.com/sophie-maney/imaging?rev=b995a49983a6d1ad71448484a16829cbc7e3a6a4#b995a49983a6d1ad71448484a16829cbc7e3a6a4"
 dependencies = [
  "glifo",
  "imaging",
@@ -1760,7 +1760,7 @@ dependencies = [
 [[package]]
 name = "imaging_vello_hybrid"
 version = "0.0.2"
-source = "git+https://github.com/forest-rs/imaging?rev=f3f932a8a0e233f5ab52863041b8a3d6cff9255b#f3f932a8a0e233f5ab52863041b8a3d6cff9255b"
+source = "git+https://github.com/sophie-maney/imaging?rev=b995a49983a6d1ad71448484a16829cbc7e3a6a4#b995a49983a6d1ad71448484a16829cbc7e3a6a4"
 dependencies = [
  "glifo",
  "imaging",
@@ -1775,7 +1775,7 @@ dependencies = [
 [[package]]
 name = "imaging_wgpu"
 version = "0.0.2"
-source = "git+https://github.com/forest-rs/imaging?rev=f3f932a8a0e233f5ab52863041b8a3d6cff9255b#f3f932a8a0e233f5ab52863041b8a3d6cff9255b"
+source = "git+https://github.com/sophie-maney/imaging?rev=b995a49983a6d1ad71448484a16829cbc7e3a6a4#b995a49983a6d1ad71448484a16829cbc7e3a6a4"
 dependencies = [
  "imaging",
  "wgpu",
