@@ -184,6 +184,42 @@ fn title_bar_variant_goldens() {
     }
 }
 
+/// Window chrome goldens (ADR 0055): the bare title bar and a unified title bar and toolbar
+/// (22 and 52 px) × focused/unfocused × light/dark × 1x/2x.
+#[test]
+fn window_chrome_goldens() {
+    for height in [22.0, 52.0] {
+        for (appearance, a) in [(Appearance::Light, "light"), (Appearance::Dark, "dark")] {
+            for (focused, f) in [(true, "focused"), (false, "unfocused")] {
+                for (scale, s) in [(1.0, "1x"), (2.0, "2x")] {
+                    let style = TitleBarStyle {
+                        variant: appearance.into(),
+                        focused,
+                        ..TitleBarStyle::default()
+                    };
+                    let title = TextEngine::new().line_truncated(
+                        "Untitled — Edited",
+                        title_bar::TITLE_FONT_SIZE,
+                        title_bar::title_max_width(TITLE_BAR_WIDTH),
+                    );
+                    let mut scene = Scene::new(TITLE_BAR_WIDTH, height);
+                    neue_paint::materials::window_chrome_titled(
+                        &mut scene,
+                        TITLE_BAR_WIDTH,
+                        height,
+                        &title,
+                        style,
+                    );
+                    let pixmap = CpuRenderer::new(Quality::Reference)
+                        .render(&scene, scale)
+                        .unwrap();
+                    check(&format!("chrome-{height}-{f}-{a}@{s}"), pixmap);
+                }
+            }
+        }
+    }
+}
+
 /// The translucent materials (menu bar, dock shelf, flat dock shelf, HUD): opaque and
 /// translucent × light/dark × 1x/2x, and increased contrast (always opaque) × light/dark ×
 /// 1x/2x.

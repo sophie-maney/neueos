@@ -60,4 +60,5 @@ pub use text_field::{
     FieldShape, TextField, cancel_button, cancel_button_rect, magnifier, text_field,
     text_field_inside, text_field_outline,
 };
+pub use title_bar::{window_chrome, window_chrome_titled};
 pub use toggle::{Mark, Toggle, ToggleKind, toggle, toggle_outline};

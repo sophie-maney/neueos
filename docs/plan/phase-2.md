@@ -430,8 +430,44 @@ the paper and leather materials move to Phase 6/7 (Widgets, Write).
         and x86_64 not run); gallery: a "Tab view" section on the "Panes" page. Steps for
         the VM in `docs/checks/phase-2.md` §18, not run. Not yet: the items under "Not in
         scope", a strip wider than the view, clickable tabs for assistive technology.
-- [ ] **2.22 Window chrome and unified toolbar** · Opus. ADR: client-side title bars
-      (reusing neue-paint's) vs. extending the server-side ones (ADR 0013).
+- [ ] **2.22 Window chrome and unified toolbar** · Opus. Split into 2.22a to 2.22d. Kit
+      windows draw their own chrome (client-side), from neue-paint's title-bar pieces
+      (PLAN §3.1); the ADR in 2.22a records why not a private protocol that extends the
+      server-side bar (ADR 0013). Order: a → b → c; d any time before 2.22b's VM check.
+      Not in scope: toolbar overflow (chevron), toolbar customisation, reading
+      `title-bar-double-click` from clients (kit windows zoom), shadows for client-side
+      windows (they come with the compositor's shadow shader).
+  - [x] **2.22a Unified chrome material and ADR** · Opus. `neue_paint::materials::
+        window_chrome`: a bar of any height (title bar plus toolbar) with the title-bar
+        gradient, top highlight, bottom separator, rounded top corners, traffic lights and
+        title, light/dark × focused/unfocused; tokens in `neue_theme::materials`. The
+        server-side bar is its 22 px case.
+        *Accept:* the `titlebar-*` goldens unchanged bit-for-bit; new goldens (22 and 52 px
+        × focused/unfocused × light/dark × 1×/2×); neue-comp builds; ADR.
+        *Done:* ADR 0055 (client-side chrome for kit windows; the private-protocol
+        alternative rejected). `neue_paint::materials::{window_chrome,
+        window_chrome_titled}` and `title_bar::MIN_CHROME_HEIGHT`: one gradient over the
+        whole height, lights and title in the top 22 px row; the bar's private
+        `background` takes a height, so the slices are unchanged. No new theme tokens
+        (the bar's palette and metrics serve both). `titlebar-*` goldens unchanged; a unit
+        test that 22 px chrome matches `title_bar`; 16 goldens `chrome-{22,52}-…` (macOS;
+        Linux not run). neue-comp checked on Linux aarch64.
+  - [ ] **2.22b Kit window chrome** · Opus. `Window::toolbar(...)` wraps the root in a
+        chrome widget: the bar, traffic lights (glyphs on group hover, pressed, close /
+        minimise / zoom), the title, drag to move, double-click to zoom, the inactive look
+        when the window loses focus. The Wayland driver asks for client-side decorations
+        (xdg-decoration) for windows with chrome; winit on macOS uses a transparent
+        full-size title bar with the native buttons hidden. AccessKit labels on the buttons.
+        *Accept:* end-to-end tests (button actions, drag signal, double-click, inactive
+        look); goldens; the gallery window uses it; VM steps in `docs/checks/phase-2.md`.
+  - [ ] **2.22c Toolbar items** · Sonnet. `Toolbar` items: icon-and-label buttons,
+        segmented control, search field, flexible and fixed space, separator; display modes
+        (icon and text, icon only, text only); keyboard and the AccessKit `Toolbar` role.
+        *Accept:* tests for layout and keys; goldens; a gallery page.
+  - [ ] **2.22d neue-comp: resize edges for client-side windows** · Sonnet.
+        `State::chrome_hit_at` gives the 5 px resize edges to every resizable toplevel, not
+        only to windows with a server-side bar.
+        *Accept:* a headless test: a client-side window resizes from its edge; VM check.
 - [ ] **2.23 Sheet, popover, HUD panel** · Opus. Sheets map to xdg-dialog; popovers are
       xdg-popups with an arrow.
 - [ ] **2.24 Colour well, date picker, path control** · Sonnet.

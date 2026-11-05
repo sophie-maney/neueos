@@ -7,6 +7,11 @@
 //! rendered on its own with [`title_text`] and placed at [`title_x`]. [`title_bar`] draws
 //! the whole bar in one scene from the same pieces; golden tests use it.
 //!
+//! Toolkit windows draw their own chrome (ADR 0055): [`window_chrome`] is the same bar at
+//! any height, a unified title bar and toolbar under one gradient, with the traffic lights
+//! and the title in its top [`TITLE_BAR_HEIGHT`] row. The server-side bar is its
+//! [`TITLE_BAR_HEIGHT`] case.
+//!
 //! Everything is vector-drawn, with a light and a dark variant and a focused and an
 //! unfocused state. Colours and metrics come from [`neue_theme::materials::title_bar`].
 
@@ -33,6 +38,8 @@ pub const RIGHT_SLICE_WIDTH: f64 = tokens::RIGHT_SLICE_WIDTH;
 pub const MIDDLE_SLICE_WIDTH: f64 = tokens::MIDDLE_SLICE_WIDTH;
 /// Narrowest bar that shows every slice in full.
 pub const MIN_WIDTH: f64 = LEFT_SLICE_WIDTH + MIDDLE_SLICE_WIDTH + RIGHT_SLICE_WIDTH;
+/// Shortest window chrome: the title bar alone, with no toolbar.
+pub const MIN_CHROME_HEIGHT: f64 = TITLE_BAR_HEIGHT;
 /// Font size of the title.
 pub const TITLE_FONT_SIZE: f32 = tokens::TITLE_FONT_SIZE;
 
@@ -151,10 +158,11 @@ fn vertical(y0: f64, y1: f64, stops: &[(f32, Color)]) -> Gradient {
     Gradient::new_linear(Point::new(0.0, y0), Point::new(0.0, y1)).with_stops(stops)
 }
 
-/// Draw the bar background (no buttons, no title) `width` wide at the origin.
-fn background(scene: &mut Scene, width: f64, style: TitleBarStyle) {
+/// Draw the bar background (no buttons, no title) `width` × `h` at the origin: one
+/// gradient over the whole height, the highlight along the top and the separator along the
+/// bottom.
+fn background(scene: &mut Scene, width: f64, h: f64, style: TitleBarStyle) {
     let p = bar_palette(style);
-    let h = TITLE_BAR_HEIGHT;
     let shape = RoundedRect::from_rect(
         Rect::new(0.0, 0.0, width, h),
         RoundedRectRadii::new(CORNER_RADIUS, CORNER_RADIUS, 0.0, 0.0),
@@ -243,7 +251,7 @@ pub fn title_bar_slice(scene: &mut Scene, slice: TitleBarSlice, style: TitleBarS
     scene.with_transform(
         vello_common::kurbo::Affine::translate((-slice.offset(), 0.0)),
         |scene| {
-            background(scene, MIN_WIDTH, style);
+            background(scene, MIN_WIDTH, TITLE_BAR_HEIGHT, style);
             if slice == TitleBarSlice::Left {
                 for which in TrafficLight::ALL {
                     button(scene, which, style);
@@ -320,6 +328,38 @@ pub fn title_bar(scene: &mut Scene, width: f64, title: &TextLine, style: TitleBa
     });
 }
 
+/// Draw a window's chrome `width` × `height` at the origin, without the title: the bar
+/// (at least [`MIN_WIDTH`] × [`MIN_CHROME_HEIGHT`]) under one gradient, with rounded top
+/// corners and the traffic lights in its top row. Below the title row is room for a
+/// toolbar; the caller draws its items and the title (with the colours of
+/// [`BarPalette::new`], at [`title_x`] and [`tokens::TITLE_BASELINE`], as [`title_text`]
+/// does).
+pub fn window_chrome(scene: &mut Scene, width: f64, height: f64, style: TitleBarStyle) {
+    let width = width.max(MIN_WIDTH);
+    let height = height.max(MIN_CHROME_HEIGHT);
+    background(scene, width, height, style);
+    for which in TrafficLight::ALL {
+        button(scene, which, style);
+    }
+}
+
+/// [`window_chrome`] with `title` (already laid out, truncated to [`title_max_width`])
+/// centred in its top row.
+pub fn window_chrome_titled(
+    scene: &mut Scene,
+    width: f64,
+    height: f64,
+    title: &TextLine,
+    style: TitleBarStyle,
+) {
+    let width = width.max(MIN_WIDTH);
+    window_chrome(scene, width, height, style);
+    let x = title_x(width, title.width());
+    scene.with_transform(vello_common::kurbo::Affine::translate((x, 0.0)), |scene| {
+        title_text(scene, title, style);
+    });
+}
+
 #[cfg(test)]
 mod tests {
     use super::*;
@@ -342,6 +382,36 @@ mod tests {
         for b in TrafficLight::ALL {
             let r = b.rect();
             assert!(r.x0 >= 0.0 && r.x1 <= LEFT_SLICE_WIDTH && r.y1 <= TITLE_BAR_HEIGHT);
+        }
+    }
+
+    /// The server-side bar is the shortest window chrome.
+    #[test]
+    fn short_chrome_is_the_title_bar() {
+        let mut renderer = CpuRenderer::new(Quality::Reference);
+        for focused in [true, false] {
+            let style = TitleBarStyle {
+                variant: crate::Appearance::Dark.into(),
+                focused,
+                hover: true,
+                pressed: Some(TrafficLight::Zoom),
+            };
+            let width = 200.0;
+            let mut bar = Scene::new(width, TITLE_BAR_HEIGHT);
+            title_bar(&mut bar, width, &TextLine::default(), style);
+            let mut chrome = Scene::new(width, TITLE_BAR_HEIGHT);
+            window_chrome(&mut chrome, width, 10.0, style);
+            let bar = renderer.render(&bar, 2.0).unwrap();
+            let chrome = renderer.render(&chrome, 2.0).unwrap();
+            for (i, (a, b)) in bar.data().iter().zip(chrome.data()).enumerate() {
+                let diff = [
+                    a.r.abs_diff(b.r),
+                    a.g.abs_diff(b.g),
+                    a.b.abs_diff(b.b),
+                    a.a.abs_diff(b.a),
+                ];
+                assert!(diff.iter().all(|d| *d <= 2), "pixel {i}: {a:?} vs {b:?}");
+            }
         }
     }
 
