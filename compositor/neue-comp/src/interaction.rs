@@ -14,7 +14,7 @@ use smithay::input::pointer::{Focus, GrabStartData};
 use smithay::utils::{Logical, Point, Rectangle, Serial};
 
 use crate::decorations::{Hover, TITLE_BAR_HEIGHT, frame_geometry, has_title_bar};
-use crate::grabs::{Edges, ResizeGrab, TitleBarGrab, TrafficLightGrab};
+use crate::grabs::{Edges, ResizeGrab, TitleBarGrab, TrafficLightGrab, size_limits};
 use crate::state::State;
 
 /// How far outside a window's frame its resize edges reach, in logical pixels. They are
@@ -64,6 +64,15 @@ pub fn hit_test(
     if !resizable {
         return None;
     }
+    edge_hit(frame, pos)
+}
+
+/// The resize edge or corner of a window with `frame` that `pos` is on: the strips just
+/// outside the frame. Used alone for client-side windows, whose frame is all client.
+pub fn edge_hit(frame: Rectangle<i32, Logical>, pos: Point<f64, Logical>) -> Option<ChromeHit> {
+    if frame.to_f64().contains(pos) {
+        return None;
+    }
     let m = RESIZE_MARGIN;
     let outer = Rectangle::new(
         (frame.loc.x - m, frame.loc.y - m).into(),
@@ -95,6 +104,15 @@ pub fn hit_test(
     Some(ChromeHit::Edge(edges))
 }
 
+/// Whether the client pinned `window` to one size (equal, non-zero minimum and maximum).
+fn has_fixed_size(window: &Window) -> bool {
+    let Some(toplevel) = window.toplevel() else {
+        return false;
+    };
+    let (min, max) = size_limits(toplevel.wl_surface());
+    max.w > 0 && max.h > 0 && min == max
+}
+
 impl State {
     /// The window chrome under `pos` (global logical coordinates) and what part of it.
     /// A client surface above the chrome in the stacking order hides it.
@@ -104,14 +122,23 @@ impl State {
             if client.as_ref() == Some(window) {
                 return None;
             }
-            if !has_title_bar(window) {
+            if State::is_fullscreen(window) {
                 continue;
             }
             let Some(geometry) = self.space.element_geometry(window) else {
                 continue;
             };
-            let resizable = !Self::with_wm_data(window, |d| d.zoomed);
-            if let Some(hit) = hit_test(frame_geometry(window, geometry), pos, resizable) {
+            let resizable = !Self::with_wm_data(window, |d| d.zoomed) && !has_fixed_size(window);
+            let frame = frame_geometry(window, geometry);
+            let hit = if has_title_bar(window) {
+                hit_test(frame, pos, resizable)
+            } else if resizable {
+                // A client-side window draws its own bar; we only add the edges.
+                edge_hit(frame, pos)
+            } else {
+                None
+            };
+            if let Some(hit) = hit {
                 return Some((window.clone(), hit));
             }
         }

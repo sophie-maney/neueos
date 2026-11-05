@@ -50,6 +50,19 @@ impl TestClient {
         size: (i32, i32),
         mode: Option<XdgMode>,
     ) -> Toplevel {
+        self.create_decorated_toplevel_with(title, app_id, size, mode, |_| {})
+    }
+
+    /// [`TestClient::create_decorated_toplevel`], calling `setup` on the `xdg_toplevel`
+    /// before the first commit (e.g. to set size limits).
+    pub fn create_decorated_toplevel_with(
+        &mut self,
+        title: &str,
+        app_id: &str,
+        size: (i32, i32),
+        mode: Option<XdgMode>,
+        setup: impl FnOnce(&wayland_protocols::xdg::shell::client::xdg_toplevel::XdgToplevel),
+    ) -> Toplevel {
         let manager = self.xdg_decoration_manager();
         let qh = self.qh.clone();
         let index = self.data.toplevels.len();
@@ -60,6 +73,7 @@ impl TestClient {
                 d.set_mode(mode);
             }
             decoration = Some(d);
+            setup(t);
         });
         let decoration = decoration.expect("setup ran");
         let configured = self.data.decorations.xdg.get(&index).and_then(|(_, m)| *m);

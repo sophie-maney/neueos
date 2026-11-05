@@ -780,8 +780,8 @@ Clicking a tab through VoiceOver is not supported yet (ADR 0054).
 ## 19. Checking the kit window chrome (task 2.22b)
 Not run yet. Steps 1 to 4 run in the VM, set up as in `docs/dev-setup.md` §1.3; step 5 is
 on the Mac. The gallery window now draws its own chrome, with the theme switches in a
-unified toolbar. Resize edges for client-side windows come with 2.22d; until then the
-gallery can't be resized from its edges in the VM. The helpers are those of §8.
+unified toolbar. Its resize edges (task 2.22d) are checked in §21. The helpers are those
+of §8.
 
 **1. Build and open the gallery:** as §8 step 1 with `NEUE_GALLERY_PAGE=0`, screenshot
 `/tmp/c1.png`. Expected: no `WARN` or `ERROR`; a single title bar (no compositor bar
@@ -855,3 +855,23 @@ alone (shorter still).
 Cmd shortcuts reach pages 1 to 9 only). With VoiceOver on (Cmd-F5), each toolbar is
 read as a toolbar, its buttons by their label (also in the icon-only toolbar), and
 VO-Space on one presses it.
+
+## 21. Checking resize edges for client-side windows (task 2.22d)
+Not run yet. All steps run in the VM, set up as in `docs/dev-setup.md` §1.3. The gallery
+(client-side chrome, no compositor bar) is the test window. The helpers are those of §8
+and §19 (`move_to`).
+
+**1. Open the gallery and find its edge:** as §8 step 1, `neuectl windows --json`: note
+its x, y, width, height (client geometry; the chrome is inside it). Move the pointer
+2 px right of the right edge, at mid height: `neuectl` can't read the cursor, so
+screenshot `/tmp/r1.png`. Expected: a horizontal resize cursor (↔) in `r1.png` if the
+capture includes the cursor; otherwise go on to step 2.
+
+**2. Drag the edges:** press on the right edge, drag 100 px right, release; then press on
+the bottom-right corner, drag 50 px down, release; then the left edge, 100 px left.
+Expected: `neuectl windows --json` shows width +100, then height +50, then width +100 and
+x −100; the content re-lays out and stays sharp; a drag from inside the toolbar still
+moves the window and does not resize it.
+
+**3. No edges when they don't apply:** zoom the window (green light): the pointer 2 px
+outside it does nothing. Open `foot` and check its edges still work (compositor bar).
