@@ -1,5 +1,5 @@
-//! The menu bar's pieces (task 3.2b): the logo menu, the active app's name and the clock
-//! extra, put together in a [`MenuBar`]. Portable: the shell builds one per output, and the
+//! The menu bar's pieces (task 3.2b): the logo menu, the active app's name, the app's own
+//! menus (the global menu, task 3.7a) and the clock extra, put together in a [`MenuBar`]. Portable: the shell builds one per output, and the
 //! gallery's Shell page and the goldens build the same.
 
 use neue_kit::desktop::{Backdrop, MenuBar, MenuTitle};
@@ -51,6 +51,8 @@ pub fn clock_menu<M: 'static>(full_date: &str) -> Menu<M> {
 /// Handles to the parts of one bar that change.
 #[derive(Debug)]
 pub struct BarHandles<M> {
+    /// The bar, to replace the app's menus.
+    pub bar: Handle<MenuBar<M>>,
     /// The active app's name.
     pub app: Handle<MenuTitle<M>>,
     /// The clock extra.
@@ -60,6 +62,7 @@ pub struct BarHandles<M> {
 impl<M> Default for BarHandles<M> {
     fn default() -> Self {
         Self {
+            bar: Handle::default(),
             app: Handle::default(),
             clock: Handle::default(),
         }
@@ -77,26 +80,31 @@ pub struct BarContent {
     pub full_date: String,
 }
 
-/// A menu bar showing `content`, its logo menu sending `message(command)`; `handles` are
-/// pointed at the parts that change. `backdrop` is translucent when the compositor blurs
-/// behind the bar (task 3.5).
+/// A menu bar showing `content` and the app's `menus` after its name, its logo menu
+/// sending `message(command)`; `handles` are pointed at the parts that change. `backdrop`
+/// is translucent when the compositor blurs behind the bar (task 3.5).
 pub fn menu_bar<M: 'static>(
     content: &BarContent,
+    menus: Vec<MenuTitle<M>>,
     message: impl Fn(SystemCommand) -> M + Clone + 'static,
     handles: &mut BarHandles<M>,
     backdrop: Backdrop,
 ) -> MenuBar<M> {
-    MenuBar::new()
+    let bar = MenuBar::new()
         .backdrop(backdrop)
         .with(MenuTitle::logo(LOGO_NAME, logo_menu(message)))
-        // The app's own menus come with the global menu (task 3.7).
+        // The app's name opens nothing until the App menu of the fallback menu (3.9).
         .with(
             MenuTitle::new(content.app_name.clone(), Menu::new())
                 .bold(true)
                 .bind(&mut handles.app),
-        )
+        );
+    menus
+        .into_iter()
+        .fold(bar, MenuBar::with_menu)
         .with_extra(
             MenuTitle::new(content.time.clone(), clock_menu(&content.full_date))
                 .bind(&mut handles.clock),
         )
+        .bind(&mut handles.bar)
 }

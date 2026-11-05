@@ -204,7 +204,7 @@ their goldens and the gallery's "Shell" page run on macOS.
       `appearance.toml`.
 
 ## B. Menu bar
-- [ ] **3.7a Global menu A: registrar and DBusMenu** · Opus. After 3.2b. Split from 3.7
+- [x] **3.7a Global menu A: registrar and DBusMenu** · Opus. After 3.2b. Split from 3.7
       on 2026-11-05. In `neue-dbus` (ADR 0005 §1): `com.canonical.AppMenu.Registrar`
       owned by the shell, and a DBusMenu client (layout, properties, `AboutToShow`,
       events, toggles, shortcuts, icons, updates). The Wayland driver passes each window's
@@ -213,7 +213,14 @@ their goldens and the gallery's "Shell" page run on macOS.
       items act. Navigation inside an open menu is the kit's as before.
       *Accept:* tests against neue-kit's own DBusMenu export (`neue-dbus` `testing`); in
       the VM the gallery's and a Qt6 app's menus show and their items act.
-      *Owner:* Chromium and LibreOffice menus on the PC.
+      *Owner:* Chromium and LibreOffice menus on the PC; in the VM, choosing an item from
+      the gallery's Pages menu and KWrite's File ▸ New in the bar acts.
+      *Done (ADR 0076):* in the VM the gallery's and KWrite's (Qt6) menus show, KWrite
+      hides its own menu bar, the bar follows the active window, and a killed shell
+      brings the registrar and the menus back. Items acting is covered by kit and
+      `neue-dbus` tests; not clicked in the VM, because ydotool input didn't reach the
+      session in that run (not even Tab in the gallery), so it is on the *Owner:* line.
+      Icons are parsed but not drawn; Super shows as the kit's command key until 3.10.
 - [ ] **3.7b Global menu A: menu-bar navigation** · Opus. After 3.7a. Hover-switching
       between open menus, Left/Right across the bar's menus, Escape, and a shortcut to
       focus the menu bar: a `neue_shell_v1` event (`focus_menu_bar`, version bump) sent by

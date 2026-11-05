@@ -23,7 +23,7 @@ use wayland_client::{Connection, Proxy, QueueHandle};
 use super::{AppEvent, State};
 use crate::desktop::{
     ChordModifiers, OutputEvent, OutputId, OutputInfo, ShellEvent, ShellRequest, Toplevel,
-    ToplevelId,
+    ToplevelId, ToplevelMenu,
 };
 
 /// The driver's view of outputs and of the shell protocol.
@@ -321,7 +321,26 @@ impl Dispatch2<NeueShellToplevelV1, State> for ShellToplevelData {
                     state.events.push(AppEvent::Shell(event));
                 }
             }
-            // Icons (3.16) and menu addresses (3.7) wait for the tasks that use them.
+            Event::MenuDbusmenu { service, path } => {
+                t.pending.menu = ToplevelMenu::DbusMenu { service, path };
+            }
+            Event::MenuGmenu {
+                bus_name,
+                menubar_path,
+                app_menu_path,
+                application_path,
+                window_path,
+            } => {
+                t.pending.menu = ToplevelMenu::GMenu {
+                    bus_name,
+                    menubar_path,
+                    app_menu_path,
+                    application_path,
+                    window_path,
+                };
+            }
+            Event::MenuNone => t.pending.menu = ToplevelMenu::None,
+            // Icons wait for the dock (3.16).
             _ => {}
         }
     }

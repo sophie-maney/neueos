@@ -69,6 +69,27 @@ pub struct Toplevel {
     pub minimized: bool,
     /// It asked for focus it wasn't given (the dock bounces its icon).
     pub attention: bool,
+    /// Where the window's app exports its menus, for the global menu (ADR 0005).
+    pub menu: ToplevelMenu,
+}
+
+/// Where a window's menus are exported (`neue_shell_v1`'s `menu_*` events, ADR 0025).
+/// The strings passed only a syntax check in the compositor.
+#[derive(Debug, Clone, Default, PartialEq, Eq)]
+pub enum ToplevelMenu {
+    /// Nothing exported: the shell shows the fallback menu.
+    #[default]
+    None,
+    /// `com.canonical.dbusmenu` at `service` and `path` (Qt, Chromium, neue-kit apps).
+    DbusMenu { service: String, path: String },
+    /// GTK's `org.gtk.Menus` and `org.gtk.Actions` on `bus_name`.
+    GMenu {
+        bus_name: String,
+        menubar_path: Option<String>,
+        app_menu_path: Option<String>,
+        application_path: Option<String>,
+        window_path: Option<String>,
+    },
 }
 
 /// What the compositor tells the shell (`neue_shell_v1`).
