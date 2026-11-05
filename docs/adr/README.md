@@ -80,3 +80,4 @@ Don't edit an accepted ADR's decision; supersede it with a new one.
 | [0068](0068-shell-skeleton-and-menu-bar.md) | The shell skeleton and menu bar: `MenuBar`/`MenuTitle` in the kit, DejaVu Sans Bold, jiff for the clock, logind for lock/restart/shut down, Log Out as the compositor's `quit` | Accepted |
 | [0069](0069-desktop-background.md) | The desktop background: a `neue-desktop` background layer per output, a vector default picture, photos through the texture cache, `shell.toml`, `png` and `zune-jpeg` | Accepted |
 | [0070](0070-neue-desktop-v0.md) | `neue-desktop` v0: desktop entries, app id matching, icon theme lookup, raster icons from PNG and SVG (`resvg`), launching with an activation token, the trash | Accepted |
+| [0071](0071-backdrop-blur.md) | Backdrop blur: `ext-background-effect-v1`, a dual-Kawase framebuffer-effect element below each blurred surface, cached while nothing behind changes | Accepted |

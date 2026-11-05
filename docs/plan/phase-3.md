@@ -116,7 +116,7 @@ their goldens and the gallery's "Shell" page run on macOS.
       fixture directories (macOS and the OrbStack arm64 machine). `resvg` 0.47 with default features off. Not run in the VM
       (nothing consumes the crate until 3.16). Not in v0: other volumes' trash (needs the
       mount table, 3.16), D-Bus activation, MIME, thumbnails, recent files, autostart.
-- [ ] **3.4 Backdrop blur: compositor** · Opus. ADR choosing the protocol:
+- [x] **3.4 Backdrop blur: compositor** · Opus. ADR choosing the protocol:
       `ext-background-effect-v1` if our pinned wayland-protocols and Smithay have it,
       else a private one (ADR 0002 §7). A dual-Kawase blur pass in the GLES renderer for
       toplevels, popups and layer surfaces with a blur region: damage widened by the blur
@@ -124,8 +124,18 @@ their goldens and the gallery's "Shell" page run on macOS.
       direct-scanout and full-screen windows.
       *Accept:* a headless test renders a client with a blur region over a pattern and
       checks the pixels behind it; a VM screenshot; no extra frames when idle (ADR 0019).
-      *Owner:* on the PC (AMD/Intel and NVIDIA), dragging a blurred window stays smooth at
-      the display's refresh rate.
+      *Owner:* on the PC (AMD/Intel and NVIDIA), dragging a blurred window (`blur-demo`, below) over a busy
+      window, and a window under it, stays smooth at the display's refresh rate.
+      *Done:* ADR 0071. `ext-background-effect-v1` (in our wayland-protocols and Smithay
+      pins); `blur::BlurElement`, a Smithay framebuffer effect below each surface with a
+      blur region (windows, subsurfaces, popups, layer surfaces): the damage tracker
+      re-captures when damage behind reaches it, the blur reads 32 logical px around the
+      region, the result is cached per tracker. Dual Kawase, 3 passes (4 above scale 1.5),
+      as Smithay custom texture shaders. Off for full-screen windows and locked sessions.
+      7 headless tests (`tests/blur.rs`) and 5 unit tests; VM: screenshot of `blur-demo`
+      over foot on the tty backend, 0 CPU ticks in 10 s idle with it open.
+      `cargo run -p neue-comp --example blur-demo [W H]` makes a blurred window. Not done:
+      real hardware.
 - [ ] **3.5 Backdrop blur: clients** · Sonnet. After 3.4. `neue-platform`'s Wayland
       driver asks for blur on surfaces whose root material is translucent (menus,
       popovers, HUD panels, the menu bar), and translucent materials (ADR 0039) switch

@@ -53,6 +53,7 @@ use smithay::wayland::text_input::TextInputManagerState;
 use smithay::wayland::viewporter::ViewporterState;
 use smithay::wayland::xdg_activation::XdgActivationState;
 use smithay::wayland::xdg_foreign::XdgForeignState;
+use smithay::wayland::background_effect::BackgroundEffectState;
 use smithay::wayland::xdg_system_bell::XdgSystemBellState;
 use smithay::wayland::xdg_toplevel_icon::XdgToplevelIconManager;
 use tracing::warn;
@@ -193,6 +194,8 @@ pub struct State {
     pub xdg_dialog_state: XdgDialogState,
     pub toplevel_icon_manager: XdgToplevelIconManager,
     pub system_bell_state: XdgSystemBellState,
+    /// `ext-background-effect-v1`: blur behind surfaces (ADR 0071).
+    pub background_effect_state: BackgroundEffectState,
     /// `org_kde_kwin_appmenu` and `gtk_shell1`: where apps export their menus (ADR 0025).
     pub appmenu_state: AppmenuState,
     /// `neue_window_v1`: where a window's own chrome ends, for sheets (ADR 0064).
@@ -330,6 +333,7 @@ impl State {
         let mut toplevel_icon_manager = XdgToplevelIconManager::new::<Self>(&dh);
         toplevel_icon_manager.replace_icon_sizes([64, 128]);
         let system_bell_state = XdgSystemBellState::new::<Self>(&dh);
+        let background_effect_state = BackgroundEffectState::new::<Self>(&dh);
         let appmenu_state = AppmenuState::new(&dh);
         let neue_window_state = NeueWindowState::new(&dh);
         let neue_shell = NeueShellState::new(&dh);
@@ -410,6 +414,7 @@ impl State {
             xdg_dialog_state,
             toplevel_icon_manager,
             system_bell_state,
+            background_effect_state,
             appmenu_state,
             neue_window_state,
             neue_shell,

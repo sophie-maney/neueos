@@ -25,10 +25,13 @@ use smithay::backend::renderer::utils::CommitCounter;
 use smithay::backend::renderer::{Bind, Blit, ExportMem, Offscreen, Renderer, TextureFilter};
 use smithay::desktop::{LayerMap, LayerSurface, Space, Window, layer_map_for_output};
 use smithay::output::Output;
+use smithay::reexports::wayland_server::protocol::wl_surface::WlSurface;
 use smithay::utils::{Logical, Physical, Point, Rectangle, Scale, Size, Transform};
+use smithay::wayland::compositor::SurfaceData;
 use smithay::wayland::session_lock::LockSurface;
 use smithay::wayland::shell::wlr_layer::Layer;
 
+use crate::blur::{self, BlurElement, SurfaceBlur};
 use crate::decorations::{self, Chrome, frame_geometry};
 use crate::fullscreen::fullscreen_window_on;
 
@@ -45,6 +48,8 @@ smithay::backend::renderer::element::render_elements! {
     Surface=WaylandSurfaceRenderElement<GlesRenderer>,
     Chrome=MemoryRenderBufferRenderElement<GlesRenderer>,
     Backdrop=SolidColorRenderElement,
+    /// The blurred backdrop below a surface with a blur region (ADR 0071).
+    Blur=BlurElement,
 }
 
 smithay::backend::renderer::element::render_elements! {
@@ -94,6 +99,11 @@ pub fn output_elements(
     }
 
     let fullscreen = fullscreen_window_on(space, output);
+    let blur = Blur {
+        on: blur::supported(renderer),
+        scale: output_scale,
+        output_size: output_geo.size.to_f64().to_physical(scale).to_i32_round(),
+    };
     let layer_map = layer_map_for_output(output);
     let below_windows = |layer: Layer| match layer {
         Layer::Background | Layer::Bottom => true,
@@ -104,7 +114,7 @@ pub fn output_elements(
         .layers()
         .rev()
         .partition(|s| below_windows(s.layer()));
-    push_layers(&mut elements, renderer, &layer_map, upper, scale);
+    push_layers(&mut elements, renderer, &layer_map, upper, &blur);
 
     for window in space.elements().rev() {
         let Some(geometry) = space.element_geometry(window) else {
@@ -119,17 +129,20 @@ pub fn output_elements(
             continue;
         }
         let render_location = geometry.loc - window.geometry().loc - output_geo.loc;
-        elements.extend(
-            window
-                .render_elements::<WaylandSurfaceRenderElement<GlesRenderer>>(
-                    renderer,
-                    render_location.to_physical_precise_round(output_scale),
-                    scale,
-                    1.0,
-                )
-                .into_iter()
-                .map(OutputElement::Surface),
+        let surfaces = window.render_elements::<WaylandSurfaceRenderElement<GlesRenderer>>(
+            renderer,
+            render_location.to_physical_precise_round(output_scale),
+            scale,
+            1.0,
         );
+        // Nothing shows through a full-screen window, so it gets no blur (and stays
+        // eligible for direct scanout).
+        let blurs = if fullscreen.as_ref() == Some(window) {
+            Vec::new()
+        } else {
+            blur.regions(|visit| window.with_surfaces(visit))
+        };
+        blur.push(&mut elements, surfaces, &blurs);
         if decorated {
             let bar: Point<i32, Logical> = frame.loc - output_geo.loc;
             elements.extend(
@@ -150,8 +163,40 @@ pub fn output_elements(
         }
     }
 
-    push_layers(&mut elements, renderer, &layer_map, lower, scale);
+    push_layers(&mut elements, renderer, &layer_map, lower, &blur);
     elements
+}
+
+/// How surfaces with a blur region get their [`BlurElement`] on one output.
+struct Blur {
+    /// The renderer can blur ([`blur::supported`]).
+    on: bool,
+    scale: f64,
+    output_size: Size<i32, Physical>,
+}
+
+impl Blur {
+    /// The blur regions of the surfaces `visit` walks (none if blur is off).
+    fn regions(
+        &self,
+        visit: impl FnOnce(&mut dyn FnMut(&WlSurface, &SurfaceData)),
+    ) -> Vec<SurfaceBlur> {
+        if self.on {
+            blur::surface_regions(visit)
+        } else {
+            Vec::new()
+        }
+    }
+
+    /// Append `surfaces` (topmost first), each followed by its blur from `blurs`.
+    fn push(
+        &self,
+        elements: &mut Vec<OutputElement>,
+        surfaces: Vec<WaylandSurfaceRenderElement<GlesRenderer>>,
+        blurs: &[SurfaceBlur],
+    ) {
+        blur::push_with_blur(elements, surfaces, blurs, self.scale, self.output_size);
+    }
 }
 
 /// Append the render elements of layer `surfaces`, topmost first.
@@ -160,25 +205,24 @@ fn push_layers(
     renderer: &mut GlesRenderer,
     layer_map: &LayerMap,
     surfaces: Vec<&LayerSurface>,
-    scale: Scale<f64>,
+    blur: &Blur,
 ) {
+    let scale = Scale::from(blur.scale);
     for surface in surfaces {
         let Some(geo) = layer_map.layer_geometry(surface) else {
             continue;
         };
-        elements.extend(
-            AsRenderElements::<GlesRenderer>::render_elements::<
-                WaylandSurfaceRenderElement<GlesRenderer>,
-            >(
-                surface,
-                renderer,
-                geo.loc.to_physical_precise_round(scale),
-                scale,
-                1.0,
-            )
-            .into_iter()
-            .map(OutputElement::Surface),
+        let rendered = AsRenderElements::<GlesRenderer>::render_elements::<
+            WaylandSurfaceRenderElement<GlesRenderer>,
+        >(
+            surface,
+            renderer,
+            geo.loc.to_physical_precise_round(scale),
+            scale,
+            1.0,
         );
+        let blurs = blur.regions(|visit| surface.with_surfaces(visit));
+        blur.push(elements, rendered, &blurs);
     }
 }
 
