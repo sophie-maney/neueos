@@ -293,6 +293,8 @@ impl FieldWidget {
             highlight: None,
             on_closed: Some(combo::closed),
             refocus: None,
+            on_step: None,
+            return_focus: None,
         };
         menu::open(
             ctx,
@@ -345,6 +347,8 @@ impl FieldWidget {
         let anchor = Anchor {
             on_closed: Some(edit_closed),
             refocus: Some(ctx.widget_id()),
+            on_step: None,
+            return_focus: None,
             ..Anchor::at(at)
         };
         menu::open(ctx, spec, anchor, keyboard, &mut self.edit_return_focus);

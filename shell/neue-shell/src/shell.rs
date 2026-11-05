@@ -430,6 +430,17 @@ impl Application for Shell {
     }
 
     fn shell(&mut self, cx: &mut Cx<'_, Message>, event: ShellEvent) {
+        if let ShellEvent::FocusMenuBar { output } = event {
+            // Ctrl+F2: the first menu, from the keyboard. Right away, so that its popup
+            // grabs with the event's serial.
+            let bar = output
+                .and_then(|o| self.bars.get(&o))
+                .or_else(|| self.bars.values().next());
+            if let Some(bar) = bar {
+                bar.handles.bar.open_first_menu(cx);
+            }
+            return;
+        }
         self.windows.apply(event);
         self.app_changed(cx);
         self.follow_menus(cx);

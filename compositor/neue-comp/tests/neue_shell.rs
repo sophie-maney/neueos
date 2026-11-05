@@ -21,6 +21,9 @@ const ATTENTION: u32 = 2;
 const SHIFT_L: u32 = 42 + 8;
 const VOLUME_UP: u32 = 115 + 8;
 const BRIGHTNESS_UP: u32 = 225 + 8;
+const CTRL_L: u32 = 29 + 8;
+const F2: u32 = 60 + 8;
+const DOWN: u32 = 108 + 8;
 /// evdev codes, as `wl_keyboard.key` reports them.
 const EVDEV_CTRL_L: u32 = 29;
 const EVDEV_C: u32 = 46;
@@ -310,6 +313,102 @@ fn send_shortcut_types_the_chord_into_the_active_window() {
     let (now, seen) = app.app_modifiers();
     assert_eq!(now, 0);
     assert_ne!(seen & CONTROL_MASK, 0);
+}
+
+#[test]
+fn ctrl_f2_hands_the_keyboard_to_the_menu_bar_and_back() {
+    let server = Server::start();
+    let mut app = server.connect();
+    let _win = app.create_toplevel("Editor", "org.neueos.A", (200, 100));
+    let mut shell = shell(&server);
+    // The bar never takes the keyboard itself.
+    let bar = shell.create_layer_surface(Layer::Top, "menu-bar", (300, 22), |layer| {
+        layer.set_size(0, 22);
+        layer.set_anchor(Anchor::Top | Anchor::Left | Anchor::Right);
+        layer.set_keyboard_interactivity(KeyboardInteractivity::None);
+    });
+    app.roundtrip();
+    assert!(window(&server, "Editor").focused);
+
+    // Ctrl+F2 (the default binding of focus-menu-bar) reaches the shell, not the editor.
+    let app_keys = app.app_keys().len();
+    key(&server, CTRL_L, Key::Pressed);
+    key(&server, F2, Key::Pressed);
+    key(&server, F2, Key::Released);
+    key(&server, CTRL_L, Key::Released);
+    shell.roundtrip();
+    app.roundtrip();
+    let [(serial, _)] = *shell.shell_focus_menu_bar() else {
+        panic!("{:?}", shell.shell_focus_menu_bar());
+    };
+    assert!(app.app_keys()[app_keys..].iter().all(|&(k, _)| k != F2 - 8));
+
+    // The shell opens its first menu with that serial: the menu gets the keyboard and the
+    // editor stays the active window.
+    let menu = shell.create_layer_popup(&bar, (120, 80), Some(serial));
+    app.roundtrip();
+    assert!(!window(&server, "Editor").focused);
+    assert_eq!(
+        shell.shell_active().last().unwrap(),
+        &Some(ident(&server, "Editor"))
+    );
+    let (shell_keys, app_keys) = (shell.key_presses(), app.key_presses());
+    key(&server, DOWN, Key::Pressed);
+    key(&server, DOWN, Key::Released);
+    shell.roundtrip();
+    app.roundtrip();
+    assert_eq!(shell.key_presses(), shell_keys + 1);
+    assert_eq!(app.key_presses(), app_keys);
+
+    // The menu closes: the editor gets the keyboard back, and the next key.
+    shell.close_popup(menu);
+    server.with_state(|_| ());
+    server.with_state(|_| ());
+    app.roundtrip();
+    assert!(window(&server, "Editor").focused);
+    key(&server, DOWN, Key::Pressed);
+    key(&server, DOWN, Key::Released);
+    shell.roundtrip();
+    app.roundtrip();
+    assert_eq!(shell.key_presses(), shell_keys + 1);
+    assert_eq!(app.key_presses(), app_keys + 1);
+}
+
+#[test]
+fn a_menu_bar_can_switch_menus_while_the_old_grab_lingers() {
+    let server = Server::start();
+    let mut app = server.connect();
+    let _win = app.create_toplevel("Editor", "org.neueos.A", (200, 100));
+    let mut shell = shell(&server);
+    let bar = shell.create_layer_surface(Layer::Top, "menu-bar", (300, 22), |layer| {
+        layer.set_size(0, 22);
+        layer.set_anchor(Anchor::Top | Anchor::Left | Anchor::Right);
+        layer.set_keyboard_interactivity(KeyboardInteractivity::None);
+    });
+    key(&server, CTRL_L, Key::Pressed);
+    key(&server, F2, Key::Pressed);
+    key(&server, F2, Key::Released);
+    key(&server, CTRL_L, Key::Released);
+    shell.roundtrip();
+    let (serial, _) = shell.shell_focus_menu_bar()[0];
+
+    // Hovering another title: in one flush the old menu goes and a new one grabs, with
+    // the serial of the pointer entering the bar (not the grab's), before any input
+    // arrives to end the old grab.
+    let first = shell.create_layer_popup(&bar, (120, 80), Some(serial));
+    first.popup.destroy();
+    first.xdg_surface.destroy();
+    first.surface.destroy();
+    let _second = shell.create_layer_popup(&bar, (120, 80), Some(serial + 1000));
+    server.with_state(|_| ());
+    server.with_state(|_| ());
+    app.roundtrip();
+    assert!(!window(&server, "Editor").focused);
+    let shell_keys = shell.key_presses();
+    key(&server, DOWN, Key::Pressed);
+    key(&server, DOWN, Key::Released);
+    shell.roundtrip();
+    assert_eq!(shell.key_presses(), shell_keys + 1);
 }
 
 #[test]

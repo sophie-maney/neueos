@@ -37,7 +37,8 @@ use tracing::{debug, warn};
 use crate::state::{ClientState, State};
 
 /// Version of `neue_shell_manager_v1` we implement.
-const VERSION: u32 = 1;
+/// Version 2 adds `focus_menu_bar` (task 3.7b, ADR 0077).
+const VERSION: u32 = 2;
 
 /// Icon images larger than this (per side) are not passed on.
 const MAX_ICON_SIZE: i32 = 512;
@@ -577,6 +578,50 @@ impl State {
             ..ActionParams::default()
         };
         self.run_action(params).map_err(|err| err.message)
+    }
+
+    /// The window the shell treats as active (it stays while a shell menu has the
+    /// keyboard).
+    pub(crate) fn shell_active(&self) -> Option<Window> {
+        self.neue_shell.active.clone()
+    }
+
+    /// The `focus-menu-bar` action: ask the shell to open its menu bar's first menu from
+    /// the keyboard, on the active window's output (else the pointer's). Fails when no
+    /// shell that knows the event (version 2) is bound, or while the session is locked.
+    pub(crate) fn shell_focus_menu_bar(&mut self) -> Result<(), String> {
+        if self.is_locked() {
+            return Err("the session is locked".into());
+        }
+        let output = self
+            .neue_shell
+            .active
+            .as_ref()
+            .and_then(|w| self.space.outputs_for_element(w).into_iter().next())
+            .or_else(|| {
+                let pos = self.pointer.current_location();
+                self.space.output_under(pos).next().cloned()
+            });
+        let serial = SERIAL_COUNTER.next_serial();
+        let mut sent = false;
+        for manager in &self.neue_shell.managers {
+            if manager.resource.version() < 2 {
+                continue;
+            }
+            let wl_output = output.as_ref().and_then(|o| {
+                let client = manager.resource.client()?;
+                o.client_outputs(&client).next()
+            });
+            manager
+                .resource
+                .focus_menu_bar(serial.into(), wl_output.as_ref());
+            sent = true;
+        }
+        if sent {
+            Ok(())
+        } else {
+            Err("no shell with a menu bar is running".into())
+        }
     }
 
     /// `send_shortcut`: type `modifiers` + `keysym` into the active window.

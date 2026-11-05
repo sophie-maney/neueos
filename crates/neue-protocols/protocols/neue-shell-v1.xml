@@ -23,7 +23,7 @@
     a protocol error.
   </description>
 
-  <interface name="neue_shell_manager_v1" version="1">
+  <interface name="neue_shell_manager_v1" version="2">
     <description summary="the shell's view of the compositor">
       On bind, the compositor sends a toplevel event for every window that is mapped or
       minimised, each followed by that toplevel's state and done, then one active event.
@@ -126,6 +126,22 @@
       <arg name="key" type="uint" enum="system_key"/>
       <arg name="state" type="uint" enum="key_state"/>
       <arg name="modifiers" type="uint" enum="modifiers"/>
+    </event>
+
+    <!-- Version 2 additions -->
+
+    <event name="focus_menu_bar" since="2">
+      <description summary="move the keyboard to the menu bar">
+        The user asked to reach the menu bar from the keyboard (the focus-menu-bar
+        compositor action, Ctrl+F2 by default). The shell opens the first menu of the
+        bar on output with its first item highlighted, as a grabbing popup that gets the
+        keyboard. serial is for that popup's xdg_popup.grab. output is where the active
+        window is, else where the pointer is; null if the shell has no wl_output for it.
+        The active window stays active while the menu is up, and gets the keyboard back
+        when the menus close.
+      </description>
+      <arg name="serial" type="uint" summary="serial for xdg_popup.grab"/>
+      <arg name="output" type="object" interface="wl_output" allow-null="true"/>
     </event>
   </interface>
 

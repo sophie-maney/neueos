@@ -194,6 +194,13 @@ pub fn run_with_connection(
         options,
     };
     state.reg.has_shell = state.desktop.has_shell();
+    // sctk binds the seats that exist at start-up without calling `new_seat` for them.
+    // Before any roundtrip: a seat's capabilities arriving before it is adopted would be
+    // ignored, and the app would get no keyboard and no pointer.
+    let seats: Vec<_> = state.seats.seats().collect();
+    for seat in seats {
+        state.adopt_seat(seat);
+    }
     if state.g.blur.is_some() {
         // The manager sends its capabilities on bind; apps ask `Ctx::has_blur` in `on_start`.
         queue.roundtrip(&mut state)?;
@@ -201,11 +208,6 @@ pub fn run_with_connection(
     WaylandSource::new(conn.clone(), queue)
         .insert(event_loop.handle())
         .map_err(|e| Error::Loop(e.to_string()))?;
-    // sctk binds the seats that exist at start-up without calling `new_seat` for them.
-    let seats: Vec<_> = state.seats.seats().collect();
-    for seat in seats {
-        state.adopt_seat(seat);
-    }
 
     app.on_start(&mut Ctx::new(&mut state.reg));
     state.pump(app)?;

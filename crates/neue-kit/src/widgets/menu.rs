@@ -12,7 +12,9 @@
 //!   opened the menu (press, drag, release). A press outside every menu closes them all.
 //! - **Keyboard.** Up and Down (Home, End) move the highlight over enabled items, Right
 //!   opens a submenu, Left closes one, Return or Space chooses, Escape closes, and typing
-//!   jumps to the first item starting with what was typed ([`TYPE_SELECT_RESET`]).
+//!   jumps to the first item starting with what was typed ([`TYPE_SELECT_RESET`]). In a
+//!   menu bar's menu ([`Anchor::on_step`]), Left in the top menu and Right on an item with
+//!   no submenu go to the neighbouring menu of the bar.
 //! - **Choosing.** The owner receives [`Chosen`] with the item's id and closes the menus.
 
 use std::any::TypeId;
@@ -60,6 +62,11 @@ pub(crate) struct Chosen(pub(crate) usize);
 /// receives [`Chosen`].
 pub(crate) type OnClosed = fn(WidgetMut<'_, dyn Widget>, Option<usize>);
 
+/// Called on a menu-bar title, the owner, when the keyboard leaves its menus for the
+/// bar's next menu (`true`, Right) or previous one (`false`, Left). The menus stay up
+/// until the bar replaces them.
+pub(crate) type OnStep = fn(WidgetMut<'_, dyn Widget>, bool);
+
 /// Where and how a menu opens.
 #[derive(Debug, Clone, Copy)]
 pub(crate) struct Anchor {
@@ -76,6 +83,11 @@ pub(crate) struct Anchor {
     pub(crate) on_closed: Option<OnClosed>,
     /// Where focus goes back to if nothing had it when the menu opened.
     pub(crate) refocus: Option<WidgetId>,
+    /// The owner is a menu-bar title: Left and Right may leave for its neighbours.
+    pub(crate) on_step: Option<OnStep>,
+    /// The menu replaces another menu of the same bar (switching menus): what had focus
+    /// before that one opened, which focus goes back to. `None`: what has focus now.
+    pub(crate) return_focus: Option<Option<WidgetId>>,
 }
 
 impl Anchor {
@@ -88,6 +100,8 @@ impl Anchor {
             highlight: None,
             on_closed: None,
             refocus: None,
+            on_step: None,
+            return_focus: None,
         }
     }
 }
@@ -153,7 +167,9 @@ pub(crate) fn open(
         return;
     }
     let owner = ctx.owner();
-    if ctx.open_menu().is_none() {
+    if let Some(inherited) = anchor.return_focus {
+        *return_focus = inherited;
+    } else if ctx.open_menu().is_none() {
         *return_focus = ctx.focus_target().or(anchor.refocus);
     }
     let return_focus = *return_focus;
@@ -170,6 +186,7 @@ pub(crate) fn open(
             parent: None,
             return_focus,
             on_closed: anchor.on_closed,
+            on_step: anchor.on_step,
             session,
         },
         if keyboard || anchor.highlight.is_some() {
@@ -217,6 +234,8 @@ struct Chain {
     return_focus: Option<WidgetId>,
     /// What the owner wants to know when the menus close.
     on_closed: Option<OnClosed>,
+    /// Set for a menu bar's menus.
+    on_step: Option<OnStep>,
     session: Arc<Mutex<Session>>,
 }
 
@@ -530,6 +549,21 @@ impl MenuWidget {
         });
     }
 
+    /// Whether row `i` opens a submenu with items in it.
+    fn has_submenu(&self, i: usize) -> bool {
+        matches!(
+            self.spec.0.get(i).map(|s| &s.kind),
+            Some(SpecKind::Submenu(spec)) if !spec.0.is_empty()
+        )
+    }
+
+    /// Leaves for the bar's next (`forward`) or previous menu, in a menu bar's menus.
+    fn step_bar(&self, ctx: &mut impl MenuCtx, forward: bool) {
+        if let Some(on_step) = self.chain.on_step {
+            ctx.later(self.chain.owner, move |owner| on_step(owner, forward));
+        }
+    }
+
     /// Highlights and focuses the first item of a submenu that is already up (Right on
     /// the item that the pointer opened it from). A mutation can't move focus, so a row
     /// reports ready again, as on opening.
@@ -561,12 +595,17 @@ impl MenuWidget {
                 let last = self.step(None, false);
                 self.highlight(ctx, last);
             }
-            Key::Named(NamedKey::ArrowRight) => {
-                if let Some(i) = self.highlighted {
-                    self.open_submenu(ctx, i, true);
+            Key::Named(NamedKey::ArrowRight) => match self.highlighted {
+                Some(i) if self.has_submenu(i) => self.open_submenu(ctx, i, true),
+                _ => self.step_bar(ctx, true),
+            },
+            Key::Named(NamedKey::ArrowLeft) => {
+                if self.chain.parent.is_some() {
+                    self.back_to_parent(ctx);
+                } else {
+                    self.step_bar(ctx, false);
                 }
             }
-            Key::Named(NamedKey::ArrowLeft) => self.back_to_parent(ctx),
             Key::Named(NamedKey::Enter) => match self.highlighted {
                 Some(i) => self.activate(ctx, i, true),
                 None => self.close_all(ctx, None),

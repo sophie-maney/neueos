@@ -55,7 +55,8 @@ impl Desktop {
         globals: &wayland_client::globals::GlobalList,
         qh: &QueueHandle<State>,
     ) -> Self {
-        let manager = globals.bind(qh, 1..=1, ShellManagerData).ok();
+        // Version 2: `focus_menu_bar` (task 3.7b).
+        let manager = globals.bind(qh, 1..=2, ShellManagerData).ok();
         if manager.is_some() {
             tracing::info!("bound neue_shell_manager_v1: this client is the shell");
         }
@@ -262,6 +263,17 @@ impl Dispatch2<NeueShellManagerV1, State> for ShellManagerData {
             }
             // Volume, brightness and media keys: task 3.14.
             Event::SystemKey { .. } => {}
+            Event::FocusMenuBar { serial, output } => {
+                // The menu it opens grabs with this serial.
+                state.input.last_serial = Some(serial);
+                let output = output.and_then(|o| {
+                    let outputs = &state.desktop.outputs;
+                    outputs.iter().find(|(w, _)| *w == o).map(|&(_, id)| id)
+                });
+                state
+                    .events
+                    .push(AppEvent::Shell(ShellEvent::FocusMenuBar { output }));
+            }
             _ => {}
         }
     }

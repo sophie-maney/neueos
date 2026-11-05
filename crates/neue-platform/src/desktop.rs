@@ -106,6 +106,10 @@ pub enum ShellEvent {
     Active(Option<ToplevelId>),
     /// A [`ShellRequest::RunAction`] failed.
     ActionFailed { name: String, message: String },
+    /// The user asked to reach the menu bar from the keyboard (Ctrl+F2): open the first
+    /// menu of the bar on `output` (`None`: any) from the keyboard. Opening it right away
+    /// lets the driver grab with this event's serial.
+    FocusMenuBar { output: Option<OutputId> },
 }
 
 /// Modifiers of a key chord for [`ShellRequest::SendShortcut`].
