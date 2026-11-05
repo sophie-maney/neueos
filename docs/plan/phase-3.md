@@ -294,13 +294,25 @@ their goldens and the gallery's "Shell" page run on macOS.
       Super+V pastes into another field; Ctrl+A and Ctrl+C do nothing; the context menu
       shows ⌘X ⌘C ⌘V.
       *Owner:* none beyond 3.10a's: Super+C/V in a kit app on the PC.
-- [ ] **3.10c Super as ⌘ C: ⌘ in third-party menus** · Sonnet. After 3.10a. A
+- [x] **3.10c Super as ⌘ C: ⌘ in third-party menus** · Sonnet. After 3.10a. A
       `neue_shell_toplevel_v1` event (manager version 3) telling the shell whether Super
       reaches the window's app as Ctrl; neue-platform passes it on in `Toplevel`, and the
       shell's global menu shows those apps' Control shortcuts with ⌘. ADR for the protocol
       change.
       *Accept:* a headless test of the event (exempt and remapped apps); shell unit tests of
       the mapping; in the VM, Firefox's menus show ⌘C and foot's do not.
+      *Done (ADR 0081):* `neue_shell_toplevel_v1.command_key(super | ctrl)`, since 3, in a
+      toplevel's first batch and again when it changes (new app id, config reload); both
+      the manager and the toplevel interface are version 3 (a toplevel takes its manager's
+      version). `Toplevel::super_as_ctrl` in neue-platform; the shell shows Control
+      shortcuts as ⌘ for such windows (Super beside it counts once) and rebuilds the bar's
+      menus when the flag changes. Shortcut inhibitors are not tracked. Headless tests:
+      remapped, exempt and kit apps, later windows, app-id and config changes, and a
+      version-2 shell getting no event. In the VM, KWrite (Qt6, DBusMenu): File shows
+      ⌘N ⇧⌘N ⌘O ⌘L ⌘W ⇧⌘W ⌘Q; after adding it to `exceptions` and reloading, ⌃N ⌃⇧N and the
+      rest. Firefox and foot export no menu on Wayland (`menu: none`), so the plan's
+      Firefox/foot check isn't possible; KWrite stands in for the remapped app.
+      *Owner:* GTK apps' menus (gedit, Nautilus) show ⌘ on the PC; Chromium's too.
 - [ ] **3.11 Menu extras: battery and Bluetooth** · Sonnet. After 3.2b. zbus proxies for
       UPower and BlueZ (not `bluer`, which links libdbus). Battery: icon with charge and
       state, menu with percentage and time left, hidden without a battery. Bluetooth:

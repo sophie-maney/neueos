@@ -174,20 +174,29 @@ impl State {
         if !config.enabled {
             return false;
         }
+        if self
+            .seat
+            .keyboard_shortcuts_inhibitor_for_surface(surface)
+            .is_some()
+        {
+            return false;
+        }
+        self.window_super_as_ctrl(surface)
+    }
+
+    /// [`Self::super_as_ctrl`] without the keyboard-shortcuts inhibitor, which comes and
+    /// goes with focus: what the shell is told about a window (`command_key`, 3.10c).
+    pub fn window_super_as_ctrl(&self, surface: &WlSurface) -> bool {
+        let config = &self.config.active.super_as_command;
+        if !config.enabled {
+            return false;
+        }
         let native = surface.client().is_none_or(|client| {
             client
                 .get_data::<ClientState>()
                 .is_some_and(|data| data.shell || data.native_keys.load(Ordering::Relaxed))
         });
-        if native
-            || self
-                .seat
-                .keyboard_shortcuts_inhibitor_for_surface(surface)
-                .is_some()
-        {
-            return false;
-        }
-        config.remaps(&self.app_id_of(surface).unwrap_or_default())
+        !native && config.remaps(&self.app_id_of(surface).unwrap_or_default())
     }
 
     /// The app id of the window `surface` belongs to: the toplevel itself, or the window a

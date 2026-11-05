@@ -18,7 +18,7 @@ use smithay_client_toolkit::dispatch2::Dispatch2;
 use smithay_client_toolkit::output::{OutputHandler, OutputState};
 use wayland_client::backend::{ObjectData, ObjectId};
 use wayland_client::protocol::wl_output;
-use wayland_client::{Connection, Proxy, QueueHandle};
+use wayland_client::{Connection, Proxy, QueueHandle, WEnum};
 
 use super::{AppEvent, State};
 use crate::desktop::{
@@ -55,8 +55,8 @@ impl Desktop {
         globals: &wayland_client::globals::GlobalList,
         qh: &QueueHandle<State>,
     ) -> Self {
-        // Version 2: `focus_menu_bar` (task 3.7b).
-        let manager = globals.bind(qh, 1..=2, ShellManagerData).ok();
+        // Version 2: `focus_menu_bar` (task 3.7b); version 3: `command_key` (task 3.10c).
+        let manager = globals.bind(qh, 1..=3, ShellManagerData).ok();
         if manager.is_some() {
             tracing::info!("bound neue_shell_manager_v1: this client is the shell");
         }
@@ -352,6 +352,10 @@ impl Dispatch2<NeueShellToplevelV1, State> for ShellToplevelData {
                 };
             }
             Event::MenuNone => t.pending.menu = ToplevelMenu::None,
+            Event::CommandKey { key } => {
+                t.pending.super_as_ctrl =
+                    key == WEnum::Value(neue_shell_toplevel_v1::CommandKey::Ctrl);
+            }
             // Icons wait for the dock (3.16).
             _ => {}
         }

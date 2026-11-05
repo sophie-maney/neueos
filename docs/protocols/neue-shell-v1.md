@@ -3,7 +3,8 @@
 Our private Wayland extension between neue-comp and neue-shell (task 3.1, ADR 0066).
 
 - **XML:** `crates/neue-protocols/protocols/neue-shell-v1.xml`. Licence: GPL-3.0-or-later.
-- **Offered:** `neue_shell_manager_v1` version 2 (ADR 0077 added `focus_menu_bar`), only
+- **Offered:** `neue_shell_manager_v1` version 3 (ADR 0077 added `focus_menu_bar`, ADR 0081 the
+  toplevel's `command_key`), only
   to the shell: the client that
   `neue-comp --shell <command>` spawned with `WAYLAND_SOCKET`. Others don't see it, and
   binding it anyway is a protocol error.
@@ -42,6 +43,10 @@ first batch only changes are sent)
 - `menu_dbusmenu(service, path)`, `menu_gmenu(bus_name, menubar_path?, app_menu_path?,
   application_path?, window_path?)` or `menu_none` (show the fallback menu). The strings
   passed only a syntax check (ADR 0025).
+- `command_key(super | ctrl)` (version 3; in the first batch): whether Super reaches the
+  window's app as itself or as Control (ADR 0079). With `ctrl` the shell shows the app's
+  Control shortcuts with ⌘ (ADR 0081). Shortcut inhibitors are not tracked. A toplevel has
+  its manager's version, and the interface is version 3 as well.
 - `done`, `closed` (then destroy the object).
 - Requests `activate` (restores a minimised window), `minimize`, `unminimize`, `close`,
   `set_minimize_rectangle(surface, x, y, width, height)` (on one of the shell's layer

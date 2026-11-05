@@ -29,6 +29,8 @@ pub struct ShellWindow {
     /// `(width, height, scale, pixels)` of each icon image.
     pub icon_images: Vec<(i32, i32, i32, Vec<u8>)>,
     pub menu: ShellMenu,
+    /// The last `command_key`: `Some(true)` for ctrl, `None` before any (version 3).
+    pub super_as_ctrl: Option<bool>,
     pub done: usize,
     pub closed: bool,
     /// Every event name in order, to check that only changes are sent.
@@ -76,9 +78,14 @@ impl TestClient {
 
     /// Bind `neue_shell_manager_v1` (the client must be the shell) and take in the windows.
     pub fn bind_neue_shell(&mut self) -> NeueShellManagerV1 {
+        self.bind_neue_shell_at(3)
+    }
+
+    /// [`Self::bind_neue_shell`] at exactly `version`, like an older shell.
+    pub fn bind_neue_shell_at(&mut self, version: u32) -> NeueShellManagerV1 {
         let manager: NeueShellManagerV1 = self
             ._globals
-            .bind(&self.qh, 1..=2, ())
+            .bind(&self.qh, version..=version, ())
             .expect("binding neue_shell_manager_v1");
         self.data.neue_shell.manager = Some(manager.clone());
         self.roundtrip();
@@ -307,6 +314,11 @@ impl Dispatch<NeueShellToplevelV1, ()> for ClientData {
             E::MenuNone => {
                 window.menu = ShellMenu::None;
                 "menu_none"
+            }
+            E::CommandKey { key } => {
+                window.super_as_ctrl =
+                    Some(key == WEnum::Value(neue_shell_toplevel_v1::CommandKey::Ctrl));
+                "command_key"
             }
             E::Done => {
                 window.done += 1;

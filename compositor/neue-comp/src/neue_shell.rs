@@ -37,8 +37,9 @@ use tracing::{debug, warn};
 use crate::state::{ClientState, State};
 
 /// Version of `neue_shell_manager_v1` we implement.
-/// Version 2 adds `focus_menu_bar` (task 3.7b, ADR 0077).
-const VERSION: u32 = 2;
+/// Version 2 adds `focus_menu_bar` (task 3.7b, ADR 0077); version 3 the toplevel's
+/// `command_key` (task 3.10c, ADR 0081).
+const VERSION: u32 = 3;
 
 /// Icon images larger than this (per side) are not passed on.
 const MAX_ICON_SIZE: i32 = 512;
@@ -103,6 +104,8 @@ struct Snapshot {
     app_id: String,
     state: neue_shell_toplevel_v1::State,
     menu: Option<MenuAddress>,
+    /// Whether Super reaches the window's app as Control (`command_key`, version 3).
+    super_as_ctrl: bool,
     icon: Icon,
 }
 
@@ -418,6 +421,9 @@ impl State {
             app_id: info.app_id.unwrap_or_default(),
             state,
             menu: info.menu,
+            super_as_ctrl: window
+                .toplevel()
+                .is_some_and(|t| self.window_super_as_ctrl(t.wl_surface())),
             icon,
         })
     }
@@ -465,6 +471,23 @@ impl State {
         }
         // A minimised active window stops being active.
         self.shell_refresh_active();
+    }
+
+    /// The remap settings changed (config reload): send each window whose `command_key`
+    /// did.
+    pub(crate) fn shell_command_keys_changed(&mut self) {
+        if !self.neue_shell.is_bound() {
+            return;
+        }
+        let windows: Vec<Window> = self
+            .minimized
+            .iter()
+            .map(|(w, _)| w.clone())
+            .chain(self.space.elements().cloned())
+            .collect();
+        for window in &windows {
+            self.shell_window_changed(window);
+        }
     }
 
     /// `window`'s root surface committed: send a new icon if this commit applied one.
@@ -769,6 +792,13 @@ fn send_changes(toplevel: &NeueShellToplevelV1, old: Option<&Snapshot>, new: &Sn
         for image in &new.icon.images {
             toplevel.icon_buffer(image.fd.as_fd(), image.width, image.height, image.scale);
         }
+    }
+    if toplevel.version() >= 3 && old.is_none_or(|o| o.super_as_ctrl != new.super_as_ctrl) {
+        toplevel.command_key(if new.super_as_ctrl {
+            neue_shell_toplevel_v1::CommandKey::Ctrl
+        } else {
+            neue_shell_toplevel_v1::CommandKey::Super
+        });
     }
     if old.is_none_or(|o| o.menu != new.menu) {
         match &new.menu {

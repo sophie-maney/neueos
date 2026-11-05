@@ -23,7 +23,7 @@
     a protocol error.
   </description>
 
-  <interface name="neue_shell_manager_v1" version="2">
+  <interface name="neue_shell_manager_v1" version="3">
     <description summary="the shell's view of the compositor">
       On bind, the compositor sends a toplevel event for every window that is mapped or
       minimised, each followed by that toplevel's state and done, then one active event.
@@ -145,13 +145,24 @@
     </event>
   </interface>
 
-  <interface name="neue_shell_toplevel_v1" version="1">
+  <interface name="neue_shell_toplevel_v1" version="3">
     <description summary="one window, as the shell sees it">
       State events are buffered and applied together on done. The first batch always
-      carries identifier, title, app_id, state, icon and one of the menu events; later
-      batches carry only what changed (an icon change sends icon and its icon_buffer
-      events again).
+      carries identifier, title, app_id, state, icon, one of the menu events and, from
+      version 3, command_key; later batches carry only what changed (an icon change
+      sends icon and its icon_buffer events again).
+
+      A toplevel has the version of the manager that announced it, so its version 3
+      events need a manager bound at version 3 (the interface itself gained nothing in
+      version 2).
     </description>
+
+    <enum name="command_key">
+      <entry name="super" value="0"
+             summary="the app takes Super itself (neue-kit apps, terminals, apps that inhibit shortcuts)"/>
+      <entry name="ctrl" value="1"
+             summary="Super reaches the app as Control (ADR 0079)"/>
+    </enum>
 
     <enum name="state" bitfield="true">
       <entry name="minimized" value="1" summary="hidden by minimise"/>
@@ -263,6 +274,19 @@
 
     <event name="menu_none">
       <description summary="no exported menus: the shell shows the fallback menu"/>
+    </event>
+
+    <event name="command_key" since="3">
+      <description summary="what Super is to the window's app">
+        Whether Super, the command key (⌘), reaches the window's app as itself or as
+        Control (ADR 0079, task 3.10a). With ctrl, the app's menus list its Control
+        shortcuts: the user types them with Super, so the shell shows them with ⌘. With
+        super the app's shortcuts are shown as they are. Sent in the first batch and when
+        the answer changes (the app id changed, or the compositor's configuration was
+        reloaded). A keyboard-shortcuts inhibitor is not tracked: it comes and goes with
+        focus.
+      </description>
+      <arg name="key" type="uint" enum="command_key"/>
     </event>
 
     <event name="done">
