@@ -1,4 +1,5 @@
-//! `compositor.toml`: loading, applying and hot reload (ADR 0004, ADR 0009).
+//! `compositor.toml` and `appearance.toml`: loading, applying and hot reload (ADR 0004,
+//! ADR 0009, ADR 0075).
 //!
 //! The active config lives in [`ConfigRuntime`] on the [`State`]. A reload loads every
 //! layer, checks what only the compositor can check (key names, action names, the xkb
@@ -13,7 +14,9 @@ use std::os::fd::AsFd;
 use std::path::PathBuf;
 use std::time::Duration;
 
-use neue_config::{CompositorConfig, ConfigError, ConfigFile, Layers, compositor::UNBOUND};
+use neue_config::{
+    AppearanceConfig, CompositorConfig, ConfigError, ConfigFile, Layers, compositor::UNBOUND,
+};
 use neue_ipc::{ConfigErrorInfo, Event};
 use rustix::fs::inotify::{self, CreateFlags, ReadFlags, WatchFlags};
 use rustix::io::Errno;
@@ -110,6 +113,8 @@ pub struct ConfigRuntime {
     handle: LoopHandle<'static, State>,
     /// The config that is applied.
     pub active: CompositorConfig,
+    /// The applied `appearance.toml`: title bars and the cursor follow it.
+    pub appearance: AppearanceConfig,
     /// `active.keybindings`, resolved.
     pub bindings: Bindings,
     /// Keys whose press was taken by a binding; their release is taken too, so clients never
@@ -117,6 +122,26 @@ pub struct ConfigRuntime {
     pub swallowed: HashSet<u32>,
     /// The pending debounce timer, if file events arrived recently.
     debounce: Option<RegistrationToken>,
+    /// Which files the events since the last reload concerned.
+    pending: Changed,
+}
+
+/// Which of the two watched files changed.
+#[derive(Debug, Clone, Copy, Default)]
+struct Changed {
+    compositor: bool,
+    appearance: bool,
+}
+
+impl Changed {
+    const BOTH: Self = Self {
+        compositor: true,
+        appearance: true,
+    };
+
+    fn any(self) -> bool {
+        self.compositor || self.appearance
+    }
 }
 
 impl std::fmt::Debug for ConfigRuntime {
@@ -138,8 +163,10 @@ impl ConfigRuntime {
             // The defaults only name known keys and actions.
             bindings: Bindings::build(&active.keybindings).unwrap_or_default(),
             active,
+            appearance: AppearanceConfig::default(),
             swallowed: HashSet::new(),
             debounce: None,
+            pending: Changed::default(),
         }
     }
 
@@ -157,16 +184,73 @@ impl State {
     /// are logged and leave the defaults active; the compositor always starts.
     pub fn init_config(&mut self, layers: Layers) {
         self.config.layers = layers;
-        // Errors are already logged and emitted by `reload_config`.
-        let _ = self.reload_config();
+        // Errors are already logged and emitted by the reloads.
+        let _ = self.reload_appearance();
+        let _ = self.reload_compositor();
         if let Err(err) = self.watch_config() {
             warn!(%err, "not watching the config files: changes need `neuectl reload-config`");
         }
     }
 
-    /// Re-read the config files and apply what changed. On failure the previous config stays
-    /// active, the error is logged and sent as `config_error`, and returned.
+    /// Re-read `appearance.toml` and `compositor.toml` and apply what changed. On failure
+    /// the previous config stays active, the error is logged and sent as `config_error`,
+    /// and (the first one) returned.
     pub fn reload_config(&mut self) -> Result<(), ConfigErrorInfo> {
+        let appearance = self.reload_appearance();
+        self.reload_compositor().and(appearance)
+    }
+
+    /// Re-read `appearance.toml` (every layer) and apply it if it changed. Says nothing
+    /// when it didn't.
+    fn reload_appearance(&mut self) -> Result<(), ConfigErrorInfo> {
+        let file = AppearanceConfig::FILE_NAME;
+        match neue_config::load::<AppearanceConfig>(&self.config.layers) {
+            Ok(loaded) => {
+                for key in &loaded.unknown_keys {
+                    warn!(file, key, "ignoring unknown config key");
+                }
+                if loaded.config != self.config.appearance {
+                    self.apply_appearance(loaded.config);
+                    info!(file, "config loaded");
+                    self.emit(Event::ConfigReloaded {
+                        file: file.to_owned(),
+                    });
+                }
+                Ok(())
+            }
+            Err(err) => Err(self.reject_config(err)),
+        }
+    }
+
+    /// Make `new` the active appearance: title bars take its colours, the cursor its theme
+    /// and size.
+    fn apply_appearance(&mut self, new: AppearanceConfig) {
+        self.chrome.variant = new.variant();
+        #[cfg(feature = "tty")]
+        if new.cursor != self.config.appearance.cursor
+            && let crate::state::Backend::Tty(tty) = &mut self.backend
+        {
+            tty.configure_cursor(&new.cursor);
+        }
+        self.config.appearance = new;
+        self.queue_redraw_all();
+    }
+
+    /// Log a rejected config and send it as `config_error`.
+    fn reject_config(&mut self, err: ConfigError) -> ConfigErrorInfo {
+        warn!(%err, "config rejected, keeping the previous one");
+        let info = ConfigErrorInfo {
+            file: err.file.display().to_string(),
+            line: err.line.and_then(|l| u32::try_from(l).ok()),
+            column: err.column.and_then(|c| u32::try_from(c).ok()),
+            message: err.message,
+        };
+        self.emit(Event::ConfigError(info.clone()));
+        info
+    }
+
+    /// Re-read `compositor.toml` and apply what changed.
+    fn reload_compositor(&mut self) -> Result<(), ConfigErrorInfo> {
         let file = CompositorConfig::FILE_NAME;
         let result =
             neue_config::load::<CompositorConfig>(&self.config.layers).and_then(|loaded| {
@@ -184,17 +268,7 @@ impl State {
                 });
                 Ok(())
             }
-            Err(err) => {
-                warn!(%err, "config rejected, keeping the previous one");
-                let info = ConfigErrorInfo {
-                    file: err.file.display().to_string(),
-                    line: err.line.and_then(|l| u32::try_from(l).ok()),
-                    column: err.column.and_then(|c| u32::try_from(c).ok()),
-                    message: err.message,
-                };
-                self.emit(Event::ConfigError(info.clone()));
-                Err(info)
-            }
+            Err(err) => Err(self.reject_config(err)),
         }
     }
 
@@ -284,8 +358,9 @@ impl State {
             .insert_source(
                 Generic::new(fd, Interest::READ, Mode::Level),
                 |_, fd, state| {
-                    if drain_events(fd.as_fd()) {
-                        state.schedule_config_reload();
+                    let changed = drain_events(fd.as_fd());
+                    if changed.any() {
+                        state.schedule_config_reload(changed);
                     }
                     Ok(PostAction::Continue)
                 },
@@ -294,16 +369,25 @@ impl State {
         Ok(())
     }
 
-    /// Reload once [`DEBOUNCE`] has passed, unless a reload is already scheduled.
-    fn schedule_config_reload(&mut self) {
+    /// Reload `changed` once [`DEBOUNCE`] has passed; a reload already scheduled takes it
+    /// along.
+    fn schedule_config_reload(&mut self, changed: Changed) {
+        self.config.pending.compositor |= changed.compositor;
+        self.config.pending.appearance |= changed.appearance;
         if self.config.debounce.is_some() {
             return;
         }
         let timer = Timer::from_duration(DEBOUNCE);
         let token = self.config.handle.insert_source(timer, |_, _, state| {
             state.config.debounce = None;
+            let pending = std::mem::take(&mut state.config.pending);
             // Errors are logged and emitted inside.
-            let _ = state.reload_config();
+            if pending.appearance {
+                let _ = state.reload_appearance();
+            }
+            if pending.compositor {
+                let _ = state.reload_compositor();
+            }
             TimeoutAction::Drop
         });
         match token {
@@ -313,23 +397,26 @@ impl State {
     }
 }
 
-/// Read every pending inotify event; true if one concerns `compositor.toml` (or events
+/// Read every pending inotify event; which of the two files they concern (both if events
 /// were lost).
-fn drain_events(fd: std::os::fd::BorrowedFd<'_>) -> bool {
+fn drain_events(fd: std::os::fd::BorrowedFd<'_>) -> Changed {
     let mut buffer = [MaybeUninit::<u8>::uninit(); 4096];
     let mut reader = inotify::Reader::new(fd, &mut buffer);
-    let name = CompositorConfig::FILE_NAME.as_bytes();
-    let mut relevant = false;
+    let mut changed = Changed::default();
     loop {
         match reader.next() {
             Ok(event) => {
-                relevant |= event.events().contains(ReadFlags::QUEUE_OVERFLOW)
-                    || event.file_name().is_some_and(|n| n.to_bytes() == name);
+                if event.events().contains(ReadFlags::QUEUE_OVERFLOW) {
+                    changed = Changed::BOTH;
+                } else if let Some(name) = event.file_name() {
+                    changed.compositor |= name.to_bytes() == CompositorConfig::FILE_NAME.as_bytes();
+                    changed.appearance |= name.to_bytes() == AppearanceConfig::FILE_NAME.as_bytes();
+                }
             }
-            Err(Errno::AGAIN) => return relevant,
+            Err(Errno::AGAIN) => return changed,
             Err(err) => {
                 warn!(%err, "reading config file events failed");
-                return true;
+                return Changed::BOTH;
             }
         }
     }

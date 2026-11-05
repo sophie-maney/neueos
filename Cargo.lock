@@ -2562,6 +2562,7 @@ dependencies = [
 name = "neue-config"
 version = "0.0.0"
 dependencies = [
+ "neue-theme",
  "serde",
  "tempfile",
  "thiserror 2.0.21",
@@ -2728,6 +2729,8 @@ dependencies = [
  "neue-dbus",
  "neue-kit",
  "png",
+ "rustix 1.1.6",
+ "tempfile",
  "thiserror 2.0.21",
  "tracing",
  "tracing-subscriber",

@@ -24,9 +24,12 @@ zune-jpeg.workspace = true
 
 [target.'cfg(target_os = "linux")'.dependencies]
 neue-dbus.workspace = true
+# inotify for appearance.toml (ADR 0075).
+rustix.workspace = true
 
 [dev-dependencies]
 neue-kit = { workspace = true, features = ["testing"] }
+tempfile.workspace = true
 
 [lints]
 workspace = true

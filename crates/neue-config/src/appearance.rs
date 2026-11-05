@@ -31,6 +31,34 @@ impl ConfigFile for AppearanceConfig {
     const FILE_NAME: &'static str = "appearance.toml";
 }
 
+impl AppearanceConfig {
+    /// The colour variant `mode`, `accent` and `contrast` select.
+    pub fn variant(&self) -> neue_theme::Variant {
+        neue_theme::Variant {
+            appearance: match self.mode {
+                Mode::Light => neue_theme::Appearance::Light,
+                Mode::Dark => neue_theme::Appearance::Dark,
+            },
+            accent: match self.accent {
+                Accent::Blue => neue_theme::Accent::Blue,
+                Accent::Graphite => neue_theme::Accent::Graphite,
+            },
+            contrast: match self.contrast {
+                Contrast::Standard => neue_theme::Contrast::Standard,
+                Contrast::Increased => neue_theme::Contrast::Increased,
+            },
+        }
+    }
+
+    /// The toolkit theme: [`Self::variant`] plus `reduced-motion`.
+    pub fn theme(&self) -> neue_theme::Theme {
+        neue_theme::Theme {
+            variant: self.variant(),
+            reduced_motion: self.reduced_motion,
+        }
+    }
+}
+
 /// Light or dark (`mode`).
 #[derive(Debug, Clone, Copy, Default, PartialEq, Eq, Serialize, Deserialize)]
 #[serde(rename_all = "kebab-case")]
@@ -133,6 +161,23 @@ mod tests {
         assert_eq!(config.accent, Accent::Blue);
         assert_eq!(config.fonts.ui, "DejaVu Sans");
         assert_eq!(config.cursor.size, 24);
+    }
+
+    #[test]
+    fn the_theme_follows_the_file() {
+        let theme = load_text(
+            "mode = \"dark\"\naccent = \"graphite\"\ncontrast = \"increased\"\nreduced-motion = true\n",
+        )
+        .unwrap()
+        .theme();
+        assert!(theme.variant.is_dark());
+        assert_eq!(theme.variant.accent, neue_theme::Accent::Graphite);
+        assert_eq!(theme.variant.contrast, neue_theme::Contrast::Increased);
+        assert!(theme.reduced_motion);
+        assert_eq!(
+            AppearanceConfig::default().theme(),
+            neue_theme::Theme::default()
+        );
     }
 
     #[test]

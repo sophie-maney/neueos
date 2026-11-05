@@ -150,9 +150,18 @@ impl Server {
 
     /// Replace `compositor.toml` the way editors do: write a temporary file, rename it over.
     pub fn write_config(&self, text: &str) {
-        let temp = self.config_dir.join(".compositor.toml.tmp");
+        self.write_file("compositor.toml", text);
+    }
+
+    /// Replace `appearance.toml` the same way.
+    pub fn write_appearance(&self, text: &str) {
+        self.write_file("appearance.toml", text);
+    }
+
+    fn write_file(&self, name: &str, text: &str) {
+        let temp = self.config_dir.join(format!(".{name}.tmp"));
         std::fs::write(&temp, text).expect("writing the config");
-        std::fs::rename(&temp, self.config_dir.join("compositor.toml")).expect("renaming");
+        std::fs::rename(&temp, self.config_dir.join(name)).expect("renaming");
     }
 
     /// Connect a new `neuectl` client to the compositor's IPC socket.

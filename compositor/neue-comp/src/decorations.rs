@@ -75,8 +75,8 @@ pub struct Chrome {
     text: TextEngine,
     /// Left, middle and right slices per style and scale (`f64::to_bits`).
     slices: HashMap<(TitleBarStyle, u64), Arc<[Pixmap; 3]>>,
-    /// Theme variant of every title bar. Light, blue, standard contrast until the appearance
-    /// settings exist (Phase 3).
+    /// Theme variant of every title bar: `appearance.toml`'s (light, blue, standard until
+    /// it is read).
     pub variant: Variant,
     /// The traffic lights under the pointer, if any.
     pub hover: Option<Hover>,

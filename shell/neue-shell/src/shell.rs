@@ -4,6 +4,7 @@
 use std::collections::BTreeMap;
 
 use anyhow::Context as _;
+use neue_config::{AppearanceConfig, Layers};
 use neue_dbus::login::Login;
 use neue_kit::desktop::{
     Anchor, Desktop, Fit, LayerKeyboard, LayerSpec, OutputEvent, OutputId, Picture, ShellEvent,
@@ -15,6 +16,8 @@ use neue_shell::bar::{self, BarContent, BarHandles, SystemCommand};
 use neue_shell::clock;
 use neue_shell::picture;
 use neue_shell::windows::Windows;
+
+use crate::appearance;
 
 /// The bar's layer-shell namespace.
 const NAMESPACE: &str = "neue-menubar";
@@ -33,6 +36,10 @@ enum Message {
     Login(Result<(), String>),
     /// The configured picture was decoded, or why not.
     Picture(Result<(Picture, Fit), String>),
+    /// `appearance.toml` changed.
+    Appearance(Box<AppearanceConfig>),
+    /// The `appearance.toml` watcher stopped (it logged why).
+    AppearanceWatchEnded,
 }
 
 struct Bar {
@@ -102,6 +109,18 @@ impl Shell {
                 desktop: handle,
             },
         );
+    }
+
+    /// Follows `appearance.toml` from now on: the watcher thread sends each change.
+    fn watch_appearance(&self, cx: &mut Cx<'_, Message>) {
+        let layers = Layers::standard();
+        let current = appearance::load(&layers);
+        cx.spawn(move |tx| {
+            appearance::watch(&layers, current, |config| {
+                tx.send(Message::Appearance(Box::new(config.clone())))
+            });
+            Message::AppearanceWatchEnded
+        });
     }
 
     /// Starts decoding the picture `shell.toml` asks for, if any.
@@ -236,6 +255,7 @@ impl Application for Shell {
             self.open_bar(cx, output.id);
         }
         self.load_picture(cx);
+        self.watch_appearance(cx);
         self.tick(cx);
     }
 
@@ -252,6 +272,8 @@ impl Application for Shell {
                 }
                 self.photo = Some((picture, fit));
             }
+            Message::Appearance(config) => cx.set_theme(config.theme()),
+            Message::AppearanceWatchEnded => {}
             Message::Picture(Err(error)) => {
                 tracing::warn!(%error, "can't load the desktop picture: using the built-in one");
             }
@@ -286,7 +308,7 @@ impl Application for Shell {
 pub fn run() -> anyhow::Result<()> {
     let settings = Settings {
         app_id: "org.neueos.Shell".to_owned(),
-        ..Settings::default()
+        theme: appearance::start_theme(&Layers::standard()),
     };
     neue_kit::run(Shell::new(), settings).context("the shell's event loop failed")
 }

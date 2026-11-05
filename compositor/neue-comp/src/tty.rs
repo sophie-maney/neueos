@@ -428,6 +428,11 @@ impl TtyData {
         }
     }
 
+    /// Apply a changed `[cursor]` section of `appearance.toml`.
+    pub fn configure_cursor(&mut self, config: &neue_config::appearance::CursorConfig) {
+        self.cursors.configure(config);
+    }
+
     /// Apply a changed `[touchpad]` section to the touchpads that are plugged in.
     pub fn configure_touchpads(&mut self, config: &TouchpadConfig) {
         for device in &mut self.touchpads {
