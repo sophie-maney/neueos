@@ -115,6 +115,45 @@ fn changing_the_xkb_layout_applies_without_restart() {
 }
 
 #[test]
+fn appearance_toml_reaches_the_title_bars_and_follows_edits() {
+    let server = Server::start();
+    let mut events = config_events(&server);
+    let variant = |server: &Server| server.with_state(|s| s.chrome.variant);
+    assert!(!variant(&server).is_dark());
+
+    server.write_appearance("mode = \"dark\"\naccent = \"graphite\"\n");
+    match next(&mut events) {
+        Event::ConfigReloaded { file } => assert_eq!(file, "appearance.toml"),
+        other => panic!("expected config_reloaded, got {other:?}"),
+    }
+    let dark = variant(&server);
+    assert!(dark.is_dark());
+    assert_eq!(dark.accent, neue_paint::Accent::Graphite);
+    assert_eq!(
+        server.with_state(|s| s.config.appearance.mode),
+        neue_config::appearance::Mode::Dark
+    );
+
+    // Back to the defaults by removing the keys.
+    server.write_appearance("");
+    assert!(matches!(next(&mut events), Event::ConfigReloaded { .. }));
+    assert!(!variant(&server).is_dark());
+}
+
+#[test]
+fn a_broken_appearance_toml_keeps_the_previous_look() {
+    let server = Server::start();
+    let mut events = config_events(&server);
+    server.write_appearance("mode = \"dark\"\n");
+    assert!(matches!(next(&mut events), Event::ConfigReloaded { .. }));
+
+    server.write_appearance("mode = \"dim\"\n");
+    let info = config_error(next(&mut events));
+    assert!(info.file.ends_with("appearance.toml"), "{info:?}");
+    assert!(server.with_state(|s| s.chrome.variant.is_dark()));
+}
+
+#[test]
 fn keybindings_reload_and_unbind() {
     let server = Server::start();
     let mut events = config_events(&server);

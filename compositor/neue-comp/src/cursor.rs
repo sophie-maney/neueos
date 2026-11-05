@@ -3,7 +3,7 @@
 //!
 //! [`Themes`] resolves a CSS cursor name ([`CursorIcon`], from `cursor-shape-v1` or a
 //! compositor action such as a resize) to an image at the physical size an output needs,
-//! caches it, and steps through animated cursors. Sizes are `XCURSOR_SIZE` (default 24)
+//! caches it, and steps through animated cursors. Sizes are `[cursor] size` of `appearance.toml` (default 24; `XCURSOR_SIZE` overrides)
 //! times the output scale, so a scale-2 output gets the 48 px images and stays sharp; the
 //! element is then drawn 1:1 in physical pixels.
 //!
@@ -22,7 +22,7 @@ use tracing::{debug, warn};
 
 /// Width and height of the built-in arrow at scale 1, in pixels.
 pub const SIZE: i32 = 24;
-/// Smallest and largest cursor size accepted from `XCURSOR_SIZE`, in pixels.
+/// Smallest and largest cursor size accepted, in pixels.
 const SIZE_RANGE: (u32, u32) = (8, 256);
 
 /// Outline polygon of the arrow, in image pixels; the tip is first.
@@ -128,24 +128,39 @@ impl Animation {
     }
 }
 
+/// The theme name and size to use: the environment's `XCURSOR_THEME` and `XCURSOR_SIZE`
+/// over `config`.
+fn resolve(config: &neue_config::appearance::CursorConfig) -> (String, u32) {
+    let name = std::env::var("XCURSOR_THEME").unwrap_or_else(|_| config.theme.clone());
+    let size = std::env::var("XCURSOR_SIZE")
+        .ok()
+        .and_then(|s| s.parse().ok())
+        .unwrap_or(config.size);
+    (name, size)
+}
+
 /// An XCursor theme with a cache of decoded cursors, per icon and pixel size.
 #[derive(Debug)]
 pub struct Themes {
     theme: xcursor::CursorTheme,
-    /// Nominal size at scale 1 (`XCURSOR_SIZE`).
+    /// Nominal size at scale 1.
     base_size: u32,
     cache: HashMap<(CursorIcon, u32), Animation>,
 }
 
 impl Themes {
-    /// The theme named by `XCURSOR_THEME` (default `default`) at `XCURSOR_SIZE` (default 24).
+    /// The theme and size `appearance.toml` gives (its defaults until the file is read),
+    /// with `XCURSOR_THEME` and `XCURSOR_SIZE` taking precedence when set (dev override).
     pub fn from_env() -> Self {
-        let name = std::env::var("XCURSOR_THEME").unwrap_or_else(|_| "default".into());
-        let size = std::env::var("XCURSOR_SIZE")
-            .ok()
-            .and_then(|s| s.parse().ok())
-            .unwrap_or(SIZE as u32);
+        let (name, size) = resolve(&neue_config::appearance::CursorConfig::default());
         Self::new(&name, size)
+    }
+
+    /// Switch to the theme and size `config` names (env overrides as in
+    /// [`Themes::from_env`]); decoded cursors are dropped.
+    pub fn configure(&mut self, config: &neue_config::appearance::CursorConfig) {
+        let (name, size) = resolve(config);
+        *self = Self::new(&name, size);
     }
 
     pub fn new(theme: &str, base_size: u32) -> Self {

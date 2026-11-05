@@ -81,9 +81,8 @@ and what Preferences uses on macOS.
   `appearance.toml`, both `settings.ini` files and dconf (`gsettings get
   org.gnome.desktop.interface color-scheme` is `'prefer-dark'`); a compositor key set the
   same way reloads the compositor (`config_reloaded`); a hand edit sends `Changed`.
-- The compositor doesn't read `appearance.toml` yet: its title bars stay light
-  (`decorations.rs`). Same for the shell's bar and the cursor theme (still
-  `XCURSOR_THEME`). Each is a small follow-up that reads the file with `neue-config`.
+- The compositor's title bars, the shell and the cursor read `appearance.toml` since ADR
+  0075.
 - The service isn't started by the session yet; D-Bus activation or a user unit comes
   with 3.27.
 - Qt/Kvantum config and the portal's colour scheme (PLAN.md §3.4) come with the Kvantum

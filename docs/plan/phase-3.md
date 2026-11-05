@@ -199,8 +199,9 @@ their goldens and the gallery's "Shell" page run on macOS.
       not `compositor.toml`; compositor keys are set the same way and hot-reload. Keys
       are the schema's own dotted paths; `Changed(a{sv}, as)` also follows hand edits. The
       mock is `Store::in_memory()`; the D-Bus client for apps comes with 3.24. Not yet:
-      the compositor's title bars, the shell and the cursor don't read
-      `appearance.toml` (follow-up), the session doesn't start the service (3.27).
+      the session doesn't start the service (3.27). *Follow-up (ADR 0075):* the
+      compositor's title bars, the shell and the cursor now read and follow
+      `appearance.toml`.
 
 ## B. Menu bar
 - [ ] **3.7 Global menu A: registrar and DBusMenu** · Opus. After 3.2b. In `neue-dbus`

@@ -3,6 +3,8 @@
 //! hand.
 
 #[cfg(target_os = "linux")]
+mod appearance;
+#[cfg(target_os = "linux")]
 mod shell;
 
 fn main() -> anyhow::Result<()> {
