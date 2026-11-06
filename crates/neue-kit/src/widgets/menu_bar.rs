@@ -44,7 +44,7 @@ use std::cell::RefCell;
 use std::rc::Rc;
 
 use crate::element::{Element, Handle, Handler, Wiring};
-use crate::menu::{ItemHandler, Menu, MenuSpec};
+use crate::menu::{ItemHandler, Menu, MenuSpec, Sliders};
 use crate::theme::ThemeProp;
 
 /// The Masonry widget behind [`MenuBar`].
@@ -435,11 +435,19 @@ pub enum ExtraIcon {
     Bluetooth { powered: bool, connected: bool },
     /// The network: wired, Wi-Fi with its signal, Wi-Fi switched off, or nothing.
     Network(NetworkIcon),
+    /// A speaker at `level` (0 to 1): a wave lit for each third of the way, none at 0;
+    /// faded with no wave lit while `muted`.
+    Volume { level: f64, muted: bool },
     /// A status icon of the tray (an app's picture, or an icon from the icon theme that
     /// the shell has resolved), fitted in a square of one size so that the bar doesn't
     /// shift when an app changes its icon. A picture keeps its colours, softened a little
     /// in the dark appearance; a glyph is drawn as a label.
     Image(Icon),
+}
+
+/// How many of the speaker's waves are lit at `level`: as on the OSD.
+fn speaker_waves(level: f64) -> u8 {
+    u8::try_from(neue_paint::materials::osd::waves(level)).unwrap_or(menu_bar::SPEAKER_WAVES)
 }
 
 /// What the network extra shows (see [`ExtraIcon::Network`]); every state has the same
@@ -472,6 +480,7 @@ impl ExtraIcon {
             Self::Battery { .. } => (BATTERY_WIDTH, BATTERY_HEIGHT),
             Self::Bluetooth { .. } => (BLUETOOTH_WIDTH, BLUETOOTH_HEIGHT),
             Self::Network(_) => (NETWORK_WIDTH, NETWORK_HEIGHT),
+            Self::Volume { .. } => (menu_bar::VOLUME_WIDTH, menu_bar::VOLUME_HEIGHT),
             Self::Image(_) => (TRAY_ICON_SIZE, TRAY_ICON_SIZE),
         }
     }
@@ -498,6 +507,9 @@ impl ExtraIcon {
                 }
                 Self::Network(NetworkIcon::WifiOff) => {
                     menu_bar::wifi_label(scene, rect, 0, true, variant);
+                }
+                Self::Volume { level, muted } => {
+                    menu_bar::speaker_label(scene, rect, speaker_waves(level), muted, variant);
                 }
                 Self::Image(ref image) => menu_bar::image_label(scene, rect, image, None, variant),
             }
@@ -533,6 +545,15 @@ impl ExtraIcon {
                 menu_bar::strike(scene, rect, colour);
                 scene.pop_layer();
             }
+            Self::Volume { level, muted } => {
+                if muted {
+                    scene.push_opacity(OFF_OPACITY);
+                    menu_bar::speaker(scene, rect, 0, colour);
+                    scene.pop_layer();
+                } else {
+                    menu_bar::speaker(scene, rect, speaker_waves(level), colour);
+                }
+            }
             Self::Image(ref image) => {
                 menu_bar::image_label(scene, rect, image, Some(colour), variant);
             }
@@ -541,12 +562,14 @@ impl ExtraIcon {
 }
 
 /// What a [`MenuTitleWidget`] tells its owner.
-#[derive(Debug, Clone, Copy, PartialEq, Eq)]
+#[derive(Debug, Clone, Copy, PartialEq)]
 pub(crate) enum TitleAction {
     /// Its menu opened.
     Opened,
     /// An item was chosen (its id in the menu tree).
     Chosen(usize),
+    /// A slider item (its id) was set to a value; the menu stays up.
+    Changed(usize, f64),
     /// Its menu closed (after [`TitleAction::Chosen`], if an item was chosen).
     Closed,
     /// The keyboard leaves its menu for the bar's next (`true`) or previous title; the
@@ -689,6 +712,7 @@ impl MenuTitleWidget {
             on_closed: Some(closed),
             refocus: None,
             on_step: Some(step),
+            on_change: Some(changed),
             return_focus,
         };
         menu::open(
@@ -720,6 +744,13 @@ fn step(mut owner: WidgetMut<'_, dyn Widget>, forward: bool) {
     let mut this = owner.downcast::<MenuTitleWidget>();
     this.ctx
         .submit_action::<TitleAction>(TitleAction::Step(forward));
+}
+
+/// A slider item of the title's menu was set to `value`.
+fn changed(mut owner: WidgetMut<'_, dyn Widget>, id: usize, value: f64) {
+    let mut this = owner.downcast::<MenuTitleWidget>();
+    this.ctx
+        .submit_action::<TitleAction>(TitleAction::Changed(id, value));
 }
 
 /// The title's menu closed (`chosen`: the item, if one was chosen).
@@ -1175,6 +1206,7 @@ impl<M: 'static> Handle<MenuBar<M>> {
 pub struct MenuTitle<M> {
     inner: NewWidget<MenuTitleWidget>,
     items: Vec<Option<ItemHandler<M>>>,
+    sliders: Sliders<M>,
     on_open: Option<ItemHandler<M>>,
     on_close: Option<ItemHandler<M>>,
     on_press: Option<ItemHandler<M>>,
@@ -1208,10 +1240,11 @@ impl<M: 'static> MenuTitle<M> {
     }
 
     fn with_content(content: Content, menu: Menu<M>) -> Self {
-        let (spec, items) = menu.into_parts();
+        let (spec, items, sliders) = menu.into_parts_with_sliders();
         Self {
             inner: NewWidget::new(MenuTitleWidget::new(content, spec)),
             items,
+            sliders,
             on_open: None,
             on_close: None,
             on_press: None,
@@ -1301,6 +1334,7 @@ impl<M: 'static> From<MenuTitle<M>> for Element<M> {
         let id = title.inner.id();
         let state = Rc::new(RefCell::new(TitleState {
             items: title.items,
+            sliders: title.sliders,
             callbacks: Callbacks {
                 on_open: title.on_open,
                 on_close: title.on_close,
@@ -1318,6 +1352,7 @@ impl<M: 'static> From<MenuTitle<M>> for Element<M> {
 /// A title's items and the messages besides them (each optional).
 struct TitleState<M> {
     items: Vec<Option<ItemHandler<M>>>,
+    sliders: Sliders<M>,
     callbacks: Callbacks<M>,
 }
 
@@ -1340,6 +1375,11 @@ fn title_handler<M: 'static>(state: Rc<RefCell<TitleState<M>>>) -> Handler<M> {
             TitleAction::Pressed => state.callbacks.on_press.as_mut().map(|make| make()),
             TitleAction::Context => state.callbacks.on_context.as_mut().map(|make| make()),
             TitleAction::Chosen(i) => state.items.get_mut(i)?.as_mut().map(|make| make()),
+            TitleAction::Changed(i, value) => state
+                .sliders
+                .iter_mut()
+                .find(|(id, _)| *id == i)
+                .map(|(_, make)| make(value)),
             TitleAction::Step(_) => None,
         }
     })
@@ -1350,12 +1390,14 @@ impl<M: 'static> Handle<MenuTitle<M>> {
     /// [`MenuTitle::on_open`], [`MenuTitle::on_close`], [`MenuTitle::on_press`] and
     /// [`MenuTitle::on_context`] messages.
     pub fn set_menu(&self, cx: &mut Cx<'_, M>, menu: Menu<M>) {
-        let (spec, items) = menu.into_parts();
+        let (spec, items, sliders) = menu.into_parts_with_sliders();
         cx.edit::<MenuTitleWidget, _>(self, |w| {
             w.widget.spec = spec;
             let state = w.widget.state.clone();
             if let Some(state) = state.and_then(|s| s.downcast::<RefCell<TitleState<M>>>().ok()) {
-                state.borrow_mut().items = items;
+                let mut state = state.borrow_mut();
+                state.items = items;
+                state.sliders = sliders;
             }
         });
     }

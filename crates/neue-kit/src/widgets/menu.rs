@@ -16,13 +16,16 @@
 //!   menu bar's menu ([`Anchor::on_step`]), Left in the top menu and Right on an item with
 //!   no submenu go to the neighbouring menu of the bar.
 //! - **Choosing.** The owner receives [`Chosen`] with the item's id and closes the menus.
+//! - **Sliders** (task 3.14c). A press on a slider item's row sets its value and drags
+//!   the knob until the release; Left and Right step it while it is highlighted. Each
+//!   change goes to the owner's [`Anchor::on_change`] and the menus stay up.
 
 use std::any::TypeId;
 use std::cell::Cell;
 use std::sync::{Arc, Mutex, PoisonError};
 use std::time::Instant;
 
-use masonry_core::accesskit::{Action, HasPopup, Node, Role, Toggled};
+use masonry_core::accesskit::{Action, ActionData, HasPopup, Node, Role, Toggled};
 use masonry_core::core::keyboard::{Key, Modifiers, NamedKey};
 use masonry_core::core::{
     AccessCtx, AccessEvent, ActionCtx, ChildrenIds, ErasedAction, EventCtx, Layer, LayerType,
@@ -36,15 +39,16 @@ use masonry_core::kurbo::{Affine, Axis, Insets, Point, Rect, Size, Vec2};
 use masonry_core::layout::{LayoutSize, LenDef, LenReq, Length};
 use neue_paint::imaging::ImagingReplayer;
 use neue_paint::materials::{
-    MenuMark, menu_highlight, menu_lock, menu_mark, menu_panel, menu_separator, menu_signal,
-    submenu_arrow,
+    MenuMark, Slider as SliderLook, menu_highlight, menu_lock, menu_mark, menu_panel,
+    menu_separator, menu_signal, slider, slider_value_at, submenu_arrow,
 };
 use neue_paint::{Backdrop, Scene};
 use neue_platform::{PopupBlur, PopupBlurRequest};
 use neue_theme::materials::menu::{
     ACCESSORY_GAP, ARROW_WIDTH, DRAG_THRESHOLD, ITEM_HEIGHT, LABEL_INSET, LOCK_HEIGHT, LOCK_WIDTH,
     MARK_SIZE, MIN_WIDTH, PADDING_Y, Palette, RADIUS, RIM, SEPARATOR_HEIGHT, SHADOW_OFFSET,
-    SHADOW_REACH, SHORTCUT_GAP, SIGNAL_HEIGHT, SIGNAL_WIDTH, SUBMENU_OVERLAP, TRAILING_INSET,
+    SHADOW_REACH, SHORTCUT_GAP, SIGNAL_HEIGHT, SIGNAL_WIDTH, SLIDER_ITEM_HEIGHT, SLIDER_ITEM_STEP,
+    SLIDER_ITEM_WIDTH, SUBMENU_OVERLAP, TRAILING_INSET,
 };
 use neue_theme::motion::TYPE_SELECT_RESET;
 
@@ -68,6 +72,10 @@ pub(crate) type OnClosed = fn(WidgetMut<'_, dyn Widget>, Option<usize>);
 /// until the bar replaces them.
 pub(crate) type OnStep = fn(WidgetMut<'_, dyn Widget>, bool);
 
+/// Called on a menu's owner when a slider item's value changes, with the item's id and
+/// its new value (0 to 1). The menus stay up.
+pub(crate) type OnChange = fn(WidgetMut<'_, dyn Widget>, usize, f64);
+
 /// Where and how a menu opens.
 #[derive(Debug, Clone, Copy)]
 pub(crate) struct Anchor {
@@ -86,6 +94,8 @@ pub(crate) struct Anchor {
     pub(crate) refocus: Option<WidgetId>,
     /// The owner is a menu-bar title: Left and Right may leave for its neighbours.
     pub(crate) on_step: Option<OnStep>,
+    /// Told when a slider item changes; without it a slider's changes go nowhere.
+    pub(crate) on_change: Option<OnChange>,
     /// The menu replaces another menu of the same bar (switching menus): what had focus
     /// before that one opened, which focus goes back to. `None`: what has focus now.
     pub(crate) return_focus: Option<Option<WidgetId>>,
@@ -102,6 +112,7 @@ impl Anchor {
             on_closed: None,
             refocus: None,
             on_step: None,
+            on_change: None,
             return_focus: None,
         }
     }
@@ -188,6 +199,7 @@ pub(crate) fn open(
             return_focus,
             on_closed: anchor.on_closed,
             on_step: anchor.on_step,
+            on_change: anchor.on_change,
             session,
         },
         if keyboard || anchor.highlight.is_some() {
@@ -237,6 +249,8 @@ struct Chain {
     on_closed: Option<OnClosed>,
     /// Set for a menu bar's menus.
     on_step: Option<OnStep>,
+    /// What the owner wants to know when a slider changes.
+    on_change: Option<OnChange>,
     session: Arc<Mutex<Session>>,
 }
 
@@ -347,6 +361,13 @@ pub(crate) struct MenuWidget {
     highlighted: Option<usize>,
     /// The open submenu: the row it opened from, and its layer.
     submenu: Option<(usize, WidgetId)>,
+    /// Each slider row's value (0 for the other rows).
+    values: Vec<f64>,
+    /// The slider row whose knob the pointer is dragging.
+    dragging: Option<usize>,
+    /// The highlight was last moved by the keyboard: a highlighted slider shows a focus
+    /// ring then.
+    keyboard: bool,
     type_select: TypeSelect,
     replayer: ImagingReplayer,
 }
@@ -378,6 +399,14 @@ impl MenuWidget {
                     .to_pod()
             })
             .collect();
+        let values = spec
+            .0
+            .iter()
+            .map(|item| match item.kind {
+                SpecKind::Slider(value) => value,
+                _ => 0.0,
+            })
+            .collect();
         Self {
             spec,
             rows,
@@ -387,6 +416,9 @@ impl MenuWidget {
             min_width,
             highlighted,
             submenu: None,
+            values,
+            dragging: None,
+            keyboard: on_ready == OnReady::FocusFirst,
             type_select: TypeSelect::default(),
             replayer: ImagingReplayer::new(),
         }
@@ -395,8 +427,47 @@ impl MenuWidget {
     fn row_height(item: &ItemSpec) -> f64 {
         match item.kind {
             SpecKind::Separator => SEPARATOR_HEIGHT,
+            SpecKind::Slider(_) => SLIDER_ITEM_HEIGHT,
             _ => ITEM_HEIGHT,
         }
+    }
+
+    fn is_slider(&self, i: usize) -> bool {
+        matches!(
+            self.spec.0.get(i).map(|s| &s.kind),
+            Some(SpecKind::Slider(_))
+        )
+    }
+
+    /// Sets slider row `i` to `value` (kept in 0..1) and tells the owner if it changed.
+    /// Also shows whether its knob is being dragged.
+    fn set_value(&mut self, ctx: &mut impl MenuCtx, i: usize, value: f64) {
+        if !self.is_slider(i) || !self.selectable(i) {
+            return;
+        }
+        let value = if value.is_nan() {
+            0.0
+        } else {
+            value.clamp(0.0, 1.0)
+        };
+        let pressed = self.dragging == Some(i);
+        ctx.later(self.rows[i].id(), move |mut w| {
+            MenuRowWidget::set_slider(&mut w.downcast(), value, pressed);
+        });
+        if (self.values[i] - value).abs() < f64::EPSILON {
+            return;
+        }
+        self.values[i] = value;
+        if let Some(on_change) = self.chain.on_change {
+            let id = self.spec.0[i].id;
+            ctx.later(self.chain.owner, move |owner| on_change(owner, id, value));
+        }
+    }
+
+    /// The value of slider row `i` with its knob under the menu's local `x`.
+    fn value_at(&self, i: usize, x: f64, width: f64) -> f64 {
+        let height = self.spec.0.get(i).map_or(ITEM_HEIGHT, Self::row_height);
+        slider_value_at(slider_track(Size::new(width - 2.0 * RIM, height)), x - RIM)
     }
 
     /// The row at local `p`, if `p` is inside the menu.
@@ -434,13 +505,20 @@ impl MenuWidget {
         if let Some(i) = i {
             ctx.focus(self.rows[i].id());
         }
+        let keyboard = self.keyboard;
         if self.highlighted == i {
+            // The same row; a slider's focus ring follows how it was reached.
+            if let Some(i) = i.filter(|&i| self.is_slider(i)) {
+                ctx.later(self.rows[i].id(), move |mut w| {
+                    MenuRowWidget::set_highlighted(&mut w.downcast(), true, keyboard);
+                });
+            }
             return;
         }
         for (row, on) in [(self.highlighted, false), (i, true)] {
             if let Some(row) = row {
                 ctx.later(self.rows[row].id(), move |mut w| {
-                    MenuRowWidget::set_highlighted(&mut w.downcast(), on);
+                    MenuRowWidget::set_highlighted(&mut w.downcast(), on, keyboard);
                 });
             }
         }
@@ -531,7 +609,8 @@ impl MenuWidget {
                 self.highlight(ctx, Some(i));
                 self.open_submenu(ctx, i, keyboard);
             }
-            SpecKind::Separator => {}
+            // A slider is set, not chosen.
+            SpecKind::Separator | SpecKind::Slider(_) => {}
         }
     }
 
@@ -579,6 +658,22 @@ impl MenuWidget {
     }
 
     fn on_key(&mut self, ctx: &mut EventCtx<'_>, key: &Key, modifiers: Modifiers) {
+        self.keyboard = true;
+        // Left and Right step a highlighted slider instead of leaving the menu.
+        if let Some(i) = self.highlighted.filter(|&i| self.is_slider(i)) {
+            let step = match key {
+                Key::Named(NamedKey::ArrowLeft) => Some(-SLIDER_ITEM_STEP),
+                Key::Named(NamedKey::ArrowRight) => Some(SLIDER_ITEM_STEP),
+                _ => None,
+            };
+            if let Some(step) = step {
+                self.highlight(ctx, Some(i));
+                // From the nearest step, so that the steps stay on a grid.
+                let value = ((self.values[i] + step) / SLIDER_ITEM_STEP).round() * SLIDER_ITEM_STEP;
+                self.set_value(ctx, i, value);
+                return;
+            }
+        }
         match key {
             Key::Named(NamedKey::ArrowDown) => {
                 let next = self.step(self.highlighted, true).or(self.highlighted);
@@ -640,6 +735,7 @@ impl MenuWidget {
         match event {
             PointerEvent::Down(PointerButtonEvent { state, .. }) => {
                 let p = local(ctx, state.position);
+                self.keyboard = false;
                 let inside = Rect::from_origin_size(Point::ORIGIN, size).contains(p);
                 let deepest = self.submenu.is_none();
                 let mut session = self.chain.session();
@@ -653,10 +749,28 @@ impl MenuWidget {
                 drop(session);
                 if outside_all {
                     self.close_all(ctx, None);
+                    return;
+                }
+                // A press on a slider moves its knob there and drags it.
+                if let Some(i) = self.row_at(p, size)
+                    && self.is_slider(i)
+                    && self.selectable(i)
+                {
+                    self.dragging = Some(i);
+                    self.close_submenu(ctx);
+                    self.highlight(ctx, Some(i));
+                    let value = self.value_at(i, p.x, size.width);
+                    self.set_value(ctx, i, value);
                 }
             }
             PointerEvent::Move(PointerUpdate { current, .. }) => {
                 let p = local(ctx, current.position);
+                if let Some(i) = self.dragging {
+                    let value = self.value_at(i, p.x, size.width);
+                    self.set_value(ctx, i, value);
+                    return;
+                }
+                self.keyboard = false;
                 {
                     let mut session = self.chain.session();
                     let window = ctx.to_window(p);
@@ -683,6 +797,12 @@ impl MenuWidget {
             }
             PointerEvent::Up(PointerButtonEvent { state, .. }) => {
                 let p = local(ctx, state.position);
+                if let Some(i) = self.dragging.take() {
+                    // The knob is let go: it no longer looks pressed.
+                    let value = self.values[i];
+                    self.set_value(ctx, i, value);
+                    return;
+                }
                 let armed = self.chain.session().armed;
                 if armed
                     && let Some(i) = self.row_at(p, size)
@@ -691,7 +811,10 @@ impl MenuWidget {
                     self.activate(ctx, i, false);
                 }
             }
-            PointerEvent::Cancel(..) if self.chain.root.is_none() => self.close_all(ctx, None),
+            PointerEvent::Cancel(..) if self.chain.root.is_none() => {
+                self.dragging = None;
+                self.close_all(ctx, None);
+            }
             _ => {}
         }
     }
@@ -743,6 +866,7 @@ impl Widget for MenuWidget {
                 OnReady::Nothing => {}
                 OnReady::Focus => ctx.request_focus(),
                 OnReady::FocusFirst => {
+                    self.keyboard = true;
                     let first = self.highlighted.or_else(|| self.step(None, true));
                     self.highlighted = None;
                     self.highlight(ctx, first);
@@ -752,6 +876,7 @@ impl Widget for MenuWidget {
                 }
             },
             RowEvent::Clicked => self.activate(ctx, i, true),
+            RowEvent::Set(value) => self.set_value(ctx, i, *value),
         }
     }
 
@@ -890,13 +1015,26 @@ fn signal_width(signal: Signal) -> f64 {
     }
 }
 
+/// Where a slider row's groove runs in a row of `size`: from the labels' left edge to the
+/// shortcuts' right edge.
+fn slider_track(size: Size) -> Rect {
+    Rect::new(
+        LABEL_INSET,
+        0.0,
+        (size.width - TRAILING_INSET).max(LABEL_INSET),
+        size.height,
+    )
+}
+
 /// What a row tells its menu.
-#[derive(Debug, Clone, Copy, PartialEq, Eq)]
+#[derive(Debug, Clone, Copy, PartialEq)]
 pub(crate) enum RowEvent {
     /// The row is in the tree: the menu can take focus now.
     Ready,
     /// An assistive technology clicked the row.
     Clicked,
+    /// An assistive technology set a slider row to this value.
+    Set(f64),
 }
 
 /// One row of a menu: an item, a submenu item or a separator.
@@ -905,6 +1043,12 @@ pub(crate) struct MenuRowWidget {
     label: TextLine,
     shortcut: Option<TextLine>,
     highlighted: bool,
+    /// A slider row's value, 0 to 1.
+    value: f64,
+    /// A slider row's knob is being dragged.
+    pressed: bool,
+    /// A highlighted slider row was reached by the keyboard: its knob shows a focus ring.
+    ring: bool,
     replayer: ImagingReplayer,
 }
 
@@ -925,17 +1069,38 @@ impl MenuRowWidget {
                 .shortcut
                 .as_ref()
                 .map(|s| TextLine::new(s.label(), TextStyle::Body)),
+            value: match spec.kind {
+                SpecKind::Slider(value) => value,
+                _ => 0.0,
+            },
             spec,
             highlighted: false,
+            pressed: false,
+            ring: false,
             replayer: ImagingReplayer::new(),
         }
     }
 
-    fn set_highlighted(this: &mut WidgetMut<'_, Self>, on: bool) {
-        if this.widget.highlighted != on {
+    fn set_highlighted(this: &mut WidgetMut<'_, Self>, on: bool, keyboard: bool) {
+        let ring = on && keyboard && this.widget.is_slider();
+        if this.widget.highlighted != on || this.widget.ring != ring {
             this.widget.highlighted = on;
+            this.widget.ring = ring;
             this.ctx.request_paint_only();
         }
+    }
+
+    fn set_slider(this: &mut WidgetMut<'_, Self>, value: f64, pressed: bool) {
+        if (this.widget.value - value).abs() >= f64::EPSILON {
+            this.widget.value = value;
+            this.ctx.request_accessibility_update();
+        }
+        this.widget.pressed = pressed;
+        this.ctx.request_paint_only();
+    }
+
+    fn is_slider(&self) -> bool {
+        matches!(self.spec.kind, SpecKind::Slider(_))
     }
 
     fn mark(&self) -> MenuMark {
@@ -963,7 +1128,15 @@ impl Widget for MenuRowWidget {
         _props: &mut PropertiesMut<'_>,
         event: &AccessEvent,
     ) {
-        if event.action == Action::Click {
+        if self.is_slider() {
+            let value = match (event.action, &event.data) {
+                (Action::Increment, _) => self.value + SLIDER_ITEM_STEP,
+                (Action::Decrement, _) => self.value - SLIDER_ITEM_STEP,
+                (Action::SetValue, Some(ActionData::NumericValue(value))) => *value,
+                _ => return,
+            };
+            ctx.submit_action::<RowEvent>(RowEvent::Set(value));
+        } else if event.action == Action::Click {
             ctx.submit_action::<RowEvent>(RowEvent::Clicked);
         }
     }
@@ -1000,6 +1173,9 @@ impl Widget for MenuRowWidget {
     ) -> Length {
         Length::px(match axis {
             Axis::Horizontal if matches!(self.spec.kind, SpecKind::Separator) => 0.0,
+            Axis::Horizontal if self.is_slider() => {
+                LABEL_INSET + SLIDER_ITEM_WIDTH + TRAILING_INSET
+            }
             Axis::Horizontal => {
                 let label = self.label.size(ctx.text_contexts()).width;
                 let shortcut = match &mut self.shortcut {
@@ -1019,6 +1195,7 @@ impl Widget for MenuRowWidget {
             }
             Axis::Vertical => match self.spec.kind {
                 SpecKind::Separator => SEPARATOR_HEIGHT,
+                SpecKind::Slider(_) => SLIDER_ITEM_HEIGHT,
                 _ => ITEM_HEIGHT,
             },
         })
@@ -1051,6 +1228,19 @@ impl Widget for MenuRowWidget {
             return;
         }
         let enabled = self.spec.enabled && !ctx.is_disabled();
+        if self.is_slider() {
+            // No highlight bar: the knob shows a focus ring when the keyboard is on it.
+            #[expect(clippy::cast_possible_truncation, reason = "a 0..1 position")]
+            let look = SliderLook {
+                value: self.value as f32,
+                pressed: self.pressed,
+                disabled: !enabled,
+                focused: self.highlighted && self.ring && enabled,
+            };
+            slider(&mut scene, slider_track(size), look, variant);
+            self.replayer.replay(&scene, ctx.scale_factor(), painter);
+            return;
+        }
         let highlighted = self.highlighted && enabled;
         if highlighted {
             menu_highlight(&mut scene, rect, variant);
@@ -1108,6 +1298,9 @@ impl Widget for MenuRowWidget {
     }
 
     fn accessibility_role(&self) -> Role {
+        if self.is_slider() {
+            return Role::Slider;
+        }
         match self.spec.toggle {
             MenuToggle::None => Role::MenuItem,
             MenuToggle::Check(_) => Role::MenuItemCheckBox,
@@ -1126,6 +1319,19 @@ impl Widget for MenuRowWidget {
             return;
         }
         node.set_label(self.spec.label.clone());
+        if self.is_slider() {
+            node.set_numeric_value(self.value);
+            node.set_min_numeric_value(0.0);
+            node.set_max_numeric_value(1.0);
+            node.set_numeric_value_step(SLIDER_ITEM_STEP);
+            node.add_action(Action::Increment);
+            node.add_action(Action::Decrement);
+            node.add_action(Action::SetValue);
+            if self.highlighted {
+                node.set_selected(true);
+            }
+            return;
+        }
         node.add_action(Action::Click);
         if let Some(s) = &self.spec.shortcut {
             node.set_keyboard_shortcut(s.spoken());

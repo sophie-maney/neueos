@@ -2,6 +2,9 @@
 //! items send. Context menus show it now; the menu bar (DBusMenu export, 2.18) and pop-up
 //! buttons (2.17b) show the same model.
 //!
+//! A slider item ([`MenuItem::slider`], task 3.14c) sets a value without closing the menu:
+//! the volume extra's.
+//!
 //! ```no_run
 //! # use neue_kit::{CheckState, Menu, MenuItem, Shortcut};
 //! # #[derive(Clone)] enum Msg { Copy, Paste, Wrap, Size(u8) }
@@ -71,13 +74,29 @@ impl<M> Menu<M> {
     /// Splits the menu into what its widgets show and what its items send. Every item in
     /// the tree, separators and submenus included, gets an id: its place in a depth-first
     /// walk, starting at 0. `handlers[id]` makes the message of the item `id`.
+    /// Slider items have no handler there (choosing one does nothing); see
+    /// [`Menu::into_parts_with_sliders`].
     pub(crate) fn into_parts(self) -> (MenuSpec, Vec<Option<ItemHandler<M>>>) {
-        let mut handlers = Vec::new();
-        let spec = self.flatten(&mut handlers);
+        let (spec, handlers, _) = self.into_parts_with_sliders();
         (spec, handlers)
     }
 
-    fn flatten(self, handlers: &mut Vec<Option<ItemHandler<M>>>) -> MenuSpec {
+    /// [`Menu::into_parts`], and the slider items' handlers by id: for owners that pass on
+    /// a slider's changes (menu-bar titles).
+    pub(crate) fn into_parts_with_sliders(
+        self,
+    ) -> (MenuSpec, Vec<Option<ItemHandler<M>>>, Sliders<M>) {
+        let mut handlers = Vec::new();
+        let mut sliders = Vec::new();
+        let spec = self.flatten(&mut handlers, &mut sliders);
+        (spec, handlers, sliders)
+    }
+
+    fn flatten(
+        self,
+        handlers: &mut Vec<Option<ItemHandler<M>>>,
+        sliders: &mut Sliders<M>,
+    ) -> MenuSpec {
         let mut specs = Vec::with_capacity(self.items.len());
         for item in self.items {
             let id = handlers.len();
@@ -100,7 +119,14 @@ impl<M> Menu<M> {
                 }
                 Kind::Submenu(menu) => {
                     handlers.push(None);
-                    SpecKind::Submenu(menu.flatten(handlers))
+                    SpecKind::Submenu(menu.flatten(handlers, sliders))
+                }
+                Kind::Slider(value, handler) => {
+                    handlers.push(None);
+                    if let Some(handler) = handler {
+                        sliders.push((id, handler));
+                    }
+                    SpecKind::Slider(value)
                 }
             };
             specs.push(ItemSpec {
@@ -119,6 +145,12 @@ impl<M> Menu<M> {
 
 /// Makes the message an item sends.
 pub(crate) type ItemHandler<M> = Box<dyn FnMut() -> M>;
+
+/// Makes the message a slider item sends from its new value.
+pub(crate) type SliderHandler<M> = Box<dyn FnMut(f64) -> M>;
+
+/// The slider items' handlers, by item id.
+pub(crate) type Sliders<M> = Vec<(usize, SliderHandler<M>)>;
 
 /// One row of a [`Menu`]: an item that sends a message, a submenu, or a separator.
 pub struct MenuItem<M> {
@@ -160,6 +192,8 @@ enum Kind<M> {
     Action(Option<ItemHandler<M>>),
     Submenu(Menu<M>),
     Separator,
+    /// A value from 0 to 1.
+    Slider(f64, Option<SliderHandler<M>>),
 }
 
 impl<M> std::fmt::Debug for MenuItem<M> {
@@ -170,6 +204,10 @@ impl<M> std::fmt::Debug for MenuItem<M> {
                 .field("label", &self.label)
                 .field("on_choose", &handler.is_some()),
             Kind::Submenu(menu) => d.field("label", &self.label).field("submenu", menu),
+            Kind::Slider(value, handler) => d
+                .field("label", &self.label)
+                .field("slider", value)
+                .field("on_change", &handler.is_some()),
             Kind::Separator => return f.write_str("Separator"),
         };
         d.field("shortcut", &self.shortcut)
@@ -207,6 +245,36 @@ impl<M> MenuItem<M> {
             kind: Kind::Separator,
             ..Self::new("")
         }
+    }
+
+    /// A slider set to `value` (0 to 1) across the menu, named `label` for assistive
+    /// technologies (the label isn't drawn). Dragging the knob, clicking the groove, Left
+    /// and Right while it is highlighted, or an assistive technology change the value and
+    /// send [`on_change`](Self::on_change)'s message; the menu stays up.
+    ///
+    /// Menu-bar menus send the changes; elsewhere (context menus, pop-up buttons) the
+    /// knob moves but nothing is sent, and the DBusMenu export of a window's menu bar
+    /// leaves the item out.
+    pub fn slider(label: impl Into<String>, value: f64) -> Self {
+        let value = if value.is_nan() {
+            0.0
+        } else {
+            value.clamp(0.0, 1.0)
+        };
+        Self {
+            kind: Kind::Slider(value, None),
+            ..Self::new(label)
+        }
+    }
+
+    /// For a [`slider`](Self::slider): sends the message `make` returns from each new
+    /// value (0 to 1), as the knob moves.
+    #[must_use]
+    pub fn on_change(mut self, make: impl FnMut(f64) -> M + 'static) -> Self {
+        if let Kind::Slider(_, handler) = &mut self.kind {
+            *handler = Some(Box::new(make));
+        }
+        self
     }
 
     /// Sends `message` when the item is chosen.
@@ -283,6 +351,14 @@ impl<M> MenuItem<M> {
     /// Whether this is a separator line.
     pub fn is_separator(&self) -> bool {
         matches!(self.kind, Kind::Separator)
+    }
+
+    /// A slider item's value (0 to 1); `None` for other items.
+    pub fn slider_value(&self) -> Option<f64> {
+        match self.kind {
+            Kind::Slider(value, _) => Some(value),
+            _ => None,
+        }
     }
 
     /// The menu this item opens, if it is a submenu.
@@ -461,6 +537,8 @@ pub(crate) enum SpecKind {
     Action,
     Submenu(MenuSpec),
     Separator,
+    /// A slider at this value (0 to 1) when the menu opens.
+    Slider(f64),
 }
 
 impl ItemSpec {
@@ -506,6 +584,27 @@ mod tests {
         let s = Shortcut::command("s").ctrl().shift();
         assert_eq!(s.label(), "⌃⇧⌘S");
         assert_eq!(Shortcut::new("F5").alt().label(), "⌥F5");
+    }
+
+    #[test]
+    fn sliders_keep_their_handlers_apart() {
+        let menu: Menu<String> = Menu::new()
+            .with(MenuItem::new("A").on_choose("a".to_owned()))
+            .with(MenuItem::slider("Volume", 1.5).on_change(|v| format!("{v}")))
+            .with(MenuItem::slider("Balance", 0.5));
+        assert_eq!(menu.items()[1].slider_value(), Some(1.0));
+        let (spec, mut handlers, mut sliders) = menu.into_parts_with_sliders();
+        assert!(matches!(spec.0[1].kind, SpecKind::Slider(v) if (v - 1.0).abs() < f64::EPSILON));
+        assert!(spec.0[1].selectable());
+        // Choosing a slider sends nothing; its changes go through its own handler.
+        assert!(handlers[1].is_none());
+        assert_eq!(sliders.len(), 1);
+        let (id, change) = &mut sliders[0];
+        assert_eq!((*id, change(0.25)), (1, "0.25".to_owned()));
+        assert_eq!(
+            handlers[0].as_mut().map(|make| make()),
+            Some("a".to_owned())
+        );
     }
 
     #[test]

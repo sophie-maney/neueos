@@ -581,13 +581,27 @@ their goldens and the gallery's "Shell" page run on macOS.
       reconnects in 2 s and the keys work again. Not checked: a card with routes (the VM's
       card belongs to the greeter's seat), and the VM's own build (no `clang` there, sudo
       refused `1234`; binaries were built in OrbStack).
-- [ ] **3.14c Volume extra** · Opus for the kit part, then Sonnet. After 3.14b. A slider
+- [x] **3.14c Volume extra** · Opus for the kit part, then Sonnet. After 3.14b. A slider
       item in kit menus; the volume extra in the bar (ADR 0083 pattern): glyph by level, a
       menu with the slider, Mute and the output devices as a radio list.
       *Accept:* goldens of the extra and its menu; in the VM the slider and the device
       choice show in `wpctl status`.
       *Owner:* the volume you hear follows the keys and the slider; brightness keys on a
       laptop if available.
+      *Done:* ADR 0045 and 0083 addenda. `MenuItem::slider`/`on_change`
+      (`Anchor::on_change`, `TitleAction::Changed`; menu-bar menus only, left out of
+      DBusMenu), `menu` tokens `SLIDER_ITEM_{HEIGHT,WIDTH,STEP}`; `ExtraIcon::Volume`
+      (`menu_bar::speaker{,_label}`, waves as on the OSD, faded when muted);
+      `bar::{VolumeView, OutputView, VolumeCommand, volume_icon, volume_menu,
+      ExtraMessages}`; the shell's `Keys::{volume_view, volume_command}`. Goldens
+      `shell-bar-volume-open-*`, a volume row in `shell-extras-*` (specimens widened: the
+      bar to 520 px, the extras to 120 px, so every `shell-bar-*` golden changed); 3 kit
+      (`menu_slider`), 1 kit model, 1 paint, 2 shell `bar` and 1 shell `osd` tests. VM
+      (arm64, null sinks of §1.6e): the extra shows the default sink (0.31, one wave); a
+      press on the slider gave 0.44 in `wpctl`, a drag 0.78, the menu stayed up and the icon
+      gained waves; Test Output moved the `*` in `wpctl status`, the reopened menu showed it
+      selected at its 0.50; Mute gave `[MUTED]` and the faded speaker; Volume Up then
+      unmuted at 0.56. Not checked: keyboard stepping in the VM (unit tests only).
 - [ ] **3.14d Media keys and the keyboard backlight** · Sonnet. After 3.14a. Play, pause,
       next, previous and stop go to the active MPRIS player (`neue_dbus`, the most recently
       playing one); keyboard brightness keys set the `leds` `*::kbd_backlight` device

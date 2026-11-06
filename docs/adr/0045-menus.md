@@ -80,3 +80,23 @@ cleaned up with it.
   menus on macOS hosts; no menu open/close animation.
 - Wayland behaviour (nested popups, grabs, keyboard focus in a popup) is unverified in
   the VM: `docs/checks/phase-2.md` §8.
+
+## Addendum: slider items (task 3.14c)
+The volume extra needs a slider in a menu, which sets a value without closing it.
+- **Model.** `MenuItem::slider(label, value)` with `on_change(|v| …)`: a value from 0 to
+  1, the label read by assistive technologies only. `Menu::into_parts` keeps its shape
+  (a slider has no choose handler); `into_parts_with_sliders` also returns the slider
+  handlers by item id, for owners that pass changes on.
+- **Delivery.** `Anchor::on_change` (like `on_closed`) is called on the owner with the
+  item id and value while the menus stay up. Only menu-bar titles set it
+  (`TitleAction::Changed`); in context menus and pop-up buttons the knob moves but nothing
+  is sent, and the DBusMenu export leaves slider items out (DBusMenu has no slider).
+  `Handle::set_menu` swaps the slider handlers too; an open menu keeps the value it opened
+  with, so a change from elsewhere (the volume keys) shows the next time it opens.
+- **Input.** A press on the row moves the knob there and drags it until the release
+  (which chooses nothing); Left and Right step it by `SLIDER_ITEM_STEP` (1/16, the OSD's
+  steps) while it is highlighted, instead of leaving for the bar's neighbouring menu;
+  Return and Space do nothing. It draws the regular slider across the row, with no
+  highlight bar; the knob shows a focus ring when the keyboard highlighted it.
+- **Accessibility.** Role `Slider` with numeric value, range 0..1 and step; `Increment`,
+  `Decrement` and `SetValue`.

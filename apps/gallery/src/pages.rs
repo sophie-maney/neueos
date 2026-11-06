@@ -192,6 +192,15 @@ fn shell(_: &mut PageHandles) -> Element<Message> {
             Scan => "Scan",
         })
     };
+    let volume = |command: neue_shell::bar::VolumeCommand| {
+        use neue_shell::bar::VolumeCommand::{SetLevel, SetMuted, SetOutput};
+        Message::Pressed(match command {
+            SetLevel(_) => "Volume",
+            SetMuted(true) => "Mute",
+            SetMuted(false) => "Unmute",
+            SetOutput(_) => "Output Device",
+        })
+    };
     let bluetooth = |command: neue_shell::bar::BluetoothCommand| {
         use neue_shell::bar::BluetoothCommand::{Connect, Disconnect, SetPowered};
         Message::Pressed(match command {
@@ -206,25 +215,27 @@ fn shell(_: &mut PageHandles) -> Element<Message> {
         .with(heading(
             "Shell",
             "The menu bar on every display: press the logo for the system menu, the clock \
-             for today's date, the battery, network and Bluetooth icons for their menus · Space, \
+             for today's date, the battery, volume, network and Bluetooth icons for their menus \
+             (drag the volume slider, or step it with Left and Right) · Space, \
              Return or Down open a focused title · the status line shows what you chose \
              (nothing here locks or shuts down)",
         ))
         .with(section(
             "Menu bar, an app active",
-            Stack::column().with(specimens::shell_bar("Gallery", send, network, bluetooth)),
+            Stack::column().with(specimens::shell_bar("Gallery", send, volume, network, bluetooth)),
         ))
         .with(section(
             "Menu bar, no window active",
             Stack::column().with(specimens::shell_bar(
                 neue_shell::windows::DESKTOP_NAME,
                 send,
+                volume,
                 network,
                 bluetooth,
             )),
         ))
         .with(section(
-            "Menu extras: batteries (full, charging, half, low, empty), network (wired, none, Wi-Fi with 3, 2, 1 and no arcs, off), Bluetooth (off, on, connected)",
+            "Menu extras: batteries (full, charging, half, low, empty), network (wired, none, Wi-Fi with 3, 2, 1 and no arcs, off), Bluetooth (off, on, connected), volume (full, two thirds, a third, silent, muted)",
             Stack::column().with(specimens::shell_extras()),
         ))
         .with(section(

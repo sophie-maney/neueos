@@ -6,7 +6,7 @@
 
 use neue_theme::materials::menu_bar::{
     BLUETOOTH_STROKE, EDGE, LABEL_BASELINE, LABEL_EMBOSS_OFFSET, LOGO_STROKE, NETWORK_STROKE,
-    OFF_OPACITY, Palette, TRAY_DARK_OPACITY, UNLIT_OPACITY,
+    OFF_OPACITY, Palette, TRAY_DARK_OPACITY, UNLIT_OPACITY, VOLUME_STROKE,
 };
 use vello_common::kurbo::{
     Arc, BezPath, Cap, Circle, Join, Point, Rect, RoundedRect, Stroke, Vec2,
@@ -20,7 +20,7 @@ use crate::{Backdrop, Variant};
 
 pub use neue_theme::materials::menu_bar::{
     BATTERY_HEIGHT, BATTERY_WIDTH, BLUETOOTH_HEIGHT, BLUETOOTH_WIDTH, FONT_SIZE, HEIGHT, LOGO_SIZE,
-    NETWORK_HEIGHT, NETWORK_WIDTH,
+    NETWORK_HEIGHT, NETWORK_WIDTH, VOLUME_HEIGHT, VOLUME_WIDTH,
 };
 
 /// How many arcs a Wi-Fi fan has.
@@ -327,6 +327,71 @@ pub fn image_label(
     }
 }
 
+/// How many waves a speaker has.
+pub const SPEAKER_WAVES: u8 = 3;
+
+/// Draw the speaker in `rect` (a [`VOLUME_WIDTH`] by [`VOLUME_HEIGHT`] box) in `color`:
+/// a magnet and a cone facing right, and [`SPEAKER_WAVES`] arcs in front of it, the first
+/// `lit` of them in full and the rest faded (so the icon keeps its size at every level).
+pub fn speaker(scene: &mut Scene, rect: Rect, lit: u8, color: Color) {
+    let c = rect.center();
+    let x = rect.x0 + 0.5;
+    let magnet = RoundedRect::new(x, c.y - 2.4, x + 3.0, c.y + 2.4, 0.6);
+    scene.fill(&magnet, color);
+    let tip = x + 7.5;
+    let mut cone = BezPath::new();
+    cone.move_to((x + 2.6, c.y - 2.4));
+    cone.line_to((tip, c.y - 5.6));
+    cone.line_to((tip, c.y + 5.6));
+    cone.line_to((x + 2.6, c.y + 2.4));
+    cone.close_path();
+    scene.fill(&cone, color);
+    let stroke = Stroke::new(VOLUME_STROKE).with_caps(Cap::Round);
+    let sweep = 0.28 * std::f64::consts::PI;
+    for wave in 1..=SPEAKER_WAVES {
+        let radius = 0.6 + 2.6 * f64::from(wave);
+        let arc = Arc::new(
+            Point::new(tip, c.y),
+            Vec2::new(radius, radius),
+            -sweep,
+            2.0 * sweep,
+            0.0,
+        );
+        let brush = if wave <= lit {
+            color
+        } else {
+            color.multiply_alpha(UNLIT_OPACITY)
+        };
+        scene.stroke(&arc, &stroke, brush);
+    }
+}
+
+/// Draw the speaker in `rect` as a menu-bar label: its embossed shadow, then the speaker
+/// with `lit` waves. `muted` fades it and lights no wave.
+pub fn speaker_label(
+    scene: &mut Scene,
+    rect: Rect,
+    lit: u8,
+    muted: bool,
+    variant: impl Into<Variant>,
+) {
+    let p = Palette::new(variant.into(), Backdrop::default());
+    let lit = if muted { 0 } else { lit };
+    if muted {
+        scene.push_opacity(OFF_OPACITY);
+    }
+    speaker(
+        scene,
+        rect + Vec2::new(0.0, LABEL_EMBOSS_OFFSET),
+        lit,
+        p.label_shadow,
+    );
+    speaker(scene, rect, lit, p.label);
+    if muted {
+        scene.pop_layer();
+    }
+}
+
 /// A diagonal line across `rect`: what strikes out an icon that is switched off.
 pub fn strike(scene: &mut Scene, rect: Rect, color: Color) {
     let mut line = BezPath::new();
@@ -395,6 +460,22 @@ mod tests {
             scene.commands().len()
         };
         assert_eq!(fills(&glyph), 2 * fills(&picture));
+    }
+
+    #[test]
+    fn a_muted_speaker_is_faded_and_its_waves_unlit() {
+        let rect = Rect::new(0.0, 0.0, VOLUME_WIDTH, VOLUME_HEIGHT);
+        let mut scene = Scene::new(VOLUME_WIDTH, VOLUME_HEIGHT);
+        speaker_label(&mut scene, rect, 2, true, Appearance::Light);
+        assert_eq!(scene.open_layers(), 0);
+        let mut plain = Scene::new(VOLUME_WIDTH, VOLUME_HEIGHT);
+        speaker_label(&mut plain, rect, 2, false, Appearance::Light);
+        // The fade's layer: one push and one pop more.
+        assert_eq!(scene.commands().len(), plain.commands().len() + 2);
+        // Magnet, cone and three waves, whatever the level.
+        let mut one = Scene::new(VOLUME_WIDTH, VOLUME_HEIGHT);
+        speaker(&mut one, rect, 0, Color::BLACK);
+        assert_eq!(one.commands().len(), 2 + usize::from(SPEAKER_WAVES));
     }
 
     #[test]

@@ -1156,6 +1156,12 @@ pub mod menu_bar {
     pub const NETWORK_HEIGHT: f64 = 13.0;
     /// Stroke width of the Wi-Fi arcs and the wired chevrons.
     pub const NETWORK_STROKE: f64 = 1.5;
+    /// Width of the volume icon's box: the speaker and its three waves.
+    pub const VOLUME_WIDTH: f64 = 18.0;
+    /// Height of the volume icon's box.
+    pub const VOLUME_HEIGHT: f64 = 13.0;
+    /// Stroke width of the volume icon's waves.
+    pub const VOLUME_STROKE: f64 = 1.4;
     /// Opacity of the Wi-Fi arcs that are not lit (the signal is weaker than them).
     pub const UNLIT_OPACITY: f32 = 0.30;
     /// Width and height of a status icon in the tray (one size for every icon, so that the
@@ -1978,6 +1984,12 @@ pub mod menu {
     pub const ITEM_HEIGHT: f64 = 19.0;
     /// Height of a separator (the line is centred in it).
     pub const SEPARATOR_HEIGHT: f64 = 10.0;
+    /// Height of a slider item (the regular slider, with room around its knob).
+    pub const SLIDER_ITEM_HEIGHT: f64 = 23.0;
+    /// Length of a slider item's groove when nothing wider sets the menu's width.
+    pub const SLIDER_ITEM_WIDTH: f64 = 140.0;
+    /// How far Left and Right move a slider item (0 to 1): the OSD's sixteen steps.
+    pub const SLIDER_ITEM_STEP: f64 = 1.0 / 16.0;
     /// Thickness of a separator's line.
     pub const SEPARATOR_LINE: f64 = 1.0;
     /// Left edge of an item's label: the column before it holds the check mark.

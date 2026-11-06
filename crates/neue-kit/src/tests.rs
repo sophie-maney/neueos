@@ -28,6 +28,7 @@ mod fields;
 mod grid;
 mod huds;
 mod icons;
+mod menu_slider;
 #[cfg(target_os = "linux")]
 mod menubar;
 mod menus;

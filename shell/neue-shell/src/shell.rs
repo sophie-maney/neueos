@@ -18,8 +18,8 @@ use neue_kit::desktop::{
 use neue_kit::{Application, Cx, Handle, Settings, WindowId};
 use neue_shell::about::About;
 use neue_shell::bar::{
-    self, BarContent, BarHandles, BatteryView, BluetoothCommand, NetworkCommand, SystemCommand,
-    TrayActions, TrayItemView,
+    self, BarContent, BarHandles, BatteryView, BluetoothCommand, ExtraMessages, NetworkCommand,
+    SystemCommand, TrayActions, TrayItemView, VolumeCommand,
 };
 use neue_shell::clock;
 use neue_shell::fallback::{self, Command, Context, WindowEntry};
@@ -58,6 +58,8 @@ enum Message {
     NetworkCall(Result<(), String>),
     /// Something chosen in the Bluetooth menu.
     Bluetooth(BluetoothCommand),
+    /// Something done in the volume menu (task 3.14c).
+    Volume(VolumeCommand),
     /// UPower's battery changed (`None`: there is none, or UPower isn't on the bus).
     Battery(Option<BatteryView>),
     /// The battery worker stopped (it logged why).
@@ -288,6 +290,8 @@ impl Shell {
                 full_date: clock::full_date_text(now),
                 // Shown once the workers (`start_extras`) find a battery and an adapter.
                 battery: None,
+                // Shown once PipeWire reports a default sink.
+                volume: None,
                 // Shown once the network worker finds a network device.
                 network: None,
                 bluetooth: None,
@@ -840,8 +844,11 @@ impl Shell {
             &self.content,
             titles,
             Message::System,
-            Message::Network,
-            Message::Bluetooth,
+            ExtraMessages {
+                volume: Message::Volume,
+                network: Message::Network,
+                bluetooth: Message::Bluetooth,
+            },
             |view| tray_actions(&self.tray, view),
             &mut handles,
             cx.backdrop(),
@@ -884,6 +891,16 @@ impl Shell {
                     battery.set_hidden(cx, false);
                 }
                 None => battery.set_hidden(cx, true),
+            }
+            let volume = &bar.handles.volume;
+            match &self.content.volume {
+                Some(view) => {
+                    let (icon, name) = bar::volume_icon(view);
+                    volume.set_icon(cx, icon, name);
+                    volume.set_menu(cx, bar::volume_menu(view, Message::Volume));
+                    volume.set_hidden(cx, false);
+                }
+                None => volume.set_hidden(cx, true),
             }
             let network = &bar.handles.network;
             match &self.content.network {
@@ -1196,7 +1213,17 @@ impl Application for Shell {
             }
             Message::Login(Ok(())) => {}
             Message::Login(Err(error)) => tracing::warn!(%error, "logind call failed"),
-            Message::Osd(event) => self.keys.event(cx, Message::Osd, event),
+            Message::Osd(event) => {
+                let audio = matches!(event, osd::Event::Audio(_));
+                self.keys.event(cx, Message::Osd, event);
+                // PipeWire's news also moves the volume extra.
+                let view = self.keys.volume_view();
+                if audio && self.content.volume != view {
+                    self.content.volume = view;
+                    self.sync_bars(cx);
+                }
+            }
+            Message::Volume(command) => self.keys.volume_command(command),
             Message::Picture(Ok((picture, fit))) => {
                 for background in self.backgrounds.values() {
                     background.desktop.set_photo(cx, picture.clone(), fit);
