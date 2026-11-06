@@ -20,7 +20,9 @@ use neue_dbus::{
 };
 use neue_dbus::{Toggle, ToggleState};
 use neue_kit::desktop::{MenuTitle, ToplevelMenu};
-use neue_kit::{CheckState, Menu, MenuItem, Shortcut};
+use neue_kit::{CheckState, Handle, Menu, MenuItem, Shortcut};
+use neue_shell::help;
+use neue_shell::search::Entry;
 
 /// How long the shell waits for an app to answer before giving up on a call.
 const CALL_TIMEOUT: Duration = Duration::from_secs(2);
@@ -289,10 +291,16 @@ fn forward(
 /// item chosen and each title opened or closed. Separators and items without a menu at the
 /// top level are left out (the bar has no room for buttons). `super_as_ctrl`: the app gets
 /// Super as Control, so its Control shortcuts show as ⌘ ([`shortcut`]).
+///
+/// The app's Help menu, if it has one, is where menu search goes: `help` is pointed at
+/// its title (and left unbound when there is none), and with `search` it gets the item
+/// sending that message at the top.
 pub fn bar_titles<M: Clone + 'static>(
     titles: &[MenuNode],
     generation: u64,
     super_as_ctrl: bool,
+    search: Option<&M>,
+    help: &mut Handle<MenuTitle<M>>,
     message: impl Fn(MenuEvent) -> M + Clone + 'static,
 ) -> Vec<MenuTitle<M>> {
     let event = |id, event| MenuEvent {
@@ -300,18 +308,73 @@ pub fn bar_titles<M: Clone + 'static>(
         id,
         event,
     };
-    titles
+    let mut built = Vec::new();
+    for t in titles
         .iter()
         .filter(|t| t.kind == NodeKind::Item && !t.children.is_empty())
-        .map(|t| {
-            MenuTitle::new(
-                t.label.clone(),
-                menu(&t.children, generation, super_as_ctrl, &message),
-            )
-            .on_open(message(event(t.id, ItemEvent::Opened)))
-            .on_close(message(event(t.id, ItemEvent::Closed)))
-        })
-        .collect()
+    {
+        let is_help = !help.is_bound() && help::is_help(&t.label);
+        let first = match search {
+            Some(open) if is_help => Menu::new()
+                .with(help::search_item(open.clone()))
+                .separator(),
+            _ => Menu::new(),
+        };
+        let mut title = MenuTitle::new(
+            t.label.clone(),
+            menu_from(first, &t.children, generation, super_as_ctrl, &message),
+        )
+        .on_open(message(event(t.id, ItemEvent::Opened)))
+        .on_close(message(event(t.id, ItemEvent::Closed)));
+        if is_help {
+            title = title.bind(help);
+        }
+        built.push(title);
+    }
+    built
+}
+
+/// What menu search finds in the app's menus: every enabled item, by its path from the
+/// menu title (the app menu is under `app_name`). Submenus that were never opened may be
+/// empty, and so are not searched. Choosing one is [`ItemEvent::Clicked`].
+pub fn entries(menus: &Menus, app_name: &str, super_as_ctrl: bool) -> Vec<Entry<MenuEvent>> {
+    let mut found = Vec::new();
+    let mut walk = |path: &mut Vec<String>, nodes: &[MenuNode]| {
+        collect(&mut found, path, nodes, menus.generation, super_as_ctrl);
+    };
+    walk(&mut vec![app_name.to_owned()], &menus.app_menu);
+    for title in &menus.titles {
+        walk(&mut vec![title.label.clone()], &title.children);
+    }
+    found
+}
+
+fn collect(
+    found: &mut Vec<Entry<MenuEvent>>,
+    path: &mut Vec<String>,
+    nodes: &[MenuNode],
+    generation: u64,
+    super_as_ctrl: bool,
+) {
+    for node in nodes.iter().filter(|n| n.kind == NodeKind::Item) {
+        if !node.children.is_empty() {
+            path.push(node.label.clone());
+            collect(found, path, &node.children, generation, super_as_ctrl);
+            path.pop();
+        } else if node.enabled && !node.label.trim().is_empty() {
+            let mut full = path.clone();
+            full.push(node.label.clone());
+            found.push(Entry {
+                path: full,
+                shortcut: shortcut(&node.shortcut, super_as_ctrl),
+                target: MenuEvent {
+                    generation,
+                    id: node.id,
+                    event: ItemEvent::Clicked,
+                },
+            });
+        }
+    }
 }
 
 /// The kit menu under the app's name for the app menu `items`: each item chosen sends
@@ -332,7 +395,18 @@ fn menu<M: 'static>(
     super_as_ctrl: bool,
     message: &(impl Fn(MenuEvent) -> M + Clone + 'static),
 ) -> Menu<M> {
-    items.iter().fold(Menu::new(), |built, node| {
+    menu_from(Menu::new(), items, generation, super_as_ctrl, message)
+}
+
+/// `first` followed by a kit menu's items for `items`.
+fn menu_from<M: 'static>(
+    first: Menu<M>,
+    items: &[MenuNode],
+    generation: u64,
+    super_as_ctrl: bool,
+    message: &(impl Fn(MenuEvent) -> M + Clone + 'static),
+) -> Menu<M> {
+    items.iter().fold(first, |built, node| {
         if node.kind == NodeKind::Separator {
             return built.separator();
         }
@@ -415,7 +489,7 @@ mod tests {
 
     #[test]
     fn titles_are_the_top_level_menus() {
-        let titles = bar_titles(&tree(), 3, false, |e| e);
+        let titles = bar_titles(&tree(), 3, false, None, &mut Handle::default(), |e| e);
         assert_eq!(titles.len(), 2);
         let file = menu(&tree()[0].children, 3, false, &|e| e);
         let save = &file.items()[0];
@@ -431,6 +505,60 @@ mod tests {
             neue_kit::MenuToggle::Check(CheckState::On)
         );
         assert!(!view.items()[1].is_enabled());
+    }
+
+    #[test]
+    fn an_apps_help_menu_gets_the_search_item_and_the_handle() {
+        let mut tree = tree();
+        tree.push(MenuNode::submenu(
+            9,
+            "Help",
+            vec![MenuNode::item(10, "Manual")],
+        ));
+        let mut handle = Handle::default();
+        let titles = bar_titles(&tree, 3, false, Some(&0u8), &mut handle, |_| 1u8);
+        assert_eq!(titles.len(), 3);
+        assert!(handle.is_bound());
+        // Without one the handle stays unbound.
+        let mut none = Handle::default();
+        bar_titles(&self::tree(), 3, false, Some(&0u8), &mut none, |_| 1u8);
+        assert!(!none.is_bound());
+    }
+
+    #[test]
+    fn search_finds_enabled_items_by_path() {
+        let mut nested = MenuNode::submenu(
+            20,
+            "Recent",
+            vec![MenuNode::item(21, "One"), MenuNode::separator(22)],
+        );
+        nested.enabled = true;
+        let menus = Menus {
+            generation: 4,
+            titles: vec![
+                MenuNode::submenu(1, "File", vec![MenuNode::item(2, "Save"), nested]),
+                MenuNode::submenu(4, "View", {
+                    let mut gone = MenuNode::item(6, "Gone");
+                    gone.enabled = false;
+                    vec![gone]
+                }),
+            ],
+            app_menu: vec![MenuNode::item(30, "Preferences")],
+        };
+        let found = entries(&menus, "Gallery", false);
+        let paths: Vec<String> = found.iter().map(|e| e.path.join("/")).collect();
+        assert_eq!(
+            paths,
+            ["Gallery/Preferences", "File/Save", "File/Recent/One"]
+        );
+        assert_eq!(
+            found[1].target,
+            MenuEvent {
+                generation: 4,
+                id: 2,
+                event: ItemEvent::Clicked
+            }
+        );
     }
 
     #[test]

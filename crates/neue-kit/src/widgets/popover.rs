@@ -35,7 +35,7 @@ use neue_platform::{
 };
 use neue_theme::materials::popover::{ARROW_HEIGHT, GAP, PADDING, RADIUS, SHADOW_REACH};
 
-use crate::element::{Element, Wiring};
+use crate::element::{Element, Handle, Wiring};
 use crate::theme::{BackdropProp, ThemeProp};
 
 /// A panel of content shown next to a widget, with an arrow pointing at it. Show it with
@@ -58,6 +58,7 @@ pub struct Popover<M> {
     content: Element<M>,
     edge: Edge,
     on_close: Option<M>,
+    focus: Option<WidgetId>,
 }
 
 impl<M> std::fmt::Debug for Popover<M> {
@@ -76,7 +77,16 @@ impl<M: Clone + 'static> Popover<M> {
             content: content.into(),
             edge: Edge::Bottom,
             on_close: None,
+            focus: None,
         }
+    }
+
+    /// Moves keyboard focus to `target`, a widget of the content (a search field), when
+    /// the popover opens, instead of leaving it on the popover itself.
+    #[must_use]
+    pub fn focus<W>(mut self, target: &Handle<W>) -> Self {
+        self.focus = target.id();
+        self
     }
 
     /// The side of the anchor it goes on when there is room (on Wayland the compositor
@@ -103,7 +113,8 @@ impl<M: Clone + 'static> Popover<M> {
         if let Some(button) = wiring.default_button.take() {
             tracing::debug!(%button, "a popover's default button is not the window's");
         }
-        let popover = NewWidget::new(PopoverWidget::new(content, self.edge));
+        let mut popover = NewWidget::new(PopoverWidget::new(content, self.edge));
+        popover.widget.initial_focus = self.focus;
         if let Some(message) = self.on_close {
             wiring.handlers.push((
                 popover.id(),
@@ -171,6 +182,8 @@ pub(crate) struct PopoverWidget {
     owner: Option<WidgetId>,
     /// What had keyboard focus when it opened.
     return_focus: Option<WidgetId>,
+    /// The content widget that takes focus when it opens (the popover itself if `None`).
+    initial_focus: Option<WidgetId>,
     /// The layer's position, as last asked for or as landed.
     origin: Point,
     /// The driver placed it ([`PopoverLanded`]): it stays where it is.
@@ -204,6 +217,7 @@ impl PopoverWidget {
             edge,
             owner: None,
             return_focus: None,
+            initial_focus: None,
             origin: Point::ORIGIN,
             landed: false,
             placed: (edge, 0.0),
@@ -354,7 +368,10 @@ impl Widget for PopoverWidget {
     ) {
         if source == self.probe.id() && action.is::<Ready>() {
             ctx.set_handled();
-            ctx.request_focus();
+            match self.initial_focus {
+                Some(target) => ctx.set_focus(target),
+                None => ctx.request_focus(),
+            }
         }
     }
 

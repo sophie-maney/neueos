@@ -29,7 +29,8 @@ Our private Wayland extension between neue-comp and neue-shell (task 3.1, ADR 00
   action; null is the active window. The result object gets `done` or `failed(message)`
   after the request's dispatch.
 - Request `send_shortcut(modifiers, keysym)`: the active window gets the keyboard (if a
-  shell menu had it) and the chord, typed with the current layout. Close the menu first.
+  shell menu had it, its popup grab is ended) and the chord, typed with the current layout
+  (ADR 0082).
 - Request `destroy`.
 
 **`neue_shell_toplevel_v1`** (state events are applied together on `done`; after the

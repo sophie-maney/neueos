@@ -29,6 +29,10 @@ enum Msg {
 struct Popovers {
     edge: Edge,
     button: Handle<Button<Msg>>,
+    /// The button in the popover.
+    inside: Handle<Button<Msg>>,
+    /// The popover puts focus on `inside` when it opens.
+    focus_inside: bool,
     log: Vec<Msg>,
 }
 
@@ -37,6 +41,8 @@ impl Popovers {
         Self {
             edge,
             button: Handle::default(),
+            inside: Handle::default(),
+            focus_inside: false,
             log: Vec::new(),
         }
     }
@@ -57,13 +63,18 @@ impl Application for Popovers {
     fn update(&mut self, cx: &mut Cx<'_, Msg>, message: Msg) {
         match message {
             Msg::Show => {
-                let content = Stack::column()
-                    .with(Label::new("Details"))
-                    .with(Button::new("Inside").on_press(Msg::Inner));
-                cx.show_popover(
-                    &self.button,
-                    Popover::new(content).edge(self.edge).on_close(Msg::Closed),
+                let content = Stack::column().with(Label::new("Details")).with(
+                    Button::new("Inside")
+                        .on_press(Msg::Inner)
+                        .bind(&mut self.inside),
                 );
+                let popover = Popover::new(content).edge(self.edge).on_close(Msg::Closed);
+                let popover = if self.focus_inside {
+                    popover.focus(&self.inside)
+                } else {
+                    popover
+                };
+                cx.show_popover(&self.button, popover);
             }
             Msg::Close => cx.close_popover(&self.button),
             _ => {}
@@ -225,6 +236,16 @@ fn it_takes_focus_and_escape_closes_it_and_gives_focus_back() {
     assert!(dialogs(&mut host).is_empty());
     assert_eq!(runner.app().log, [Msg::Show, Msg::Closed]);
     assert_eq!(host.only().focused_widget_id(), Some(button));
+}
+
+#[test]
+fn it_can_put_focus_on_a_widget_of_its_content() {
+    let (mut runner, mut host) = setup(Edge::Bottom);
+    runner.app_mut().focus_inside = true;
+    open(&mut runner, &mut host);
+    assert_eq!(focused(&mut host).as_deref(), Some("Inside"));
+    named(&mut runner, &mut host, NamedKey::Escape);
+    assert!(dialogs(&mut host).is_empty());
 }
 
 #[test]

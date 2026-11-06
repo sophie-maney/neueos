@@ -659,10 +659,16 @@ impl State {
         let Some(surface) = window.toplevel().map(|t| t.wl_surface().clone()) else {
             return;
         };
+        let keyboard = self.keyboard.clone();
+        // A shell menu's popup grab still has the keyboard if the shell sends the chord
+        // in the update that closed the menu (the popup is destroyed after it): end the
+        // grab, or focus can't move and the chord would go to the popup.
+        if keyboard.is_grabbed() {
+            keyboard.unset_grab(self);
+        }
         if self.keyboard_focus().as_ref() != Some(&surface) {
             self.focus_window(&window);
         }
-        let keyboard = self.keyboard.clone();
         let mut keys = Vec::new();
         for (flag, sym) in [
             (Modifiers::Shift, Keysym::Shift_L),
