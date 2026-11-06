@@ -2,7 +2,7 @@
 //! a title's menu opening below it, choosing, the keyboard, and changing a title; the
 //! active app's menus being replaced, and their open and close messages (3.7a); moving
 //! between menus by pointing and with Left and Right, and opening the first menu from the
-//! keyboard (3.7b).
+//! keyboard (3.7b); and icon extras that change and hide (3.11b).
 
 use masonry_core::accesskit::{Action, Role};
 use masonry_core::core::PointerButton;
@@ -12,7 +12,7 @@ use neue_theme::materials::menu_bar::{EDGE_INSET, HEIGHT};
 
 use super::menus::{a11y, click_item, find, focused, menus_open, named};
 use super::*;
-use crate::desktop::{Anchor, LayerSpec, MenuBar, MenuTitle};
+use crate::desktop::{Anchor, ExtraIcon, LayerSpec, MenuBar, MenuTitle};
 use crate::{Menu, MenuItem};
 
 #[derive(Debug, Clone, PartialEq)]
@@ -28,6 +28,10 @@ enum Msg {
     Opened(&'static str),
     Closed(&'static str),
     Item(&'static str),
+    /// Script: the battery extra shows this icon, named so.
+    SetBattery(ExtraIcon, &'static str),
+    /// Script: the Bluetooth extra hides or shows.
+    HideBluetooth(bool),
 }
 
 /// An app menu titled `name`, with an item `name item`, reporting opening and closing.
@@ -49,8 +53,19 @@ struct Bar {
     logo: Handle<MenuTitle<Msg>>,
     app: Handle<MenuTitle<Msg>>,
     clock: Handle<MenuTitle<Msg>>,
+    battery: Handle<MenuTitle<Msg>>,
+    bluetooth: Handle<MenuTitle<Msg>>,
     log: Vec<Msg>,
 }
+
+const HALF: ExtraIcon = ExtraIcon::Battery {
+    level: 0.5,
+    charging: false,
+};
+const BLUETOOTH: ExtraIcon = ExtraIcon::Bluetooth {
+    powered: true,
+    connected: false,
+};
 
 impl Application for Bar {
     type Message = Msg;
@@ -74,6 +89,23 @@ impl Application for Bar {
             )
             .with_menu(app_menu("Edit"))
             .with_extra(MenuTitle::new("10:09", Menu::new()).bind(&mut self.clock))
+            .with_extra(
+                MenuTitle::icon(
+                    HALF,
+                    "Battery, 50 percent",
+                    Menu::new().with(MenuItem::new("Power").on_choose(Msg::Item("Power"))),
+                )
+                .bind(&mut self.battery),
+            )
+            .with_extra(
+                MenuTitle::icon(
+                    BLUETOOTH,
+                    "Bluetooth, on",
+                    Menu::new().with(MenuItem::new("Switch").on_choose(Msg::Item("Switch"))),
+                )
+                .hidden(true)
+                .bind(&mut self.bluetooth),
+            )
             .bind(&mut self.bar);
         // The bar is the surface's root, as in the shell; the window is taller so that the
         // menus fit in the fake host.
@@ -85,6 +117,8 @@ impl Application for Bar {
         match message {
             Msg::Rename(name) => self.app.set_text(cx, name),
             Msg::FocusBar => self.bar.open_first_menu(cx),
+            Msg::SetBattery(icon, name) => self.battery.set_icon(cx, icon, name),
+            Msg::HideBluetooth(hidden) => self.bluetooth.set_hidden(cx, hidden),
             Msg::SetMenus(names) => {
                 self.bar
                     .set_menus(cx, names.into_iter().map(app_menu).collect());
@@ -267,8 +301,8 @@ fn app_menus_are_replaced_whole() {
     assert!(title(&mut host, "Window").is_none());
     assert_eq!(
         find(&mut host, Role::MenuItem, None).len(),
-        3,
-        "logo, app, clock"
+        5,
+        "logo, app, clock, battery and the hidden Bluetooth"
     );
 }
 
@@ -420,4 +454,79 @@ fn the_shortcut_opens_the_first_menu_from_the_keyboard() {
     assert_eq!(focused(&mut host).as_deref(), Some("Quit Files"));
     named(&mut runner, &mut host, NamedKey::Escape);
     assert_eq!(menus_open(&mut host), 0);
+}
+
+/// Extra width of a title around its content: the padding on both sides.
+const PADDING: f64 = 2.0 * neue_theme::materials::menu_bar::TITLE_PADDING;
+
+#[test]
+fn icon_extras_are_sized_by_their_icon_and_sit_left_of_the_clock() {
+    use neue_theme::materials::menu_bar::{BATTERY_WIDTH, BLUETOOTH_WIDTH};
+    let (mut runner, mut host) = setup();
+    let clock = bounds_of(&mut host, id(&runner.app().clock));
+    let battery = bounds_of(&mut host, id(&runner.app().battery));
+    assert!((battery.x1 - clock.x0).abs() < 0.5, "{battery:?} {clock:?}");
+    assert!((battery.width() - (BATTERY_WIDTH + PADDING).ceil()).abs() < 0.5);
+    assert!((battery.height() - HEIGHT).abs() < 0.5);
+    // Read as a title: its name is the accessible label, and it has a menu.
+    let found = find(&mut host, Role::MenuItem, Some("Battery, 50 percent"));
+    assert_eq!(found.len(), 1);
+
+    // Another kind of icon is another width.
+    runner.send(&mut host, Msg::SetBattery(BLUETOOTH, "Bluetooth, on"));
+    let _ = host.only().render();
+    let now = bounds_of(&mut host, id(&runner.app().battery));
+    assert!((now.width() - (BLUETOOTH_WIDTH + PADDING).ceil()).abs() < 0.5);
+    assert!((now.x1 - clock.x0).abs() < 0.5);
+}
+
+#[test]
+fn an_icon_extra_opens_its_menu_and_changes_its_name() {
+    let (mut runner, mut host) = setup();
+    let battery = id(&runner.app().battery);
+    click_widget(&mut runner, &mut host, battery);
+    assert_eq!(menus_open(&mut host), 1);
+    assert_eq!(expanded(&mut host, "Battery, 50 percent"), Some(true));
+    click_item(&mut runner, &mut host, "Power");
+    assert_eq!(runner.app().log, [Msg::Item("Power")]);
+
+    let full = ExtraIcon::Battery {
+        level: 1.0,
+        charging: true,
+    };
+    runner.send(
+        &mut host,
+        Msg::SetBattery(full, "Battery, 100 percent, charging"),
+    );
+    let _ = host.only().render();
+    assert!(title(&mut host, "Battery, 50 percent").is_none());
+    assert!(title(&mut host, "Battery, 100 percent, charging").is_some());
+}
+
+#[test]
+fn a_hidden_extra_takes_no_room_and_opens_nothing_until_shown() {
+    use neue_theme::materials::menu_bar::BLUETOOTH_WIDTH;
+    let (mut runner, mut host) = setup();
+    let (bluetooth, battery) = (id(&runner.app().bluetooth), id(&runner.app().battery));
+    let width = bounds_of(&mut host, bluetooth).width();
+    assert!(width < 0.5, "hidden at the start: {width}");
+    // Nothing takes it from the keyboard either.
+    host.only().focus_on(Some(bluetooth));
+    named(&mut runner, &mut host, NamedKey::ArrowDown);
+    assert_eq!(menus_open(&mut host), 0);
+
+    runner.send(&mut host, Msg::HideBluetooth(false));
+    let _ = host.only().render();
+    let shown = bounds_of(&mut host, bluetooth);
+    assert!((shown.width() - (BLUETOOTH_WIDTH + PADDING).ceil()).abs() < 0.5);
+    assert!((shown.x1 - bounds_of(&mut host, battery).x0).abs() < 0.5);
+    click_widget(&mut runner, &mut host, bluetooth);
+    assert_eq!(menus_open(&mut host), 1);
+
+    // Hiding it while its menu is up takes the menu down too.
+    runner.send(&mut host, Msg::HideBluetooth(true));
+    deliver(&mut runner, &mut host);
+    let _ = host.only().render();
+    assert_eq!(menus_open(&mut host), 0);
+    assert!(bounds_of(&mut host, bluetooth).width() < 0.5);
 }

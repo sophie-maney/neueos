@@ -23,10 +23,11 @@ use masonry_core::kurbo::{Affine, Axis, Point, Rect, Size, Vec2};
 use masonry_core::layout::{LayoutSize, LenDef, LenReq, Length, SizeDef};
 use neue_paint::imaging::ImagingReplayer;
 use neue_paint::materials::{menu_bar, menu_highlight};
-use neue_paint::{Backdrop, Scene};
+use neue_paint::{Backdrop, Scene, Variant};
 use neue_theme::materials::menu as menu_tokens;
 use neue_theme::materials::menu_bar::{
-    EDGE_INSET, HEIGHT, LABEL_BASELINE, LABEL_EMBOSS_OFFSET, LOGO_SIZE, Palette, TITLE_PADDING,
+    BATTERY_HEIGHT, BATTERY_WIDTH, BLUETOOTH_HEIGHT, BLUETOOTH_WIDTH, EDGE_INSET, HEIGHT,
+    LABEL_BASELINE, LABEL_EMBOSS_OFFSET, LOGO_SIZE, OFF_OPACITY, Palette, TITLE_PADDING,
 };
 
 use super::menu::{self, Anchor};
@@ -378,6 +379,61 @@ enum Content {
     Text(Box<TextLine>),
     /// The logo mark; the string is its accessible name.
     Logo(String),
+    /// A menu extra's icon; the string is its accessible name.
+    Icon(ExtraIcon, String),
+}
+
+/// The icon of a menu extra (see [`MenuTitle::icon`]), drawn in the bar's label colours
+/// in both appearances.
+#[derive(Debug, Clone, Copy, PartialEq)]
+pub enum ExtraIcon {
+    /// A battery filled to `level` (0 to 1), with a bolt over it while `charging`.
+    Battery { level: f64, charging: bool },
+    /// The Bluetooth rune, faded while the adapter is off (`powered` false), with a dot
+    /// on each side while a device is `connected`.
+    Bluetooth { powered: bool, connected: bool },
+}
+
+impl ExtraIcon {
+    /// The icon's width and height.
+    fn size(self) -> (f64, f64) {
+        match self {
+            Self::Battery { .. } => (BATTERY_WIDTH, BATTERY_HEIGHT),
+            Self::Bluetooth { .. } => (BLUETOOTH_WIDTH, BLUETOOTH_HEIGHT),
+        }
+    }
+
+    /// Draws the icon in `rect`, as a label of the bar, or in the highlighted label colour
+    /// (`highlighted`, over the blue of an open menu's title).
+    fn draw(self, scene: &mut Scene, rect: Rect, variant: Variant, highlighted: bool) {
+        if !highlighted {
+            match self {
+                Self::Battery { level, charging } => {
+                    menu_bar::battery_label(scene, rect, level, charging, variant);
+                }
+                Self::Bluetooth { powered, connected } => {
+                    menu_bar::bluetooth_label(scene, rect, powered, connected, variant);
+                }
+            }
+            return;
+        }
+        let colour = menu_tokens::Palette::new(variant, Backdrop::Opaque).highlighted_label;
+        match self {
+            Self::Battery { level, charging } => {
+                let knockout = Palette::new(variant, Backdrop::Opaque).highlighted_knockout;
+                menu_bar::battery(scene, rect, level, charging, colour, knockout);
+            }
+            Self::Bluetooth { powered, connected } => {
+                if !powered {
+                    scene.push_opacity(OFF_OPACITY);
+                }
+                menu_bar::bluetooth(scene, rect, connected, colour);
+                if !powered {
+                    scene.pop_layer();
+                }
+            }
+        }
+    }
 }
 
 /// What a [`MenuTitleWidget`] tells its owner.
@@ -431,6 +487,8 @@ pub(crate) struct MenuTitleWidget {
     spec: MenuSpec,
     /// Its menu is up.
     open: bool,
+    /// Takes no room, shows nothing and opens nothing (a menu extra that isn't relevant).
+    hidden: bool,
     return_focus: Option<WidgetId>,
     replayer: ImagingReplayer,
 }
@@ -440,6 +498,7 @@ impl std::fmt::Debug for MenuTitleWidget {
         f.debug_struct("MenuTitleWidget")
             .field("content", &self.content)
             .field("open", &self.open)
+            .field("hidden", &self.hidden)
             .finish_non_exhaustive()
     }
 }
@@ -450,6 +509,7 @@ impl MenuTitleWidget {
             content,
             spec,
             open: false,
+            hidden: false,
             return_focus: None,
             replayer: ImagingReplayer::new(),
         }
@@ -458,12 +518,12 @@ impl MenuTitleWidget {
     fn name(&self) -> &str {
         match &self.content {
             Content::Text(line) => line.text(),
-            Content::Logo(name) => name,
+            Content::Logo(name) | Content::Icon(_, name) => name,
         }
     }
 
     fn can_open(&self, ctx: &impl TitleCtx) -> bool {
-        !ctx.disabled() && !self.spec.0.is_empty()
+        !self.hidden && !ctx.disabled() && !self.spec.0.is_empty()
     }
 
     /// Opens the menu right below the title, its left edge at the title's. `return_focus`:
@@ -634,10 +694,12 @@ impl Widget for MenuTitleWidget {
     ) -> Length {
         Length::px(match axis {
             Axis::Vertical => HEIGHT,
+            Axis::Horizontal if self.hidden => 0.0,
             Axis::Horizontal => {
                 let content = match &mut self.content {
                     Content::Text(line) => line.size(ctx.text_contexts()).width,
                     Content::Logo(_) => LOGO_SIZE,
+                    Content::Icon(icon, _) => icon.size().0,
                 };
                 (content + 2.0 * TITLE_PADDING).ceil()
             }
@@ -654,6 +716,9 @@ impl Widget for MenuTitleWidget {
         props: &PropertiesRef<'_>,
         painter: &mut Painter<'_>,
     ) {
+        if self.hidden {
+            return;
+        }
         let ThemeProp(theme) = *props.get::<ThemeProp>(ctx.property_cache());
         let size = ctx.content_box().size();
         let rect = Rect::from_origin_size(Point::ORIGIN, size);
@@ -682,6 +747,16 @@ impl Widget for MenuTitleWidget {
                 menu_bar::logo_label(&mut scene, logo, theme.variant);
             }
         }
+        if let Content::Icon(icon, _) = self.content {
+            let (width, height) = icon.size();
+            // Centred in the title, a pixel up like the logo for the embossed shadow.
+            let at = Point::new(
+                ((size.width - width) / 2.0).round(),
+                ((HEIGHT - height) / 2.0 - LABEL_EMBOSS_OFFSET / 2.0).round(),
+            );
+            let rect = Rect::from_origin_size(at, Size::new(width, height));
+            icon.draw(&mut scene, rect, theme.variant, highlighted);
+        }
         self.replayer.replay(&scene, ctx.scale_factor(), painter);
 
         if let Content::Text(line) = &mut self.content {
@@ -709,6 +784,10 @@ impl Widget for MenuTitleWidget {
         _props: &PropertiesRef<'_>,
         node: &mut Node,
     ) {
+        if self.hidden {
+            node.set_hidden();
+            return;
+        }
         node.set_label(self.name().to_owned());
         node.add_action(Action::Click);
         node.set_has_popup(HasPopup::Menu);
@@ -720,7 +799,7 @@ impl Widget for MenuTitleWidget {
     }
 
     fn accepts_focus(&self) -> bool {
-        true
+        !self.hidden
     }
 
     fn get_debug_text(&self) -> Option<String> {
@@ -903,6 +982,12 @@ impl<M: 'static> MenuTitle<M> {
         Self::with_content(Content::Logo(name.into()), menu)
     }
 
+    /// A menu extra showing `icon` instead of text, opening `menu`; `name` is what
+    /// assistive technologies read ([`Handle::set_icon`] changes both).
+    pub fn icon(icon: ExtraIcon, name: impl Into<String>, menu: Menu<M>) -> Self {
+        Self::with_content(Content::Icon(icon, name.into()), menu)
+    }
+
     fn with_content(content: Content, menu: Menu<M>) -> Self {
         let (spec, items) = menu.into_parts();
         Self {
@@ -941,6 +1026,13 @@ impl<M: 'static> MenuTitle<M> {
         if let Content::Text(line) = &mut self.inner.widget.content {
             line.set_bold(bold);
         }
+        self
+    }
+
+    /// Starts hidden (see [`Handle::set_hidden`]).
+    #[must_use]
+    pub fn hidden(mut self, hidden: bool) -> Self {
+        self.inner.widget.hidden = hidden;
         self
     }
 
@@ -994,6 +1086,46 @@ impl<M: 'static> Handle<MenuTitle<M>> {
 }
 
 impl<M> Handle<MenuTitle<M>> {
+    /// Changes an icon title's icon and accessible name (the others have no icon).
+    pub fn set_icon<N>(&self, cx: &mut Cx<'_, N>, icon: ExtraIcon, name: impl Into<String>) {
+        let name = name.into();
+        cx.edit::<MenuTitleWidget, _>(self, |mut w| {
+            let new = Content::Icon(icon, name);
+            if let Content::Icon(old, old_name) = &w.widget.content
+                && let Content::Icon(_, new_name) = &new
+                && old == &icon
+                && old_name == new_name
+            {
+                return;
+            }
+            if matches!(w.widget.content, Content::Icon(..)) {
+                w.widget.content = new;
+                // The icon's size follows its kind.
+                w.ctx.request_layout();
+                w.ctx.request_paint_only();
+                w.ctx.request_accessibility_update();
+            }
+        });
+    }
+
+    /// Hides the title (it takes no room in the bar and shows nothing, its menu comes
+    /// down if it is up) or shows it again: a menu extra that doesn't apply, such as the
+    /// battery on a desktop computer.
+    pub fn set_hidden<N>(&self, cx: &mut Cx<'_, N>, hidden: bool) {
+        cx.edit::<MenuTitleWidget, _>(self, |mut w| {
+            if w.widget.hidden == hidden {
+                return;
+            }
+            w.widget.hidden = hidden;
+            if hidden {
+                MenuTitleWidget::dismiss(&mut w);
+            }
+            w.ctx.request_layout();
+            w.ctx.request_paint_only();
+            w.ctx.request_accessibility_update();
+        });
+    }
+
     /// Changes a text title's text (the logo has none).
     pub fn set_text<N>(&self, cx: &mut Cx<'_, N>, text: impl Into<String>) {
         let text = text.into();

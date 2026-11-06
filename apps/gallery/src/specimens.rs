@@ -946,20 +946,78 @@ pub fn calendar<M: 'static>() -> neue_kit::CalendarPicker<M> {
 /// Golden window size for the shell's menu bar, with room for its logo menu.
 pub const SHELL_BAR_SIZE: (u32, u32) = (420, 210);
 
-/// What the specimen bar shows: a fixed app name and time, so goldens don't change.
+/// What the specimen bar shows: a fixed app name and time, so goldens don't change; a
+/// battery on its way up and a connected Bluetooth mouse.
 pub fn shell_bar_content(app_name: &str) -> neue_shell::bar::BarContent {
+    use neue_shell::bar::{BatteryView, BluetoothView, DeviceView};
+    let device = |name: &str, connected| DeviceView {
+        name: name.to_owned(),
+        connected,
+    };
     neue_shell::bar::BarContent {
         app_name: app_name.to_owned(),
         time: "Thu 09:41".to_owned(),
         full_date: "Thursday, 5 November 2026".to_owned(),
+        battery: Some(BatteryView {
+            percent: 73,
+            charging: true,
+            on_ac: true,
+            time_left: Some(std::time::Duration::from_secs(45 * 60)),
+        }),
+        bluetooth: Some(BluetoothView {
+            powered: true,
+            devices: vec![device("Trackpad", true), device("Headphones", false)],
+        }),
     }
 }
 
+/// Golden window size for the menu extras' icons in each state.
+pub const SHELL_EXTRAS_SIZE: (u32, u32) = (300, 60);
+
+/// Two bars of menu extras: batteries (full, charging, half, low, empty) and Bluetooth
+/// icons (off, on, connected).
+pub fn shell_extras<M: 'static>() -> Stack<M> {
+    use neue_kit::desktop::{Backdrop, ExtraIcon, MenuBar, MenuTitle};
+    let battery = |level, charging| {
+        MenuTitle::icon(
+            ExtraIcon::Battery { level, charging },
+            "Battery",
+            neue_kit::Menu::new(),
+        )
+    };
+    let bluetooth = |powered, connected| {
+        MenuTitle::icon(
+            ExtraIcon::Bluetooth { powered, connected },
+            "Bluetooth",
+            neue_kit::Menu::new(),
+        )
+    };
+    Stack::column()
+        .align(Align::Fill)
+        .with(
+            MenuBar::new()
+                .backdrop(Backdrop::Opaque)
+                .with_extra(battery(1.0, false))
+                .with_extra(battery(0.7, true))
+                .with_extra(battery(0.5, false))
+                .with_extra(battery(0.15, false))
+                .with_extra(battery(0.0, false)),
+        )
+        .with(
+            MenuBar::new()
+                .backdrop(Backdrop::Opaque)
+                .with_extra(bluetooth(false, false))
+                .with_extra(bluetooth(true, false))
+                .with_extra(bluetooth(true, true)),
+        )
+}
+
 /// The shell's menu bar across the top, naming `app_name`; the logo menu sends
-/// `send(command)`.
+/// `send(command)` and the Bluetooth menu `bluetooth(command)`.
 pub fn shell_bar<M: 'static>(
     app_name: &str,
     send: impl Fn(neue_shell::bar::SystemCommand) -> M + Clone + 'static,
+    bluetooth: impl Fn(neue_shell::bar::BluetoothCommand) -> M + Clone + 'static,
 ) -> Stack<M> {
     let mut handles = neue_shell::bar::BarHandles::default();
     // The app's own menus, as the global menu shows them (task 3.7a).
@@ -978,6 +1036,7 @@ pub fn shell_bar<M: 'static>(
             &shell_bar_content(app_name),
             menus,
             send,
+            bluetooth,
             &mut handles,
             // Inside a gallery window, nothing is blurred behind the bar.
             neue_kit::desktop::Backdrop::Opaque,
