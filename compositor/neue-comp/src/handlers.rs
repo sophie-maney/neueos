@@ -577,10 +577,20 @@ impl XdgActivationHandler for State {
         &mut self.xdg_activation_state
     }
 
-    /// A token may take focus if the client that asked for it had keyboard focus at the
-    /// time, and any serial it passed is no older than that focus. Tokens are always
+    /// A token may take focus if the shell asked for it (it hands tokens to the apps it
+    /// launches and to the senders of the notifications clicked, from surfaces that never
+    /// have keyboard focus; ADR 0066 addendum), or if the client that asked had keyboard focus at
+    /// the time and any serial it passed is no older than that focus. Tokens are always
     /// accepted so that refused activations can still ask for attention.
     fn token_created(&mut self, _token: XdgActivationToken, data: XdgActivationTokenData) -> bool {
+        let from_shell = data.client_id.clone().is_some_and(|id| {
+            self.display_handle
+                .backend_handle()
+                .get_client_data(id)
+                .ok()
+                .and_then(|d| d.downcast_ref::<ClientState>().map(|c| c.shell))
+                .unwrap_or(false)
+        });
         let focused_client = self
             .keyboard_focus()
             .and_then(|s| s.client())
@@ -596,8 +606,8 @@ impl XdgActivationHandler for State {
                         .is_some_and(|enter| serial.is_no_older_than(&enter))
             }
         };
-        let granted = from_focused && serial_ok;
-        debug!(granted, app_id = ?data.app_id, "activation token created");
+        let granted = from_shell || (from_focused && serial_ok);
+        debug!(granted, from_shell, app_id = ?data.app_id, "activation token created");
         data.user_data
             .insert_if_missing_threadsafe(|| TokenGrant(granted));
         self.xdg_activation_state

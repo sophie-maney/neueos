@@ -12,7 +12,9 @@ use masonry_core::core::{
 };
 use masonry_core::peniko::{Blob, Color};
 use neue_platform::desktop::{OutputEvent, OutputInfo, ShellEvent, ShellRequest};
-use neue_platform::{Blur, Decorations, LayerSpec, MenuAddress, WindowId, WindowKind, WindowSpec};
+use neue_platform::{
+    Blur, Decorations, LayerSpec, MenuAddress, TokenRequest, WindowId, WindowKind, WindowSpec,
+};
 use neue_theme::Theme;
 use neue_theme::materials::Backdrop;
 use neue_theme::materials::hud::RADIUS as HUD_RADIUS;
@@ -329,6 +331,8 @@ pub(crate) trait Host {
     /// Whether the compositor blurs behind windows that ask ([`neue_platform::Ctx::has_blur`]).
     fn has_blur(&self) -> bool;
     fn shell(&mut self, request: ShellRequest);
+    /// Asks for an activation token ([`neue_platform::Ctx::activation_token`]).
+    fn activation_token(&mut self, window: WindowId) -> TokenRequest;
 }
 
 impl Host for neue_platform::Ctx<'_> {
@@ -371,6 +375,9 @@ impl Host for neue_platform::Ctx<'_> {
     fn shell(&mut self, request: ShellRequest) {
         neue_platform::Ctx::shell(self, request);
     }
+    fn activation_token(&mut self, window: WindowId) -> TokenRequest {
+        neue_platform::Ctx::activation_token(self, window)
+    }
 }
 
 /// A sheet open on a window.
@@ -405,7 +412,13 @@ pub(crate) struct Kit<M> {
     queue: VecDeque<M>,
     mailbox: Mailbox<M>,
     menu_bars: MenuBars<M>,
+    /// [`Cx::activation_token`] requests waiting for their token, and what makes the
+    /// message.
+    tokens: HashMap<TokenRequest, TokenMessage<M>>,
 }
+
+/// Turns an activation token (or its absence) into a message.
+type TokenMessage<M> = Box<dyn FnOnce(Option<String>) -> M>;
 
 impl<M: Send + 'static> Kit<M> {
     /// The next message for `update`: queued ones first, then mailed ones, then chosen
@@ -727,6 +740,21 @@ impl<M> Cx<'_, M> {
         self.host.shell(request);
     }
 
+    /// Asks the compositor for an xdg-activation token for `window` and the latest input,
+    /// then sends `message(token)`: pass the token on to the client that should take focus
+    /// (a launched app's `XDG_ACTIVATION_TOKEN`, the notification `ActivationToken`
+    /// signal). Ask from the `update` that handles the click. The compositor grants the
+    /// shell's tokens even for a window without keyboard focus (ADR 0066 addendum). `None` without
+    /// xdg-activation, after `window` closed, and on macOS; the message is sent either way.
+    pub fn activation_token(
+        &mut self,
+        window: WindowId,
+        message: impl FnOnce(Option<String>) -> M + 'static,
+    ) {
+        let request = self.host.activation_token(window);
+        self.kit.tokens.insert(request, Box::new(message));
+    }
+
     /// The app's theme.
     pub fn theme(&self) -> Theme {
         self.kit.settings.theme
@@ -966,6 +994,7 @@ impl<A: Application> Runner<A> {
             queue: VecDeque::new(),
             mailbox: Mailbox::new(wake.clone()),
             menu_bars: MenuBars::new(wake),
+            tokens: HashMap::new(),
         });
         #[cfg(all(test, target_os = "linux"))]
         if let Some(conn) = self.dbus.take() {
@@ -1145,6 +1174,21 @@ impl<A: Application> Runner<A> {
         self.drain(host);
     }
 
+    pub(crate) fn activation_token(
+        &mut self,
+        host: &mut dyn Host,
+        request: TokenRequest,
+        token: Option<String>,
+    ) {
+        let Some(kit) = &mut self.kit else { return };
+        let Some(message) = kit.tokens.remove(&request) else {
+            tracing::debug!(?request, "activation token nobody asked for");
+            return;
+        };
+        kit.queue.push_back(message(token));
+        self.drain(host);
+    }
+
     /// Feeds every queued and mailed message to `update`, including ones `update` sends.
     pub(crate) fn drain(&mut self, host: &mut dyn Host) {
         let Some(kit) = &mut self.kit else { return };
@@ -1184,6 +1228,15 @@ impl<A: Application> neue_platform::App for Runner<A> {
 
     fn on_shell(&mut self, cx: &mut neue_platform::Ctx<'_>, event: ShellEvent) {
         self.shell(cx, event);
+    }
+
+    fn on_activation_token(
+        &mut self,
+        cx: &mut neue_platform::Ctx<'_>,
+        request: TokenRequest,
+        token: Option<String>,
+    ) {
+        self.activation_token(cx, request, token);
     }
 }
 

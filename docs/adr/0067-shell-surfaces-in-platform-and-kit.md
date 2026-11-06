@@ -64,3 +64,17 @@ shell can't open a second connection for it: the toolkit's own driver has to bin
 - neue-kit's `Application` gains `output` and `shell` (default no-ops).
 - neue-comp's `State::layer_surfaces` lists layer surfaces by namespace and output, for
   tests; its harness gains `connect_shell_raw`.
+
+## Addendum (2026-11-06, task 3.15c): activation tokens
+- **`Ctx::activation_token(window) -> TokenRequest`** queues a request; after the
+  callback the Wayland driver asks `xdg_activation_v1` for a token with `window`'s own
+  surface (not the keyboard-focused one: a banner never has focus) and the latest input
+  serial. The answer comes to **`App::on_activation_token(cx, request, token)`**, exactly
+  once per request: `None` without xdg-activation or when the window is gone, and always
+  `None` on the winit driver. `TokenRequest` is the driver's counter, never reused.
+- **The kit** turns it into a message: `Cx::activation_token(window, |token| Message)`
+  keeps the closure until the answer and queues its message for `update`. Answers to
+  unknown requests are dropped.
+- The driver's own `TakeFocus` token (keyboard-focused surface) is unchanged; both kinds
+  share the sctk handler, told apart by what they were asked for.
+- The compositor grants the shell's tokens even without focus (ADR 0066 addendum).

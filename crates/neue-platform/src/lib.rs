@@ -33,7 +33,7 @@ pub mod winit;
 
 pub use app::{
     Anchor, App, Blur, ChromeHeight, Ctx, Decorations, LayerKeyboard, LayerSpec, Margin,
-    MenuAddress, ShellLayer, Waker, WindowId, WindowKind, WindowSpec,
+    MenuAddress, ShellLayer, TokenRequest, Waker, WindowId, WindowKind, WindowSpec,
 };
 pub use popover::{
     PopoverAnchor, PopoverLanded, PopoverRequest, PopupBlur, PopupBlurRequest, Side,

@@ -87,6 +87,8 @@ struct FakeHost {
     blur: bool,
     blurs: BTreeMap<WindowId, neue_platform::Blur>,
     shell_requests: Vec<neue_platform::desktop::ShellRequest>,
+    /// Activation tokens asked for, in order: the request and its window.
+    token_requests: Vec<(neue_platform::TokenRequest, WindowId)>,
 }
 
 impl Host for FakeHost {
@@ -166,6 +168,11 @@ impl Host for FakeHost {
         if self.shell {
             self.shell_requests.push(request);
         }
+    }
+    fn activation_token(&mut self, window: WindowId) -> neue_platform::TokenRequest {
+        let request = neue_platform::TokenRequest::from_raw(self.token_requests.len() as u64);
+        self.token_requests.push((request, window));
+        request
     }
 }
 
