@@ -780,7 +780,7 @@ their goldens and the gallery's "Shell" page run on macOS.
       next banner).
 
 ## C. Dock
-- [ ] **3.16 Dock A: shelf, launching and running apps** · Opus. After 3.1–3.3. The
+- [x] **3.16 Dock A: shelf, launching and running apps** · Opus. After 3.1–3.3. The
       glass shelf material in `neue-paint` (procedural, light and dark, reflections;
       goldens) and the dock layer surface at the bottom: pinned apps from config, launch
       on click, running indicators, click to activate (and cycle its windows), launch
@@ -788,7 +788,26 @@ their goldens and the gallery's "Shell" page run on macOS.
       rectangles sent to the compositor.
       *Accept:* goldens of the dock; in the VM launching foot from the dock, its indicator,
       activation and an attention bounce (`xdg-system-bell`), checked by screenshots.
-      *Owner:* the shelf's look on the PC, light and dark.
+      *Owner:* the shelf's look on the PC, light and dark: glass with the icons faintly
+      reflected, a light under running apps; foot launched from the dock bounces until its
+      window opens, focused; `sleep 2; tput bel` in foot then a click on the desktop makes
+      its icon bounce with rests until the icon is clicked.
+      *Done:* ADR 0092. `neue_paint::materials::dock_shelf::{dock_shelf_with, reflected,
+      running_indicator, placeholder_icon}` (tokens `dock_shelf::{REFLECTION_SCALE,
+      INDICATOR, …}` and `materials::dock`); `neue_kit::desktop::{Dock, DockTile,
+      DockBounce, dock_size, dock_icon_rect}`; `neue_shell::dock` (model) and
+      `dock_host` (surface, icons, launching); `[dock] pinned` in `shell.toml` (default
+      `["foot"]`); `LayerSpec::pass_through_top`; `ShellRequest::SetMinimizeRectangle`.
+      Raster icons now follow the scene transform (their texture was placed in scene
+      space). Goldens: `shell-dock` (normal, bouncing) × light/dark × 1 and 2; gallery
+      Shell page entry. Tests: 4 paint, 5 bounce and layout, 3 kit (clicks, keyboard and
+      AccessKit, bounce across updates), 4 model, 1 config. Checked in the VM: foot
+      launched from the dock (bounce, then focused), the indicator, an attention bounce
+      from `tput bel` with rests, a click activating it and clearing attention, clicks
+      cycling two windows, restoring a minimised window, an unpinned app with the
+      placeholder, the minimise rectangles reaching the compositor (debug log) and a
+      zoomed window stopping above the shelf. Not done: blur under the shelf, hover labels,
+      keyboard focus for the dock surface, the app's own window icon (ADR 0092).
 - [ ] **3.17 Dock B: magnification, edges and editing** · Sonnet. After 3.16.
       Magnification, the 2D dock on the left and right edges, drag to rearrange, drag off
       to remove, Keep in Dock, context menus with the app's windows and Quit, the Trash

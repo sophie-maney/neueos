@@ -11,6 +11,7 @@ mod color;
 mod context;
 mod date;
 mod desktop;
+mod dock;
 mod edit_menu;
 mod field;
 mod icon;
@@ -71,6 +72,8 @@ pub use context::ContextMenu;
 pub use date::{CalendarPicker, DatePicker};
 pub(crate) use date::{CalendarWidget, DateFieldWidget};
 pub(crate) use desktop::DesktopWidget;
+pub use dock::{DockBounce, DockTile, dock_icon_rect, dock_size};
+pub(crate) use dock::{DockTileWidget, DockWidget, TileClicked};
 pub use field::{ComboBox, TextField};
 pub(crate) use field::{FieldAction, FieldWidget};
 pub(crate) use icon::IconWidget;
@@ -502,6 +505,85 @@ impl Handle<Osd> {
     /// passed.
     pub fn hide<M>(&self, cx: &mut Cx<'_, M>) {
         cx.edit::<OsdWidget, _>(self, |mut osd| OsdWidget::edit_hide(&mut osd));
+    }
+}
+
+/// The dock: the glass shelf at the bottom of the screen with a tile per app on it, each
+/// the app's icon reflected in the glass, a light under it while the app runs, and a bounce
+/// while it launches or asks for attention ([`DockBounce`]; under reduced motion an icon
+/// asking for attention stands raised instead). Its size follows the tile count
+/// ([`dock_size`]), so a layer window with `fit_content` follows it; the room above the
+/// icons is for the bounce (`tokens::materials::dock::BOUNCE_ROOM`), for the pointer to
+/// pass through. Tab reaches each tile; Space or Return clicks it.
+pub struct Dock<M> {
+    inner: NewWidget<DockWidget>,
+    on_click: Option<DockClick<M>>,
+}
+
+/// The app's closure for a click on a dock tile.
+type DockClick<M> = Box<dyn FnMut(&str) -> Option<M>>;
+
+impl<M> std::fmt::Debug for Dock<M> {
+    fn fmt(&self, f: &mut std::fmt::Formatter<'_>) -> std::fmt::Result {
+        f.debug_struct("Dock")
+            .field("inner", &self.inner)
+            .field("on_click", &self.on_click.is_some())
+            .finish()
+    }
+}
+
+impl<M: 'static> Dock<M> {
+    /// Showing `tiles`, left to right.
+    pub fn new(tiles: Vec<DockTile>) -> Self {
+        Self {
+            inner: NewWidget::new(DockWidget::new(tiles)),
+            on_click: None,
+        }
+    }
+
+    /// Sends the message `make` returns for a click on the tile with this key (`None`:
+    /// nothing).
+    #[must_use]
+    pub fn on_click(mut self, make: impl FnMut(&str) -> Option<M> + 'static) -> Self {
+        self.on_click = Some(Box::new(make));
+        self
+    }
+
+    /// [`Backdrop::Translucent`] when the window asked for blur behind it
+    /// ([`crate::Cx::backdrop`]).
+    #[must_use]
+    pub fn backdrop(mut self, backdrop: Backdrop) -> Self {
+        self.inner.widget.backdrop = backdrop;
+        self
+    }
+
+    /// Points `handle` at this dock.
+    #[must_use]
+    pub fn bind(self, handle: &mut Handle<Self>) -> Self {
+        *handle = Handle::new(self.inner.id());
+        self
+    }
+}
+
+impl<M: 'static> From<Dock<M>> for Element<M> {
+    fn from(dock: Dock<M>) -> Self {
+        let id = dock.inner.id();
+        let mut element = Element::new(dock.inner.erased());
+        if let Some(mut make) = dock.on_click {
+            element.on_action(id, move |action| {
+                let TileClicked(key) = action.downcast_ref()?;
+                make(key)
+            });
+        }
+        element
+    }
+}
+
+impl<M> Handle<Dock<M>> {
+    /// Shows `tiles`, left to right. A tile keeps its bounce and keyboard focus across
+    /// updates by its key.
+    pub fn set_tiles<N>(&self, cx: &mut Cx<'_, N>, tiles: Vec<DockTile>) {
+        cx.edit::<DockWidget, _>(self, |mut dock| DockWidget::edit_tiles(&mut dock, tiles));
     }
 }
 

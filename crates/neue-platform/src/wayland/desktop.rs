@@ -21,9 +21,11 @@ use smithay_client_toolkit::reexports::calloop::RegistrationToken;
 use smithay_client_toolkit::reexports::calloop::timer::{TimeoutAction, Timer};
 use wayland_client::backend::{ObjectData, ObjectId};
 use wayland_client::protocol::wl_output;
+use wayland_client::protocol::wl_surface::WlSurface;
 use wayland_client::{Connection, Proxy, QueueHandle, WEnum};
 
 use super::{AppEvent, State};
+use crate::WindowId;
 use crate::desktop::{
     ChordModifiers, OutputEvent, OutputId, OutputInfo, ShellEvent, ShellRequest, SystemKey,
     SystemKeyState, Toplevel, ToplevelId, ToplevelMenu,
@@ -97,8 +99,14 @@ impl Desktop {
             .find_map(|t| (t.id == id).then_some(&t.proxy))
     }
 
-    /// Sends `request`; requests naming a window that has closed are dropped.
-    pub(super) fn send(&self, request: ShellRequest, qh: &QueueHandle<State>) {
+    /// Sends `request`; requests naming a window that has closed are dropped. `surface`
+    /// finds the `wl_surface` of one of the app's own windows.
+    pub(super) fn send<'w>(
+        &self,
+        request: ShellRequest,
+        qh: &QueueHandle<State>,
+        surface: impl Fn(WindowId) -> Option<&'w WlSurface>,
+    ) {
         let Some(manager) = &self.manager else {
             return;
         };
@@ -128,6 +136,18 @@ impl Desktop {
             ShellRequest::SendShortcut { modifiers, keysym } => {
                 manager.send_shortcut(protocol_modifiers(modifiers), keysym);
                 Some(())
+            }
+            ShellRequest::SetMinimizeRectangle {
+                toplevel,
+                surface: on,
+                rect,
+            } => {
+                let Some(wl) = surface(on) else {
+                    tracing::debug!(?on, "minimise rectangle on a window that isn't open");
+                    return;
+                };
+                let (x, y, w, h) = rect.unwrap_or_default();
+                window(toplevel).map(|proxy| proxy.set_minimize_rectangle(wl, x, y, w, h))
             }
         };
     }
@@ -268,7 +288,9 @@ impl State {
     /// Sends the shell requests the app queued.
     pub(super) fn send_shell_requests(&mut self) {
         for request in std::mem::take(&mut self.reg.shell_requests) {
-            self.desktop.send(request, &self.qh);
+            let windows = &self.reg.windows;
+            self.desktop
+                .send(request, &self.qh, |id| windows.get(&id).map(|w| &w.surf.wl));
         }
     }
 }

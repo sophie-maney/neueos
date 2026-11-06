@@ -269,7 +269,9 @@ fn draw_raster(scene: &mut Scene, rect: Rect, picture: &Picture) {
             picture: picture.clone(),
             size: (w as u16, h as u16),
         }),
-        transform: Affine::translate((x, y)),
+        // Texture brushes are placed in scene space; the icon's follows the scene's
+        // transform with its rect (a dock icon's mirror image, ADR 0092).
+        transform: scene.transform() * Affine::translate((x, y)),
     };
     scene.fill(&Rect::new(x, y, x + w, y + h), brush);
 }

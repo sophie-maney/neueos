@@ -1290,6 +1290,42 @@ pub fn shell_osd(glyph: neue_kit::desktop::OsdGlyph, level: f64) -> neue_kit::de
     neue_kit::desktop::Osd::new(glyph, level)
 }
 
+/// Golden window size for the dock: four tiles on the shelf, the bounce room above them and
+/// the window's padding.
+pub const SHELL_DOCK_SIZE: (u32, u32) = (264, 106);
+
+/// The dock's tiles: the sample vector icon (running), a raster icon (asking for
+/// attention), an app without an icon (the placeholder; running) and the sample icon again
+/// (not running).
+pub fn shell_dock_tiles() -> Vec<neue_kit::desktop::DockTile> {
+    use neue_kit::desktop::{DockBounce, DockTile};
+    let tile = |key: &str, icon, running, bounce| DockTile {
+        key: key.to_owned(),
+        name: key.to_owned(),
+        icon,
+        running,
+        bounce,
+    };
+    vec![
+        tile("Sample", Some(sample_icon()), true, DockBounce::None),
+        tile(
+            "Chat",
+            Some(tray_picture([0x3d, 0x9b, 0x5a], 96)),
+            false,
+            DockBounce::Attention,
+        ),
+        tile("No Icon", None, true, DockBounce::None),
+        tile("Idle", Some(sample_icon()), false, DockBounce::None),
+    ]
+}
+
+/// The dock with [`shell_dock_tiles`]; `make` turns a click on a tile into a message.
+pub fn shell_dock<M: 'static>(
+    make: impl FnMut(&str) -> Option<M> + 'static,
+) -> neue_kit::desktop::Dock<M> {
+    neue_kit::desktop::Dock::new(shell_dock_tiles()).on_click(make)
+}
+
 /// Golden window size for a notification: the panel, the room around it for its shadow and
 /// close button, and the window's padding.
 pub const SHELL_NOTIFICATION_SIZE: (u32, u32) = (384, 116);

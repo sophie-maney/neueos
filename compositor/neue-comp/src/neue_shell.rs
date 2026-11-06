@@ -253,6 +253,7 @@ impl Dispatch2<NeueShellToplevelV1, State> for ShellToplevel {
                     debug!(?resource, "minimise rectangle on another client's surface");
                     return;
                 }
+                debug!(?resource, x, y, width, height, "minimise rectangle");
                 let target = (width > 0 && height > 0).then(|| {
                     (
                         surface.downgrade(),

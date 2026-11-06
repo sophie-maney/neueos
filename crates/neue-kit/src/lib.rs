@@ -86,8 +86,9 @@ pub use widgets::{
 pub mod desktop {
     pub use crate::notification_stack::{self, NotificationStack};
     pub use crate::widgets::{
-        Desktop, ExtraIcon, MenuBar, MenuTitle, NetworkIcon, Notification, NotificationContent,
-        NotificationEvent, NotificationHost, Osd,
+        Desktop, Dock, DockBounce, DockTile, ExtraIcon, MenuBar, MenuTitle, NetworkIcon,
+        Notification, NotificationContent, NotificationEvent, NotificationHost, Osd,
+        dock_icon_rect, dock_size,
     };
     pub use neue_paint::materials::desktop::{Fit, Picture};
     pub use neue_paint::materials::osd::Glyph as OsdGlyph;
