@@ -1277,6 +1277,17 @@ pub mod dock_shelf {
     pub const INDICATOR_GLOW: f64 = 3.0;
     /// Corner radius of the placeholder tile, as a share of its side.
     pub const PLACEHOLDER_RADIUS: f64 = 0.22;
+    /// Corner radius of a minimised window's tile, as a share of its side.
+    pub const WINDOW_RADIUS: f64 = 0.12;
+    /// Height of the title bar on a minimised window's tile, as a share of its side.
+    pub const WINDOW_TITLE: f64 = 0.16;
+    /// The app's icon on a minimised window's tile, as a share of the tile's side; it
+    /// stands in the tile's bottom right corner.
+    pub const WINDOW_BADGE: f64 = 0.5;
+    /// Thickness of the line between the dock's sections.
+    pub const DIVIDER_WIDTH: f64 = 1.0;
+    /// How far the divider stops short of the icons' height, as a share of it, at each end.
+    pub const DIVIDER_INSET: f64 = 0.12;
 
     /// Colours of the shelf.
     #[derive(Clone, Copy, Debug, PartialEq)]
@@ -1298,6 +1309,10 @@ pub mod dock_shelf {
         /// The tile shown for an app without an icon: its gradient, top and bottom, and
         /// its rim.
         pub placeholder: [Color; 3],
+        /// A minimised window's tile: its body, top and bottom, its rim and its title bar.
+        pub window: [Color; 4],
+        /// The line between the dock's sections.
+        pub divider: Color,
     }
 
     impl Palette {
@@ -1324,6 +1339,13 @@ pub mod dock_shelf {
                         rgba(0.30, 0.72, 1.0, if contrast { 1.0 } else { 0.85 }),
                     ],
                     placeholder: [grey(0.94), grey(0.76), black(0.30 + edge_boost)],
+                    window: [
+                        grey(0.99),
+                        grey(0.86),
+                        black(0.34 + edge_boost),
+                        black(0.10 + edge_boost / 2.0),
+                    ],
+                    divider: black(0.30 + edge_boost),
                 },
                 Appearance::Dark => Self {
                     fill: on_backdrop(
@@ -1341,6 +1363,13 @@ pub mod dock_shelf {
                         rgba(0.36, 0.70, 1.0, if contrast { 1.0 } else { 0.75 }),
                     ],
                     placeholder: [grey(0.58), grey(0.40), black(0.55 + edge_boost)],
+                    window: [
+                        grey(0.36),
+                        grey(0.22),
+                        black(0.60 + edge_boost),
+                        black(0.22 + edge_boost / 2.0),
+                    ],
+                    divider: white(0.34 + edge_boost),
                 },
             }
         }

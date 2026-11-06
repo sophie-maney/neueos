@@ -8,12 +8,14 @@
 //! near edge. Translucent over a blurred backdrop, or an opaque tint without one. Colours
 //! and metrics come from [`neue_theme::materials::dock_shelf`].
 //!
-//! Also here: the running indicator that glows on the shelf under an app's icon, and the
-//! tile shown for an app without an icon.
+//! Also here: the running indicator that glows on the shelf under an app's icon, the
+//! tile shown for an app without an icon, the divider between the dock's sections and the
+//! tile of a minimised window.
 
 use neue_theme::materials::dock_shelf::{
-    EDGE, FLAT_RADIUS, INDICATOR, INDICATOR_GLOW, PERSPECTIVE_INSET, PLACEHOLDER_RADIUS, Palette,
-    REFLECTION_SCALE, SHEEN_HEIGHT,
+    DIVIDER_INSET, DIVIDER_WIDTH, EDGE, FLAT_RADIUS, INDICATOR, INDICATOR_GLOW, PERSPECTIVE_INSET,
+    PLACEHOLDER_RADIUS, Palette, REFLECTION_SCALE, SHEEN_HEIGHT, WINDOW_BADGE, WINDOW_RADIUS,
+    WINDOW_TITLE,
 };
 use vello_common::kurbo::{
     Affine, BezPath, Ellipse, Line, Point, Rect, RoundedRect, Shape, Stroke,
@@ -185,6 +187,77 @@ pub fn placeholder_icon(scene: &mut Scene, rect: Rect, variant: impl Into<Varian
     );
 }
 
+/// Draw the divider between the dock's sections in the slot `rect` (a tile's stretch of the
+/// dock): a thin line across the middle of it, standing as tall as the icons and
+/// upright whichever edge the dock is on (`vertical`: the line runs up and down).
+pub fn dock_divider(scene: &mut Scene, rect: Rect, vertical: bool, variant: impl Into<Variant>) {
+    let p = Palette::new(variant.into(), Backdrop::Opaque);
+    let centre = rect.center();
+    let line = if vertical {
+        let inset = rect.height() * DIVIDER_INSET;
+        Rect::new(
+            centre.x - DIVIDER_WIDTH / 2.0,
+            rect.y0 + inset,
+            centre.x + DIVIDER_WIDTH / 2.0,
+            rect.y1 - inset,
+        )
+    } else {
+        let inset = rect.width() * DIVIDER_INSET;
+        Rect::new(
+            rect.x0 + inset,
+            centre.y - DIVIDER_WIDTH / 2.0,
+            rect.x1 - inset,
+            centre.y + DIVIDER_WIDTH / 2.0,
+        )
+    };
+    scene.fill(&line, p.divider);
+}
+
+/// Draw the tile of a minimised window filling the square `rect`: a small window (a title
+/// bar over a body), and `badge`, if any, drawn by the caller in the rect it is given, in
+/// its bottom right corner. A thumbnail of the window replaces the body later.
+pub fn minimised_window(
+    scene: &mut Scene,
+    rect: Rect,
+    variant: impl Into<Variant>,
+    badge: impl FnOnce(&mut Scene, Rect),
+) {
+    let variant = variant.into();
+    let p = Palette::new(variant, Backdrop::Opaque);
+    let side = rect.width().min(rect.height());
+    let card = rect.inset(-side * 0.06);
+    let radius = side * WINDOW_RADIUS;
+    let shape = RoundedRect::from_rect(card, radius);
+    scene.fill(
+        &shape,
+        Gradient::new_linear(Point::new(0.0, card.y0), Point::new(0.0, card.y1))
+            .with_stops([(0.0, p.window[0]), (1.0, p.window[1])]),
+    );
+    // The title bar: the top of the card, cut to its corners.
+    scene.push_clip(&shape);
+    scene.fill(
+        &Rect::new(card.x0, card.y0, card.x1, card.y0 + side * WINDOW_TITLE),
+        p.window[3],
+    );
+    scene.pop_layer();
+    scene.stroke(
+        &RoundedRect::from_rect(card.inset(-0.5), radius - 0.5),
+        &Stroke::new(1.0),
+        p.window[2],
+    );
+    let size = card.width().min(card.height()) * WINDOW_BADGE;
+    let corner = side * 0.02;
+    badge(
+        scene,
+        Rect::new(
+            card.x1 - size - corner,
+            card.y1 - size - corner,
+            card.x1 - corner,
+            card.y1 - corner,
+        ),
+    );
+}
+
 #[cfg(test)]
 mod tests {
     use super::*;
@@ -261,5 +334,42 @@ mod tests {
             path.elements()[0],
             vello_common::kurbo::PathEl::MoveTo(Point::new(5.0, 0.0))
         );
+    }
+
+    #[test]
+    fn a_minimised_window_hands_its_badge_the_bottom_right_and_balances_layers() {
+        for variant in [Appearance::Light, Appearance::Dark] {
+            let mut scene = Scene::new(48.0, 48.0);
+            let mut badge = None;
+            minimised_window(
+                &mut scene,
+                Rect::new(0.0, 0.0, 48.0, 48.0),
+                variant,
+                |_, rect| badge = Some(rect),
+            );
+            assert_eq!(scene.open_layers(), 0);
+            let badge = badge.expect("the badge is drawn by the caller");
+            assert!(badge.x1 < 48.0 && badge.y1 < 48.0);
+            assert!(badge.x0 > 12.0 && badge.y0 > 12.0, "{badge:?}");
+            assert!((badge.width() - badge.height()).abs() < 1e-9);
+        }
+    }
+
+    #[test]
+    fn a_divider_is_centred_in_its_slot_and_balanced() {
+        let mut scene = Scene::new(52.0, 48.0);
+        dock_divider(
+            &mut scene,
+            Rect::new(0.0, 0.0, 52.0, 48.0),
+            true,
+            Appearance::Light,
+        );
+        dock_divider(
+            &mut scene,
+            Rect::new(0.0, 0.0, 52.0, 48.0),
+            false,
+            Appearance::Dark,
+        );
+        assert_eq!(scene.open_layers(), 0);
     }
 }

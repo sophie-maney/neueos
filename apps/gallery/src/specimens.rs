@@ -1305,6 +1305,7 @@ pub fn shell_dock_tiles() -> Vec<neue_kit::desktop::DockTile> {
         icon,
         running,
         bounce,
+        ..DockTile::default()
     };
     vec![
         tile("Sample", Some(sample_icon()), true, DockBounce::None),
@@ -1317,6 +1318,73 @@ pub fn shell_dock_tiles() -> Vec<neue_kit::desktop::DockTile> {
         tile("No Icon", None, true, DockBounce::None),
         tile("Idle", Some(sample_icon()), false, DockBounce::None),
     ]
+}
+
+/// Golden window size for the dock with its other section ([`shell_dock_sections`]):
+/// six tiles, the room above them, and the window's padding.
+pub const SHELL_DOCK_SECTIONS_SIZE: (u32, u32) = (368, 130);
+
+/// Golden window size for [`shell_dock_sections`] on the left or right edge.
+pub const SHELL_DOCK_SECTIONS_SIDE_SIZE: (u32, u32) = (120, 368);
+
+/// The dock's tiles with its other section (task 3.17c): an app running, one asking for
+/// attention, the divider, a minimised window of the first app (its icon in the corner),
+/// a minimised window of an app without an icon, and the Trash, `full` or empty.
+pub fn shell_dock_sections_tiles(full: bool) -> Vec<neue_kit::desktop::DockTile> {
+    use neue_kit::desktop::{DockBounce, DockTile, DockTileKind};
+    let mut tiles = shell_dock_tiles();
+    tiles.truncate(2);
+    tiles.extend([
+        DockTile {
+            key: "divider".to_owned(),
+            kind: DockTileKind::Divider,
+            ..DockTile::default()
+        },
+        DockTile {
+            key: "window".to_owned(),
+            name: "Sample notes".to_owned(),
+            icon: Some(sample_icon()),
+            kind: DockTileKind::Minimised,
+            ..DockTile::default()
+        },
+        DockTile {
+            key: "window-2".to_owned(),
+            name: "Untitled".to_owned(),
+            kind: DockTileKind::Minimised,
+            ..DockTile::default()
+        },
+        DockTile {
+            key: "trash".to_owned(),
+            name: "Trash".to_owned(),
+            // Stand-ins for the theme's empty and full cans.
+            icon: Some(tray_picture(
+                if full {
+                    [0x5a, 0x60, 0x6a]
+                } else {
+                    [0x9a, 0xa0, 0xa8]
+                },
+                96,
+            )),
+            bounce: DockBounce::None,
+            fixed: true,
+            ..DockTile::default()
+        },
+    ]);
+    tiles
+}
+
+/// The dock with [`shell_dock_sections_tiles`] on `edge`.
+pub fn shell_dock_sections<M: 'static>(
+    full: bool,
+    edge: neue_kit::desktop::DockEdge,
+    make: impl FnMut(&str) -> Option<M> + 'static,
+) -> neue_kit::desktop::Dock<M> {
+    neue_kit::desktop::Dock::new(shell_dock_sections_tiles(full))
+        .layout(neue_kit::desktop::DockLayout {
+            edge,
+            ..neue_kit::desktop::DockLayout::default()
+        })
+        .on_click(make)
 }
 
 /// The dock with [`shell_dock_tiles`]; `make` turns a click on a tile into a message.

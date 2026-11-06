@@ -7,6 +7,10 @@
 //! tile, and one without an app id is a tile of its own. The process side (the surface,
 //! icons, launching) is `src/dock_host.rs`.
 //!
+//! After the apps come the dock's other section (task 3.17c, ADR 0095): a divider, a tile
+//! for each minimised window (a click restores it) and the Trash, empty or full. These
+//! tiles stay where they are; only the apps can be dragged.
+//!
 //! Editing (task 3.17b, ADR 0094): an app with a desktop entry can be kept in the dock
 //! ([`Dock::pin`]), let go ([`Dock::unpin`]), or dragged to another place, which keeps it
 //! there ([`Dock::move_tile`]). The kept apps stay in front of the others, so a tile
@@ -16,15 +20,35 @@
 use std::collections::{BTreeMap, HashMap};
 use std::time::Instant;
 
-use neue_desktop::{AppDatabase, DesktopEntry};
+use neue_desktop::{AppDatabase, DesktopEntry, TrashState};
 use neue_kit::desktop::{Toplevel, ToplevelId};
 use neue_kit::tokens::materials::dock::LAUNCH_TIMEOUT;
 
 use crate::windows::{Windows, app_name};
 
+/// What a tile is.
+#[derive(Clone, Copy, Debug, Default, PartialEq, Eq)]
+pub enum TileKind {
+    /// An app, kept in the dock or running.
+    #[default]
+    App,
+    /// A minimised window: its tile restores it.
+    Minimised(ToplevelId),
+    /// The Trash, empty or full.
+    Trash(TrashState),
+    /// The line between the apps and the rest.
+    Divider,
+}
+
+/// The key of the divider's tile.
+pub const DIVIDER_KEY: &str = "divider";
+/// The key of the Trash's tile.
+pub const TRASH_KEY: &str = "trash";
+
 /// One tile of the dock.
 #[derive(Clone, Debug, Default, PartialEq, Eq)]
 pub struct Tile {
+    pub kind: TileKind,
     /// Its key: the desktop file ID without `.desktop`, else the windows' app id, else the
     /// window's identifier.
     pub key: String,
@@ -55,7 +79,9 @@ pub enum Click {
     Launch(String),
     /// Activate this window (restoring it if minimised).
     Activate(ToplevelId),
-    /// Nothing to do (the tile is gone).
+    /// Open the Trash.
+    OpenTrash,
+    /// Nothing to do (the tile is gone, or it is the divider).
     Nothing,
 }
 
@@ -67,6 +93,8 @@ pub struct Dock {
     launching: HashMap<String, Instant>,
     /// The window of each app that was active last, by key.
     last_active: HashMap<String, ToplevelId>,
+    /// The Trash's state; `None`: there is no Trash to show.
+    trash: Option<TrashState>,
 }
 
 impl Dock {
@@ -78,8 +106,19 @@ impl Dock {
         }
     }
 
+    /// Shows the Trash as `state` (`None`: no Trash tile). Returns whether that changed.
+    pub fn set_trash(&mut self, state: Option<TrashState>) -> bool {
+        std::mem::replace(&mut self.trash, state) != state
+    }
+
+    /// The Trash's state, if it is shown.
+    pub fn trash(&self) -> Option<TrashState> {
+        self.trash
+    }
+
     /// The tiles, left to right: the pinned apps that are installed, then the other apps
-    /// with windows in the order their first window opened.
+    /// with windows in the order their first window opened; then, set apart by a divider,
+    /// a tile for each minimised window (oldest first) and the Trash.
     pub fn tiles(&self, windows: &Windows, apps: &AppDatabase) -> Vec<Tile> {
         let mut tiles: Vec<Tile> = Vec::new();
         for wanted in &self.pinned {
@@ -119,6 +158,34 @@ impl Dock {
         for tile in &mut tiles {
             tile.launching = !tile.running() && self.launching.contains_key(&tile.key);
         }
+        let minimised: Vec<Tile> = windows
+            .iter()
+            .filter(|(_, window)| window.minimized)
+            .map(|(id, window)| minimised_tile(id, window, apps))
+            .collect();
+        if !minimised.is_empty() || self.trash.is_some() {
+            tiles.push(Tile {
+                kind: TileKind::Divider,
+                key: DIVIDER_KEY.to_owned(),
+                ..Tile::default()
+            });
+        }
+        tiles.extend(minimised);
+        if let Some(state) = self.trash {
+            tiles.push(Tile {
+                kind: TileKind::Trash(state),
+                key: TRASH_KEY.to_owned(),
+                name: "Trash".to_owned(),
+                icon: Some(
+                    match state {
+                        TrashState::Empty => "user-trash",
+                        TrashState::Full => "user-trash-full",
+                    }
+                    .to_owned(),
+                ),
+                ..Tile::default()
+            });
+        }
         tiles
     }
 
@@ -129,6 +196,12 @@ impl Dock {
         let Some(tile) = self.tiles(windows, apps).into_iter().find(|t| t.key == key) else {
             return Click::Nothing;
         };
+        match tile.kind {
+            TileKind::App => {}
+            TileKind::Minimised(window) => return Click::Activate(window),
+            TileKind::Trash(_) => return Click::OpenTrash,
+            TileKind::Divider => return Click::Nothing,
+        }
         if !tile.running() {
             return match tile.entry {
                 Some(entry) => Click::Launch(entry),
@@ -287,13 +360,42 @@ fn pinned_key(wanted: &str, apps: &AppDatabase) -> Option<String> {
         .map(entry_key)
 }
 
-/// The tile index each window minimises to: `(window, tile)`.
+/// The tile index each window minimises to: `(window, tile)`. A window goes to its app's
+/// tile, and once minimised to its own tile, where it is restored from.
 pub fn minimize_targets(tiles: &[Tile]) -> BTreeMap<ToplevelId, usize> {
-    tiles
+    let mut targets: BTreeMap<ToplevelId, usize> = tiles
         .iter()
         .enumerate()
         .flat_map(|(i, tile)| tile.windows.iter().map(move |&w| (w, i)))
-        .collect()
+        .collect();
+    for (i, tile) in tiles.iter().enumerate() {
+        if let TileKind::Minimised(window) = tile.kind {
+            targets.insert(window, i);
+        }
+    }
+    targets
+}
+
+/// The tile of the minimised `window`: named for its title, with its app's icon.
+fn minimised_tile(id: ToplevelId, window: &Toplevel, apps: &AppDatabase) -> Tile {
+    let (_, entry) = window_key(id, window, apps);
+    let name = if window.title.trim().is_empty() {
+        app_name(window)
+    } else {
+        window.title.clone()
+    };
+    let key = if window.identifier.is_empty() {
+        format!("minimised-{id:?}")
+    } else {
+        format!("minimised-{}", window.identifier)
+    };
+    Tile {
+        kind: TileKind::Minimised(id),
+        key,
+        name,
+        icon: entry.and_then(|e| e.icon.clone()),
+        ..Tile::default()
+    }
 }
 
 fn entry_key(entry: &DesktopEntry) -> String {
@@ -582,5 +684,109 @@ mod tests {
             },
         );
         assert!(dock.tiles(&windows, &apps)[0].attention);
+    }
+
+    fn minimised(app_id: &str, n: u64, title: &str) -> Toplevel {
+        Toplevel {
+            minimized: true,
+            title: title.to_owned(),
+            ..window(app_id, n)
+        }
+    }
+
+    #[test]
+    fn minimised_windows_and_the_trash_follow_a_divider() {
+        let (_dir, apps) = apps();
+        let mut dock = Dock::new(vec!["foot".into()]);
+        let mut windows = Windows::default();
+        // Nothing but the apps.
+        let tiles = dock.tiles(&windows, &apps);
+        assert_eq!(tiles.len(), 1);
+        let a = open(&mut windows, 1, window("foot", 1));
+        let b = open(&mut windows, 2, minimised("foot", 2, "notes"));
+        let c = open(&mut windows, 3, minimised("org.example.Chat", 3, " "));
+        assert!(dock.set_trash(Some(TrashState::Full)));
+        assert!(!dock.set_trash(Some(TrashState::Full)));
+        let tiles = dock.tiles(&windows, &apps);
+        let keys: Vec<_> = tiles.iter().map(|t| t.key.as_str()).collect();
+        assert_eq!(
+            keys,
+            [
+                "org.codeberg.dnkl.foot",
+                // The chat's window has no entry: its own app tile, before the divider.
+                "org.example.Chat",
+                DIVIDER_KEY,
+                "minimised-window-2",
+                "minimised-window-3",
+                TRASH_KEY
+            ]
+        );
+        assert_eq!(tiles[2].kind, TileKind::Divider);
+        assert_eq!(tiles[3].kind, TileKind::Minimised(b));
+        assert_eq!(tiles[3].name, "notes");
+        assert_eq!(tiles[3].icon.as_deref(), Some("Foot-icon"));
+        // A blank title falls back to the app's name.
+        assert_eq!(tiles[4].name, "Chat");
+        assert_eq!(tiles[5].kind, TileKind::Trash(TrashState::Full));
+        assert_eq!(tiles[5].icon.as_deref(), Some("user-trash-full"));
+        // The app is still running with its minimised window.
+        assert_eq!(tiles[0].windows, [a, b]);
+        // Minimised windows go to their own tiles, the others to their apps'.
+        assert_eq!(
+            minimize_targets(&tiles),
+            BTreeMap::from([(a, 0), (b, 3), (c, 4)])
+        );
+    }
+
+    #[test]
+    fn the_trash_alone_is_set_apart_and_goes_with_no_trash() {
+        let (_dir, apps) = apps();
+        let mut dock = Dock::new(vec!["foot".into()]);
+        let windows = Windows::default();
+        dock.set_trash(Some(TrashState::Empty));
+        let kinds: Vec<_> = dock.tiles(&windows, &apps).iter().map(|t| t.kind).collect();
+        assert_eq!(
+            kinds,
+            [
+                TileKind::App,
+                TileKind::Divider,
+                TileKind::Trash(TrashState::Empty)
+            ]
+        );
+        assert!(dock.set_trash(None));
+        assert_eq!(dock.tiles(&windows, &apps).len(), 1);
+        assert_eq!(dock.trash(), None);
+    }
+
+    #[test]
+    fn clicks_restore_minimised_windows_and_open_the_trash() {
+        let (_dir, apps) = apps();
+        let mut dock = Dock::new(Vec::new());
+        let mut windows = Windows::default();
+        let b = open(&mut windows, 2, minimised("foot", 2, "notes"));
+        dock.set_trash(Some(TrashState::Empty));
+        assert_eq!(
+            dock.click("minimised-window-2", &windows, &apps),
+            Click::Activate(b)
+        );
+        assert_eq!(dock.click(TRASH_KEY, &windows, &apps), Click::OpenTrash);
+        assert_eq!(dock.click(DIVIDER_KEY, &windows, &apps), Click::Nothing);
+    }
+
+    #[test]
+    fn editing_the_apps_ignores_the_other_section() {
+        let (_dir, apps) = apps();
+        let mut dock = Dock::new(vec!["foot".into(), "org.gnome.Nautilus".into()]);
+        let mut windows = Windows::default();
+        open(&mut windows, 1, minimised("foot", 1, "notes"));
+        dock.set_trash(Some(TrashState::Full));
+        // Dropped on the Trash, the app is kept after the last kept app.
+        assert!(dock.move_tile("org.codeberg.dnkl.foot", 5, &windows, &apps));
+        assert_eq!(dock.pinned(), ["org.gnome.Nautilus", "foot"]);
+        // The Trash, the divider and minimised windows can't be kept.
+        assert!(!dock.pin(TRASH_KEY, &windows, &apps));
+        assert!(!dock.move_tile(TRASH_KEY, 0, &windows, &apps));
+        assert!(!dock.move_tile("minimised-window-1", 0, &windows, &apps));
+        assert_eq!(dock.pinned(), ["org.gnome.Nautilus", "foot"]);
     }
 }

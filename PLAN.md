@@ -457,7 +457,8 @@ Notifications are split into the D-Bus server (3.15a), the banner and alert widg
 split into a content-sized layer surface, the kit's notification host, the shell wiring
 and the bar extra: 3.15d1–d4).
 The dock's second half is split into magnification and the left/right edges (3.17a, Opus),
-editing and context menus (3.17b) and the Trash and minimised tiles (3.17c).
+editing and context menus (3.17b), the Trash and minimised tiles with app icons (3.17c)
+and thumbnails in the minimised tiles (3.17d, Opus: a toplevel-capture client in the shell).
 - **Exit:** log in from the greeter on your PC and use neueOS as the daily desktop.
 
 ### Phase 4: Overview and Spaces (L)

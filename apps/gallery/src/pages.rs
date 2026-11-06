@@ -339,6 +339,20 @@ fn shell(handles: &mut PageHandles) -> Element<Message> {
                 })),
         ))
         .with(section(
+            "Dock with its other section: after the divider, a minimised window (the app's icon in its corner; click to restore) and the Trash (empty above, full on the left edge) · secondary-click the Trash for its menu · only the apps can be dragged",
+            Stack::row()
+                .with(specimens::shell_dock_sections(
+                    false,
+                    DockEdge::Bottom,
+                    |key| Some(Message::Pressed(dock_key(key))),
+                ))
+                .with(specimens::shell_dock_sections(
+                    true,
+                    DockEdge::Left,
+                    |key| Some(Message::Pressed(dock_key(key))),
+                )),
+        ))
+        .with(section(
             "Notifications: a banner (point at it for its close button), a banner with an image, and an alert with two actions · Tab reaches each button, Space or Return activates, Escape closes · the status line shows what you did",
             Stack::column()
                 .with(specimens::shell_banner(notification_event))

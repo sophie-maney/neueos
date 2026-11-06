@@ -16,21 +16,26 @@
 //!   Dock, and Open or Quit (which asks each window to close). Each change of the kept
 //!   apps is saved as `[dock] pinned` through `neue-settingsd`, on a thread.
 //!
+//! - The Trash and minimised windows (task 3.17c, ADR 0095): the Trash tile shows whether
+//!   the trash has anything in it (polled every `TRASH_POLL` on a thread, since the shell
+//!   has no file watcher), opens it with `xdg-open` and empties it from its menu; a
+//!   minimised window's tile restores it, from its click or its menu.
+//!
 //! The dock lives on the first output; when that output goes away it moves to another.
 
 use std::collections::{BTreeMap, HashMap, HashSet};
-use std::time::Instant;
+use std::time::{Duration, Instant};
 
 use neue_config::{DockConfig, Layers, ShellConfig};
 use neue_dbus::settings::Settings as SettingsClient;
-use neue_desktop::{AppDatabase, IconLoader, IconLookup, LaunchOptions};
+use neue_desktop::{AppDatabase, IconLoader, IconLookup, LaunchOptions, Trash, TrashState};
 use neue_kit::desktop::{
-    Anchor, Dock as DockView, DockBounce, DockTile, LayerKeyboard, LayerSpec, OutputId, ShellLayer,
-    ShellRequest, ToplevelId,
+    Anchor, Dock as DockView, DockBounce, DockTile, DockTileKind, LayerKeyboard, LayerSpec,
+    OutputId, ShellLayer, ShellRequest, ToplevelId,
 };
 use neue_kit::desktop::{DockEdge, DockLayout, Margin, Rect};
 use neue_kit::{Cx, Handle, Icon, Menu, MenuItem, WindowId};
-use neue_shell::dock::{Click, Dock, Tile, minimize_targets};
+use neue_shell::dock::{Click, Dock, Tile, TileKind, minimize_targets};
 use neue_shell::windows::{Windows, app_name};
 
 use crate::tray::{FALLBACK_THEME, ICON_THEME};
@@ -39,6 +44,8 @@ use crate::tray::{FALLBACK_THEME, ICON_THEME};
 const NAMESPACE: &str = "neue-dock";
 /// Icons are loaded for this scale, so they stay sharp on a doubled output.
 const ICON_SCALE: f64 = 2.0;
+/// How often the trash is looked at.
+const TRASH_POLL: Duration = Duration::from_secs(2);
 /// The `neue-settingsd` key of the apps kept in the dock.
 const PINNED_KEY: &str = "shell.dock.pinned";
 
@@ -75,6 +82,18 @@ pub enum Event {
     Quit(String),
     /// Saving `[dock] pinned` finished.
     Saved(Result<(), String>),
+    /// The poll looked at the trash (`None`: it can't be read); it looks again later.
+    TrashState(Option<TrashState>),
+    /// The trash was looked at once, after it was emptied.
+    TrashChecked(Option<TrashState>),
+    /// Open the Trash was chosen (or its tile clicked).
+    OpenTrash,
+    /// Empty Trash was chosen.
+    EmptyTrash,
+    /// Emptying or opening the Trash finished.
+    TrashDone(Result<(), String>),
+    /// Close was chosen from a minimised window's menu.
+    Close(ToplevelId),
 }
 
 struct Surface<M> {
@@ -104,6 +123,10 @@ pub struct DockHost<M> {
     sent: BTreeMap<ToplevelId, (i32, i32, i32, i32)>,
     /// The launch deadline a timer is running for.
     timer: Option<Instant>,
+    /// The user's trash; `None` without a home directory.
+    trash: Option<Trash>,
+    /// The trash poll is running.
+    polling: bool,
 }
 
 impl<M: Send + 'static> DockHost<M> {
@@ -121,6 +144,8 @@ impl<M: Send + 'static> DockHost<M> {
             shown: Vec::new(),
             sent: BTreeMap::new(),
             timer: None,
+            trash: Trash::home(),
+            polling: false,
         }
     }
 
@@ -226,6 +251,10 @@ impl<M: Send + 'static> DockHost<M> {
                     surface.view.set_tiles(cx, self.shown.clone());
                 }
                 self.sync(cx, windows, apps);
+                // The dock may open again on another output: one poll serves them all.
+                if !std::mem::replace(&mut self.polling, true) {
+                    self.look_at_trash(cx, Duration::ZERO, Event::TrashState);
+                }
             }
             Event::Clicked(key) => self.click(cx, &key, windows, apps),
             Event::Placed(icons) => {
@@ -294,6 +323,36 @@ impl<M: Send + 'static> DockHost<M> {
                     }
                 }
             }
+            Event::TrashState(state) => {
+                if self.model.set_trash(state) {
+                    self.sync(cx, windows, apps);
+                }
+                self.look_at_trash(cx, TRASH_POLL, Event::TrashState);
+            }
+            Event::TrashChecked(state) => {
+                if self.model.set_trash(state) {
+                    self.sync(cx, windows, apps);
+                }
+            }
+            Event::OpenTrash => self.open_trash(cx),
+            Event::EmptyTrash => {
+                let (wrap, trash) = (self.wrap, self.trash.clone());
+                cx.spawn(move |_| {
+                    wrap(Event::TrashDone(
+                        trash
+                            .ok_or_else(|| "there is no trash".to_owned())
+                            .and_then(|t| t.empty().map(drop).map_err(|e| e.to_string())),
+                    ))
+                });
+            }
+            Event::TrashDone(result) => {
+                if let Err(error) = result {
+                    tracing::warn!(%error, "the Trash didn't open or empty");
+                }
+                // The can changes as soon as it is emptied, not at the next poll.
+                self.look_at_trash(cx, Duration::ZERO, Event::TrashChecked);
+            }
+            Event::Close(window) => cx.shell(ShellRequest::Close(window)),
             Event::Saved(Ok(())) => tracing::debug!("saved the apps kept in the dock"),
             Event::Saved(Err(error)) => tracing::warn!(
                 %error,
@@ -339,6 +398,32 @@ impl<M: Send + 'static> DockHost<M> {
         };
         let wrap = self.wrap;
         let mut menu = Menu::new();
+        match tile.kind {
+            TileKind::App => {}
+            TileKind::Divider => return,
+            TileKind::Minimised(id) => {
+                menu = menu
+                    .with(
+                        MenuItem::new("Restore").on_choose_with(move || wrap(Event::Activate(id))),
+                    )
+                    .separator()
+                    .with(MenuItem::new("Close").on_choose_with(move || wrap(Event::Close(id))));
+                surface.view.show_menu(cx, key, menu);
+                return;
+            }
+            TileKind::Trash(state) => {
+                menu = menu
+                    .with(MenuItem::new("Open").on_choose_with(move || wrap(Event::OpenTrash)))
+                    .separator()
+                    .with(
+                        MenuItem::new("Empty Trash")
+                            .disabled(state == TrashState::Empty)
+                            .on_choose_with(move || wrap(Event::EmptyTrash)),
+                    );
+                surface.view.show_menu(cx, key, menu);
+                return;
+            }
+        }
         let active = windows.active_id();
         for &id in &tile.windows {
             let Some((_, window)) = windows.iter().find(|(w, _)| *w == id) else {
@@ -384,8 +469,48 @@ impl<M: Send + 'static> DockHost<M> {
         surface.view.show_menu(cx, key, menu);
     }
 
+    /// Opens the Trash in the default file manager, on a thread.
+    fn open_trash(&self, cx: &mut Cx<'_, M>) {
+        let wrap = self.wrap;
+        cx.spawn(move |_| {
+            wrap(Event::TrashDone(
+                std::process::Command::new("xdg-open")
+                    .arg("trash:///")
+                    .status()
+                    .map_err(|e| format!("can't run xdg-open: {e}"))
+                    .and_then(|status| {
+                        status
+                            .success()
+                            .then_some(())
+                            .ok_or_else(|| format!("xdg-open: {status}"))
+                    }),
+            ))
+        });
+    }
+
+    /// Looks at the trash after `wait`, on a thread, and tells the dock with `make`.
+    fn look_at_trash(
+        &self,
+        cx: &mut Cx<'_, M>,
+        wait: Duration,
+        make: fn(Option<TrashState>) -> Event,
+    ) {
+        let (wrap, Some(trash)) = (self.wrap, self.trash.clone()) else {
+            return;
+        };
+        cx.spawn(move |_| {
+            std::thread::sleep(wait);
+            let state = trash
+                .state()
+                .inspect_err(|error| tracing::debug!(%error, "can't read the trash"))
+                .ok();
+            wrap(make(state))
+        });
+    }
+
     fn click(&mut self, cx: &mut Cx<'_, M>, key: &str, windows: &Windows, apps: &AppDatabase) {
         match self.model.click(key, windows, apps) {
+            Click::OpenTrash => self.open_trash(cx),
             Click::Launch(entry) => {
                 // Bouncing at once, while the token is on its way.
                 self.model.launched(key, Instant::now());
@@ -447,6 +572,12 @@ impl<M: Send + 'static> DockHost<M> {
                 .and_then(|name| self.icons.get(name).cloned().flatten()),
             running: tile.running(),
             bounce,
+            kind: match tile.kind {
+                TileKind::App | TileKind::Trash(_) => DockTileKind::App,
+                TileKind::Minimised(_) => DockTileKind::Minimised,
+                TileKind::Divider => DockTileKind::Divider,
+            },
+            fixed: tile.kind != TileKind::App,
         }
     }
 
