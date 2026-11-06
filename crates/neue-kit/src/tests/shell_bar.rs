@@ -35,6 +35,8 @@ enum Msg {
     SetNetwork(ExtraIcon, &'static str),
     /// Script: the Bluetooth extra hides or shows.
     HideBluetooth(bool),
+    /// Script: the Bluetooth extra's menu becomes one item, `Replaced`.
+    ReplaceBluetoothMenu,
     /// Script: the tray's icons become these (name, tooltip, picture side in pixels).
     SetTray(Vec<TrayItem>),
     /// Script: the tray's icons become two that act on a press: `Mail` with a menu and
@@ -158,6 +160,8 @@ impl Application for Bar {
                     "Bluetooth, on",
                     Menu::new().with(MenuItem::new("Switch").on_choose(Msg::Item("Switch"))),
                 )
+                .on_open(Msg::Opened("Bluetooth"))
+                .on_close(Msg::Closed("Bluetooth"))
                 .hidden(true)
                 .bind(&mut self.bluetooth),
             );
@@ -183,6 +187,10 @@ impl Application for Bar {
             Msg::SetBattery(icon, name) => self.battery.set_icon(cx, icon, name),
             Msg::SetNetwork(icon, name) => self.network.set_icon(cx, icon, name),
             Msg::HideBluetooth(hidden) => self.bluetooth.set_hidden(cx, hidden),
+            Msg::ReplaceBluetoothMenu => self.bluetooth.set_menu(
+                cx,
+                Menu::new().with(MenuItem::new("Replaced").on_choose(Msg::Item("Replaced"))),
+            ),
             Msg::SetTray(items) => {
                 self.tray = vec![Handle::default(); items.len()];
                 let titles = items
@@ -631,6 +639,29 @@ fn a_hidden_extra_takes_no_room_and_opens_nothing_until_shown() {
     let _ = host.only().render();
     assert_eq!(menus_open(&mut host), 0);
     assert!(bounds_of(&mut host, bluetooth).width() < 0.5);
+}
+
+#[test]
+fn replacing_a_menu_keeps_the_open_and_close_messages() {
+    let (mut runner, mut host) = setup();
+    let bluetooth = id(&runner.app().bluetooth);
+    runner.send(&mut host, Msg::HideBluetooth(false));
+    let _ = host.only().render();
+    for _ in 0..2 {
+        runner.send(&mut host, Msg::ReplaceBluetoothMenu);
+    }
+    click_widget(&mut runner, &mut host, bluetooth);
+    assert_eq!(runner.app().log, [Msg::Opened("Bluetooth")]);
+    click_item(&mut runner, &mut host, "Replaced");
+    assert_eq!(
+        runner.app().log,
+        [
+            Msg::Opened("Bluetooth"),
+            Msg::Item("Replaced"),
+            Msg::Closed("Bluetooth")
+        ],
+        "the new item's message, and the close one the title was built with"
+    );
 }
 
 #[test]

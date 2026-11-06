@@ -39,6 +39,10 @@ use neue_theme::materials::menu_bar::{
 use super::menu::{self, Anchor};
 use super::text::{TextLine, TextStyle};
 use crate::Cx;
+use std::any::Any;
+use std::cell::RefCell;
+use std::rc::Rc;
+
 use crate::element::{Element, Handle, Handler, Wiring};
 use crate::menu::{ItemHandler, Menu, MenuSpec};
 use crate::theme::ThemeProp;
@@ -601,6 +605,9 @@ pub(crate) struct MenuTitleWidget {
     pressable: bool,
     return_focus: Option<WidgetId>,
     replayer: ImagingReplayer,
+    /// The title's items and callbacks (a `TitleState<M>`), shared with its action handler
+    /// so that [`Handle::set_menu`] can swap the items and keep the callbacks.
+    state: Option<Rc<dyn Any>>,
 }
 
 impl std::fmt::Debug for MenuTitleWidget {
@@ -624,6 +631,7 @@ impl MenuTitleWidget {
             pressable: false,
             return_focus: None,
             replayer: ImagingReplayer::new(),
+            state: None,
         }
     }
 
@@ -1211,8 +1219,7 @@ impl<M: 'static> MenuTitle<M> {
         }
     }
 
-    /// Sends `message` whenever its menu opens. [`Handle::set_menu`] keeps only the items:
-    /// to change this, build a new title.
+    /// Sends `message` whenever its menu opens ([`Handle::set_menu`] keeps it).
     #[must_use]
     pub fn on_open(mut self, message: M) -> Self
     where
@@ -1223,7 +1230,7 @@ impl<M: 'static> MenuTitle<M> {
     }
 
     /// Sends `message` whenever its menu closes, after the chosen item's message if one
-    /// was chosen. Like [`MenuTitle::on_open`], not kept by [`Handle::set_menu`].
+    /// was chosen. [`Handle::set_menu`] keeps it.
     #[must_use]
     pub fn on_close(mut self, message: M) -> Self
     where
@@ -1235,8 +1242,7 @@ impl<M: 'static> MenuTitle<M> {
 
     /// Makes a primary press the title's own action, sending `message`, and the menu opens
     /// on a secondary press instead (Return and Space press; Down and the menu key open
-    /// the menu): a status icon whose click activates its app. [`Handle::set_menu`] doesn't
-    /// keep it.
+    /// the menu): a status icon whose click activates its app.
     #[must_use]
     pub fn on_press(mut self, message: M) -> Self
     where
@@ -1291,23 +1297,28 @@ impl<M: 'static> MenuTitle<M> {
 }
 
 impl<M: 'static> From<MenuTitle<M>> for Element<M> {
-    fn from(title: MenuTitle<M>) -> Self {
+    fn from(mut title: MenuTitle<M>) -> Self {
         let id = title.inner.id();
+        let state = Rc::new(RefCell::new(TitleState {
+            items: title.items,
+            callbacks: Callbacks {
+                on_open: title.on_open,
+                on_close: title.on_close,
+                on_press: title.on_press,
+                on_context: title.on_context,
+            },
+        }));
+        title.inner.widget.state = Some(state.clone());
         let mut element = Element::new(title.inner.erased());
-        element.on_action(
-            id,
-            title_handler(
-                title.items,
-                Callbacks {
-                    on_open: title.on_open,
-                    on_close: title.on_close,
-                    on_press: title.on_press,
-                    on_context: title.on_context,
-                },
-            ),
-        );
+        element.on_action(id, title_handler(state));
         element
     }
+}
+
+/// A title's items and the messages besides them (each optional).
+struct TitleState<M> {
+    items: Vec<Option<ItemHandler<M>>>,
+    callbacks: Callbacks<M>,
 }
 
 /// The messages of a title besides its items' (each optional).
@@ -1318,46 +1329,35 @@ struct Callbacks<M> {
     on_context: Option<ItemHandler<M>>,
 }
 
-impl<M> Callbacks<M> {
-    fn none() -> Self {
-        Self {
-            on_open: None,
-            on_close: None,
-            on_press: None,
-            on_context: None,
+/// Turns a title's actions into messages: the chosen item's, and the open, close, press
+/// and context ones if it has them.
+fn title_handler<M: 'static>(state: Rc<RefCell<TitleState<M>>>) -> Handler<M> {
+    Box::new(move |action| {
+        let mut state = state.borrow_mut();
+        match *action.downcast_ref::<TitleAction>()? {
+            TitleAction::Opened => state.callbacks.on_open.as_mut().map(|make| make()),
+            TitleAction::Closed => state.callbacks.on_close.as_mut().map(|make| make()),
+            TitleAction::Pressed => state.callbacks.on_press.as_mut().map(|make| make()),
+            TitleAction::Context => state.callbacks.on_context.as_mut().map(|make| make()),
+            TitleAction::Chosen(i) => state.items.get_mut(i)?.as_mut().map(|make| make()),
+            TitleAction::Step(_) => None,
         }
-    }
-}
-
-/// Turns a title's actions into messages: the chosen item's, and the open, close and press
-/// ones if it has them.
-fn title_handler<M: 'static>(
-    mut items: Vec<Option<ItemHandler<M>>>,
-    mut callbacks: Callbacks<M>,
-) -> Handler<M> {
-    Box::new(move |action| match *action.downcast_ref::<TitleAction>()? {
-        TitleAction::Opened => callbacks.on_open.as_mut().map(|make| make()),
-        TitleAction::Closed => callbacks.on_close.as_mut().map(|make| make()),
-        TitleAction::Pressed => callbacks.on_press.as_mut().map(|make| make()),
-        TitleAction::Context => callbacks.on_context.as_mut().map(|make| make()),
-        TitleAction::Chosen(i) => items.get_mut(i)?.as_mut().map(|make| make()),
-        TitleAction::Step(_) => None,
     })
 }
 
 impl<M: 'static> Handle<MenuTitle<M>> {
-    /// Replaces the menu (for the next time it opens).
+    /// Replaces the menu (for the next time it opens). The title keeps its
+    /// [`MenuTitle::on_open`], [`MenuTitle::on_close`], [`MenuTitle::on_press`] and
+    /// [`MenuTitle::on_context`] messages.
     pub fn set_menu(&self, cx: &mut Cx<'_, M>, menu: Menu<M>) {
-        let (Some(id), Some(window)) = (self.id(), cx.window_of(self)) else {
-            return;
-        };
         let (spec, items) = menu.into_parts();
-        cx.edit::<MenuTitleWidget, _>(self, |w| w.widget.spec = spec);
-        let mut wiring = Wiring::default();
-        wiring
-            .handlers
-            .push((id, title_handler(items, Callbacks::none())));
-        cx.register_wiring(window, wiring);
+        cx.edit::<MenuTitleWidget, _>(self, |w| {
+            w.widget.spec = spec;
+            let state = w.widget.state.clone();
+            if let Some(state) = state.and_then(|s| s.downcast::<RefCell<TitleState<M>>>().ok()) {
+                state.borrow_mut().items = items;
+            }
+        });
     }
 }
 
