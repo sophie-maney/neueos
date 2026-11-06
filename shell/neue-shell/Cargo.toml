@@ -15,6 +15,7 @@ publish.workspace = true
 anyhow.workspace = true
 jiff.workspace = true
 neue-config.workspace = true
+neue-desktop.workspace = true
 neue-kit.workspace = true
 png.workspace = true
 thiserror.workspace = true

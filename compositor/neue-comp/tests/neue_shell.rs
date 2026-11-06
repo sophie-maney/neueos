@@ -481,6 +481,47 @@ fn ctrl_f2_hands_the_keyboard_to_the_menu_bar_and_back() {
 }
 
 #[test]
+fn send_shortcut_reaches_the_window_while_a_shell_menu_is_still_up() {
+    let server = Server::start();
+    let mut app = server.connect();
+    let _win = app.create_toplevel("Editor", "org.neueos.A", (200, 100));
+    let mut shell = shell(&server);
+    let bar = shell.create_layer_surface(Layer::Top, "menu-bar", (300, 22), |layer| {
+        layer.set_size(0, 22);
+        layer.set_anchor(Anchor::Top | Anchor::Left | Anchor::Right);
+        layer.set_keyboard_interactivity(KeyboardInteractivity::None);
+    });
+    app.roundtrip();
+    key(&server, CTRL_L, Key::Pressed);
+    key(&server, F2, Key::Pressed);
+    key(&server, F2, Key::Released);
+    key(&server, CTRL_L, Key::Released);
+    shell.roundtrip();
+    let [(serial, _)] = *shell.shell_focus_menu_bar() else {
+        panic!("{:?}", shell.shell_focus_menu_bar());
+    };
+    let _menu = shell.create_layer_popup(&bar, (120, 80), Some(serial));
+    app.roundtrip();
+    assert!(!window(&server, "Editor").focused);
+
+    // The shell chooses an item and sends the chord before its popup is gone (the driver
+    // closes popups after the update that made the request): the grab must not take it.
+    let before = app.app_keys().len();
+    shell.shell_send_shortcut(Modifiers::Ctrl, 0x63);
+    app.roundtrip();
+    assert!(window(&server, "Editor").focused);
+    assert_eq!(
+        &app.app_keys()[before..],
+        [
+            (EVDEV_CTRL_L, true),
+            (EVDEV_C, true),
+            (EVDEV_C, false),
+            (EVDEV_CTRL_L, false)
+        ]
+    );
+}
+
+#[test]
 fn a_menu_bar_can_switch_menus_while_the_old_grab_lingers() {
     let server = Server::start();
     let mut app = server.connect();

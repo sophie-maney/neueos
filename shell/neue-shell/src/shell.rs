@@ -2,11 +2,12 @@
 //! from the compositor's window list, the clock, and the logo menu's commands.
 
 use std::collections::BTreeMap;
-use std::sync::mpsc;
+use std::sync::{Arc, mpsc};
 
 use anyhow::Context as _;
 use neue_config::{AppearanceConfig, Layers};
 use neue_dbus::login::Login;
+use neue_desktop::{AppDatabase, LaunchOptions, Locale};
 use neue_kit::desktop::{
     Anchor, Desktop, Fit, LayerKeyboard, LayerSpec, OutputEvent, OutputId, Picture, ShellEvent,
     ShellLayer, ShellRequest,
@@ -15,7 +16,10 @@ use neue_kit::{Application, Cx, Handle, Settings, WindowId};
 use neue_shell::about::About;
 use neue_shell::bar::{self, BarContent, BarHandles, SystemCommand};
 use neue_shell::clock;
+use neue_shell::fallback::{self, Command, Context, WindowEntry};
+use neue_shell::help::{self, PanelHandles};
 use neue_shell::picture;
+use neue_shell::search::{self, Entry};
 use neue_shell::windows::Windows;
 
 use crate::appearance;
@@ -48,6 +52,45 @@ enum Message {
     AppMenu(MenuEvent),
     /// The global-menu worker stopped (it logged why).
     GlobalMenuEnded,
+    /// An item of the fallback menu was chosen.
+    Fallback(Command),
+    /// A fallback or Help menu went up (`true`) or came down.
+    FallbackMenu(bool),
+    /// The installed apps were read.
+    Apps(Arc<AppDatabase>),
+    /// Help ▸ Search Menus… was chosen.
+    OpenSearch,
+    /// The search field's text changed.
+    SearchQuery(String),
+    /// Return in the search field.
+    SearchSubmit(String),
+    /// Hit `n` of the search was pressed.
+    SearchPick(usize),
+    /// The search panel closed by itself.
+    SearchClosed,
+}
+
+/// What choosing a hit of menu search does.
+#[derive(Debug, Clone)]
+enum Target {
+    /// An item of the app's own menus.
+    App(MenuEvent),
+    /// An item of the fallback menu.
+    Fallback(Command),
+}
+
+/// Menu search as the UI thread keeps it.
+#[derive(Default)]
+struct Search {
+    /// The panel is open (under the Help title; the bars' menus stay as they are).
+    open: bool,
+    /// The bar whose Help title the panel is under.
+    anchor: Option<Handle<neue_kit::desktop::MenuTitle<Message>>>,
+    handles: PanelHandles<Message>,
+    /// Everything that can be found, as of opening.
+    entries: Vec<Entry<Target>>,
+    /// What the field's text found.
+    hits: Vec<Entry<Target>>,
 }
 
 struct Bar {
@@ -71,6 +114,11 @@ struct Shell {
     content: BarContent,
     about: Option<WindowId>,
     global_menu: GlobalMenu,
+    /// The installed apps, for each app's `new-window` action and whether it's a terminal.
+    apps: Arc<AppDatabase>,
+    /// What the bars' fallback menu was built from (`None`: the app's own menus, or none).
+    fallback_view: Option<Context>,
+    search: Search,
 }
 
 /// The global menu as the UI thread keeps it.
@@ -87,8 +135,12 @@ struct GlobalMenu {
     shown: Option<Menus>,
     /// Newer menus, held back while one of the shown menus is up.
     pending: Option<Menus>,
-    /// One of the app's menus is up.
+    /// One of the bar's menus is up.
     open: bool,
+    /// The bars' menus need building again once nothing is up.
+    dirty: bool,
+    /// The app's menus were read for the current generation and have no items.
+    empty: bool,
     /// The active window's app gets Super as Control: its Control shortcuts show as ⌘
     /// (`command_key`, ADR 0081).
     super_as_ctrl: bool,
@@ -120,7 +172,18 @@ impl Shell {
             windows,
             about: None,
             global_menu: GlobalMenu::default(),
+            apps: Arc::default(),
+            fallback_view: None,
+            search: Search::default(),
         }
+    }
+
+    /// Reads the desktop entries on a thread of their own.
+    fn load_apps(&self, cx: &mut Cx<'_, Message>) {
+        cx.spawn(|_| {
+            let dirs = neue_desktop::apps::default_application_dirs();
+            Message::Apps(Arc::new(AppDatabase::load(&dirs, &Locale::from_env())))
+        });
     }
 
     /// Starts the global-menu worker on its own thread.
@@ -137,20 +200,50 @@ impl Shell {
         });
     }
 
-    /// The bar's titles for the app's menus being shown.
-    fn app_titles(&self) -> Vec<neue_kit::desktop::MenuTitle<Message>> {
-        self.global_menu.shown.as_ref().map_or_else(Vec::new, |m| {
-            global_menu::bar_titles(
-                &m.titles,
-                m.generation,
-                self.global_menu.super_as_ctrl,
-                Message::AppMenu,
-            )
-        })
+    /// The bar's titles: the fallback menu's, or the app's menus being shown, and Help
+    /// after them. `help` is pointed at the Help title.
+    fn app_titles(
+        &self,
+        help: &mut Handle<neue_kit::desktop::MenuTitle<Message>>,
+    ) -> Vec<neue_kit::desktop::MenuTitle<Message>> {
+        *help = Handle::default();
+        let up = |title: neue_kit::desktop::MenuTitle<Message>| {
+            title
+                .on_open(Message::FallbackMenu(true))
+                .on_close(Message::FallbackMenu(false))
+        };
+        if let Some(context) = &self.fallback_view {
+            let mut titles: Vec<_> = fallback::titles(&context.sections(), &Message::Fallback)
+                .into_iter()
+                .map(up)
+                .collect();
+            titles.push(up(help::title(Message::OpenSearch, help)));
+            return titles;
+        }
+        let Some(menus) = self.global_menu.shown.as_ref() else {
+            return Vec::new();
+        };
+        let mut titles = global_menu::bar_titles(
+            &menus.titles,
+            menus.generation,
+            self.global_menu.super_as_ctrl,
+            Some(&Message::OpenSearch),
+            help,
+            Message::AppMenu,
+        );
+        // No Help of the app's own: ours, unless the app shows nothing yet.
+        if !help.is_bound() && !titles.is_empty() {
+            titles.push(up(help::title(Message::OpenSearch, help)));
+        }
+        titles
     }
 
-    /// The menu under the app's name: the app menu GTK apps export, else nothing.
+    /// The menu under the app's name: the fallback's App menu, the app menu GTK apps
+    /// export, else nothing.
     fn app_name_menu(&self) -> neue_kit::Menu<Message> {
+        if let Some(context) = &self.fallback_view {
+            return fallback::menu(&context.app_section().rows, &Message::Fallback);
+        }
         self.global_menu
             .shown
             .as_ref()
@@ -165,44 +258,113 @@ impl Shell {
     }
 
     /// Shows the app's menus on every bar.
-    fn sync_menus(&self, cx: &mut Cx<'_, Message>) {
-        for bar in self.bars.values() {
-            bar.handles.bar.set_menus(cx, self.app_titles());
-            bar.handles.app.set_menu(cx, self.app_name_menu());
+    fn sync_menus(&mut self, cx: &mut Cx<'_, Message>) {
+        let outputs: Vec<OutputId> = self.bars.keys().copied().collect();
+        for output in outputs {
+            let mut help = Handle::default();
+            let titles = self.app_titles(&mut help);
+            let name_menu = self.app_name_menu();
+            if let Some(bar) = self.bars.get_mut(&output) {
+                bar.handles.help = help;
+                bar.handles.bar.set_menus(cx, titles);
+                bar.handles.app.set_menu(cx, name_menu);
+            }
         }
+    }
+
+    /// A menu is up, or the search panel (which hangs off a title the bar would replace).
+    fn busy(&self) -> bool {
+        self.global_menu.open || self.search.open
+    }
+
+    /// Shows what the menus now are on the bars: at once, or when nothing is up.
+    fn refresh(&mut self, cx: &mut Cx<'_, Message>) {
+        if self.busy() {
+            self.global_menu.dirty = true;
+            return;
+        }
+        if let Some(menus) = self.global_menu.pending.take() {
+            self.global_menu.shown = Some(menus);
+        }
+        self.global_menu.dirty = false;
+        self.sync_menus(cx);
     }
 
     /// Shows `menus`, or holds them back while a menu is up.
     fn show_menus(&mut self, cx: &mut Cx<'_, Message>, menus: Menus) {
-        if self.global_menu.open {
-            self.global_menu.pending = Some(menus);
-        } else {
-            self.global_menu.shown = Some(menus);
-            self.sync_menus(cx);
+        self.global_menu.pending = Some(menus);
+        self.refresh(cx);
+    }
+
+    /// Something that kept the bars' menus from changing ended.
+    fn unbusy(&mut self, cx: &mut Cx<'_, Message>) {
+        if !self.busy() && self.global_menu.dirty {
+            self.refresh(cx);
         }
+    }
+
+    /// The fallback menu's context if the active window should have the fallback menu:
+    /// it exports no menus, or none that could be read.
+    fn fallback_context(&self) -> Option<Context> {
+        let active = self.windows.active()?;
+        let menus = &self.global_menu;
+        if !(menus.following.is_none() || menus.empty || menus.worker.is_none()) {
+            return None;
+        }
+        let current = self.windows.active_id();
+        let windows = self
+            .windows
+            .app_windows()
+            .into_iter()
+            .map(|(id, w)| WindowEntry {
+                id,
+                title: w.title.clone(),
+                active: Some(id) == current,
+                minimized: w.minimized,
+            })
+            .collect();
+        let entry = self.apps.find_by_app_id(&active.app_id);
+        Some(Context {
+            app_name: self.windows.active_app_name(),
+            windows,
+            can_new_window: entry.is_some_and(|e| e.new_window_action().is_some()),
+            super_as_ctrl: active.super_as_ctrl,
+            terminal: entry.is_some_and(|e| e.categories.iter().any(|c| c == "TerminalEmulator")),
+        })
+    }
+
+    /// Works out the fallback menu again; true if it changed.
+    fn set_fallback(&mut self) -> bool {
+        let now = self.fallback_context();
+        if now == self.fallback_view {
+            return false;
+        }
+        self.fallback_view = now;
+        true
     }
 
     /// Follows the active window's menus.
     fn follow_menus(&mut self, cx: &mut Cx<'_, Message>) {
         let super_as_ctrl = self.windows.active().is_some_and(|w| w.super_as_ctrl);
-        if super_as_ctrl != self.global_menu.super_as_ctrl {
-            self.global_menu.super_as_ctrl = super_as_ctrl;
-            // Show the same menus with the other key; after the open menu if one is up.
-            if let Some(menus) = self.global_menu.shown.clone() {
-                self.show_menus(cx, menus);
-            }
-        }
+        let mut changed = super_as_ctrl != self.global_menu.super_as_ctrl;
+        self.global_menu.super_as_ctrl = super_as_ctrl;
         let address = self.windows.active().and_then(|w| Address::of(&w.menu));
-        if address == self.global_menu.following {
-            return;
+        if address != self.global_menu.following {
+            self.global_menu.following.clone_from(&address);
+            self.global_menu.generation += 1;
+            self.global_menu.empty = false;
+            // The old app's menus go at once; the new ones follow when read.
+            if self.global_menu.shown.is_some() {
+                self.global_menu.pending = Some(Menus::empty(self.global_menu.generation));
+            }
+            self.global_menu.send(Input::Follow(address));
+            changed = true;
         }
-        self.global_menu.following.clone_from(&address);
-        self.global_menu.generation += 1;
-        // The old app's menus go at once; the new ones follow when read.
-        if self.global_menu.shown.is_some() {
-            self.show_menus(cx, Menus::empty(self.global_menu.generation));
+        // After the follow, which says whether the menus are to be read.
+        changed |= self.set_fallback();
+        if changed {
+            self.refresh(cx);
         }
-        self.global_menu.send(Input::Follow(address));
     }
 
     fn app_menu(&mut self, cx: &mut Cx<'_, Message>, event: MenuEvent) {
@@ -210,13 +372,129 @@ impl Shell {
             global_menu::ItemEvent::Opened => self.global_menu.open = true,
             global_menu::ItemEvent::Closed => {
                 self.global_menu.open = false;
-                if let Some(menus) = self.global_menu.pending.take() {
-                    self.show_menus(cx, menus);
-                }
+                self.unbusy(cx);
             }
             global_menu::ItemEvent::Clicked => {}
         }
         self.global_menu.send(Input::Event(event));
+    }
+
+    /// Runs the fallback menu's `command` for the active window's app.
+    fn fallback_command(&mut self, cx: &mut Cx<'_, Message>, command: Command) {
+        let Some(context) = self.fallback_context() else {
+            return;
+        };
+        if command == Command::NewWindow {
+            self.new_window();
+        }
+        for request in context.requests(command) {
+            cx.shell(request);
+        }
+    }
+
+    /// Runs the active app's `new-window` action.
+    fn new_window(&self) {
+        let Some(active) = self.windows.active() else {
+            return;
+        };
+        let Some(entry) = self.apps.find_by_app_id(&active.app_id) else {
+            return;
+        };
+        let options = LaunchOptions {
+            action: Some("new-window"),
+            ..LaunchOptions::default()
+        };
+        if let Err(error) = neue_desktop::launch::launch(entry, &options) {
+            tracing::warn!(%error, app = %active.app_id, "can't open a new window");
+        }
+    }
+
+    /// What menu search can find now.
+    fn search_entries(&self) -> Vec<Entry<Target>> {
+        if let Some(context) = &self.fallback_view {
+            return context
+                .entries()
+                .into_iter()
+                .map(|e| Entry {
+                    path: e.path,
+                    shortcut: e.shortcut,
+                    target: Target::Fallback(e.target),
+                })
+                .collect();
+        }
+        let menus = self
+            .global_menu
+            .pending
+            .as_ref()
+            .or(self.global_menu.shown.as_ref());
+        menus.map_or_else(Vec::new, |m| {
+            global_menu::entries(
+                m,
+                &self.windows.active_app_name(),
+                self.global_menu.super_as_ctrl,
+            )
+            .into_iter()
+            .map(|e| Entry {
+                path: e.path,
+                shortcut: e.shortcut,
+                target: Target::App(e.target),
+            })
+            .collect()
+        })
+    }
+
+    /// Opens the search panel under the Help title of the first bar that has one.
+    fn open_search(&mut self, cx: &mut Cx<'_, Message>) {
+        let Some(anchor) = self
+            .bars
+            .values()
+            .map(|b| b.handles.help)
+            .find(Handle::is_bound)
+        else {
+            return;
+        };
+        self.search.entries = self.search_entries();
+        self.search.hits.clear();
+        self.search.anchor = Some(anchor);
+        self.search.open = true;
+        help::show(
+            cx,
+            &anchor,
+            &mut self.search.handles,
+            Message::SearchQuery,
+            Message::SearchSubmit,
+            Message::SearchClosed,
+        );
+    }
+
+    fn search_query(&mut self, cx: &mut Cx<'_, Message>, text: &str) {
+        self.search.hits = search::search(&self.search.entries, text)
+            .into_iter()
+            .cloned()
+            .collect();
+        let texts: Vec<String> = self.search.hits.iter().map(Entry::text).collect();
+        help::set_hits(cx, &self.search.handles, &texts, Message::SearchPick);
+    }
+
+    fn close_search(&mut self, cx: &mut Cx<'_, Message>) {
+        if let Some(anchor) = self.search.anchor.take() {
+            help::close(cx, &anchor);
+        }
+        self.search.open = false;
+        self.unbusy(cx);
+    }
+
+    /// Closes the panel and runs hit `n`.
+    fn search_pick(&mut self, cx: &mut Cx<'_, Message>, n: usize) {
+        let Some(hit) = self.search.hits.get(n).cloned() else {
+            return;
+        };
+        // First, so that the keyboard is back with the app before a chord is typed.
+        self.close_search(cx);
+        match hit.target {
+            Target::App(event) => self.global_menu.send(Input::Event(event)),
+            Target::Fallback(command) => self.fallback_command(cx, command),
+        }
     }
 
     fn open_background(&mut self, cx: &mut Cx<'_, Message>, output: OutputId) {
@@ -292,9 +570,10 @@ impl Shell {
             return;
         }
         let mut handles = BarHandles::default();
+        let titles = self.app_titles(&mut handles.help);
         let root = bar::menu_bar(
             &self.content,
-            self.app_titles(),
+            titles,
             Message::System,
             &mut handles,
             cx.backdrop(),
@@ -400,6 +679,7 @@ impl Application for Shell {
         self.load_picture(cx);
         self.watch_appearance(cx);
         self.start_global_menu(cx);
+        self.load_apps(cx);
         self.tick(cx);
     }
 
@@ -409,18 +689,51 @@ impl Application for Shell {
             Message::Sync => {
                 self.sync_bars(cx);
                 // A new bar can't take the menus while another bar's menu is up.
-                if !self.global_menu.open {
+                if !self.busy() {
                     self.sync_menus(cx);
                 }
             }
             Message::AppMenus(menus) => {
                 // Menus read for an earlier window are stale.
                 if menus.generation == self.global_menu.generation {
+                    self.global_menu.empty = menus.titles.is_empty() && menus.app_menu.is_empty();
+                    self.set_fallback();
                     self.show_menus(cx, menus);
                 }
             }
             Message::AppMenu(event) => self.app_menu(cx, event),
-            Message::GlobalMenuEnded => self.global_menu.worker = None,
+            Message::GlobalMenuEnded => {
+                self.global_menu.worker = None;
+                if self.set_fallback() {
+                    self.refresh(cx);
+                }
+            }
+            Message::Fallback(command) => self.fallback_command(cx, command),
+            Message::FallbackMenu(open) => {
+                self.global_menu.open = open;
+                self.unbusy(cx);
+            }
+            Message::Apps(apps) => {
+                self.apps = apps;
+                if self.set_fallback() {
+                    self.refresh(cx);
+                }
+            }
+            Message::OpenSearch => self.open_search(cx),
+            Message::SearchQuery(text) => self.search_query(cx, &text),
+            Message::SearchSubmit(text) => {
+                // Return before the change was seen: search first.
+                if self.search.hits.is_empty() {
+                    self.search_query(cx, &text);
+                }
+                self.search_pick(cx, 0);
+            }
+            Message::SearchPick(n) => self.search_pick(cx, n),
+            Message::SearchClosed => {
+                self.search.open = false;
+                self.search.anchor = None;
+                self.unbusy(cx);
+            }
             Message::System(command) => self.system(cx, command),
             Message::Login(Ok(())) => {}
             Message::Login(Err(error)) => tracing::warn!(%error, "logind call failed"),

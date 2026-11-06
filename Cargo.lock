@@ -2727,6 +2727,7 @@ dependencies = [
  "jiff",
  "neue-config",
  "neue-dbus",
+ "neue-desktop",
  "neue-kit",
  "png",
  "rustix 1.1.6",

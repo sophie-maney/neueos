@@ -43,6 +43,30 @@ impl Windows {
         self.windows.get(&self.active?)
     }
 
+    /// The active window's id.
+    pub fn active_id(&self) -> Option<ToplevelId> {
+        self.active
+    }
+
+    /// The windows of the active window's app, the active one included, by id: those
+    /// with the same app id, or the active window alone if it has none.
+    pub fn app_windows(&self) -> Vec<(ToplevelId, &Toplevel)> {
+        let Some(active) = self
+            .active
+            .and_then(|id| Some((id, self.windows.get(&id)?)))
+        else {
+            return Vec::new();
+        };
+        if active.1.app_id.is_empty() {
+            return vec![active];
+        }
+        self.windows
+            .iter()
+            .filter(|(_, w)| w.app_id == active.1.app_id)
+            .map(|(id, w)| (*id, w))
+            .collect()
+    }
+
     /// The menu bar's bold name: the active window's app.
     pub fn active_app_name(&self) -> String {
         self.active()
@@ -87,6 +111,26 @@ mod tests {
         assert_eq!(app_name(&window("foot", "x")), "Foot");
         assert_eq!(app_name(&window("", "Untitled")), "Untitled");
         assert_eq!(app_name(&window("", "")), DESKTOP_NAME);
+    }
+
+    #[test]
+    fn an_apps_windows_share_its_app_id() {
+        let ids = [1, 2, 3, 4].map(ToplevelId::from_raw);
+        let mut list = Windows::default();
+        assert!(list.app_windows().is_empty());
+        list.apply(ShellEvent::Toplevel(ids[0], window("foot", "a")));
+        list.apply(ShellEvent::Toplevel(
+            ids[1],
+            window("org.neueos.Gallery", "b"),
+        ));
+        list.apply(ShellEvent::Toplevel(ids[2], window("foot", "c")));
+        list.apply(ShellEvent::Toplevel(ids[3], window("", "d")));
+        list.apply(ShellEvent::Active(Some(ids[2])));
+        let found: Vec<_> = list.app_windows().iter().map(|(id, _)| *id).collect();
+        assert_eq!(found, [ids[0], ids[2]]);
+        // No app id: the window alone.
+        list.apply(ShellEvent::Active(Some(ids[3])));
+        assert_eq!(list.app_windows().len(), 1);
     }
 
     #[test]

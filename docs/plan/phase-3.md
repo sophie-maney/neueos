@@ -254,13 +254,27 @@ their goldens and the gallery's "Shell" page run on macOS.
       after all (ADR 0025 §7 amended). Icons and section headers are not shown.
       *Owner:* Nautilus/gedit-style GNOME apps on the PC; a Flatpak GTK app (its bus name is
       the sandbox's own).
-- [ ] **3.9 Fallback menu and menu search** · Sonnet. After 3.7b and 3.10c. ADR 0005 §4:
+- [x] **3.9 Fallback menu and menu search** · Sonnet. After 3.7b and 3.10c. ADR 0005 §4:
       App, File, Edit, Window and Help for windows with no menu address. Edit items send
       key chords through `neue-shell-v1`; Window items run compositor actions; New Window
       uses the entry's `new-window` action (3.3) or is disabled. Help's search field finds
       items in the current menus, whatever their source.
       *Accept:* in the VM, Copy and Paste from the fallback menu work in foot and Firefox;
       menu search finds and runs an item in the gallery.
+      *Done (ADR 0082):* `neue_shell::fallback` (App, File, Edit, Window from one
+      description), `neue_shell::search` and `help` (Help ▸ Search Menus… opens a popover
+      with a search field and up to 8 hits; an app's own Help menu gets the item at the
+      top). Two fixes it needed: `Popover::focus` in the kit, and `send_shortcut` in
+      neue-comp ending a popup's keyboard grab (the chord went to the closing menu). In
+      the VM: foot's Edit ▸ Paste (Ctrl+Shift+V; Cut, Undo and Select All disabled),
+      Firefox's Edit ▸ Copy (menus show ⌘), Window ▸ Zoom, File ▸ New Window disabled for
+      foot (no `new-window` action), and in the gallery Help ▸ Search Menus…, "valu",
+      Return switches to Pages ▸ Values. Not run in the VM: Hide, Quit, Bring All to
+      Front, New Window of an app that has the action (unit tests cover the requests),
+      Copy in foot (scripted pointer selection didn't work there). About is disabled.
+      *Owner:* on the PC, Edit ▸ Copy/Paste in a libadwaita app (Text Editor) and an
+      Electron app; File ▸ New Window in Nautilus or a browser; search with two outputs
+      (the panel opens under the first bar's Help).
 - **3.10 Super as ⌘**, split into three PRs (2026-11-06: about 30 files across six crates
   and a protocol change were too many for one). PLAN.md Q1, decided yes on 2026-11-05.
 - [x] **3.10a Super as ⌘ A: compositor remap** · Opus. The compositor remaps Super+key

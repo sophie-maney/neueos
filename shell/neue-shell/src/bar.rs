@@ -57,6 +57,8 @@ pub struct BarHandles<M> {
     pub app: Handle<MenuTitle<M>>,
     /// The clock extra.
     pub clock: Handle<MenuTitle<M>>,
+    /// The Help title, which menu search opens under (unbound when the bar has none).
+    pub help: Handle<MenuTitle<M>>,
 }
 
 impl<M> Default for BarHandles<M> {
@@ -65,6 +67,7 @@ impl<M> Default for BarHandles<M> {
             bar: Handle::default(),
             app: Handle::default(),
             clock: Handle::default(),
+            help: Handle::default(),
         }
     }
 }
@@ -93,7 +96,7 @@ pub fn menu_bar<M: 'static>(
     let bar = MenuBar::new()
         .backdrop(backdrop)
         .with(MenuTitle::logo(LOGO_NAME, logo_menu(message)))
-        // The app's name opens nothing until the App menu of the fallback menu (3.9).
+        // The app's menu: the fallback menu's (3.9) or GTK's; empty opens nothing.
         .with(
             MenuTitle::new(content.app_name.clone(), Menu::new())
                 .bold(true)
