@@ -717,7 +717,7 @@ their goldens and the gallery's "Shell" page run on macOS.
       on click). 7 kit tests (slide in, size follows the stack, slide out and close up with
       handlers forgotten, replacement and coming back, reduced motion, clicks by id, Tab
       order). No VM check: the shell uses it in 3.15d3.
-- [ ] **3.15d3 Notifications in the shell** · Sonnet. After 3.15a–c, 3.15d1 and
+- [x] **3.15d3 Notifications in the shell** · Sonnet. After 3.15a–c, 3.15d1 and
       3.15d2. The shell owns `org.freedesktop.Notifications` and shows banners top right
       under the bar on the output with the active window, in one layer surface per
       output sized by the host, stacked, timing out (paused while hovered); replace-id
@@ -733,6 +733,27 @@ their goldens and the gallery's "Shell" page run on macOS.
       `notify-send` prints the chosen action), and Do Not Disturb hides banners.
       *Owner:* a real app's notification (a browser or a chat client) opens the app
       window on click.
+      *Done:* ADR 0091. `neue-shell`'s `notify` module: a worker thread owns the server and
+      prepares each notification (icon from `app_icon`, `image-path`, the desktop entry or
+      `icon_data`; `image-data` or an image file as the picture; plain-text body;
+      `[notifications]` read per request, so Do Not Disturb applies to the next one without
+      a watcher); `Notifier` on the UI thread (store, one timer thread, hover pause, token
+      then `ActivationToken` + `ActionInvoked`, close unless `resident`). Diverges from the
+      text above: one top-right overlay surface on the *active* output (opened without an
+      output, as the OSD is; closed when the last panel slid out), not one per output;
+      at most five banners on screen (older ones stay open); a critical notification
+      without actions is a banner that stays (the panel is an alert only when it has
+      buttons); a click on one without a `default` action only dismisses it. Small
+      interface changes: `IconSource::parse` and `neue_config::NotificationsConfig` public.
+      3 unit tests (content, images and icons, the worker over a peer-to-peer connection).
+      VM (arm64, §1.6g, `gdbus` since there is no `notify-send`): banner at 5 s, stacking
+      newest on top, critical with three actions shows two buttons and never expires, a 2 s
+      timeout expires (reason 1), replace-id updates in place, a button sends
+      `ActivationToken` + `ActionInvoked("later")` + closed(2), a click on the body the same
+      with `"default"`, Do Not Disturb hides banners (they still expire, reason 1), and a
+      hovered banner outlives its 3 s until the pointer leaves. Not checked: `notify-send`
+      itself and `--wait` (not installed; its output is `ActionInvoked` as seen with
+      `gdbus monitor`), a second output.
 - [ ] **3.15d4 Notifications extra in the bar** · Sonnet. After 3.15a (independent of
       the rest). A notifications extra at the far right of the bar, dimmed while Do Not
       Disturb is on, with a menu holding a Do Not Disturb toggle saved to `shell.toml`

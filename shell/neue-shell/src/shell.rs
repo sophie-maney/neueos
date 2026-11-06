@@ -31,6 +31,7 @@ use neue_shell::windows::Windows;
 use crate::appearance;
 use crate::extras;
 use crate::global_menu::{self, Address, Input, MenuEvent, Menus};
+use crate::notify::{self, Notifier};
 use crate::osd;
 use crate::tray;
 
@@ -90,6 +91,8 @@ enum Message {
     Login(Result<(), String>),
     /// The system keys' timers and workers.
     Osd(osd::Event),
+    /// The notification server, the banners and their timers (task 3.15d3).
+    Notify(notify::Event),
     /// The configured picture was decoded, or why not.
     Picture(Result<(Picture, Fit), String>),
     /// `appearance.toml` changed.
@@ -239,6 +242,8 @@ struct Shell {
     tray: Tray,
     /// The volume and brightness keys and their OSD.
     keys: osd::Keys,
+    /// The notification server and its banners.
+    notifications: Notifier<Message>,
 }
 
 /// The global menu as the UI thread keeps it.
@@ -308,6 +313,7 @@ impl Shell {
             network: None,
             tray: Tray::default(),
             keys: osd::Keys::default(),
+            notifications: Notifier::new(Message::Notify),
         }
     }
 
@@ -1106,6 +1112,7 @@ impl Application for Shell {
         Self::start_extras(cx);
         Self::start_tray(cx);
         self.keys.start(cx, Message::Osd);
+        self.notifications.start(cx);
         self.load_apps(cx);
         self.tick(cx);
     }
@@ -1223,6 +1230,7 @@ impl Application for Shell {
                     self.sync_bars(cx);
                 }
             }
+            Message::Notify(event) => self.notifications.event(cx, event),
             Message::Volume(command) => self.keys.volume_command(command),
             Message::Picture(Ok((picture, fit))) => {
                 for background in self.backgrounds.values() {

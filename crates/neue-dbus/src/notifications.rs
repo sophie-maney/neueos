@@ -241,8 +241,9 @@ pub enum IconSource<'a> {
 }
 
 impl<'a> IconSource<'a> {
-    /// `image-path` or `app_icon`: a `file://` URI, an absolute path or a name.
-    fn from_str(s: &'a str) -> Option<Self> {
+    /// What `image-path`, `app_icon` or a desktop entry's `Icon` names: a `file://` URI, an
+    /// absolute path or an icon name; `None` when empty.
+    pub fn parse(s: &'a str) -> Option<Self> {
         if s.is_empty() {
             None
         } else if let Some(path) = s.strip_prefix("file://") {
@@ -313,13 +314,8 @@ impl Notification {
             .image
             .as_ref()
             .map(IconSource::Pixels)
-            .or_else(|| {
-                self.hints
-                    .image_path
-                    .as_deref()
-                    .and_then(IconSource::from_str)
-            })
-            .or_else(|| IconSource::from_str(&self.app_icon))
+            .or_else(|| self.hints.image_path.as_deref().and_then(IconSource::parse))
+            .or_else(|| IconSource::parse(&self.app_icon))
             .or_else(|| self.hints.icon_data.as_ref().map(IconSource::Pixels))
     }
 
