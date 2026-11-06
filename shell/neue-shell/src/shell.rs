@@ -6,6 +6,7 @@ use std::sync::{Arc, mpsc};
 
 use anyhow::Context as _;
 use neue_config::{AppearanceConfig, Layers};
+use neue_dbus::bluetooth::{Bluetooth, State as BluetoothState};
 use neue_dbus::login::Login;
 use neue_desktop::{AppDatabase, LaunchOptions, Locale};
 use neue_kit::desktop::{
@@ -14,7 +15,7 @@ use neue_kit::desktop::{
 };
 use neue_kit::{Application, Cx, Handle, Settings, WindowId};
 use neue_shell::about::About;
-use neue_shell::bar::{self, BarContent, BarHandles, BluetoothCommand, SystemCommand};
+use neue_shell::bar::{self, BarContent, BarHandles, BatteryView, BluetoothCommand, SystemCommand};
 use neue_shell::clock;
 use neue_shell::fallback::{self, Command, Context, WindowEntry};
 use neue_shell::help::{self, PanelHandles};
@@ -23,6 +24,7 @@ use neue_shell::search::{self, Entry};
 use neue_shell::windows::Windows;
 
 use crate::appearance;
+use crate::extras;
 use crate::global_menu::{self, Address, Input, MenuEvent, Menus};
 
 /// The bar's layer-shell namespace.
@@ -38,8 +40,18 @@ enum Message {
     /// change missed it, since a queued window's widgets can't be edited yet.
     Sync,
     System(SystemCommand),
-    /// Something chosen in the Bluetooth menu (task 3.11c wires it up).
+    /// Something chosen in the Bluetooth menu.
     Bluetooth(BluetoothCommand),
+    /// UPower's battery changed (`None`: there is none, or UPower isn't on the bus).
+    Battery(Option<BatteryView>),
+    /// The battery worker stopped (it logged why).
+    BatteryEnded,
+    /// BlueZ's adapter or devices changed (`None`: no adapter, or BlueZ isn't on the bus).
+    BluetoothState(Option<BluetoothState>),
+    /// The Bluetooth worker stopped (it logged why).
+    BluetoothEnded,
+    /// A BlueZ call (power, connect, disconnect) finished.
+    BluetoothCall(Result<(), String>),
     /// A logind call finished.
     Login(Result<(), String>),
     /// The configured picture was decoded, or why not.
@@ -70,6 +82,14 @@ enum Message {
     SearchPick(usize),
     /// The search panel closed by itself.
     SearchClosed,
+}
+
+/// A BlueZ call, with the object paths it is made on.
+enum BluetoothCall {
+    /// Turns the adapter at this path on or off.
+    Power(String, bool),
+    Connect(String),
+    Disconnect(String),
 }
 
 /// What choosing a hit of menu search does.
@@ -121,6 +141,8 @@ struct Shell {
     /// What the bars' fallback menu was built from (`None`: the app's own menus, or none).
     fallback_view: Option<Context>,
     search: Search,
+    /// BlueZ as of its last change: the menu's device indices are looked up here.
+    bluetooth: Option<BluetoothState>,
 }
 
 /// The global menu as the UI thread keeps it.
@@ -170,7 +192,7 @@ impl Shell {
                 app_name: windows.active_app_name(),
                 time: clock::time_text(now),
                 full_date: clock::full_date_text(now),
-                // Followed by the battery and Bluetooth worker (task 3.11c).
+                // Shown once the workers (`start_extras`) find a battery and an adapter.
                 battery: None,
                 bluetooth: None,
             },
@@ -180,6 +202,7 @@ impl Shell {
             apps: Arc::default(),
             fallback_view: None,
             search: Search::default(),
+            bluetooth: None,
         }
     }
 
@@ -202,6 +225,24 @@ impl Shell {
                 tracing::warn!(%err, "no global menu: the session bus is unavailable");
             }
             Message::GlobalMenuEnded
+        });
+    }
+
+    /// Starts the battery and Bluetooth workers, each on a thread of its own.
+    fn start_extras(cx: &mut Cx<'_, Message>) {
+        cx.spawn(|sender| {
+            if let Err(err) = extras::run_battery(|view| sender.send(Message::Battery(view))) {
+                tracing::warn!(%err, "no battery extra: the system bus is unavailable");
+            }
+            Message::BatteryEnded
+        });
+        cx.spawn(|sender| {
+            if let Err(err) =
+                extras::run_bluetooth(|state| sender.send(Message::BluetoothState(state)))
+            {
+                tracing::warn!(%err, "no Bluetooth extra: the system bus is unavailable");
+            }
+            Message::BluetoothEnded
         });
     }
 
@@ -613,7 +654,79 @@ impl Shell {
             bar.handles
                 .clock
                 .set_menu(cx, bar::clock_menu(&self.content.full_date));
+            let battery = &bar.handles.battery;
+            match &self.content.battery {
+                Some(view) => {
+                    let (icon, name) = bar::battery_icon(view);
+                    battery.set_icon(cx, icon, name);
+                    battery.set_menu(cx, bar::battery_menu(view));
+                    battery.set_hidden(cx, false);
+                }
+                None => battery.set_hidden(cx, true),
+            }
+            let bluetooth = &bar.handles.bluetooth;
+            match &self.content.bluetooth {
+                Some(view) => {
+                    let (icon, name) = bar::bluetooth_icon(view);
+                    bluetooth.set_icon(cx, icon, name);
+                    bluetooth.set_menu(cx, bar::bluetooth_menu(view, Message::Bluetooth));
+                    bluetooth.set_hidden(cx, false);
+                }
+                None => bluetooth.set_hidden(cx, true),
+            }
         }
+    }
+
+    /// Shows a new battery on every bar.
+    fn set_battery(&mut self, cx: &mut Cx<'_, Message>, battery: Option<BatteryView>) {
+        if self.content.battery != battery {
+            self.content.battery = battery;
+            self.sync_bars(cx);
+        }
+    }
+
+    /// Shows BlueZ's new state on every bar.
+    fn set_bluetooth(&mut self, cx: &mut Cx<'_, Message>, state: Option<BluetoothState>) {
+        let view = state.as_ref().map(extras::bluetooth_view);
+        self.bluetooth = state;
+        if self.content.bluetooth != view {
+            self.content.bluetooth = view;
+            self.sync_bars(cx);
+        }
+    }
+
+    /// Does what the Bluetooth menu chose, on a thread of its own (connecting takes
+    /// seconds). The result needs no handling beyond logging: BlueZ's change signals bring
+    /// the new state.
+    fn bluetooth_command(&mut self, cx: &mut Cx<'_, Message>, command: BluetoothCommand) {
+        let Some(state) = &self.bluetooth else {
+            return;
+        };
+        let path = |index: usize| state.devices.get(index).map(|d| d.path.clone());
+        let call = match command {
+            BluetoothCommand::SetPowered(on) => {
+                BluetoothCall::Power(state.adapter.path.clone(), on)
+            }
+            BluetoothCommand::Connect(i) => match path(i) {
+                Some(path) => BluetoothCall::Connect(path),
+                None => return,
+            },
+            BluetoothCommand::Disconnect(i) => match path(i) {
+                Some(path) => BluetoothCall::Disconnect(path),
+                None => return,
+            },
+        };
+        cx.spawn(move |_| {
+            Message::BluetoothCall(
+                Bluetooth::system()
+                    .and_then(|bluetooth| match &call {
+                        BluetoothCall::Power(adapter, on) => bluetooth.set_powered(adapter, *on),
+                        BluetoothCall::Connect(device) => bluetooth.connect(device),
+                        BluetoothCall::Disconnect(device) => bluetooth.disconnect(device),
+                    })
+                    .map_err(|e| e.to_string()),
+            )
+        });
     }
 
     fn tick(&mut self, cx: &mut Cx<'_, Message>) {
@@ -685,6 +798,7 @@ impl Application for Shell {
         self.load_picture(cx);
         self.watch_appearance(cx);
         self.start_global_menu(cx);
+        Self::start_extras(cx);
         self.load_apps(cx);
         self.tick(cx);
     }
@@ -741,8 +855,15 @@ impl Application for Shell {
                 self.unbusy(cx);
             }
             Message::System(command) => self.system(cx, command),
-            Message::Bluetooth(command) => {
-                tracing::debug!(?command, "Bluetooth menu: not wired yet")
+            Message::Bluetooth(command) => self.bluetooth_command(cx, command),
+            Message::Battery(battery) => self.set_battery(cx, battery),
+            Message::BatteryEnded => self.set_battery(cx, None),
+            Message::BluetoothState(state) => self.set_bluetooth(cx, state),
+            Message::BluetoothEnded => self.set_bluetooth(cx, None),
+            Message::BluetoothCall(result) => {
+                if let Err(err) = result {
+                    tracing::warn!(%err, "a Bluetooth call failed");
+                }
             }
             Message::Login(Ok(())) => {}
             Message::Login(Err(error)) => tracing::warn!(%error, "logind call failed"),

@@ -138,6 +138,22 @@ ssh neueos-vm 'export DBUS_SESSION_BUS_ADDRESS=unix:path=/run/user/1000/bus
 `Get s <key>`, `GetAll`, `Reset s <key>`; `busctl --user monitor org.neueos.Settings` shows
 `Changed`.
 
+### 1.6b Mock UPower and BlueZ (battery and Bluetooth extras)
+The VM has no battery or Bluetooth. `neue-dbus`'s `mock_power_bluetooth` example serves both
+on the **system** bus (a battery at 64 %, a powered adapter, devices Earbuds, Keyboard and
+Broken whose `Connect` fails) and prints each call it gets. The bus refuses the names to
+everyone but the real services, so give root a policy for it first, and stop the real
+`upower` (the shell would otherwise start it by activation). Start the mock before the
+session; the extras appear within 5 s of it starting and disappear within 5 s of it stopping.
+```sh
+ssh -t neueos-vm 'printf "%s\n" "<busconfig><policy user=\"root\"><allow own=\"org.bluez\"/><allow own=\"org.freedesktop.UPower\"/></policy><policy context=\"default\"><allow send_destination=\"org.bluez\"/><allow send_destination=\"org.freedesktop.UPower\"/></policy></busconfig>" | sudo tee /usr/share/dbus-1/system.d/neue-mock.conf >/dev/null; sudo systemctl reload dbus; sudo systemctl stop upower'
+ssh neueos-vm 'cd neueos && cargo build -p neue-dbus --example mock_power_bluetooth'
+ssh -t neueos-vm 'sudo sh -c "setsid nohup ~sophie/neueos/target/debug/examples/mock_power_bluetooth >/tmp/mock.log 2>&1 </dev/null &"'
+ssh neueos-vm 'cat /tmp/mock.log'                                  # the calls the menus made
+ssh -t neueos-vm 'sudo pkill -x mock_power_blue; sudo rm -f /usr/share/dbus-1/system.d/neue-mock.conf; sudo systemctl reload dbus'   # when done
+```
+`--battery 20 --charging` set the battery.
+
 ### 1.7 Known quirks
 - `ydotool mousemove --absolute` lands at twice the coordinates. Relative moves are 1:1.
 - Nested (winit) backend: after the pointer jumps into the window, send one relative move
