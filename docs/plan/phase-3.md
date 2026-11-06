@@ -663,13 +663,21 @@ their goldens and the gallery's "Shell" page run on macOS.
       `shell-alert` (normal, close hovered); gallery Shell page. 5 material, 7 stack model and
       5 widget tests (clicks, hover, Tab order and keys, AccessKit, replacement). Not done
       here: the container that hosts the panels and applies the model (3.15d).
-- [ ] **3.15c Activation tokens for the shell** · Opus. After 3.2a. `Ctx::activation_token`
+- [x] **3.15c Activation tokens for the shell** · Opus. After 3.2a. `Ctx::activation_token`
       through `neue-platform` (an `xdg_activation_v1` token for a surface and the input
       serial) and the kit; the compositor grants tokens asked for by the shell's client
       even without keyboard focus (a banner never has it). ADR 0066/0067 addendum.
       *Accept:* a headless `neue-comp` test with the real driver: the shell's token
       activates another client's toplevel; a token from an unfocused ordinary client is
       still refused.
+      *Done:* ADR 0066 and 0067 addenda. `Ctx::activation_token(window) -> TokenRequest`
+      and `App::on_activation_token` (one answer per request; the window's own surface and
+      the latest serial; `None` on winit); `Cx::activation_token(window, |token| Message)`
+      in the kit; `token_created` grants every token from the shell's client. Tests: 1
+      platform, 1 kit, headless `platform_shell` (the shell's token brings another
+      client's window forward from no focus; an unfocused ordinary client only gets
+      attention; tokens single-use; the test fails without the grant). No VM check: nothing
+      in the shell asks for a token until 3.15d.
 - [ ] **3.15d Shell wiring** · Sonnet. After 3.15a–c. The shell owns the name and shows
       banners top right under the bar on the output with the active window, stacked
       (a kit container that hosts `Notification`s and applies `NotificationStack`, in one

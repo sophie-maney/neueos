@@ -20,7 +20,9 @@ use neue_platform::desktop::{
     OutputEvent, OutputId, ShellEvent, ShellRequest, SystemKey, SystemKeyState, Toplevel,
     ToplevelId,
 };
-use neue_platform::{Anchor, App, Ctx, LayerSpec, Options, Waker, WindowId, WindowSpec};
+use neue_platform::{
+    Anchor, App, Ctx, LayerSpec, Options, TokenRequest, Waker, WindowId, WindowSpec,
+};
 use smithay::backend::input::{InputTime, KeyState as Key};
 use smithay::input::keyboard::Keycode;
 use wayland_client::Connection;
@@ -30,15 +32,29 @@ const NAMESPACE: &str = "test-bar";
 /// What the driver thread reports to the test.
 #[derive(Debug)]
 enum Report {
-    Started { waker: Waker, shell: bool },
+    Started {
+        waker: Waker,
+        shell: bool,
+    },
     Output(OutputEvent),
     Shell(ShellEvent),
+    /// The answer to an `Ask::Token`.
+    Token(Option<String>),
+}
+
+/// What the test asks the driver thread to do.
+#[derive(Debug)]
+enum Ask {
+    Shell(ShellRequest),
+    /// An activation token for the first bar (`Ctx::activation_token`).
+    Token,
 }
 
 /// A shell in miniature: a bar per output; requests come from the test over a channel.
 struct TestShell {
     reports: Sender<Report>,
-    requests: Receiver<ShellRequest>,
+    requests: Receiver<Ask>,
+    bars: Vec<WindowId>,
 }
 
 impl App for TestShell {
@@ -54,9 +70,18 @@ impl App for TestShell {
     fn on_action(&mut self, _: &mut Ctx<'_>, _: WindowId, _: WidgetId, _: ErasedAction) {}
 
     fn on_wake(&mut self, cx: &mut Ctx<'_>) {
-        while let Ok(request) = self.requests.try_recv() {
-            cx.shell(request);
+        while let Ok(ask) = self.requests.try_recv() {
+            match ask {
+                Ask::Shell(request) => cx.shell(request),
+                Ask::Token => {
+                    cx.activation_token(self.bars[0]);
+                }
+            }
         }
+    }
+
+    fn on_activation_token(&mut self, _: &mut Ctx<'_>, _: TokenRequest, token: Option<String>) {
+        let _ = self.reports.send(Report::Token(token));
     }
 
     fn on_output(&mut self, cx: &mut Ctx<'_>, event: OutputEvent) {
@@ -67,10 +92,11 @@ impl App for TestShell {
                 ..LayerSpec::new(NAMESPACE, Anchor::TOP_EDGE)
             };
             let root = NewWidget::new(Label::new("bar")).erased();
-            cx.open_window(WindowSpec {
+            let bar = cx.open_window(WindowSpec {
                 kind: neue_platform::WindowKind::Layer(layer),
                 ..WindowSpec::new("bar", (0, 20), root)
             });
+            self.bars.push(bar);
         }
         let _ = self.reports.send(Report::Output(event));
     }
@@ -104,8 +130,9 @@ fn wait_for<T>(what: &str, mut f: impl FnMut() -> Option<T>) -> T {
 /// The test's end of the driver: its reports so far and a way to send requests.
 struct Driver {
     reports: Receiver<Report>,
-    requests: Sender<ShellRequest>,
+    requests: Sender<Ask>,
     waker: Waker,
+    tokens: Vec<Option<String>>,
     toplevels: Vec<(ToplevelId, Toplevel)>,
     active: Vec<Option<ToplevelId>>,
     outputs: Vec<OutputEvent>,
@@ -125,6 +152,7 @@ impl Driver {
             let mut app = TestShell {
                 reports: report_tx,
                 requests: request_rx,
+                bars: Vec::new(),
             };
             let conn = Connection::from_socket(stream).unwrap();
             // Kept alive, it runs until the compositor goes away and the connection breaks.
@@ -140,6 +168,7 @@ impl Driver {
             reports,
             requests,
             waker,
+            tokens: Vec::new(),
             toplevels: Vec::new(),
             active: Vec::new(),
             outputs: Vec::new(),
@@ -151,8 +180,17 @@ impl Driver {
     }
 
     fn send(&self, request: ShellRequest) {
-        self.requests.send(request).unwrap();
+        self.requests.send(Ask::Shell(request)).unwrap();
         self.waker.wake();
+    }
+
+    /// Asks for an activation token for the first bar and waits for the answer.
+    fn token(&mut self) -> Option<String> {
+        self.requests.send(Ask::Token).unwrap();
+        self.waker.wake();
+        let before = self.tokens.len();
+        self.until("an activation token", |d| d.tokens.len() > before);
+        self.tokens.pop().unwrap()
     }
 
     /// Takes in reports until `done` holds.
@@ -179,6 +217,7 @@ impl Driver {
                 Ok(Report::Shell(ShellEvent::SystemKey { key, state, .. })) => {
                     self.system_keys.push((key, state));
                 }
+                Ok(Report::Token(token)) => self.tokens.push(token),
                 Ok(Report::Started { .. }) => panic!("started twice"),
                 Err(_) => panic!("timed out waiting for {what}; got {:#?}", self.toplevels),
             }
@@ -337,6 +376,57 @@ fn system_keys_reach_the_driver_and_held_steps_repeat() {
             (SystemKey::Mute, SystemKeyState::Released)
         ]
     );
+}
+
+/// The windows from the bottom of the stack up, the focused one marked with `*`.
+fn stack(server: &Server) -> Vec<String> {
+    server
+        .with_state(|state| state.windows())
+        .into_iter()
+        .map(|w| {
+            let title = w.title.unwrap_or_default();
+            if w.focused {
+                format!("*{title}")
+            } else {
+                title
+            }
+        })
+        .collect()
+}
+
+#[test]
+fn the_shells_token_activates_another_clients_window_without_focus() {
+    let server = Server::start_rendering();
+    let (mut driver, _) = Driver::start(&server);
+    wait_for("the bar", || {
+        (bars(&server) == ["HEADLESS-1"]).then_some(())
+    });
+    let mut a = server.connect();
+    let a_window = a.create_toplevel("A", "org.neueos.A", (300, 200));
+    let mut b = server.connect();
+    let b_window = b.create_toplevel("B", "org.neueos.B", (300, 200));
+    assert_eq!(stack(&server), ["A", "*B"]);
+
+    // The shell's bar never has keyboard focus, yet its token (handed to A, as a clicked
+    // notification's `ActivationToken` would be) brings A forward.
+    let shell_token = driver.token().expect("a token for the shell");
+    a.activate(&a_window, &shell_token);
+    assert_eq!(stack(&server), ["B", "*A"]);
+    assert!(!window(&server, "A").demands_attention);
+
+    // An ordinary client without focus still can't: B only asks for attention.
+    let token = b.activation_token(None, Some(&b_window.surface));
+    b.activate(&b_window, &token);
+    assert_eq!(stack(&server), ["B", "*A"]);
+    assert!(window(&server, "B").demands_attention);
+
+    // The shell's token was single-use; a fresh one works again.
+    b.activate(&b_window, &shell_token);
+    assert_eq!(stack(&server), ["B", "*A"]);
+    let fresh = driver.token().expect("another token");
+    b.activate(&b_window, &fresh);
+    assert_eq!(stack(&server), ["A", "*B"]);
+    assert!(!window(&server, "B").demands_attention);
 }
 
 #[test]

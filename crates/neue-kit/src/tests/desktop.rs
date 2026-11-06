@@ -160,3 +160,39 @@ fn cx_reports_outputs_and_whether_it_is_the_shell() {
     let (runner, ..) = start(Probe(Vec::new()));
     assert_eq!(runner.app().0, [(0, false)]);
 }
+
+#[test]
+fn activation_tokens_come_back_as_messages_once() {
+    /// Asks for two tokens for its banner (as two clicks would) and keeps the answers.
+    #[derive(Default)]
+    struct Clicker {
+        window: Option<WindowId>,
+        tokens: Vec<Option<String>>,
+    }
+    impl Application for Clicker {
+        type Message = Option<String>;
+        fn start(&mut self, cx: &mut Cx<'_, Option<String>>) {
+            let banner = Window::new("Banner", (100, 40), Label::new("hi"))
+                .layer(LayerSpec::new("neue-notification", Anchor::TOP_EDGE));
+            let window = cx.open_window(banner);
+            self.window = Some(window);
+            cx.activation_token(window, |token| token);
+            cx.activation_token(window, |token| token);
+        }
+        fn update(&mut self, _: &mut Cx<'_, Option<String>>, token: Option<String>) {
+            self.tokens.push(token);
+        }
+    }
+    let (mut runner, mut host, _) = start(Clicker::default());
+    let window = runner.app().window.expect("opened in start");
+    assert_eq!(host.token_requests.len(), 2);
+    assert!(host.token_requests.iter().all(|(_, w)| *w == window));
+    let (first, second) = (host.token_requests[0].0, host.token_requests[1].0);
+    assert!(runner.app().tokens.is_empty());
+
+    // Answers may come in any order; each reaches `update` once, as its own message.
+    runner.activation_token(&mut host, second, None);
+    runner.activation_token(&mut host, first, Some("tok".into()));
+    runner.activation_token(&mut host, first, Some("again".into()));
+    assert_eq!(runner.app().tokens, [None, Some("tok".to_owned())]);
+}

@@ -31,6 +31,18 @@ impl WindowId {
     }
 }
 
+/// Names one [`Ctx::activation_token`] request; its answer comes back to
+/// [`App::on_activation_token`] with the same value. Never reused.
+#[derive(Debug, Clone, Copy, PartialEq, Eq, Hash, PartialOrd, Ord)]
+pub struct TokenRequest(u64);
+
+impl TokenRequest {
+    /// A request made outside a driver, for fakes of the app API in tests.
+    pub const fn from_raw(raw: u64) -> Self {
+        Self(raw)
+    }
+}
+
 /// Where a window's menu bar is exported over D-Bus (`com.canonical.dbusmenu`), for the
 /// global menu (ADR 0005, ADR 0047).
 #[derive(Clone, Debug, PartialEq, Eq, Hash)]
@@ -302,6 +314,17 @@ pub trait App {
 
     /// The compositor's window list changed (`neue_shell_v1`; only the shell gets these).
     fn on_shell(&mut self, _cx: &mut Ctx<'_>, _event: ShellEvent) {}
+
+    /// The answer to [`Ctx::activation_token`] `request`: the token, or `None` when there
+    /// is none (no xdg-activation, the window closed, or the winit driver). Every request
+    /// gets exactly one answer.
+    fn on_activation_token(
+        &mut self,
+        _cx: &mut Ctx<'_>,
+        _request: TokenRequest,
+        _token: Option<String>,
+    ) {
+    }
 }
 
 /// Wakes a driver's event loop from any thread; the loop then calls [`App::on_wake`].
@@ -444,6 +467,17 @@ impl<'a> Ctx<'a> {
     pub fn shell(&mut self, request: ShellRequest) {
         self.host.shell(request);
     }
+
+    /// Asks the compositor for an `xdg_activation_v1` token for `window`'s surface and the
+    /// latest input serial, after the callback returns. The token comes back to
+    /// [`App::on_activation_token`]; pass it on to another client (`XDG_ACTIVATION_TOKEN`
+    /// for a launch, the notification `ActivationToken` signal) so that client may take
+    /// focus. The compositor grants the shell's tokens even when the window has no
+    /// keyboard focus (a notification banner never does; ADR 0066 addendum). Elsewhere the answer
+    /// is `None`.
+    pub fn activation_token(&mut self, window: WindowId) -> TokenRequest {
+        self.host.activation_token(window)
+    }
 }
 
 /// The driver side of [`Ctx`].
@@ -461,6 +495,7 @@ pub(crate) trait Host {
     fn has_shell(&self) -> bool;
     fn has_blur(&self) -> bool;
     fn shell(&mut self, request: ShellRequest);
+    fn activation_token(&mut self, window: WindowId) -> TokenRequest;
 }
 
 /// A driver's open windows, the windows queued to open, and the exit flag.
@@ -482,7 +517,11 @@ pub(crate) struct Registry<W> {
     pub(crate) blur: Arc<AtomicBool>,
     /// Queued by [`Ctx::shell`]; the driver sends them after the callback.
     pub(crate) shell_requests: Vec<ShellRequest>,
+    /// Queued by [`Ctx::activation_token`]; the driver asks for them (or answers `None`)
+    /// after the callback.
+    pub(crate) token_requests: Vec<(TokenRequest, WindowId)>,
     next_id: u64,
+    next_token: u64,
     pub(crate) exit: bool,
     /// Set by [`Ctx::keep_alive`]: no open window doesn't end the loop.
     keep_alive: bool,
@@ -500,7 +539,9 @@ impl<W> Registry<W> {
             has_shell: false,
             blur: Arc::new(AtomicBool::new(false)),
             shell_requests: Vec::new(),
+            token_requests: Vec::new(),
             next_id: 0,
+            next_token: 0,
             exit: false,
             keep_alive: false,
             waker,
@@ -587,6 +628,13 @@ impl<W: DriverWindow> Host for Registry<W> {
             tracing::debug!(?request, "no neue_shell_v1: request dropped");
         }
     }
+
+    fn activation_token(&mut self, window: WindowId) -> TokenRequest {
+        let request = TokenRequest(self.next_token);
+        self.next_token += 1;
+        self.token_requests.push((request, window));
+        request
+    }
 }
 
 impl<W> Registry<W> {
@@ -621,6 +669,16 @@ mod tests {
         Ctx::new(&mut reg).set_primary_selection("b".into());
         Ctx::new(&mut reg).set_primary_selection(String::new());
         assert_eq!(reg.primary_selection.as_deref(), Some("b"));
+    }
+
+    #[test]
+    fn token_requests_queue_in_order_with_fresh_ids() {
+        let mut reg = Registry::<Dummy>::new(Waker::new(|| {}));
+        let window = Ctx::new(&mut reg).open_window(spec());
+        let a = Ctx::new(&mut reg).activation_token(window);
+        let b = Ctx::new(&mut reg).activation_token(window);
+        assert_ne!(a, b);
+        assert_eq!(reg.token_requests, vec![(a, window), (b, window)]);
     }
 
     #[test]

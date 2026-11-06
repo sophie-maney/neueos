@@ -108,3 +108,19 @@ PLAN.md §3.3 and §9 say the compositor restarts the shell when it crashes.
   version can add a `parent` event.
 - Workspaces and outputs per window: `ext-workspace` and Phase 4.
 - A real shell client: task 3.2 (the headless tests script one).
+
+## Addendum (2026-11-06, task 3.15c): the shell's activation tokens
+- **The compositor grants every `xdg_activation_v1` token the shell's client asks for**
+  (the client inserted with `insert_shell_client`, `ClientState::shell`), whatever has
+  keyboard focus and whatever serial it passes. The shell hands tokens to the apps it
+  launches (`XDG_ACTIVATION_TOKEN`) and to the sender of a clicked notification (the
+  `ActivationToken` signal, ADR 0089); a banner or the dock never has keyboard focus, so
+  the focus rule for ordinary clients would refuse them all.
+- **Ordinary clients are unchanged:** a token takes focus only if its client had keyboard
+  focus and any serial is no older than that focus; otherwise activating with it asks for
+  attention. Tokens stay single-use and live 10 s.
+- **Why not a protocol request instead:** xdg-activation is what apps already speak, and
+  the token can pass through D-Bus and the environment; the trust is the one the shell
+  already has (it alone binds `neue_shell_v1`).
+- **Consequence:** a compromised shell can move focus at will, which it could already do
+  with `neue_shell_toplevel_v1.activate`.

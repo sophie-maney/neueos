@@ -187,6 +187,12 @@ impl Driver<'_> {
                     self.handle_signal(id, signal);
                 }
             }
+            // No xdg-activation outside Wayland: every request is answered with none.
+            for (request, _) in std::mem::take(&mut self.shared.token_requests) {
+                handled = true;
+                let app = &mut *self.app;
+                app.on_activation_token(&mut Ctx::new(&mut self.shared), request, None);
+            }
             if !handled && self.shared.opening.is_empty() {
                 break;
             }

@@ -95,7 +95,8 @@ use crate::app::{DriverWindow, Registry};
 use crate::gpu::{Gpu, GpuError, SurfaceTarget};
 use crate::{
     Anchor, App, Blur, ChromeHeight, Ctx, Decorations, LayerKeyboard, LayerSpec, MenuAddress,
-    Options, PopoverAnchor, PopupBlur, ShellLayer, Waker, WindowId, WindowKind, WindowSpec,
+    Options, PopoverAnchor, PopupBlur, ShellLayer, TokenRequest, Waker, WindowId, WindowKind,
+    WindowSpec,
 };
 use access::{Access, AccessEvent};
 use clipboard::Clipboard;
@@ -578,6 +579,16 @@ enum AppEvent {
     CloseRequested(WindowId),
     Output(crate::desktop::OutputEvent),
     Shell(crate::desktop::ShellEvent),
+    ActivationToken(TokenRequest, Option<String>),
+}
+
+/// What an xdg-activation token was asked for.
+#[derive(Debug, Clone, Copy)]
+enum TokenFor {
+    /// Masonry's `TakeFocus` for this window: the token activates it.
+    Focus(WindowId),
+    /// [`Ctx::activation_token`]: the token goes to the app.
+    App(TokenRequest),
 }
 
 struct State {
@@ -622,6 +633,7 @@ impl State {
                 self.set_menu_address(id, address);
             }
             self.send_shell_requests();
+            self.request_app_tokens();
             if let Some(text) = self.reg.primary_selection.take() {
                 progress = true;
                 self.store_primary(text);
@@ -650,6 +662,9 @@ impl State {
                     AppEvent::CloseRequested(id) => app.on_close_requested(cx, id),
                     AppEvent::Output(event) => app.on_output(cx, event),
                     AppEvent::Shell(event) => app.on_shell(cx, event),
+                    AppEvent::ActivationToken(request, token) => {
+                        app.on_activation_token(cx, request, token);
+                    }
                 }
             }
             if !progress {
@@ -1220,9 +1235,32 @@ impl State {
                 app_id: None,
                 seat_and_serial: self.input.seat.clone().zip(self.input.last_serial),
                 surface,
-                udata: id,
+                udata: TokenFor::Focus(id),
             },
         );
+    }
+
+    /// Asks for the tokens queued by [`Ctx::activation_token`]: for the window's own
+    /// surface (a shell surface may never have keyboard focus) and the latest input
+    /// serial. Requests that can't be made are answered with `None` right away.
+    fn request_app_tokens(&mut self) {
+        for (request, id) in std::mem::take(&mut self.reg.token_requests) {
+            let surface = self.reg.windows.get(&id).map(|w| w.surf.wl.clone());
+            let (Some(activation), Some(surface)) = (&self.g.activation, surface) else {
+                tracing::debug!(%id, "no xdg-activation or no such window: no token");
+                self.events.push(AppEvent::ActivationToken(request, None));
+                continue;
+            };
+            activation.request_token(
+                &self.qh,
+                RequestData {
+                    app_id: None,
+                    seat_and_serial: self.input.seat.clone().zip(self.input.last_serial),
+                    surface: Some(surface),
+                    udata: TokenFor::App(request),
+                },
+            );
+        }
     }
 
     // --- text-input-v3 ------------------------------------------------------------------
@@ -1437,12 +1475,20 @@ fn resize_edge(direction: ResizeDirection) -> xdg_toplevel::ResizeEdge {
 }
 
 impl ActivationHandler for State {
-    type RequestUdata = WindowId;
+    type RequestUdata = TokenFor;
 
-    fn new_token(&mut self, token: String, data: &RequestData<WindowId>) {
-        if let (Some(activation), Some(w)) = (&self.g.activation, self.reg.windows.get(&data.udata))
-        {
-            activation.activate::<State>(&w.surf.wl, token);
+    fn new_token(&mut self, token: String, data: &RequestData<TokenFor>) {
+        match data.udata {
+            TokenFor::Focus(id) => {
+                if let (Some(activation), Some(w)) = (&self.g.activation, self.reg.windows.get(&id))
+                {
+                    activation.activate::<State>(&w.surf.wl, token);
+                }
+            }
+            TokenFor::App(request) => {
+                self.events
+                    .push(AppEvent::ActivationToken(request, Some(token)));
+            }
         }
     }
 }
