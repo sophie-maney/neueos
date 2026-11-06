@@ -220,6 +220,9 @@ Check the volume keys (§1.3 session running, `ydotoold` as in §1.4; key codes 
 ssh neueos-vm '. ~/neueos/docs/vm-env.sh; export YDOTOOL_SOCKET=/tmp/.ydotool_socket
   ydotool key 115:1 115:0; sleep 0.3; wpctl get-volume @DEFAULT_AUDIO_SINK@; wpctl status | sed -n "/Sinks/,/Filters/p"'
 ```
+The volume extra (task 3.14c) sits left of the battery (at 1024 px wide, x ≈ 922): open
+it, drag the slider or choose an output, then read `wpctl get-volume
+@DEFAULT_AUDIO_SINK@` and `wpctl status` as above.
 `neue-audio`'s example drives the backend without the shell: `cargo run -p neue-audio
 --example audio -- volume 0.5` (also `mute`, `unmute`, `mic-mute`, `default <node.name>`).
 

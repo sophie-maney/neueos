@@ -10,6 +10,9 @@
 //! The volume keys change the default sink's volume and mute, and the mic mute key the
 //! default source's mute, through PipeWire ([`neue_audio`], task 3.14b). The brightness
 //! is the screen's backlight, set through logind (`Session.SetBrightness`).
+//!
+//! The bar's volume extra (task 3.14c) shows the same default sink ([`Keys::volume_view`])
+//! and its menu acts through the same PipeWire thread ([`Keys::volume_command`]).
 
 use std::time::Instant;
 
@@ -21,6 +24,7 @@ use neue_kit::desktop::{
 };
 use neue_kit::tokens::materials::osd::{BOTTOM_MARGIN, FADE, HOLD, RADIUS, SIZE};
 use neue_kit::{Cx, Handle, WindowId};
+use neue_shell::bar::{OutputView, VolumeCommand, VolumeView};
 use neue_shell::levels::{self, Backlight, Volume};
 
 /// The OSD's layer-shell namespace.
@@ -217,6 +221,35 @@ impl Keys {
         self.show(cx, wrap, glyph, level);
     }
 
+    /// The default sink as the volume extra shows it; `None` (hiding it) while PipeWire
+    /// is away or has no default sink.
+    pub fn volume_view(&self) -> Option<VolumeView> {
+        volume_view(&self.sound)
+    }
+
+    /// Does what the volume menu chose. PipeWire's next report brings the new state.
+    pub fn volume_command(&mut self, command: VolumeCommand) {
+        let (Some(audio), Some(sink)) = (&self.audio, self.sound.default_endpoint(Kind::Sink))
+        else {
+            tracing::debug!(?command, "no default sink");
+            return;
+        };
+        match command {
+            VolumeCommand::SetLevel(level) => {
+                audio.set_volume(sink.id, level);
+                // Moving the slider up unmutes, as the volume keys do.
+                if sink.muted && level > 0.0 {
+                    audio.set_muted(sink.id, false);
+                }
+            }
+            VolumeCommand::SetMuted(muted) => audio.set_muted(sink.id, muted),
+            VolumeCommand::SetOutput(i) => match self.sound.sinks.get(i) {
+                Some(output) => audio.set_default(Kind::Sink, &output.name),
+                None => tracing::debug!(i, "no such output"),
+            },
+        }
+    }
+
     /// A timer or worker reported.
     pub fn event<M: Send + 'static>(
         &mut self,
@@ -331,5 +364,70 @@ impl Keys {
             std::thread::sleep(wait);
             wrap(Event::Hold)
         });
+    }
+}
+
+/// `state`'s default sink as the volume extra shows it, its sinks in PipeWire's order (the
+/// menu's indices are looked up in `state.sinks`).
+fn volume_view(state: &neue_audio::State) -> Option<VolumeView> {
+    if !state.connected {
+        return None;
+    }
+    let sink = state.default_endpoint(Kind::Sink)?;
+    let outputs = state
+        .sinks
+        .iter()
+        .map(|s| OutputView {
+            name: s.description.clone(),
+            default: s.id == sink.id,
+        })
+        .collect();
+    Some(VolumeView {
+        level: sink.volume,
+        muted: sink.muted,
+        outputs,
+    })
+}
+
+#[cfg(test)]
+mod tests {
+    use neue_audio::{Endpoint, State};
+
+    use super::*;
+
+    fn sink(id: u32, name: &str, description: &str, volume: f64) -> Endpoint {
+        Endpoint {
+            id,
+            name: name.to_owned(),
+            description: description.to_owned(),
+            volume,
+            muted: false,
+        }
+    }
+
+    #[test]
+    fn the_volume_view_is_the_default_sink_and_lists_every_sink() {
+        let mut state = State {
+            connected: true,
+            sinks: vec![
+                sink(40, "alsa_output.hdmi", "HDMI", 0.2),
+                sink(41, "alsa_output.analog", "Speakers", 0.56),
+            ],
+            default_sink: Some(41),
+            ..State::default()
+        };
+        let view = volume_view(&state).expect("a default sink");
+        assert!((view.level - 0.56).abs() < f64::EPSILON);
+        let outputs: Vec<(&str, bool)> = view
+            .outputs
+            .iter()
+            .map(|o| (o.name.as_str(), o.default))
+            .collect();
+        assert_eq!(outputs, [("HDMI", false), ("Speakers", true)]);
+        state.default_sink = None;
+        assert_eq!(volume_view(&state), None);
+        state.default_sink = Some(41);
+        state.connected = false;
+        assert_eq!(volume_view(&state), None);
     }
 }

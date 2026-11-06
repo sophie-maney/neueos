@@ -209,6 +209,8 @@ mod linux {
                     SpecKind::Separator => MenuNode::separator(id),
                     SpecKind::Action => MenuNode::item(id, item.label.clone()),
                     SpecKind::Submenu(sub) => MenuNode::submenu(id, item.label.clone(), nodes(sub)),
+                    // DBusMenu has no slider.
+                    SpecKind::Slider(_) => return None,
                 };
                 node.enabled = item.enabled;
                 node.toggle = match item.toggle {

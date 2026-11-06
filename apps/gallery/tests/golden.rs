@@ -205,16 +205,21 @@ const BATTERY_OPEN: State = ("battery-open", |f: &mut Fixture| {
     let (w, h) = SHELL_BAR_SIZE;
     f.press_at(1.0 - 107.0 / f64::from(w), 11.0 / f64::from(h));
 });
+/// The shell bar's volume icon pressed: the slider, Mute and the output devices.
+const VOLUME_OPEN: State = ("volume-open", |f: &mut Fixture| {
+    let (w, h) = SHELL_BAR_SIZE;
+    f.press_at(1.0 - 146.0 / f64::from(w), 11.0 / f64::from(h));
+});
 /// The shell bar's network icon pressed: the Wi-Fi switch, the networks in range and
 /// the Ethernet port.
 const NETWORK_OPEN: State = ("network-open", |f: &mut Fixture| {
     let (w, h) = SHELL_BAR_SIZE;
-    f.press_at(1.0 - 145.0 / f64::from(w), 11.0 / f64::from(h));
+    f.press_at(1.0 - 181.0 / f64::from(w), 11.0 / f64::from(h));
 });
 /// The shell bar's Bluetooth icon pressed: its switch and the paired devices.
 const BLUETOOTH_OPEN: State = ("bluetooth-open", |f: &mut Fixture| {
     let (w, h) = SHELL_BAR_SIZE;
-    f.press_at(1.0 - 179.0 / f64::from(w), 11.0 / f64::from(h));
+    f.press_at(1.0 - 215.0 / f64::from(w), 11.0 / f64::from(h));
 });
 
 /// A tray icon (the sync app's, with its attention icon) pressed: its menu opens below it,
@@ -374,7 +379,7 @@ control_goldens! {
 
     // The shell's menu bar (3.2b): the logo, the active app's name in bold and the clock;
     // the logo's menu and the clock's menu open, their titles highlighted.
-    shell_bar: "shell-bar", SHELL_BAR_SIZE, &[NORMAL, LOGO_OPEN, CLOCK_OPEN, BATTERY_OPEN, NETWORK_OPEN, BLUETOOTH_OPEN], specimens::shell_bar("Gallery", |_| (), |_| (), |_| ());
+    shell_bar: "shell-bar", SHELL_BAR_SIZE, &[NORMAL, LOGO_OPEN, CLOCK_OPEN, BATTERY_OPEN, VOLUME_OPEN, NETWORK_OPEN, BLUETOOTH_OPEN], specimens::shell_bar("Gallery", |_| (), |_| (), |_| (), |_| ());
 
     // The battery, network (3.12b) and Bluetooth extras' icons in each state (3.11b).
     shell_extras: "shell-extras", SHELL_EXTRAS_SIZE, &[NORMAL], specimens::shell_extras();

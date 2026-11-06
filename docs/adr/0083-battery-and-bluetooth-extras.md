@@ -55,3 +55,14 @@ the two system services.
   as too soon is logged at debug level). Results are only logged; the change signals bring
   the new state. A protected network that isn't saved can't be joined (the menu greys it
   out; `nmtui` until a secret agent exists).
+
+## Addendum: the volume extra (task 3.14c)
+The volume extra (between the battery and the network) follows PipeWire through the
+OSD's `neue_audio::Audio` thread (ADR 0087) rather than a worker of its own: the shell's
+`osd::Keys` keeps the last `State`, maps it to `bar::VolumeView` (the default sink's level
+and mute, every sink by description) and runs the menu's commands on the same thread
+(`Keys::volume_command`): the slider sets the default sink's volume as it moves (and
+unmutes it, like the volume keys), Mute toggles its mute, and an output device becomes
+the default sink by `node.name`. Absent means hidden: PipeWire away, or no default sink.
+Nothing is applied optimistically; PipeWire's next report moves the icon and the menu.
+`menu_bar` now takes the extras' message makers as one `ExtraMessages` struct.

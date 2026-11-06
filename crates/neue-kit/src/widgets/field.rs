@@ -294,6 +294,7 @@ impl FieldWidget {
             on_closed: Some(combo::closed),
             refocus: None,
             on_step: None,
+            on_change: None,
             return_focus: None,
         };
         menu::open(
@@ -348,6 +349,7 @@ impl FieldWidget {
             on_closed: Some(edit_closed),
             refocus: Some(ctx.widget_id()),
             on_step: None,
+            on_change: None,
             return_focus: None,
             ..Anchor::at(at)
         };

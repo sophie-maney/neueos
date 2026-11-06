@@ -149,6 +149,7 @@ impl PopUpWidget {
             on_closed: Some(closed),
             refocus: None,
             on_step: None,
+            on_change: None,
             return_focus: None,
         };
         menu::open(

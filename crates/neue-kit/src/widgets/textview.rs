@@ -223,6 +223,7 @@ impl TextViewWidget {
             on_closed: Some(edit_closed),
             refocus: Some(ctx.widget_id()),
             on_step: None,
+            on_change: None,
             return_focus: None,
             ..Anchor::at(at)
         };

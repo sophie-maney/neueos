@@ -1,6 +1,7 @@
 //! The menu bar's pieces (task 3.2b): the logo menu, the active app's name, the app's own
-//! menus (the global menu, task 3.7a), the clock, battery, network and Bluetooth extras
-//! (tasks 3.11b and 3.12b) and the status-icon tray (task 3.13b), put together in a
+//! menus (the global menu, task 3.7a), the clock, battery, volume, network and Bluetooth
+//! extras (tasks 3.11b, 3.12b and 3.14c) and the status-icon tray (task 3.13b), put
+//! together in a
 //! [`MenuBar`]. Portable: the shell builds one per output, and the
 //! gallery's Shell page and the goldens build the same.
 
@@ -96,6 +97,83 @@ pub enum BluetoothCommand {
     Connect(usize),
     /// Disconnect the device at this index.
     Disconnect(usize),
+}
+
+/// An output device (a PipeWire sink) as the volume menu lists it.
+#[derive(Debug, Clone, PartialEq)]
+pub struct OutputView {
+    /// What the user calls it (the sink's description).
+    pub name: String,
+    /// It is the default sink: the one the slider, Mute and the keys act on.
+    pub default: bool,
+}
+
+/// The default sink as the bar shows it; `neue-audio`'s `State` is mapped to it.
+#[derive(Debug, Clone, PartialEq)]
+pub struct VolumeView {
+    /// The default sink's volume, 0 to 1 (cubic, as `wpctl` shows it; more than 1 shows
+    /// as 1).
+    pub level: f64,
+    pub muted: bool,
+    /// Every sink, in the order the menu lists them.
+    pub outputs: Vec<OutputView>,
+}
+
+/// What the volume menu offers.
+#[derive(Debug, Clone, Copy, PartialEq)]
+pub enum VolumeCommand {
+    /// Set the default sink's volume (0 to 1), from the slider as it moves.
+    SetLevel(f64),
+    /// Mute (`true`) or unmute the default sink.
+    SetMuted(bool),
+    /// Make the sink at this index of [`VolumeView::outputs`] the default.
+    SetOutput(usize),
+}
+
+/// What assistive technologies call the volume slider.
+pub const VOLUME_SLIDER_NAME: &str = "Volume";
+
+/// The volume extra's icon and what assistive technologies call it.
+pub fn volume_icon(view: &VolumeView) -> (ExtraIcon, String) {
+    let level = view.level.clamp(0.0, 1.0);
+    let icon = ExtraIcon::Volume {
+        level,
+        muted: view.muted,
+    };
+    let name = if view.muted {
+        "Volume, muted".to_owned()
+    } else {
+        format!("Volume, {} percent", (level * 100.0).round())
+    };
+    (icon, name)
+}
+
+/// The volume extra's menu: the slider, Mute (ticked while muted), then the output
+/// devices as a radio list (the default one selected); each sends `message(command)`.
+pub fn volume_menu<M: 'static>(
+    view: &VolumeView,
+    message: impl Fn(VolumeCommand) -> M + Clone + 'static,
+) -> Menu<M> {
+    let item = |label: &str, command| {
+        let message = message.clone();
+        MenuItem::new(label).on_choose_with(move || message(command))
+    };
+    let slide = message.clone();
+    let mut menu = Menu::new()
+        .with(
+            MenuItem::slider(VOLUME_SLIDER_NAME, view.level)
+                .on_change(move |level| slide(VolumeCommand::SetLevel(level))),
+        )
+        .with(item("Mute", VolumeCommand::SetMuted(!view.muted)).checked(view.muted))
+        .separator()
+        .with(MenuItem::new("Output Device:").disabled(true));
+    if view.outputs.is_empty() {
+        return menu.with(MenuItem::new("No Output Devices").disabled(true));
+    }
+    for (i, output) in view.outputs.iter().enumerate() {
+        menu = menu.with(item(&output.name, VolumeCommand::SetOutput(i)).radio(output.default));
+    }
+    menu
 }
 
 /// A wired (Ethernet) device as the bar shows it.
@@ -550,6 +628,8 @@ pub struct BarHandles<M> {
     pub clock: Handle<MenuTitle<M>>,
     /// The battery extra (hidden without a battery).
     pub battery: Handle<MenuTitle<M>>,
+    /// The volume extra (hidden without PipeWire or a default sink).
+    pub volume: Handle<MenuTitle<M>>,
     /// The network extra (hidden without NetworkManager).
     pub network: Handle<MenuTitle<M>>,
     /// The Bluetooth extra (hidden without an adapter).
@@ -567,6 +647,7 @@ impl<M> Default for BarHandles<M> {
             app: Handle::default(),
             clock: Handle::default(),
             battery: Handle::default(),
+            volume: Handle::default(),
             network: Handle::default(),
             bluetooth: Handle::default(),
             tray: Vec::new(),
@@ -576,7 +657,7 @@ impl<M> Default for BarHandles<M> {
 }
 
 /// What a bar shows.
-#[derive(Debug, Clone, PartialEq, Eq)]
+#[derive(Debug, Clone, PartialEq)]
 pub struct BarContent {
     /// The active app's name, in bold after the logo.
     pub app_name: String,
@@ -586,6 +667,8 @@ pub struct BarContent {
     pub full_date: String,
     /// The battery extra's state; `None` (no battery) hides it.
     pub battery: Option<BatteryView>,
+    /// The volume extra's state; `None` (no PipeWire, or no default sink) hides it.
+    pub volume: Option<VolumeView>,
     /// The network extra's state; `None` (no NetworkManager) hides it.
     pub network: Option<NetworkView>,
     /// The Bluetooth extra's state; `None` (no adapter) hides it.
@@ -595,25 +678,46 @@ pub struct BarContent {
     pub tray: Vec<TrayItemView>,
 }
 
+/// The commands of the menus of a bar's extras, each sending a message of the app's.
+pub struct ExtraMessages<V, N, B> {
+    /// The volume menu's.
+    pub volume: V,
+    /// The network menu's (it also sends [`NetworkCommand::Scan`] when it opens).
+    pub network: N,
+    /// The Bluetooth menu's.
+    pub bluetooth: B,
+}
+
+impl<V, N, B> std::fmt::Debug for ExtraMessages<V, N, B> {
+    fn fmt(&self, f: &mut std::fmt::Formatter<'_>) -> std::fmt::Result {
+        f.debug_struct("ExtraMessages").finish_non_exhaustive()
+    }
+}
+
 /// A menu bar showing `content` and the app's `menus` after its name, its logo menu
-/// sending `message(command)`, its network menu `network(command)`, its Bluetooth menu
-/// `bluetooth(command)` (the network menu also sends [`NetworkCommand::Scan`] when it
-/// opens) and each tray item doing `tray(item)`; `handles` are pointed at the parts that change. `backdrop` is translucent when
-/// the compositor blurs behind the bar (task 3.5).
-#[expect(
-    clippy::too_many_arguments,
-    reason = "one closure for each menu that sends commands; a struct would only rename them"
-)]
-pub fn menu_bar<M: Clone + 'static>(
+/// sending `message(command)`, its extras' menus sending `extras`' messages and each tray
+/// item doing `tray(item)`; `handles` are pointed at the parts that change. `backdrop` is
+/// translucent when the compositor blurs behind the bar (task 3.5).
+pub fn menu_bar<M, V, N, B>(
     content: &BarContent,
     menus: Vec<MenuTitle<M>>,
     message: impl Fn(SystemCommand) -> M + Clone + 'static,
-    network: impl Fn(NetworkCommand) -> M + Clone + 'static,
-    bluetooth: impl Fn(BluetoothCommand) -> M + Clone + 'static,
+    extras: ExtraMessages<V, N, B>,
     tray: impl Fn(&TrayItemView) -> TrayActions<M>,
     handles: &mut BarHandles<M>,
     backdrop: Backdrop,
-) -> MenuBar<M> {
+) -> MenuBar<M>
+where
+    M: Clone + 'static,
+    V: Fn(VolumeCommand) -> M + Clone + 'static,
+    N: Fn(NetworkCommand) -> M + Clone + 'static,
+    B: Fn(BluetoothCommand) -> M + Clone + 'static,
+{
+    let ExtraMessages {
+        volume,
+        network,
+        bluetooth,
+    } = extras;
     // All the extras are always in the bar, so that they can appear without rebuilding it.
     let battery = content.battery.unwrap_or(BatteryView {
         percent: 100,
@@ -622,6 +726,12 @@ pub fn menu_bar<M: Clone + 'static>(
         time_left: None,
     });
     let (battery_icon, battery_name) = battery_icon(&battery);
+    let volume_view = content.volume.clone().unwrap_or(VolumeView {
+        level: 0.0,
+        muted: false,
+        outputs: Vec::new(),
+    });
+    let (volume_icon, volume_name) = volume_icon(&volume_view);
     let network_view = content.network.clone().unwrap_or(NetworkView {
         wifi_enabled: false,
         wired: Vec::new(),
@@ -653,6 +763,11 @@ pub fn menu_bar<M: Clone + 'static>(
             MenuTitle::icon(battery_icon, battery_name, battery_menu(&battery))
                 .hidden(content.battery.is_none())
                 .bind(&mut handles.battery),
+        )
+        .with_extra(
+            MenuTitle::icon(volume_icon, volume_name, volume_menu(&volume_view, volume))
+                .hidden(content.volume.is_none())
+                .bind(&mut handles.volume),
         )
         .with_extra(
             MenuTitle::icon(
@@ -739,6 +854,83 @@ mod tests {
                 }
             })
             .collect()
+    }
+
+    fn sound(level: f64, muted: bool, outputs: &[(&str, bool)]) -> VolumeView {
+        VolumeView {
+            level,
+            muted,
+            outputs: outputs
+                .iter()
+                .map(|&(name, default)| OutputView {
+                    name: name.to_owned(),
+                    default,
+                })
+                .collect(),
+        }
+    }
+
+    #[test]
+    fn the_volume_icon_and_name_follow_the_level_and_mute() {
+        let (icon, name) = volume_icon(&sound(0.56, false, &[]));
+        assert_eq!(
+            icon,
+            ExtraIcon::Volume {
+                level: 0.56,
+                muted: false
+            }
+        );
+        assert_eq!(name, "Volume, 56 percent");
+        // Over 100 percent (wpctl can set it) shows as full.
+        let (icon, name) = volume_icon(&sound(1.3, false, &[]));
+        assert_eq!(
+            icon,
+            ExtraIcon::Volume {
+                level: 1.0,
+                muted: false
+            }
+        );
+        assert_eq!(name, "Volume, 100 percent");
+        assert_eq!(volume_icon(&sound(0.4, true, &[])).1, "Volume, muted");
+    }
+
+    #[test]
+    fn the_volume_menu_has_the_slider_mute_and_the_outputs() {
+        let view = sound(0.25, true, &[("Speakers", false), ("Headphones", true)]);
+        let menu = volume_menu(&view, |c| c);
+        let labels: Vec<String> = menu
+            .items()
+            .iter()
+            .map(|i| {
+                if i.is_separator() {
+                    "-".to_owned()
+                } else {
+                    i.label().to_owned()
+                }
+            })
+            .collect();
+        assert_eq!(
+            labels,
+            [
+                "Volume",
+                "Mute",
+                "-",
+                "Output Device:",
+                "Speakers",
+                "Headphones"
+            ]
+        );
+        let items = menu.items();
+        assert_eq!(items[0].slider_value(), Some(0.25));
+        assert_eq!(items[1].toggle(), MenuToggle::Check(CheckState::On));
+        assert_eq!(items[4].toggle(), MenuToggle::Radio(false));
+        assert_eq!(items[5].toggle(), MenuToggle::Radio(true));
+        assert!(!items[3].is_enabled());
+        let empty = volume_menu(&sound(0.5, false, &[]), |c| c);
+        assert_eq!(
+            empty.items().last().map(MenuItem::label),
+            Some("No Output Devices")
+        );
     }
 
     #[test]

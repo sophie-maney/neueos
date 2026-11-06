@@ -944,14 +944,15 @@ pub fn calendar<M: 'static>() -> neue_kit::CalendarPicker<M> {
 }
 
 /// Golden window size for the shell's menu bar, with room for its logo menu.
-pub const SHELL_BAR_SIZE: (u32, u32) = (460, 240);
+pub const SHELL_BAR_SIZE: (u32, u32) = (520, 240);
 
 /// What the specimen bar shows: a fixed app name and time, so goldens don't change; a
 /// battery on its way up, Wi-Fi joined to Home (with Cafe open and Library protected in
 /// range, and an Ethernet port with a cable) and a connected Bluetooth mouse.
 pub fn shell_bar_content(app_name: &str) -> neue_shell::bar::BarContent {
     use neue_shell::bar::{
-        BatteryView, BluetoothView, DeviceView, NetworkView, WifiNetworkView, WifiView, WiredView,
+        BatteryView, BluetoothView, DeviceView, NetworkView, OutputView, VolumeView,
+        WifiNetworkView, WifiView, WiredView,
     };
     let network = |ssid: &str, strength, secured, saved, active| WifiNetworkView {
         ssid: ssid.to_owned(),
@@ -973,6 +974,20 @@ pub fn shell_bar_content(app_name: &str) -> neue_shell::bar::BarContent {
             charging: true,
             on_ac: true,
             time_left: Some(std::time::Duration::from_secs(45 * 60)),
+        }),
+        volume: Some(VolumeView {
+            level: 0.56,
+            muted: false,
+            outputs: vec![
+                OutputView {
+                    name: "Speakers".to_owned(),
+                    default: true,
+                },
+                OutputView {
+                    name: "HDMI Display".to_owned(),
+                    default: false,
+                },
+            ],
         }),
         network: Some(NetworkView {
             wifi_enabled: true,
@@ -1001,11 +1016,11 @@ pub fn shell_bar_content(app_name: &str) -> neue_shell::bar::BarContent {
 }
 
 /// Golden window size for the menu extras' icons in each state.
-pub const SHELL_EXTRAS_SIZE: (u32, u32) = (300, 90);
+pub const SHELL_EXTRAS_SIZE: (u32, u32) = (300, 120);
 
-/// Three bars of menu extras: batteries (full, charging, half, low, empty), network icons
-/// (wired, disconnected, Wi-Fi with three, two, one and no arcs lit, Wi-Fi off) and
-/// Bluetooth icons (off, on, connected).
+/// Four bars of menu extras: batteries (full, charging, half, low, empty), network icons
+/// (wired, disconnected, Wi-Fi with three, two, one and no arcs lit, Wi-Fi off), Bluetooth
+/// icons (off, on, connected) and volume icons (full, two thirds, a third, silent, muted).
 pub fn shell_extras<M: 'static>() -> Stack<M> {
     use neue_kit::desktop::{Backdrop, ExtraIcon, MenuBar, MenuTitle, NetworkIcon};
     let network =
@@ -1021,6 +1036,13 @@ pub fn shell_extras<M: 'static>() -> Stack<M> {
         MenuTitle::icon(
             ExtraIcon::Bluetooth { powered, connected },
             "Bluetooth",
+            neue_kit::Menu::new(),
+        )
+    };
+    let volume = |level, muted| {
+        MenuTitle::icon(
+            ExtraIcon::Volume { level, muted },
+            "Volume",
             neue_kit::Menu::new(),
         )
     };
@@ -1053,14 +1075,24 @@ pub fn shell_extras<M: 'static>() -> Stack<M> {
                 .with_extra(bluetooth(true, false))
                 .with_extra(bluetooth(true, true)),
         )
+        .with(
+            MenuBar::new()
+                .backdrop(Backdrop::Opaque)
+                .with_extra(volume(1.0, false))
+                .with_extra(volume(0.6, false))
+                .with_extra(volume(0.3, false))
+                .with_extra(volume(0.0, false))
+                .with_extra(volume(0.6, true)),
+        )
 }
 
 /// The shell's menu bar across the top, naming `app_name`; the logo menu sends
-/// `send(command)`, the network menu `network(command)` and the Bluetooth menu
-/// `bluetooth(command)`.
+/// `send(command)`, the volume menu `volume(command)`, the network menu
+/// `network(command)` and the Bluetooth menu `bluetooth(command)`.
 pub fn shell_bar<M: Clone + 'static>(
     app_name: &str,
     send: impl Fn(neue_shell::bar::SystemCommand) -> M + Clone + 'static,
+    volume: impl Fn(neue_shell::bar::VolumeCommand) -> M + Clone + 'static,
     network: impl Fn(neue_shell::bar::NetworkCommand) -> M + Clone + 'static,
     bluetooth: impl Fn(neue_shell::bar::BluetoothCommand) -> M + Clone + 'static,
 ) -> Stack<M> {
@@ -1081,8 +1113,11 @@ pub fn shell_bar<M: Clone + 'static>(
             &shell_bar_content(app_name),
             menus,
             send,
-            network,
-            bluetooth,
+            neue_shell::bar::ExtraMessages {
+                volume,
+                network,
+                bluetooth,
+            },
             |_| neue_shell::bar::TrayActions::menu(neue_kit::Menu::new()),
             &mut handles,
             // Inside a gallery window, nothing is blurred behind the bar.
@@ -1176,6 +1211,7 @@ pub fn shell_tray<M: Clone + 'static>(idle: M) -> Stack<M> {
                 time: "09:41".to_owned(),
                 full_date: String::new(),
                 battery: None,
+                volume: None,
                 network: None,
                 bluetooth: None,
                 tray,
@@ -1191,13 +1227,19 @@ pub fn shell_tray<M: Clone + 'static>(idle: M) -> Stack<M> {
                     let idle = idle.clone();
                     move |_| idle.clone()
                 },
-                {
-                    let idle = idle.clone();
-                    move |_| idle.clone()
-                },
-                {
-                    let idle = idle.clone();
-                    move |_| idle.clone()
+                neue_shell::bar::ExtraMessages {
+                    volume: {
+                        let idle = idle.clone();
+                        move |_| idle.clone()
+                    },
+                    network: {
+                        let idle = idle.clone();
+                        move |_| idle.clone()
+                    },
+                    bluetooth: {
+                        let idle = idle.clone();
+                        move |_| idle.clone()
+                    },
                 },
                 |item| {
                     neue_shell::bar::TrayActions::menu(neue_kit::Menu::new().with(
