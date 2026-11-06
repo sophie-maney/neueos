@@ -8,6 +8,7 @@ use anyhow::Context as _;
 use neue_config::{AppearanceConfig, Layers};
 use neue_dbus::bluetooth::{Bluetooth, State as BluetoothState};
 use neue_dbus::login::Login;
+use neue_dbus::network::{Network, State as NetworkState};
 use neue_desktop::{AppDatabase, LaunchOptions, Locale};
 use neue_kit::desktop::{
     Anchor, Desktop, Fit, LayerKeyboard, LayerSpec, OutputEvent, OutputId, Picture, ShellEvent,
@@ -44,6 +45,13 @@ enum Message {
     System(SystemCommand),
     /// Something chosen in the network menu (task 3.12c wires it up).
     Network(NetworkCommand),
+    /// NetworkManager's devices or networks changed (`None`: no network device, or
+    /// NetworkManager isn't on the bus).
+    NetworkState(Option<NetworkState>),
+    /// The network worker stopped (it logged why).
+    NetworkEnded,
+    /// A NetworkManager call (Wi-Fi switch, join, connect, disconnect) finished.
+    NetworkCall(Result<(), String>),
     /// Something chosen in the Bluetooth menu.
     Bluetooth(BluetoothCommand),
     /// UPower's battery changed (`None`: there is none, or UPower isn't on the bus).
@@ -92,6 +100,16 @@ enum Message {
 enum BluetoothCall {
     /// Turns the adapter at this path on or off.
     Power(String, bool),
+    Connect(String),
+    Disconnect(String),
+}
+
+/// A NetworkManager call, with the object paths it is made on.
+enum NetworkCall {
+    SetWifi(bool),
+    Scan(String),
+    /// The Wi-Fi device and the access point to join.
+    Join(String, String),
     Connect(String),
     Disconnect(String),
 }
@@ -147,6 +165,8 @@ struct Shell {
     search: Search,
     /// BlueZ as of its last change: the menu's device indices are looked up here.
     bluetooth: Option<BluetoothState>,
+    /// NetworkManager as of its last change: the menu's indices are looked up here.
+    network: Option<NetworkState>,
 }
 
 /// The global menu as the UI thread keeps it.
@@ -198,7 +218,7 @@ impl Shell {
                 full_date: clock::full_date_text(now),
                 // Shown once the workers (`start_extras`) find a battery and an adapter.
                 battery: None,
-                // Followed by a NetworkManager worker (task 3.12c).
+                // Shown once the network worker finds a network device.
                 network: None,
                 bluetooth: None,
             },
@@ -209,6 +229,7 @@ impl Shell {
             fallback_view: None,
             search: Search::default(),
             bluetooth: None,
+            network: None,
         }
     }
 
@@ -234,13 +255,20 @@ impl Shell {
         });
     }
 
-    /// Starts the battery and Bluetooth workers, each on a thread of its own.
+    /// Starts the battery, network and Bluetooth workers, each on a thread of its own.
     fn start_extras(cx: &mut Cx<'_, Message>) {
         cx.spawn(|sender| {
             if let Err(err) = extras::run_battery(|view| sender.send(Message::Battery(view))) {
                 tracing::warn!(%err, "no battery extra: the system bus is unavailable");
             }
             Message::BatteryEnded
+        });
+        cx.spawn(|sender| {
+            if let Err(err) = extras::run_network(|state| sender.send(Message::NetworkState(state)))
+            {
+                tracing::warn!(%err, "no network extra: the system bus is unavailable");
+            }
+            Message::NetworkEnded
         });
         cx.spawn(|sender| {
             if let Err(err) =
@@ -671,6 +699,16 @@ impl Shell {
                 }
                 None => battery.set_hidden(cx, true),
             }
+            let network = &bar.handles.network;
+            match &self.content.network {
+                Some(view) => {
+                    let (icon, name) = bar::network_icon(view);
+                    network.set_icon(cx, icon, name);
+                    network.set_menu(cx, bar::network_menu(view, Message::Network));
+                    network.set_hidden(cx, false);
+                }
+                None => network.set_hidden(cx, true),
+            }
             let bluetooth = &bar.handles.bluetooth;
             match &self.content.bluetooth {
                 Some(view) => {
@@ -690,6 +728,63 @@ impl Shell {
             self.content.battery = battery;
             self.sync_bars(cx);
         }
+    }
+
+    /// Shows NetworkManager's new state on every bar.
+    fn set_network(&mut self, cx: &mut Cx<'_, Message>, state: Option<NetworkState>) {
+        let view = state.as_ref().map(extras::network_view);
+        self.network = state;
+        if self.content.network != view {
+            self.content.network = view;
+            self.sync_bars(cx);
+        }
+    }
+
+    /// Does what the network menu chose, on a thread of its own (joining takes seconds).
+    /// The result is only logged: NetworkManager's change signals bring the new state.
+    fn network_command(&mut self, cx: &mut Cx<'_, Message>, command: NetworkCommand) {
+        let Some(state) = &self.network else {
+            return;
+        };
+        let wifi = state.wifi.as_ref();
+        let wired = |i: usize| state.wired.get(i).map(|w| w.device.clone());
+        let call = match command {
+            NetworkCommand::SetWifi(on) => Some(NetworkCall::SetWifi(on)),
+            // A switched-off radio can't scan.
+            NetworkCommand::Scan => wifi
+                .filter(|_| state.wifi_enabled)
+                .map(|w| NetworkCall::Scan(w.device.clone())),
+            NetworkCommand::Join(i) => wifi.and_then(|w| {
+                let ap = w.access_points.get(i)?;
+                Some(NetworkCall::Join(w.device.clone(), ap.path.clone()))
+            }),
+            NetworkCommand::DisconnectWifi => {
+                wifi.map(|w| NetworkCall::Disconnect(w.device.clone()))
+            }
+            NetworkCommand::ConnectWired(i) => wired(i).map(NetworkCall::Connect),
+            NetworkCommand::DisconnectWired(i) => wired(i).map(NetworkCall::Disconnect),
+        };
+        let Some(call) = call else {
+            return;
+        };
+        cx.spawn(move |_| {
+            let result = Network::system().and_then(|network| match &call {
+                NetworkCall::SetWifi(on) => network.set_wifi_enabled(*on),
+                NetworkCall::Scan(device) => network.request_scan(device),
+                NetworkCall::Join(device, ap) => network.join(device, ap),
+                NetworkCall::Connect(device) => network.connect(device),
+                NetworkCall::Disconnect(device) => network.disconnect(device),
+            });
+            Message::NetworkCall(match (&call, result) {
+                // NetworkManager refuses scans that follow each other closely; the list
+                // is current enough.
+                (NetworkCall::Scan(_), Err(err)) => {
+                    tracing::debug!(%err, "Wi-Fi scan refused");
+                    Ok(())
+                }
+                (_, result) => result.map_err(|e| e.to_string()),
+            })
+        });
     }
 
     /// Shows BlueZ's new state on every bar.
@@ -862,8 +957,13 @@ impl Application for Shell {
                 self.unbusy(cx);
             }
             Message::System(command) => self.system(cx, command),
-            Message::Network(command) => {
-                tracing::debug!(?command, "network menu: not wired yet");
+            Message::Network(command) => self.network_command(cx, command),
+            Message::NetworkState(state) => self.set_network(cx, state),
+            Message::NetworkEnded => self.set_network(cx, None),
+            Message::NetworkCall(result) => {
+                if let Err(err) = result {
+                    tracing::warn!(%err, "a network call failed");
+                }
             }
             Message::Bluetooth(command) => self.bluetooth_command(cx, command),
             Message::Battery(battery) => self.set_battery(cx, battery),

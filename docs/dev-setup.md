@@ -167,6 +167,8 @@ ssh -t neueos-vm 'sudo sh -c "setsid nohup ~sophie/neueos/target/debug/examples/
 ssh neueos-vm 'cat /tmp/mock-nm.log'                               # the calls the menu made
 ssh -t neueos-vm 'sudo pkill -x mock_network_m; sudo rm -f /usr/share/dbus-1/system.d/neue-mock-nm.conf; sudo systemctl reload dbus; sudo systemctl start NetworkManager'   # when done
 ```
+The shell follows NetworkManager within 5 s of the mock starting or stopping; open the
+network menu (the extra left of Bluetooth) to scan and list the networks.
 Without a private system bus the example can also be tried in OrbStack:
 `orb run -m neueos-arm64 dbus-run-session -- sh -c 'DBUS_SYSTEM_BUS_ADDRESS=$DBUS_SESSION_BUS_ADDRESS target/neueos-arm64/debug/examples/mock_network_manager'`
 and `busctl --user …` against `org.freedesktop.NetworkManager`.

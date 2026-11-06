@@ -467,6 +467,14 @@ their goldens and the gallery's "Shell" page run on macOS.
       wired connection can be toggled, the Wi-Fi list shows and joining Home and Cafe reaches
       the mock; the extra is gone with the mock stopped.
       *Owner:* Wi-Fi list and joining a saved network on the PC.
+      *Done (not ticked, VM check open):* `extras::{run_network, network_view}` and the shell
+      wiring as in the addendum to ADR 0083. 1 new test (`network_view`); the existing
+      `follow` tests take the debounce. Clippy and tests pass on arm64 Linux. In the VM
+      without NetworkManager the extra is absent (screenshot checked). **Not done:** the
+      mock NetworkManager run (the VM's sudo refused `1234`); the steps are in
+      `docs/dev-setup.md` §1.6c. Tick this box once they pass: extra shows, Wired
+      connection 1 toggles, Home and Cafe join (the mock log shows the calls), Library is
+      greyed, and the extra is gone with the mock stopped.
 - [ ] **3.13 Status-icon tray** · Sonnet. After 3.7a. `StatusNotifierWatcher` and a host in
       `neue-dbus`; icons by name or pixmap, tooltips, activation, and menus through the 3.7a
       DBusMenu client.
