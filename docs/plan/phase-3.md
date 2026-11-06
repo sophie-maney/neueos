@@ -808,13 +808,33 @@ their goldens and the gallery's "Shell" page run on macOS.
       placeholder, the minimise rectangles reaching the compositor (debug log) and a
       zoomed window stopping above the shelf. Not done: blur under the shelf, hover labels,
       keyboard focus for the dock surface, the app's own window icon (ADR 0092).
-- [ ] **3.17 Dock B: magnification, edges and editing** · Sonnet. After 3.16.
-      Magnification, the 2D dock on the left and right edges, drag to rearrange, drag off
-      to remove, Keep in Dock, context menus with the app's windows and Quit, the Trash
-      tile (empty/full, Empty Trash; 3.3), and tiles for minimised windows (a thumbnail via
-      toplevel capture, ADR 0023; click restores).
-      *Accept:* goldens; in the VM each behaviour checked with `ydotool` and screenshots.
+- [ ] **3.17 Dock B: magnification, edges and editing**, split into 3.17a–c (the layout
+      rework, editing and menus, the Trash and minimised tiles).
+- [ ] **3.17a Magnification and left/right edges** · Opus. After 3.16. Both rewrite the
+      dock's layout (`dock_size`, `dock_icon_rect`), hit-testing and the minimise
+      rectangles, so they go together. Hover magnification in `neue_kit::desktop::Dock`
+      (a spring-smoothed scale curve under the pointer; tile rects and minimise
+      rectangles follow it; reduced motion turns it off), the 2D dock on the left and right
+      edges (vertical layout, rotated shelf material, surface anchored to that edge,
+      exclusive zone, bounce direction), and `[dock]` config for edge, size and
+      magnification (defaults keep today's dock).
+      *Accept:* goldens (magnified, left, right × light/dark × 1 and 2); unit tests of the
+      curve and layout; in the VM, `ydotool` pointer moves with screenshots, the edge
+      switched through config, windows stopping at the shelf, minimise rectangles still
+      right (debug log).
       *Owner:* magnification feels right with a real mouse and trackpad.
+- [ ] **3.17b Editing and context menus** · Sonnet (Opus if the drag gesture proves
+      fiddly). After 3.17a. Drag to rearrange, drag off to remove, Keep in Dock (writes
+      `[dock] pinned`), and a context menu (existing `ContextMenu` widget) with the app's
+      windows, Keep in Dock, and Quit.
+      *Accept:* model tests (reorder, remove, pin, unpin); goldens of the dragging state;
+      in the VM, drags and menu clicks with `ydotool`, the resulting `pinned` list and
+      screenshots.
+- [ ] **3.17c Trash and minimised tiles** · Sonnet. After 3.17b (and 3.3). The Trash tile
+      (empty/full, Empty Trash) and tiles for minimised windows (a thumbnail via toplevel
+      capture, ADR 0023; click restores). Split again if the thumbnail plumbing is large.
+      *Accept:* goldens; in the VM, minimise a window and check its tile and thumbnail,
+      restore it, fill and empty the trash.
 
 ## D. Session
 - [ ] **3.18 Lock screen** · Opus. After 3.2b. An `ext-session-lock-v1` client on linen
