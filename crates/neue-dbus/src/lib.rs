@@ -6,6 +6,8 @@
 //! - [`gmenu_client`]: the same for GTK's `org.gtk.Menus` and `org.gtk.Actions` (task 3.8).
 //! - [`registrar`]: `com.canonical.AppMenu.Registrar`, owned by the shell (task 3.7a).
 //! - [`login`]: the logind calls behind the logo menu.
+//! - [`power`] and [`bluetooth`]: UPower's battery and BlueZ's adapter and devices, for the
+//!   battery and Bluetooth menu extras (task 3.11a).
 //!
 //! The StatusNotifierItem host and our private services arrive
 //! with later Phase 3 tasks.
@@ -14,10 +16,12 @@
 //! apps without an async runtime can use this crate; method calls are answered on that
 //! thread, never on the caller's.
 
+pub mod bluetooth;
 pub mod gmenu_client;
 pub mod login;
 pub mod menu;
 pub mod menu_client;
+pub mod power;
 pub mod registrar;
 pub mod testing;
 

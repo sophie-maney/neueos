@@ -327,12 +327,42 @@ their goldens and the gallery's "Shell" page run on macOS.
       rest. Firefox and foot export no menu on Wayland (`menu: none`), so the plan's
       Firefox/foot check isn't possible; KWrite stands in for the remapped app.
       *Owner:* GTK apps' menus (gedit, Nautilus) show ⌘ on the PC; Chromium's too.
-- [ ] **3.11 Menu extras: battery and Bluetooth** · Sonnet. After 3.2b. zbus proxies for
-      UPower and BlueZ (not `bluer`, which links libdbus). Battery: icon with charge and
-      state, menu with percentage and time left, hidden without a battery. Bluetooth:
-      on/off, paired devices with connect and disconnect, hidden without an adapter.
-      *Accept:* unit tests against mock D-Bus services; VM screenshots with mocked
-      services where the VM lacks the hardware.
+- [x] **3.11a Battery and Bluetooth A: UPower and BlueZ clients** · Sonnet. After 3.2b.
+      Split from 3.11. `neue-dbus` modules `power` and `bluetooth`: zbus proxies for UPower
+      (`DisplayDevice`) and BlueZ (`ObjectManager`, not `bluer`, which links libdbus) on the
+      system bus, and plain models with the logic (`neue-dbus` is Linux-only, so these are not
+      portable; 3.11b's builders take their own portable view types, as `BarContent` is):
+      `Battery` (percentage, state, time left; `None` when absent), `Adapter` and `Device`
+      (powered, connected, name). Calls: adapter
+      power, device connect and disconnect. Change signals as a stream of snapshots the
+      shell worker (3.11c) can wait on.
+      *Accept:* unit tests against mock UPower and BlueZ services over `testing::pair()`: no
+      battery, charging, discharging, time left, no adapter, power on and off, connect and
+      disconnect, a device appearing and disappearing.
+      *Done:* `neue_dbus::power::{Power, Battery, BatteryState, PowerChanges}` (UPower's
+      `DisplayDevice`, `IsPresent` false → `None`; time left is until empty when
+      discharging, until full when charging, `None` without an estimate) and
+      `neue_dbus::bluetooth::{Bluetooth, State, Adapter, Device, BluetoothChanges}` (first
+      adapter by path; only paired devices of it, connected first; `set_powered`, `connect`
+      (blocks: call it off the UI thread) and `disconnect`). `*Changes` are blocking
+      iterators of "read again" signals, like `MenuSignals`. 23 neue-dbus unit tests
+      (arm64 Linux via `cargo xtask linux`) against mock services over `testing::pair()`.
+      No ADR: zbus only, no new dependency or protocol. Pairing a new device needs a BlueZ
+      agent and is not planned yet (paired devices only).
+- [ ] **3.11b Battery and Bluetooth B: icon extras in the kit** · Sonnet. After 3.11a's
+      models (can start from their shapes). `MenuTitle::icon` and `Handle::set_hidden`;
+      original vector battery (charge level, charging) and Bluetooth icons, light and dark;
+      `bar::battery_menu` and `bluetooth_menu` builders over the 3.11a models. Gallery Shell
+      page entries, AccessKit labels.
+      *Accept:* goldens (states × light/dark × scale 1 and 2); kit tests for icon and hidden
+      titles.
+- [ ] **3.11c Battery and Bluetooth C: shell wiring** · Sonnet. After 3.11a and 3.11b. A
+      worker thread (as the global menu's) following UPower and BlueZ, bar sync, extras
+      absent without a battery or an adapter, menu actions (power toggle, connect,
+      disconnect). ADR for the extras.
+      *Accept:* in the VM with a mock UPower and BlueZ on the system bus: both extras show
+      with screenshots, the Bluetooth menu toggles and connects (checked on the mock), and
+      neither shows with the mocks stopped.
       *Owner:* battery on a laptop if one is available; pairing and connecting a device on
       the PC.
 - [ ] **3.12 Menu extra: network** · Sonnet. After 3.2b. NetworkManager over zbus: wired
