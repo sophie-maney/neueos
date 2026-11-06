@@ -808,8 +808,8 @@ their goldens and the gallery's "Shell" page run on macOS.
       placeholder, the minimise rectangles reaching the compositor (debug log) and a
       zoomed window stopping above the shelf. Not done: blur under the shelf, hover labels,
       keyboard focus for the dock surface, the app's own window icon (ADR 0092).
-- [ ] **3.17 Dock B: magnification, edges and editing**, split into 3.17a–c (the layout
-      rework, editing and menus, the Trash and minimised tiles).
+- [ ] **3.17 Dock B: magnification, edges and editing**, split into 3.17a–d (the layout
+      rework, editing and menus, the Trash and minimised tiles, thumbnails).
 - [x] **3.17a Magnification and left/right edges** · Opus. After 3.16. Both rewrite the
       dock's layout (`dock_size`, `dock_icon_rect`), hit-testing and the minimise
       rectangles, so they go together. Hover magnification in `neue_kit::desktop::Dock`
@@ -873,11 +873,42 @@ their goldens and the gallery's "Shell" page run on macOS.
       restoring minimised foot. Not done: the icon following the pointer beyond the
       surface (a Wayland drag icon), the poof, press-and-hold for the menu, keyboard
       reordering; real hardware.
-- [ ] **3.17c Trash and minimised tiles** · Sonnet. After 3.17b (and 3.3). The Trash tile
-      (empty/full, Empty Trash) and tiles for minimised windows (a thumbnail via toplevel
-      capture, ADR 0023; click restores). Split again if the thumbnail plumbing is large.
-      *Accept:* goldens; in the VM, minimise a window and check its tile and thumbnail,
-      restore it, fill and empty the trash.
+- [x] **3.17c Trash and minimised tiles** · Sonnet. After 3.17b (and 3.3). The Trash tile
+      at the end of the dock, set apart (empty/full icon from `neue_desktop::Trash`, a menu
+      with Empty Trash, refreshed while the shell runs) and tiles for minimised windows
+      after a divider (the app's icon for now; click restores). Thumbnails are 3.17d.
+      *Accept:* model tests (tile order, the divider, Trash state); goldens (Trash empty
+      and full, a minimised tile, light/dark × 1 and 2); in the VM, minimise a window and
+      check its tile, restore it, fill and empty the trash.
+      *Owner:* the tiles, menus and Trash feel right with a real mouse and trackpad; the
+      Trash and its Open item with a file manager installed (the VM has none, so `xdg-open`
+      was not exercised); the theme's Trash icons (the VM has no Papirus or neueOS theme, so
+      its tile showed the placeholder).
+      *Done:* ADR 0095. `neue_shell::dock::{TileKind, DIVIDER_KEY, TRASH_KEY}` and
+      `Dock::{set_trash, trash}`; tiles after the apps: divider, a tile per minimised
+      window (window title, the app's icon as a badge), the Trash. `neue_kit::desktop::
+      {DockTileKind, DockTile::{kind, fixed}}` (fixed tiles click but never drag; the
+      divider has no pointer, focus or label); `neue-paint` `dock_divider` and
+      `minimised_window`; tokens and palette in `dock_shelf`. Minimise targets follow a
+      window to its own tile. Trash polled every 2 s; menus: Open and Empty Trash (no
+      confirmation), Restore and Close. Goldens: `shell-dock-sections` (full),
+      `-sections-empty` and `-sections-left` × light/dark × 1 and 2; gallery entry. Tests: 4
+      model, 3 kit, 2 paint. Checked in the VM (1024×768, dev shell and compositor): foot
+      minimised (its tile appears with foot's icon in the corner; the minimise rectangle
+      moves from x 22 to the new tile at x 126), a click restoring it, its menu's Restore and
+      Close, two files trashed (the tile switched to `user-trash-full` within 3 s, Empty
+      Trash enabled) and Empty Trash clearing `files/` and `info/` (disabled again). Not
+      done: thumbnails (3.17d), confirmation before Empty Trash, other volumes' trash, files
+      dropped on the Trash, a narrow divider; real hardware.
+- [ ] **3.17d Minimised-window thumbnails** · Opus. After 3.17c. The shell has no
+      toplevel-capture client: add `ext-image-copy-capture` with
+      `ext-foreign-toplevel-image-capture-source` to `neue-platform` (session, shm buffers,
+      frame loop, `window-<id>` identifiers; ADR 0023 is the compositor side), a
+      `ShellRequest` and event for it, shm to `Picture`, and the thumbnail in minimised
+      tiles (app icon as the badge, fallback while there is none). ADR for the client.
+      *Accept:* a platform test against the headless compositor; goldens; in the VM,
+      minimise a window and check that its tile shows the thumbnail, and that it stops
+      updating requests when the window is restored or closed.
 
 ## D. Session
 - [ ] **3.18 Lock screen** · Opus. After 3.2b. An `ext-session-lock-v1` client on linen

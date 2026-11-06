@@ -74,7 +74,7 @@ pub use date::{CalendarPicker, DatePicker};
 pub(crate) use date::{CalendarWidget, DateFieldWidget};
 pub(crate) use desktop::DesktopWidget;
 pub(crate) use dock::{DockAction, DockTileWidget, DockWidget};
-pub use dock::{DockBounce, DockTile};
+pub use dock::{DockBounce, DockTile, DockTileKind};
 pub use dock_layout::{DockEdge, DockLayout, DockPlacement};
 pub use field::{ComboBox, TextField};
 pub(crate) use field::{FieldAction, FieldWidget};

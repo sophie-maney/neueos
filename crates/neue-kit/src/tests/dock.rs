@@ -17,7 +17,7 @@ use neue_platform::{PopoverAnchor, Side};
 use neue_theme::materials::dock::MENU_GAP;
 
 use super::*;
-use crate::desktop::{Dock, DockBounce, DockEdge, DockLayout, DockTile};
+use crate::desktop::{Dock, DockBounce, DockEdge, DockLayout, DockTile, DockTileKind};
 use crate::widgets::{DockWidget, MenuWidget};
 use crate::{Menu, MenuItem};
 
@@ -58,6 +58,7 @@ fn tile(key: &str, running: bool, bounce: DockBounce) -> DockTile {
         icon: None,
         running,
         bounce,
+        ..DockTile::default()
     }
 }
 
@@ -545,4 +546,115 @@ fn drag_on(runner: &mut Runner<Shelf>, host: &mut FakeHost, path: &[Point]) {
         host.only().mouse_move(p);
     }
     deliver(runner, host);
+}
+
+/// Two apps, then a divider, a minimised window and the Trash (fixed): a, b, divider,
+/// window and trash.
+fn setup_sections() -> (Runner<Shelf>, FakeHost) {
+    let special = |key: &str, kind, fixed| DockTile {
+        kind,
+        fixed,
+        ..tile(key, false, DockBounce::None)
+    };
+    setup_shelf(
+        Shelf {
+            tiles: vec![
+                tile("a", false, DockBounce::None),
+                tile("b", false, DockBounce::None),
+                special("divider", DockTileKind::Divider, false),
+                special("window", DockTileKind::Minimised, false),
+                special("trash", DockTileKind::App, true),
+            ],
+            ..Shelf::default()
+        },
+        false,
+    )
+}
+
+#[test]
+fn the_divider_takes_a_slot_but_no_pointer_and_no_focus() {
+    let (mut runner, mut host) = setup_sections();
+    let rest = DockLayout::default().rest(5);
+    let divider = rest.icons[2].center();
+    let point = at(&runner, &mut host, divider.x, divider.y);
+    click_at(&mut runner, &mut host, point);
+    let window = rest.icons[3].center();
+    let point = at(&runner, &mut host, window.x, window.y);
+    click_at(&mut runner, &mut host, point);
+    let trash = rest.icons[4].center();
+    let point = at(&runner, &mut host, trash.x, trash.y);
+    click_at(&mut runner, &mut host, point);
+    assert_eq!(runner.app().clicked, ["window", "trash"]);
+
+    // Tab skips the divider: a, b, window, trash.
+    let tiles = dock(&runner, &mut host, DockWidget::tile_ids);
+    host.only().focus_on(Some(tiles[1]));
+    tap(host.only(), &Key::Named(NamedKey::Tab));
+    assert_eq!(host.only().focused_widget_id(), Some(tiles[3]));
+    assert_eq!(
+        host.only().access_node(tiles[2]).map(|n| n.role()),
+        Some(Role::GenericContainer)
+    );
+    assert_eq!(
+        host.only().access_node(tiles[3]).map(|n| n.role()),
+        Some(Role::Button)
+    );
+}
+
+#[test]
+fn fixed_tiles_are_clicked_but_never_dragged() {
+    let (mut runner, mut host) = setup_sections();
+    let rest = DockLayout::default().rest(5);
+    for (i, key) in [(3, "window"), (4, "trash")] {
+        let from = rest.icons[i].center();
+        // Far enough along and off the dock to be a drag of an app.
+        drag(
+            &mut runner,
+            &mut host,
+            from,
+            &[from + Vec2::new(-80.0, 0.0), from + Vec2::new(-80.0, -60.0)],
+        );
+        assert_eq!(
+            shown(&runner, &mut host),
+            ["a", "b", "divider", "window", "trash"]
+        );
+        release(&mut runner, &mut host);
+        assert!(runner.app().edits.is_empty(), "{key}");
+        // Released off its tile: no click either.
+        assert!(runner.app().clicked.is_empty(), "{key}");
+    }
+    // An app is dragged past them: it lands among the section.
+    let a = rest.icons[0].center();
+    drag(&mut runner, &mut host, a, &[rest.icons[4].center()]);
+    assert_eq!(
+        shown(&runner, &mut host),
+        ["b", "divider", "window", "trash", "a"]
+    );
+    release(&mut runner, &mut host);
+    assert_eq!(runner.app().edits, ["move a 4"]);
+}
+
+#[test]
+fn a_secondary_click_on_the_trash_asks_for_its_menu() {
+    let (mut runner, mut host) = setup_sections();
+    let rest = DockLayout::default().rest(5);
+    let trash = rest.icons[4].center();
+    let point = at(&runner, &mut host, trash.x, trash.y);
+    host.only().mouse_move(point);
+    host.only()
+        .mouse_button_press(Some(PointerButton::Secondary));
+    host.only()
+        .mouse_button_release(Some(PointerButton::Secondary));
+    deliver(&mut runner, &mut host);
+    assert_eq!(runner.app().edits, ["menu trash"]);
+    // The divider has none.
+    let divider = rest.icons[2].center();
+    let point = at(&runner, &mut host, divider.x, divider.y);
+    host.only().mouse_move(point);
+    host.only()
+        .mouse_button_press(Some(PointerButton::Secondary));
+    host.only()
+        .mouse_button_release(Some(PointerButton::Secondary));
+    deliver(&mut runner, &mut host);
+    assert_eq!(runner.app().edits, ["menu trash"]);
 }

@@ -41,7 +41,8 @@ use masonry_core::layout::{LenReq, Length};
 use neue_paint::icon::{Icon, icon};
 use neue_paint::imaging::ImagingReplayer;
 use neue_paint::materials::dock_shelf::{
-    ShelfStyle, dock_shelf_with, placeholder_icon, reflected, running_indicator,
+    ShelfStyle, dock_divider, dock_shelf_with, minimised_window, placeholder_icon, reflected,
+    running_indicator,
 };
 use neue_paint::materials::focus_ring;
 use neue_paint::{Backdrop, Scene};
@@ -72,6 +73,20 @@ pub enum DockBounce {
     Attention,
 }
 
+/// What a dock tile is.
+#[derive(Clone, Copy, Debug, Default, PartialEq, Eq, Hash)]
+pub enum DockTileKind {
+    /// An app, or anything shown as an icon on the shelf (the Trash).
+    #[default]
+    App,
+    /// A minimised window: a small window with the app's icon (the tile's `icon`) in its
+    /// corner. It can't be dragged.
+    Minimised,
+    /// The line between the dock's sections. It takes a tile's room, but is no tile to
+    /// the pointer or the keyboard.
+    Divider,
+}
+
 /// One app on the dock.
 #[derive(Clone, Debug, Default, PartialEq)]
 pub struct DockTile {
@@ -84,6 +99,17 @@ pub struct DockTile {
     /// The app has windows: the light under it is on.
     pub running: bool,
     pub bounce: DockBounce,
+    pub kind: DockTileKind,
+    /// The tile stays where it is: it can be clicked, but not dragged. (Minimised windows
+    /// and dividers never can.)
+    pub fixed: bool,
+}
+
+impl DockTile {
+    /// Whether the tile can't be dragged.
+    fn is_fixed(&self) -> bool {
+        self.fixed || self.kind != DockTileKind::App
+    }
 }
 
 /// What the dock emits.
@@ -108,6 +134,8 @@ pub(crate) enum DockAction {
 #[derive(Clone, Debug)]
 struct Press {
     key: String,
+    /// The tile can't be dragged.
+    fixed: bool,
     /// Where the pointer went down, in the dock.
     at: Point,
     /// Where on the icon: a share of its size along the dock and away from the edge.
@@ -271,6 +299,8 @@ struct Hover {
 struct Tile {
     key: String,
     icon: Option<Icon>,
+    kind: DockTileKind,
+    fixed: bool,
     running: bool,
     bounce: Bounce,
     /// How far the icon is from its place along the dock and away from the edge, sliding
@@ -284,6 +314,8 @@ impl Tile {
         Self {
             key: tile.key.clone(),
             icon: None,
+            kind: tile.kind,
+            fixed: tile.is_fixed(),
             running: false,
             bounce: Bounce::new(),
             slide: (SpringValue::new(0.0), SpringValue::new(0.0)),
@@ -369,6 +401,8 @@ impl DockWidget {
                     Tile::new(&tile)
                 }
             };
+            kept.kind = tile.kind;
+            kept.fixed = tile.is_fixed();
             kept.icon = tile.icon;
             kept.running = tile.running;
             if kept.bounce.kind != tile.bounce || !kept.bounce.moving() {
@@ -405,7 +439,10 @@ impl DockWidget {
     /// along the dock.
     fn tile_at(&self, p: Point) -> Option<usize> {
         let (u, _) = self.layout.frame_of(p);
-        self.order.get(self.placement.tile_at(u)?).copied()
+        self.order
+            .get(self.placement.tile_at(u)?)
+            .copied()
+            .filter(|&i| self.tiles[i].kind != DockTileKind::Divider)
     }
 
     fn index_of(&self, key: &str) -> Option<usize> {
@@ -528,7 +565,7 @@ impl DockWidget {
             return;
         };
         if self.drag.is_none() {
-            if (p - press.at).hypot() < DRAG_THRESHOLD {
+            if press.fixed || (p - press.at).hypot() < DRAG_THRESHOLD {
                 return;
             }
             self.drag = Some(Drag {
@@ -828,6 +865,7 @@ impl Widget for DockWidget {
                 );
                 self.press = Some(Press {
                     key: self.tiles[index].key.clone(),
+                    fixed: self.tiles[index].fixed,
                     at: local,
                     grab,
                 });
@@ -975,7 +1013,7 @@ impl Widget for DockWidget {
                 if dimmed {
                     scene.push_opacity(0.6);
                 }
-                draw_icon(scene, rect, tile.icon.as_ref(), &theme);
+                draw_tile(scene, rect, tile, &theme, layout.edge);
                 if dimmed {
                     scene.pop_layer();
                 }
@@ -1021,7 +1059,7 @@ impl Widget for DockWidget {
             if off {
                 scene.push_opacity(REMOVING_OPACITY);
             }
-            draw_icon(&mut scene, rect, self.tiles[index].icon.as_ref(), &theme);
+            draw_tile(&mut scene, rect, &self.tiles[index], &theme, layout.edge);
             if off {
                 scene.pop_layer();
             }
@@ -1049,6 +1087,22 @@ impl Widget for DockWidget {
 
     fn get_debug_text(&self) -> Option<String> {
         Some(format!("{} tiles", self.tiles.len()))
+    }
+}
+
+/// Draws `tile` in its icon's `rect`: its icon (or the placeholder), a minimised window,
+/// or the divider.
+fn draw_tile(scene: &mut Scene, rect: Rect, tile: &Tile, theme: &Theme, edge: DockEdge) {
+    match tile.kind {
+        DockTileKind::App => draw_icon(scene, rect, tile.icon.as_ref(), theme),
+        DockTileKind::Minimised => {
+            minimised_window(scene, rect, theme.variant, |scene, badge| {
+                if let Some(app) = &tile.icon {
+                    draw_icon(scene, badge, Some(app), theme);
+                }
+            });
+        }
+        DockTileKind::Divider => dock_divider(scene, rect, edge == DockEdge::Bottom, theme.variant),
     }
 }
 
@@ -1080,6 +1134,7 @@ fn is_menu_key(key: &Key, modifiers: Modifiers) -> bool {
 /// except for the focus ring.
 #[derive(Debug)]
 pub(crate) struct DockTileWidget {
+    kind: DockTileKind,
     name: String,
     running: bool,
     launching: bool,
@@ -1089,6 +1144,7 @@ pub(crate) struct DockTileWidget {
 impl DockTileWidget {
     fn new(tile: &DockTile) -> Self {
         Self {
+            kind: tile.kind,
             name: tile.name.clone(),
             running: tile.running,
             launching: tile.bounce == DockBounce::Launch,
@@ -1099,6 +1155,7 @@ impl DockTileWidget {
     fn edit(this: &mut WidgetMut<'_, Self>, tile: &DockTile) {
         let new = Self::new(tile);
         if this.widget.name != new.name
+            || this.widget.kind != new.kind
             || this.widget.running != new.running
             || this.widget.launching != new.launching
             || this.widget.attention != new.attention
@@ -1171,11 +1228,14 @@ impl Widget for DockTileWidget {
     }
 
     fn accepts_focus(&self) -> bool {
-        true
+        self.kind != DockTileKind::Divider
     }
 
     fn accessibility_role(&self) -> Role {
-        Role::Button
+        match self.kind {
+            DockTileKind::Divider => Role::GenericContainer,
+            _ => Role::Button,
+        }
     }
 
     fn accessibility(
@@ -1184,6 +1244,9 @@ impl Widget for DockTileWidget {
         _props: &PropertiesRef<'_>,
         node: &mut Node,
     ) {
+        if self.kind == DockTileKind::Divider {
+            return;
+        }
         node.set_label(self.name.clone());
         node.add_action(Action::Click);
         node.add_action(Action::ShowContextMenu);

@@ -15,10 +15,11 @@ use neue_gallery::specimens::{
     COLOR_WELL_SIZE, COMBO_SIZE, DATE_SIZE, FIELD_SIZE, ICONS_SIZE, MENU_SIZE, OUTLINE_SIZE,
     PATH_SIZE, POPOVER_SIZE, POPUP_SIZE, PROGRESS_SIZE, PULL_DOWN_SIZE, PUSH_BUTTON_SIZE,
     SCROLL_SIZE, SEGMENTED_SIZE, SHELL_BAR_SIZE, SHELL_DESKTOP_SIZE, SHELL_DOCK_MAGNIFIED,
-    SHELL_DOCK_MAGNIFIED_SIZE, SHELL_DOCK_SIDE_SIZE, SHELL_DOCK_SIZE, SHELL_EXTRAS_SIZE,
-    SHELL_NOTIFICATION_SIZE, SHELL_NOTIFICATION_STACK_SIZE, SHELL_OSD_SIZE, SHELL_TRAY_SIZE,
-    SIDEBAR_SIZE, SLIDER_SIZE, SPINNER_SIZE, SPLIT_SIZE, STEPPER_SIZE, SUBMENU_SIZE, TABLE_SIZE,
-    TABS_SIZE, TEXT_VIEW_SIZE, TOGGLE_SIZE,
+    SHELL_DOCK_MAGNIFIED_SIZE, SHELL_DOCK_SECTIONS_SIDE_SIZE, SHELL_DOCK_SECTIONS_SIZE,
+    SHELL_DOCK_SIDE_SIZE, SHELL_DOCK_SIZE, SHELL_EXTRAS_SIZE, SHELL_NOTIFICATION_SIZE,
+    SHELL_NOTIFICATION_STACK_SIZE, SHELL_OSD_SIZE, SHELL_TRAY_SIZE, SIDEBAR_SIZE, SLIDER_SIZE,
+    SPINNER_SIZE, SPLIT_SIZE, STEPPER_SIZE, SUBMENU_SIZE, TABLE_SIZE, TABS_SIZE, TEXT_VIEW_SIZE,
+    TOGGLE_SIZE,
 };
 use neue_kit::testing::{
     self, DISABLED, FOCUSED, Fixture, Goldens, INACTIVE, NORMAL, NavKey, PRESSED, State,
@@ -446,6 +447,12 @@ control_goldens! {
     shell_dock_magnified: "shell-dock-magnified", SHELL_DOCK_MAGNIFIED_SIZE, &[MAGNIFIED], specimens::shell_dock_with::<()>(SHELL_DOCK_MAGNIFIED, |_| None);
     shell_dock_left: "shell-dock-left", SHELL_DOCK_SIDE_SIZE, &[NORMAL, BOUNCING], specimens::shell_dock_on::<()>(neue_kit::desktop::DockEdge::Left, |_| None);
     shell_dock_right: "shell-dock-right", SHELL_DOCK_SIDE_SIZE, &[NORMAL, BOUNCING], specimens::shell_dock_on::<()>(neue_kit::desktop::DockEdge::Right, |_| None);
+
+    // The dock's other section (3.17c): a divider, minimised windows (with and without an
+    // icon for the corner) and the Trash, full and empty; down the flat shelf too.
+    shell_dock_sections: "shell-dock-sections", SHELL_DOCK_SECTIONS_SIZE, &[NORMAL], specimens::shell_dock_sections::<()>(true, neue_kit::desktop::DockEdge::Bottom, |_| None);
+    shell_dock_sections_empty: "shell-dock-sections-empty", SHELL_DOCK_SECTIONS_SIZE, &[NORMAL], specimens::shell_dock_sections::<()>(false, neue_kit::desktop::DockEdge::Bottom, |_| None);
+    shell_dock_sections_left: "shell-dock-sections-left", SHELL_DOCK_SECTIONS_SIDE_SIZE, &[NORMAL], specimens::shell_dock_sections::<()>(true, neue_kit::desktop::DockEdge::Left, |_| None);
 
     // Notifications (3.15b): a banner at rest, with the pointer on its close button and
     // with keyboard focus; a banner with an image; an alert with two actions, at rest and
