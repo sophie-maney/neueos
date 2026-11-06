@@ -107,6 +107,8 @@ pub struct Window<M> {
     /// The window's material is translucent: ask for blur behind it when offered, cut to
     /// corners of this radius (0: square).
     blur_behind: Option<f64>,
+    /// A layer surface that takes the size of its content ([`Window::fit_content`]).
+    fit_content: bool,
 }
 
 impl<M> std::fmt::Debug for Window<M> {
@@ -122,6 +124,7 @@ impl<M> std::fmt::Debug for Window<M> {
             .field("toolbar", &self.toolbar.is_some())
             .field("layer", &self.layer)
             .field("blur_behind", &self.blur_behind)
+            .field("fit_content", &self.fit_content)
             .finish_non_exhaustive()
     }
 }
@@ -142,6 +145,7 @@ impl<M> Window<M> {
             toolbar: None,
             layer: None,
             blur_behind: None,
+            fit_content: false,
         }
     }
 
@@ -152,6 +156,16 @@ impl<M> Window<M> {
     #[must_use]
     pub fn layer(mut self, layer: LayerSpec) -> Self {
         self.layer = Some(layer);
+        self
+    }
+
+    /// For a [`Window::layer`]: the surface takes the size of the root element and follows
+    /// it as it grows and shrinks, and the pointer passes through it everywhere else
+    /// ([`LayerSpec::fit_content`]). The window's size is only where it starts. Ignored for
+    /// other windows and on macOS.
+    #[must_use]
+    pub fn fit_content(mut self) -> Self {
+        self.fit_content = true;
         self
     }
 
@@ -492,7 +506,8 @@ impl<M> Cx<'_, M> {
         spec.modal = window.modal;
         spec.blur = blur;
         spec.default_properties = Some(self.default_properties(self.kit.settings.theme));
-        if let Some(layer) = window.layer {
+        if let Some(mut layer) = window.layer {
+            layer.fit_content |= window.fit_content;
             spec.kind = WindowKind::Layer(layer);
             spec.background = Color::TRANSPARENT;
         } else if kind.is_some() {

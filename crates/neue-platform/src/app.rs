@@ -197,6 +197,14 @@ pub struct LayerSpec {
     /// Whether the pointer can reach it. False: an empty input region, so clicks go to
     /// whatever is below (an OSD).
     pub pointer: bool,
+    /// The surface takes the size of its root widget and follows it as the content grows
+    /// and shrinks (Masonry's `WindowSizePolicy::Content`); the window's own size is then
+    /// only where it starts. The input region is the content's rect, so the pointer passes
+    /// through anywhere else (unless `pointer` is false: then nothing takes it). Meant for
+    /// surfaces anchored to at most one edge per axis (a notification stack in a corner);
+    /// on an axis anchored to both edges the compositor still stretches the surface.
+    /// Wayland only: the winit driver ignores it.
+    pub fit_content: bool,
 }
 
 impl LayerSpec {
@@ -212,6 +220,7 @@ impl LayerSpec {
             keyboard: LayerKeyboard::OnDemand,
             output: None,
             pointer: true,
+            fit_content: false,
         }
     }
 }
@@ -256,6 +265,13 @@ impl Anchor {
         top: true,
         bottom: false,
         left: true,
+        right: true,
+    };
+    /// The top right corner (notification banners).
+    pub const TOP_RIGHT: Self = Self {
+        top: true,
+        bottom: false,
+        left: false,
         right: true,
     };
     /// Every edge: the whole output (a desktop background).

@@ -423,6 +423,15 @@ struct PopupBlurState {
     arrow: f64,
 }
 
+/// A layer surface sized by its content ([`LayerSpec::fit_content`]).
+struct ContentSized {
+    /// Whether the pointer reaches it ([`LayerSpec::pointer`]); the input region is then
+    /// the content's rect.
+    pointer: bool,
+    /// The logical size last asked of the compositor.
+    sent: Option<(u32, u32)>,
+}
+
 /// A Masonry layer shown as an xdg-popup.
 struct PopupLayer {
     // Field order is drop order: the blur effect and the surface's wgpu target before the
@@ -464,6 +473,9 @@ struct Win {
     free_size: (u32, u32),
     /// The last configure fixed the size (maximised, tiled, or an interactive resize).
     server_sized: bool,
+    /// A layer surface that follows its content ([`LayerSpec::fit_content`]): the input
+    /// region to keep in step with it (`None`: none, or the pointer passes through it all).
+    content: Option<ContentSized>,
     maximized: bool,
     scale: f64,
     configured: bool,
@@ -689,6 +701,19 @@ impl State {
         let size = (spec.width, spec.height);
         let mut dialog = None;
         let toplevel = !matches!(spec.kind, WindowKind::Layer(_));
+        let content = match &spec.kind {
+            WindowKind::Layer(layer) if layer.fit_content => Some(ContentSized {
+                pointer: layer.pointer,
+                sent: None,
+            }),
+            _ => None,
+        };
+        let size_policy = if content.is_some() {
+            // Masonry measures the root and reports its size with `SetSize`.
+            WindowSizePolicy::Content
+        } else {
+            WindowSizePolicy::User
+        };
         let shell = match (spec.kind, &self.g.layer_shell) {
             (WindowKind::Layer(layer), Some(layer_shell)) => {
                 let output = layer.output.and_then(|o| {
@@ -764,7 +789,7 @@ impl State {
                     .clone()
                     .unwrap_or_else(|| Arc::clone(&self.options.default_properties)),
                 use_system_fonts: false,
-                size_policy: WindowSizePolicy::User,
+                size_policy,
                 // Until the compositor configures the window and tells us its scale.
                 size: PhysicalSize::new(size.0.max(1), size.1.max(1)),
                 scale_factor: 1.0,
@@ -797,6 +822,7 @@ impl State {
                 background: spec.background,
                 free_size: size,
                 server_sized: false,
+                content,
                 maximized: false,
                 scale: 1.0,
                 configured: false,
@@ -960,10 +986,28 @@ impl State {
                             self.configure_window(id, logical);
                         }
                     }
-                    Shell::Layer(layer) => {
-                        layer.set_size(logical.0, logical.1);
-                        layer.commit();
-                    }
+                    Shell::Layer(layer) => match &mut w.content {
+                        Some(content) => {
+                            // Rounded up, so the content is never cut; Masonry reports
+                            // again after each configure and rescale, mostly unchanged.
+                            let logical = content_logical(size.width, size.height, w.scale);
+                            if content.sent == Some(logical) {
+                                return;
+                            }
+                            content.sent = Some(logical);
+                            w.free_size = logical;
+                            if content.pointer {
+                                set_input_rect(&self.g.compositor, layer.wl_surface(), logical);
+                            }
+                            tracing::debug!(%id, ?logical, "layer surface follows its content");
+                            layer.set_size(logical.0, logical.1);
+                            layer.commit();
+                        }
+                        None => {
+                            layer.set_size(logical.0, logical.1);
+                            layer.commit();
+                        }
+                    },
                 }
             }
             RenderRootSignal::SetTitle(title) => {
@@ -1451,6 +1495,25 @@ fn create_layer(
     layer
 }
 
+/// The logical size for a content size in physical pixels at `scale`, rounded up (less a
+/// hair, so a size that is whole in logical pixels stays put), at least 1×1.
+fn content_logical(width: u32, height: u32, scale: f64) -> (u32, u32) {
+    let px = |p: u32| ((f64::from(p) / scale - 1e-6).ceil() as u32).max(1);
+    (px(width), px(height))
+}
+
+/// Makes `size` (logical, from the surface's origin) the surface's input region, with the
+/// next commit.
+fn set_input_rect(compositor: &CompositorState, surface: &wl_surface::WlSurface, size: (u32, u32)) {
+    match Region::new(compositor) {
+        Ok(region) => {
+            region.add(0, 0, size.0 as i32, size.1 as i32);
+            surface.set_input_region(Some(region.wl_region()));
+        }
+        Err(err) => tracing::debug!(%err, "no wl_region for the layer's content"),
+    }
+}
+
 fn layer_anchor(anchor: Anchor) -> wlr_layer::Anchor {
     let mut out = wlr_layer::Anchor::empty();
     out.set(wlr_layer::Anchor::TOP, anchor.top);
@@ -1600,6 +1663,15 @@ mod tests {
         assert_eq!(physical((440, 360), 1.5), (660, 540));
         assert_eq!(physical((101, 1), 1.25), (126, 1));
         assert_eq!(physical((0, 0), 2.0), (1, 1));
+    }
+
+    #[test]
+    fn content_size_rounds_up_to_whole_logical_pixels() {
+        assert_eq!(content_logical(300, 81, 1.0), (300, 81));
+        // 480.6 → 481 physical at 1.5 is 320.67 logical: never cut, so 321.
+        assert_eq!(content_logical(481, 120, 1.5), (321, 80));
+        assert_eq!(content_logical(640, 161, 2.0), (320, 81));
+        assert_eq!(content_logical(0, 0, 2.0), (1, 1));
     }
 
     #[test]

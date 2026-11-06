@@ -22,7 +22,7 @@ use smithay::output::Output;
 use smithay::reexports::wayland_server::Resource;
 use smithay::reexports::wayland_server::protocol::wl_output::WlOutput;
 use smithay::reexports::wayland_server::protocol::wl_surface::WlSurface;
-use smithay::utils::{Logical, Point, SERIAL_COUNTER};
+use smithay::utils::{Logical, Point, Rectangle, SERIAL_COUNTER};
 use smithay::wayland::shell::wlr_layer::{
     KeyboardInteractivity, Layer, LayerSurface as WlrLayerSurface, WlrLayerShellHandler,
     WlrLayerShellState,
@@ -104,6 +104,19 @@ impl State {
                     .collect::<Vec<_>>()
             })
             .collect()
+    }
+
+    /// Where the first mapped layer surface of `namespace` is, in global logical
+    /// coordinates, as the layer map arranged it.
+    pub fn layer_geometry(&self, namespace: &str) -> Option<Rectangle<i32, Logical>> {
+        self.outputs().find_map(|output| {
+            let origin = self.space.output_geometry(output)?.loc;
+            let map = layer_map_for_output(output);
+            let layer = map.layers().find(|l| l.namespace() == namespace)?;
+            let mut geometry = map.layer_geometry(layer)?;
+            geometry.loc += origin;
+            Some(geometry)
+        })
     }
 
     /// The layer surface (and its output) that `surface`, or a popup or subsurface of it,

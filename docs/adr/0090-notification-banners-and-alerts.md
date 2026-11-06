@@ -54,3 +54,30 @@ Replacements (`replaces_id`) update a notification in place.
 - The transparent margin around each panel takes pointer input that lands there; clicks in
   it do nothing. A future input-region request could pass them through.
 - Body markup and inline replies stay out (ADR 0089 capabilities).
+
+## Addendum (2026-11-06, task 3.15d1): layer surfaces that follow their content
+- **Opt-in content sizing.** `LayerSpec::fit_content` (and `neue_kit::Window::fit_content`
+  for a `Window::layer`) opens the window's `RenderRoot` with Masonry's
+  `WindowSizePolicy::Content`: the root is measured at its preferred size and Masonry
+  reports `SetSize` whenever that changes. The Wayland driver turns it into
+  `zwlr_layer_surface_v1.set_size` (logical, rounded up so the content is never cut) and a
+  commit; the compositor configures that size and the driver resizes the buffer as for any
+  configure. The window's own size is only the size before the first layout. Sizes the
+  compositor already has are not sent again, so the reports after each configure and
+  rescale settle at once.
+- **Input region = the content's rect,** set in the same commit as the new size, so a
+  shrinking surface lets the pointer through at once rather than after its next frame,
+  and an axis the compositor stretches (anchored to both edges) still only takes input
+  over the content. With `pointer: false` the region stays empty.
+- **Scope.** For surfaces anchored to at most one edge per axis (the notification stack,
+  `Anchor::TOP_RIGHT`); a stretched axis stays the compositor's. The winit driver ignores
+  it (a layer window is a plain toplevel there). Toplevels keep `WindowSizePolicy::User`;
+  a kit `Window` that is not a layer ignores `fit_content`.
+- **Why not a fixed surface for the most panels, or an input region from the widgets:** a
+  fixed, oversized transparent surface swallows clicks meant for the windows below unless
+  the app also maintains an input region, which needs the same size tracking; following
+  the content keeps both in one place and makes the surface no bigger than it draws.
+- **Consequence:** until the compositor's configure arrives (a round trip), grown content
+  is drawn into the old buffer and cut at its edge. The stack's `extent()` (the larger of
+  the current and resting heights) grows when a panel is pushed, before the panels have
+  moved, so at most the first frame of a slide loses a few pixels.
