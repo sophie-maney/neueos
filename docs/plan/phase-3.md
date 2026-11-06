@@ -349,13 +349,28 @@ their goldens and the gallery's "Shell" page run on macOS.
       (arm64 Linux via `cargo xtask linux`) against mock services over `testing::pair()`.
       No ADR: zbus only, no new dependency or protocol. Pairing a new device needs a BlueZ
       agent and is not planned yet (paired devices only).
-- [ ] **3.11b Battery and Bluetooth B: icon extras in the kit** · Sonnet. After 3.11a's
+- [x] **3.11b Battery and Bluetooth B: icon extras in the kit** · Sonnet. After 3.11a's
       models (can start from their shapes). `MenuTitle::icon` and `Handle::set_hidden`;
       original vector battery (charge level, charging) and Bluetooth icons, light and dark;
       `bar::battery_menu` and `bluetooth_menu` builders over the 3.11a models. Gallery Shell
       page entries, AccessKit labels.
       *Accept:* goldens (states × light/dark × scale 1 and 2); kit tests for icon and hidden
       titles.
+      *Done (ADR with 3.11c):* `neue_kit::desktop::ExtraIcon` (`Battery { level, charging }`,
+      `Bluetooth { powered, connected }`), `MenuTitle::icon(icon, name, menu)` and `.hidden`,
+      `Handle::set_icon` and `set_hidden` (a hidden title takes no room, paints nothing, takes
+      no focus and opens nothing; hiding it closes its menu). Icons are drawn by
+      `neue_paint::materials::menu_bar::{battery, bluetooth}` (+ `_label`) with metrics and a
+      bolt halo colour in `neue_theme`; an open title draws them in the highlighted colour.
+      `neue_shell::bar`: portable `BatteryView`, `BluetoothView`, `DeviceView`,
+      `BluetoothCommand`; `battery_icon`/`battery_menu`, `bluetooth_icon`/`bluetooth_menu`
+      (switch, then a submenu per paired device, a tick when connected);
+      `BarContent::{battery, bluetooth}` (`None` hides the extra), `BarHandles::{battery,
+      bluetooth}`, and `menu_bar` takes a second closure for `BluetoothCommand`. Extras
+      order, right to left: clock, battery, Bluetooth. The shell passes `None` for both and
+      only logs Bluetooth commands until 3.11c. Goldens: `shell-bar` gained battery-open and
+      bluetooth-open states (the old ones changed: the extras are in the bar) and
+      `shell-extras` shows batteries and Bluetooth icons in each state; 3 kit tests.
 - [ ] **3.11c Battery and Bluetooth C: shell wiring** · Sonnet. After 3.11a and 3.11b. A
       worker thread (as the global menu's) following UPower and BlueZ, bar sync, extras
       absent without a battery or an adapter, menu actions (power toggle, connect,

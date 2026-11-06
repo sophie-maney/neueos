@@ -177,24 +177,39 @@ fn shell(_: &mut PageHandles) -> Element<Message> {
             neue_shell::bar::SystemCommand::ShutDown => "Shut Down",
         })
     };
+    let bluetooth = |command: neue_shell::bar::BluetoothCommand| {
+        use neue_shell::bar::BluetoothCommand::{Connect, Disconnect, SetPowered};
+        Message::Pressed(match command {
+            SetPowered(true) => "Turn Bluetooth On",
+            SetPowered(false) => "Turn Bluetooth Off",
+            Connect(_) => "Connect",
+            Disconnect(_) => "Disconnect",
+        })
+    };
     Stack::column()
         .spacing(spacing::L)
         .with(heading(
             "Shell",
             "The menu bar on every display: press the logo for the system menu, the clock \
-             for today's date · Space, Return or Down open a focused title · the status \
-             line shows what you chose (nothing here locks or shuts down)",
+             for today's date, the battery and Bluetooth icons for their menus · Space, \
+             Return or Down open a focused title · the status line shows what you chose \
+             (nothing here locks or shuts down)",
         ))
         .with(section(
             "Menu bar, an app active",
-            Stack::column().with(specimens::shell_bar("Gallery", send)),
+            Stack::column().with(specimens::shell_bar("Gallery", send, bluetooth)),
         ))
         .with(section(
             "Menu bar, no window active",
             Stack::column().with(specimens::shell_bar(
                 neue_shell::windows::DESKTOP_NAME,
                 send,
+                bluetooth,
             )),
+        ))
+        .with(section(
+            "Menu extras: batteries (full, charging, half, low, empty), Bluetooth (off, on, connected)",
+            Stack::column().with(specimens::shell_extras()),
         ))
         .with(section(
             "Desktop picture: built-in, and a photo filling and fitting the output",

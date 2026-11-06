@@ -14,7 +14,7 @@ use neue_kit::desktop::{
 };
 use neue_kit::{Application, Cx, Handle, Settings, WindowId};
 use neue_shell::about::About;
-use neue_shell::bar::{self, BarContent, BarHandles, SystemCommand};
+use neue_shell::bar::{self, BarContent, BarHandles, BluetoothCommand, SystemCommand};
 use neue_shell::clock;
 use neue_shell::fallback::{self, Command, Context, WindowEntry};
 use neue_shell::help::{self, PanelHandles};
@@ -38,6 +38,8 @@ enum Message {
     /// change missed it, since a queued window's widgets can't be edited yet.
     Sync,
     System(SystemCommand),
+    /// Something chosen in the Bluetooth menu (task 3.11c wires it up).
+    Bluetooth(BluetoothCommand),
     /// A logind call finished.
     Login(Result<(), String>),
     /// The configured picture was decoded, or why not.
@@ -168,6 +170,9 @@ impl Shell {
                 app_name: windows.active_app_name(),
                 time: clock::time_text(now),
                 full_date: clock::full_date_text(now),
+                // Followed by the battery and Bluetooth worker (task 3.11c).
+                battery: None,
+                bluetooth: None,
             },
             windows,
             about: None,
@@ -575,6 +580,7 @@ impl Shell {
             &self.content,
             titles,
             Message::System,
+            Message::Bluetooth,
             &mut handles,
             cx.backdrop(),
         );
@@ -735,6 +741,9 @@ impl Application for Shell {
                 self.unbusy(cx);
             }
             Message::System(command) => self.system(cx, command),
+            Message::Bluetooth(command) => {
+                tracing::debug!(?command, "Bluetooth menu: not wired yet")
+            }
             Message::Login(Ok(())) => {}
             Message::Login(Err(error)) => tracing::warn!(%error, "logind call failed"),
             Message::Picture(Ok((picture, fit))) => {

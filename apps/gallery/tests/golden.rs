@@ -14,9 +14,9 @@ use neue_gallery::specimens::{
     self, BEVEL_SIZE, CALENDAR_SIZE, CHROME_SIZE, COLLECTION_SIZE, COLOR_PANEL_SIZE,
     COLOR_WELL_SIZE, COMBO_SIZE, DATE_SIZE, FIELD_SIZE, ICONS_SIZE, MENU_SIZE, OUTLINE_SIZE,
     PATH_SIZE, POPOVER_SIZE, POPUP_SIZE, PROGRESS_SIZE, PULL_DOWN_SIZE, PUSH_BUTTON_SIZE,
-    SCROLL_SIZE, SEGMENTED_SIZE, SHELL_BAR_SIZE, SHELL_DESKTOP_SIZE, SIDEBAR_SIZE, SLIDER_SIZE,
-    SPINNER_SIZE, SPLIT_SIZE, STEPPER_SIZE, SUBMENU_SIZE, TABLE_SIZE, TABS_SIZE, TEXT_VIEW_SIZE,
-    TOGGLE_SIZE,
+    SCROLL_SIZE, SEGMENTED_SIZE, SHELL_BAR_SIZE, SHELL_DESKTOP_SIZE, SHELL_EXTRAS_SIZE,
+    SIDEBAR_SIZE, SLIDER_SIZE, SPINNER_SIZE, SPLIT_SIZE, STEPPER_SIZE, SUBMENU_SIZE, TABLE_SIZE,
+    TABS_SIZE, TEXT_VIEW_SIZE, TOGGLE_SIZE,
 };
 use neue_kit::testing::{
     self, DISABLED, FOCUSED, Fixture, Goldens, INACTIVE, NORMAL, NavKey, PRESSED, State,
@@ -200,6 +200,16 @@ const CLOCK_OPEN: State = ("clock-open", |f: &mut Fixture| {
     let (w, h) = SHELL_BAR_SIZE;
     f.press_at(1.0 - 30.0 / f64::from(w), 11.0 / f64::from(h));
 });
+/// The shell bar's battery pressed: the charge and the power source in its menu.
+const BATTERY_OPEN: State = ("battery-open", |f: &mut Fixture| {
+    let (w, h) = SHELL_BAR_SIZE;
+    f.press_at(1.0 - 107.0 / f64::from(w), 11.0 / f64::from(h));
+});
+/// The shell bar's Bluetooth icon pressed: its switch and the paired devices.
+const BLUETOOTH_OPEN: State = ("bluetooth-open", |f: &mut Fixture| {
+    let (w, h) = SHELL_BAR_SIZE;
+    f.press_at(1.0 - 144.0 / f64::from(w), 11.0 / f64::from(h));
+});
 
 const OPEN_BY_KEY: State = ("open-by-key", |f: &mut Fixture| {
     f.focus();
@@ -351,7 +361,10 @@ control_goldens! {
 
     // The shell's menu bar (3.2b): the logo, the active app's name in bold and the clock;
     // the logo's menu and the clock's menu open, their titles highlighted.
-    shell_bar: "shell-bar", SHELL_BAR_SIZE, &[NORMAL, LOGO_OPEN, CLOCK_OPEN], specimens::shell_bar("Gallery", |_| ());
+    shell_bar: "shell-bar", SHELL_BAR_SIZE, &[NORMAL, LOGO_OPEN, CLOCK_OPEN, BATTERY_OPEN, BLUETOOTH_OPEN], specimens::shell_bar("Gallery", |_| (), |_| ());
+
+    // The battery and Bluetooth extras' icons in each state (3.11b).
+    shell_extras: "shell-extras", SHELL_EXTRAS_SIZE, &[NORMAL], specimens::shell_extras();
 
     // The desktop background (3.2c): the built-in picture, and a photo filling the output
     // (cut off at the sides) and fitting inside it (black bars).

@@ -1137,6 +1137,18 @@ pub mod menu_bar {
     pub const LOGO_SIZE: f64 = 14.0;
     /// Stroke width of the logo mark.
     pub const LOGO_STROKE: f64 = 1.6;
+    /// Width of the battery extra's icon, its terminal included.
+    pub const BATTERY_WIDTH: f64 = 24.0;
+    /// Height of the battery extra's icon.
+    pub const BATTERY_HEIGHT: f64 = 10.0;
+    /// Width of the Bluetooth extra's icon, the dots of a connection included.
+    pub const BLUETOOTH_WIDTH: f64 = 14.0;
+    /// Height of the Bluetooth extra's icon.
+    pub const BLUETOOTH_HEIGHT: f64 = 13.0;
+    /// Stroke width of the Bluetooth rune.
+    pub const BLUETOOTH_STROKE: f64 = 1.4;
+    /// Opacity of the Bluetooth icon while the adapter is off.
+    pub const OFF_OPACITY: f32 = 0.45;
 
     /// Colours of the bar.
     #[derive(Clone, Copy, Debug, PartialEq)]
@@ -1151,6 +1163,10 @@ pub mod menu_bar {
         pub label: Color,
         /// Embossed shadow below the labels.
         pub label_shadow: Color,
+        /// Halo around the charging bolt, so it reads over the battery's fill.
+        pub knockout: Color,
+        /// The same halo over the highlight of an open menu's title.
+        pub highlighted_knockout: Color,
     }
 
     impl Palette {
@@ -1170,6 +1186,8 @@ pub mod menu_bar {
                     separator: black(0.45),
                     label: black(0.85),
                     label_shadow: white(0.45),
+                    knockout: white(0.90),
+                    highlighted_knockout: black(0.35),
                 },
                 Appearance::Dark => Self {
                     fill: on_backdrop(
@@ -1181,6 +1199,8 @@ pub mod menu_bar {
                     separator: black(0.80),
                     label: white(0.88),
                     label_shadow: black(0.50),
+                    knockout: black(0.80),
+                    highlighted_knockout: black(0.45),
                 },
             };
             match (contrast, variant.appearance) {
