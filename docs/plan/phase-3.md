@@ -602,13 +602,24 @@ their goldens and the gallery's "Shell" page run on macOS.
       gained waves; Test Output moved the `*` in `wpctl status`, the reopened menu showed it
       selected at its 0.50; Mute gave `[MUTED]` and the faded speaker; Volume Up then
       unmuted at 0.56. Not checked: keyboard stepping in the VM (unit tests only).
-- [ ] **3.14d Media keys and the keyboard backlight** · Sonnet. After 3.14a. Play, pause,
+- [x] **3.14d Media keys and the keyboard backlight** · Sonnet. After 3.14a. Play, pause,
       next, previous and stop go to the active MPRIS player (`neue_dbus`, the most recently
       playing one); keyboard brightness keys set the `leds` `*::kbd_backlight` device
       through logind `SetBrightness`, with a keyboard glyph on the OSD (goldens).
       *Accept:* unit tests with a mock MPRIS player; in the VM `playerctl status` follows
       the play key sent with `ydotool`.
       *Owner:* keyboard backlight keys on a laptop that has one.
+      *Done:* ADR 0088. `neue_dbus::mpris` (`Mpris::{session, players, active, send, watch}`,
+      `Command`, `pick`; the memory of who played last comes from a signal thread and from
+      key presses); `Backlight::find_keyboard` (`leds`, may go to 0; `Backlight::subsystem`);
+      `OsdGlyph::Keyboard` (goldens `shell-osd-keyboard`, gallery, label "Keyboard
+      brightness"); the shell's `osd.rs` routes the five media keys (off the event loop) and
+      the keyboard brightness keys; `mock_mpris` example. 8 `mpris` (4 on a mock bus and
+      player), 2 `levels` tests. VM (arm64, two and then three mock players, §1.6f): Play
+      pauses the playing one and starts it again, Pause, Stop, Next and Previous reach it
+      (`playerctl -a status` and the mock's log), a paused player that was last to play wins
+      over one earlier on the bus, also when it played only through a signal. Not checked:
+      the keyboard backlight (no LED in the VM).
 - [ ] **3.15 Notifications** · Sonnet. After 3.2b. An `org.freedesktop.Notifications`
       server in the shell (interface in `neue-dbus`): banners at the top right under the
       menu bar, sliding in with a spring, stacking, timing out; alerts for critical or

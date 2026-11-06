@@ -11,6 +11,7 @@
 //! - [`network`]: NetworkManager's wired and Wi-Fi devices, for the network menu extra
 //!   (task 3.12a).
 //!
+//! - [`mpris`]: media players, for the media keys (task 3.14d).
 //! - [`status_notifier`]: the StatusNotifierItem tray protocol: watcher, host and item client
 //!   (task 3.13a).
 //!
@@ -25,6 +26,7 @@ pub mod gmenu_client;
 pub mod login;
 pub mod menu;
 pub mod menu_client;
+pub mod mpris;
 pub mod network;
 pub mod power;
 pub mod registrar;

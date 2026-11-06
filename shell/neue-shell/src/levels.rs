@@ -1,5 +1,5 @@
-//! What the volume and brightness keys do to a level (task 3.14a), and the screen's
-//! backlight in sysfs. The process applies these and shows the result on the OSD.
+//! What the volume and brightness keys do to a level (task 3.14a), and the screen's and
+//! the keyboard's backlights in sysfs (task 3.14d). The process applies these and shows the result on the OSD.
 //!
 //! A key steps a level by one of the OSD's 16 steps, or by a quarter step with Shift+Alt
 //! held (as on the Mac). Stepping lands on the grid: a level between two steps goes to
@@ -14,6 +14,8 @@ use neue_kit::tokens::materials::osd::STEPS;
 
 /// Where the kernel lists screen backlights.
 pub const BACKLIGHTS: &str = "/sys/class/backlight";
+/// Where the kernel lists LEDs, among them keyboard backlights.
+pub const LEDS: &str = "/sys/class/leds";
 
 /// Grid points per unit level: 16 steps, or 64 quarter steps when `fine`.
 fn grid(fine: bool) -> f64 {
@@ -68,14 +70,21 @@ impl Volume {
     }
 }
 
-/// A screen backlight in sysfs: what `Session.SetBrightness` needs to name it, and its
-/// range.
+/// A backlight in sysfs, of the screen or the keyboard: what `Session.SetBrightness` needs
+/// to name it, and its range.
 #[derive(Debug, Clone, PartialEq, Eq)]
 pub struct Backlight {
-    /// The device's directory name (`intel_backlight`, `amdgpu_bl0`, `acpi_video0`).
+    /// The device's directory name (`intel_backlight`, `amdgpu_bl0`, `acpi_video0`;
+    /// `tpacpi::kbd_backlight` for a keyboard).
     pub name: String,
     /// The highest raw brightness.
     pub max: u32,
+    /// The logind subsystem it is in: `backlight` or `leds`.
+    pub subsystem: &'static str,
+    /// The lowest raw brightness a key steps down to: 1 for a screen (many panels turn off
+    /// at 0, and the key that would bring them back is then hard to find in the dark), 0 for
+    /// a keyboard, which is meant to go dark.
+    floor: u32,
     dir: PathBuf,
 }
 
@@ -103,11 +112,54 @@ impl Backlight {
                     return None;
                 }
                 let name = entry.file_name().into_string().ok()?;
-                Some((rank, Self { name, max, dir }))
+                Some((
+                    rank,
+                    Self {
+                        name,
+                        max,
+                        subsystem: "backlight",
+                        floor: 1,
+                        dir,
+                    },
+                ))
             })
             .collect();
         found.sort_by(|(a, x), (b, y)| a.cmp(b).then_with(|| x.name.cmp(&y.name)));
         found.into_iter().next().map(|(_, backlight)| backlight)
+    }
+
+    /// The keyboard backlight among the LEDs in `class_dir` (normally [`LEDS`]): the first,
+    /// by name, called `<something>::kbd_backlight` (`tpacpi::kbd_backlight`,
+    /// `asus::kbd_backlight`, `apple::kbd_backlight`) that has a range. `None` when there is
+    /// none (most desktops, the VM).
+    pub fn find_keyboard(class_dir: &Path) -> Option<Self> {
+        let mut found: Vec<Self> = fs::read_dir(class_dir)
+            .ok()?
+            .filter_map(Result::ok)
+            .filter_map(|entry| {
+                let name = entry.file_name().into_string().ok()?;
+                if !name.ends_with("::kbd_backlight") {
+                    return None;
+                }
+                let dir = entry.path();
+                let max = read_trimmed(&dir.join("max_brightness"))
+                    .ok()?
+                    .parse()
+                    .ok()?;
+                if max == 0 {
+                    return None;
+                }
+                Some(Self {
+                    name,
+                    max,
+                    subsystem: "leds",
+                    floor: 0,
+                    dir,
+                })
+            })
+            .collect();
+        found.sort_by(|a, b| a.name.cmp(&b.name));
+        found.into_iter().next()
     }
 
     /// The current raw brightness.
@@ -123,8 +175,8 @@ impl Backlight {
     }
 
     /// The raw brightness a brightness key moves `raw` to. It changes by at least one
-    /// unit while there is room, and never reaches 0 going down: many panels turn off
-    /// there, and the key that would bring them back is then hard to find in the dark.
+    /// unit while there is room, and stops at the backlight's floor going down (1 for a
+    /// screen, 0 for a keyboard).
     pub fn step(&self, raw: u32, up: bool, fine: bool) -> u32 {
         let level = step(self.level(raw), up, fine);
         #[expect(
@@ -138,7 +190,7 @@ impl Backlight {
         } else if !up && target >= raw {
             target = raw.saturating_sub(1);
         }
-        target.clamp(1, self.max)
+        target.clamp(self.floor, self.max)
     }
 }
 
@@ -236,5 +288,42 @@ mod tests {
         let small = Backlight { max: 7, ..b };
         assert_eq!(small.step(3, true, true), 4);
         assert_eq!(small.step(1, false, false), 1);
+    }
+
+    #[test]
+    fn the_keyboard_backlight_is_found_by_name_and_can_go_dark() {
+        let dir = tempfile::tempdir().unwrap();
+        fake(dir.path(), "input3::capslock", "raw", 1, 0);
+        fake(dir.path(), "tpacpi::kbd_backlight", "raw", 2, 1);
+        fake(dir.path(), "asus::kbd_backlight", "raw", 3, 0);
+        let k = Backlight::find_keyboard(dir.path()).unwrap();
+        assert_eq!(
+            (k.name.as_str(), k.max, k.subsystem),
+            ("asus::kbd_backlight", 3, "leds")
+        );
+        assert_eq!(k.read().unwrap(), 0);
+        // Few steps: each key press moves one, and down reaches 0 (off).
+        assert_eq!(k.step(0, true, false), 1);
+        assert_eq!(k.step(1, true, false), 2);
+        assert_eq!(k.step(3, true, false), 3);
+        assert_eq!(k.step(2, false, false), 1);
+        assert_eq!(k.step(1, false, false), 0);
+        assert_eq!(k.step(0, false, false), 0);
+        assert!(close(k.level(k.step(0, true, false)), 1.0 / 3.0));
+    }
+
+    #[test]
+    fn no_keyboard_backlight_is_none() {
+        let dir = tempfile::tempdir().unwrap();
+        assert_eq!(Backlight::find_keyboard(dir.path()), None);
+        assert_eq!(Backlight::find_keyboard(&dir.path().join("missing")), None);
+        fake(dir.path(), "input3::capslock", "raw", 1, 0);
+        fake(dir.path(), "broken::kbd_backlight", "raw", 0, 0);
+        assert_eq!(Backlight::find_keyboard(dir.path()), None);
+        // The screen's lookup doesn't pick it up either.
+        assert_eq!(
+            Backlight::find(dir.path()).map(|b| b.subsystem),
+            Some("backlight")
+        );
     }
 }

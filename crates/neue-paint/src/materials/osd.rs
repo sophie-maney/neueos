@@ -32,6 +32,8 @@ pub enum Glyph {
     Microphone,
     /// A microphone struck through, and every step unlit.
     MicrophoneMuted,
+    /// A keyboard with light rays over it: the keyboard backlight (task 3.14d).
+    Keyboard,
 }
 
 impl Glyph {
@@ -66,6 +68,7 @@ pub fn osd(
         Glyph::Brightness => sun(scene, center, p),
         Glyph::Microphone => microphone(scene, center, false, p),
         Glyph::MicrophoneMuted => microphone(scene, center, true, p),
+        Glyph::Keyboard => keyboard(scene, center, p),
     }
     let lit = if glyph.is_muted() { 0.0 } else { level };
     steps(scene, rect, lit, p);
@@ -147,6 +150,39 @@ fn sun(scene: &mut Scene, c: Point, p: Palette) {
     }
 }
 
+/// A keyboard in the glyph box around `c` (two rows of keys and a space bar in an outline)
+/// under three rays that fan out: the keyboard backlight.
+fn keyboard(scene: &mut Scene, c: Point, p: Palette) {
+    let s = GLYPH_SIZE;
+    let at = |x: f64, y: f64| c + Vec2::new(x * s, y * s);
+    let outline = RoundedRect::from_rect(
+        Rect::from_points(at(-0.46, -0.10), at(0.46, 0.36)),
+        0.07 * s,
+    );
+    scene.stroke(&outline, &Stroke::new(0.05 * s), p.glyph);
+    for (y, count) in [(0.0, 5), (0.115, 5)] {
+        for i in 0..count {
+            let x = (f64::from(i) - f64::from(count - 1) / 2.0) * 0.145;
+            let key = Rect::from_points(at(x - 0.042, y - 0.042), at(x + 0.042, y + 0.042));
+            scene.fill(&RoundedRect::from_rect(key, 0.015 * s), p.glyph);
+        }
+    }
+    let space = Rect::from_points(at(-0.22, 0.225), at(0.22, 0.295));
+    scene.fill(&RoundedRect::from_rect(space, 0.015 * s), p.glyph);
+    let stroke = Stroke::new(0.05 * s).with_caps(Cap::Round);
+    for (from, to) in [
+        ((0.0, -0.20), (0.0, -0.38)),
+        ((-0.26, -0.20), (-0.36, -0.34)),
+        ((0.26, -0.20), (0.36, -0.34)),
+    ] {
+        scene.stroke(
+            &Line::new(at(from.0, from.1), at(to.0, to.1)),
+            &stroke,
+            p.glyph,
+        );
+    }
+}
+
 /// A microphone on a stand in the glyph box around `c`; struck through when `muted`, with
 /// a gap cut around the stroke so it reads against the capsule.
 fn microphone(scene: &mut Scene, c: Point, muted: bool, p: Palette) {
@@ -206,6 +242,7 @@ mod tests {
             Glyph::Brightness,
             Glyph::Microphone,
             Glyph::MicrophoneMuted,
+            Glyph::Keyboard,
         ] {
             let mut scene = Scene::new(SIZE, SIZE);
             let rect = Rect::new(0.0, 0.0, SIZE, SIZE);
