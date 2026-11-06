@@ -62,6 +62,10 @@ arboard = { version = "3.6", default-features = false }
 # (zbus), MIT OR Apache-2.0; already in Cargo.lock through accesskit_winit.
 accesskit_unix = "0.24.1"
 
+# PipeWire (neue-audio, ADR 0087): bindings to the C library through bindgen, so building
+# needs clang and libpipewire's headers. MIT. Also for the ScreenCast portal (task 3.22).
+pipewire = "0.10"
+
 # IPC (neue-ipc, neuectl)
 serde = { version = "1.0", features = ["derive"] }
 serde_json = "1.0"
@@ -136,6 +140,7 @@ neue-protocols = { path = "crates/neue-protocols" }
 neue-platform = { path = "crates/neue-platform" }
 neue-kit = { path = "crates/neue-kit" }
 neue-dbus = { path = "crates/neue-dbus" }
+neue-audio = { path = "crates/neue-audio" }
 neue-desktop = { path = "crates/neue-desktop" }
 neue-shell = { path = "shell/neue-shell" }
 neue-settingsd = { path = "services/neue-settingsd" }

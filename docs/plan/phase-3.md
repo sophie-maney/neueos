@@ -558,7 +558,7 @@ their goldens and the gallery's "Shell" page run on macOS.
       the OSD at 9 of 16 steps, a held Volume Down repeats (about 30/s, the compositor's
       rate) down to 0 (no waves), the OSD fades and closes, a click on it reaches the
       desktop below. Not checked: brightness (no backlight in the VM).
-- [ ] **3.14b PipeWire volume backend** · Opus. After 3.14a. ADR for `pipewire-rs` (a C
+- [x] **3.14b PipeWire volume backend** · Opus. After 3.14a. ADR for `pipewire-rs` (a C
       dependency through bindgen and clang; licence check; also used by 3.22). A new
       Linux-only crate `neue-audio`: the PipeWire loop on its own thread, the default sink
       from the `default` metadata, its volume (cubic, as `wpctl` shows it) and mute, the
@@ -566,6 +566,21 @@ their goldens and the gallery's "Shell" page run on macOS.
       toggles the default source (with the OSD). PKGBUILD and CI dependencies.
       *Accept:* in the VM the volume keys (sent with `ydotool`) change the sink volume shown
       by `wpctl get-volume @DEFAULT_AUDIO_SINK@`, and the OSD shows the real level.
+      *Owner:* on the PC (a real card with routes): the volume keys change what you hear and
+      `wpctl get-volume @DEFAULT_AUDIO_SINK@` follows; after a reboot the level is kept.
+      *Done:* ADR 0087. `pipewire` 0.10; `neue-audio` (`Audio::{start, set_volume,
+      set_muted, set_default}`, `State`/`Endpoint`/`Kind`, `cubic`/`linear`; the thread
+      reconnects every 2 s) and its `audio` example; `OsdGlyph::{Microphone,
+      MicrophoneMuted}` (goldens `shell-osd-microphone{,-muted}`, gallery); the shell's
+      `osd.rs` drives the default sink and source. 6 `neue-audio` and 1 new shell test.
+      VM (arm64, null sinks from `docs/vm-audio.conf`, §1.6e): from 0.50 Volume Up gives
+      0.56 in `wpctl` and 9 of 16 steps on the OSD, three Downs 0.38, Mute `[MUTED]` with the
+      muted speaker, a held Up reaches 1.00, Mic Mute mutes the source with the
+      struck-through microphone; the example's `default neue-test-sink-2` moves the `*` in
+      `wpctl status`; after `systemctl --user restart pipewire wireplumber` the shell
+      reconnects in 2 s and the keys work again. Not checked: a card with routes (the VM's
+      card belongs to the greeter's seat), and the VM's own build (no `clang` there, sudo
+      refused `1234`; binaries were built in OrbStack).
 - [ ] **3.14c Volume extra** · Opus for the kit part, then Sonnet. After 3.14b. A slider
       item in kit menus; the volume extra in the bar (ADR 0083 pattern): glyph by level, a
       menu with the slider, Mute and the output devices as a radio list.

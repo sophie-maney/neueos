@@ -81,6 +81,8 @@ impl OsdWidget {
             Glyph::Volume => "Volume",
             Glyph::Muted => "Volume muted",
             Glyph::Brightness => "Brightness",
+            Glyph::Microphone => "Microphone",
+            Glyph::MicrophoneMuted => "Microphone muted",
         }
     }
 }
@@ -177,7 +179,7 @@ impl Widget for OsdWidget {
         if !self.shown {
             node.set_hidden();
         }
-        if self.glyph != Glyph::Muted {
+        if !self.glyph.is_muted() {
             node.set_min_numeric_value(0.0);
             node.set_max_numeric_value(100.0);
             node.set_numeric_value((self.level.clamp(0.0, 1.0) * 100.0).round());

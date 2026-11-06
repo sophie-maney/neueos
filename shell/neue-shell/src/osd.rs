@@ -7,11 +7,13 @@
 //! closed once the fade is over, so the next key opens it on whichever output is active
 //! then.
 //!
-//! The volume is a level kept here until the shell talks to PipeWire (task 3.14b). The
-//! brightness is the screen's backlight, set through logind (`Session.SetBrightness`).
+//! The volume keys change the default sink's volume and mute, and the mic mute key the
+//! default source's mute, through PipeWire ([`neue_audio`], task 3.14b). The brightness
+//! is the screen's backlight, set through logind (`Session.SetBrightness`).
 
 use std::time::Instant;
 
+use neue_audio::{Audio, Kind};
 use neue_dbus::login::Login;
 use neue_kit::desktop::{
     Anchor, ChordModifiers, LayerKeyboard, LayerSpec, Margin, Osd, OsdGlyph, ShellLayer, SystemKey,
@@ -29,6 +31,8 @@ const NAMESPACE: &str = "neue-osd";
 pub enum Event {
     /// The backlight and a logind connection to set it with; `None` without a backlight.
     Backlight(Option<(Backlight, Login)>),
+    /// PipeWire's sinks and sources changed.
+    Audio(neue_audio::State),
     /// A `SetBrightness` call ended.
     Brightness(Result<(), String>),
     /// The hold timer fired.
@@ -46,7 +50,13 @@ struct Surface {
 /// The keys' state and the OSD.
 #[derive(Default)]
 pub struct Keys {
-    volume: Volume,
+    /// The PipeWire thread; `None` if it couldn't start.
+    audio: Option<Audio>,
+    /// What PipeWire last reported.
+    sound: neue_audio::State,
+    /// The default sink and the volume last asked for: repeats step from it, since
+    /// PipeWire may not have answered yet. A new press reads the reported volume again.
+    volume: Option<(u32, f64)>,
     backlight: Option<(Backlight, Login)>,
     /// The raw brightness last asked for: repeats step from it, since logind's write
     /// may not have reached sysfs yet. A new press reads sysfs again.
@@ -61,8 +71,16 @@ pub struct Keys {
 }
 
 impl Keys {
-    /// Looks for the screen's backlight, and connects to logind if there is one.
-    pub fn start<M: Send + 'static>(cx: &mut Cx<'_, M>, wrap: fn(Event) -> M) {
+    /// Starts the PipeWire thread, looks for the screen's backlight, and connects to
+    /// logind if there is one.
+    pub fn start<M: Send + 'static>(&mut self, cx: &mut Cx<'_, M>, wrap: fn(Event) -> M) {
+        let sender = cx.sender();
+        match Audio::start(move |state| {
+            sender.send(wrap(Event::Audio(state)));
+        }) {
+            Ok(audio) => self.audio = Some(audio),
+            Err(error) => tracing::warn!(%error, "no audio thread: the volume keys do nothing"),
+        }
         cx.spawn(move |_| {
             let found = Backlight::find(levels::BACKLIGHTS.as_ref()).and_then(|backlight| {
                 match Login::system() {
@@ -90,21 +108,18 @@ impl Keys {
             return;
         }
         let fine = levels::fine(modifiers);
-        if self.volume.apply(key, fine) {
-            let glyph = if self.volume.muted {
-                OsdGlyph::Muted
-            } else {
-                OsdGlyph::Volume
-            };
-            let level = self.volume.level;
-            tracing::debug!(level, muted = self.volume.muted, "volume");
-            self.show(cx, wrap, glyph, level);
-            return;
-        }
         let up = match key {
+            SystemKey::VolumeUp | SystemKey::VolumeDown | SystemKey::Mute => {
+                self.volume_key(cx, wrap, key, state, fine);
+                return;
+            }
+            SystemKey::MicMute => {
+                self.mic_mute(cx, wrap);
+                return;
+            }
             SystemKey::BrightnessUp => true,
             SystemKey::BrightnessDown => false,
-            // Keyboard backlights, the microphone and media keys: not yet.
+            // Keyboard backlights and media keys: not yet (task 3.14d).
             other => {
                 tracing::debug!(key = ?other, "system key not handled");
                 return;
@@ -140,6 +155,68 @@ impl Keys {
         self.show(cx, wrap, OsdGlyph::Brightness, level);
     }
 
+    /// Volume Up, Down or Mute: the default sink.
+    fn volume_key<M: Send + 'static>(
+        &mut self,
+        cx: &mut Cx<'_, M>,
+        wrap: fn(Event) -> M,
+        key: SystemKey,
+        state: SystemKeyState,
+        fine: bool,
+    ) {
+        let (Some(audio), Some(sink)) = (&self.audio, self.sound.default_endpoint(Kind::Sink))
+        else {
+            tracing::debug!("no default sink");
+            return;
+        };
+        let level = match (state, self.volume) {
+            (SystemKeyState::Repeated, Some((id, level))) if id == sink.id => level,
+            _ => sink.volume,
+        };
+        let mut volume = Volume {
+            level,
+            muted: sink.muted,
+        };
+        volume.apply(key, fine);
+        if (volume.level - level).abs() > f64::EPSILON {
+            audio.set_volume(sink.id, volume.level);
+        }
+        if volume.muted != sink.muted {
+            audio.set_muted(sink.id, volume.muted);
+        }
+        tracing::debug!(
+            sink = sink.name,
+            level = volume.level,
+            muted = volume.muted,
+            "volume"
+        );
+        self.volume = Some((sink.id, volume.level));
+        let glyph = if volume.muted {
+            OsdGlyph::Muted
+        } else {
+            OsdGlyph::Volume
+        };
+        self.show(cx, wrap, glyph, volume.level.min(1.0));
+    }
+
+    /// Mic Mute: toggles the default source's mute.
+    fn mic_mute<M: Send + 'static>(&mut self, cx: &mut Cx<'_, M>, wrap: fn(Event) -> M) {
+        let (Some(audio), Some(source)) = (&self.audio, self.sound.default_endpoint(Kind::Source))
+        else {
+            tracing::debug!("no default source");
+            return;
+        };
+        let muted = !source.muted;
+        audio.set_muted(source.id, muted);
+        tracing::debug!(source = source.name, muted, "microphone");
+        let (glyph, level) = if muted {
+            (OsdGlyph::MicrophoneMuted, 0.0)
+        } else {
+            (OsdGlyph::Microphone, source.volume.min(1.0))
+        };
+        self.show(cx, wrap, glyph, level);
+    }
+
     /// A timer or worker reported.
     pub fn event<M: Send + 'static>(
         &mut self,
@@ -153,6 +230,12 @@ impl Keys {
                     tracing::info!(name = backlight.name, max = backlight.max, "backlight");
                 }
                 self.backlight = found;
+            }
+            Event::Audio(state) => {
+                if state.connected != self.sound.connected {
+                    tracing::info!(connected = state.connected, "PipeWire");
+                }
+                self.sound = state;
             }
             Event::Brightness(Ok(())) => {}
             Event::Brightness(Err(error)) => {

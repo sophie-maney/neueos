@@ -201,6 +201,28 @@ A real tray app (`nm-applet --indicator`) can replace the mock. Menu clicks can 
 with `busctl --user call <service> /StatusNotifierItem/Menu com.canonical.dbusmenu Event
 isvu 3 clicked i 0 0`.
 
+### 1.6e Audio: test devices and the volume keys
+The VM's sound card belongs to the seat, which greetd's greeter holds (§1.3 starts the
+compositor beside it), so PipeWire sees no devices. Give it two null sinks and a source,
+once (no root needed): copy `docs/vm-audio.conf` into PipeWire's config folder.
+```sh
+ssh neueos-vm 'mkdir -p ~/.config/pipewire/pipewire.conf.d && cp ~/neueos/docs/vm-audio.conf ~/.config/pipewire/pipewire.conf.d/neue-test-devices.conf && systemctl --user restart pipewire wireplumber'
+```
+Building `neue-audio` needs `clang` (bindgen). If the VM lacks it, build in OrbStack and
+copy the binaries (same architecture):
+```sh
+cargo xtask linux cargo build --release -p neue-comp -p neuectl -p neue-shell --no-default-features --features neue-comp/tty
+scp target/neueos-arm64/release/{neue-comp,neuectl,neue-shell} neueos-vm:neueos/target/release/
+```
+Check the volume keys (§1.3 session running, `ydotoold` as in §1.4; key codes 115 up,
+114 down, 113 mute, 248 mic mute):
+```sh
+ssh neueos-vm '. ~/neueos/docs/vm-env.sh; export YDOTOOL_SOCKET=/tmp/.ydotool_socket
+  ydotool key 115:1 115:0; sleep 0.3; wpctl get-volume @DEFAULT_AUDIO_SINK@; wpctl status | sed -n "/Sinks/,/Filters/p"'
+```
+`neue-audio`'s example drives the backend without the shell: `cargo run -p neue-audio
+--example audio -- volume 0.5` (also `mute`, `unmute`, `mic-mute`, `default <node.name>`).
+
 ### 1.7 Known quirks
 - `ydotool mousemove --absolute` lands at twice the coordinates. Relative moves are 1:1.
 - Nested (winit) backend: after the pointer jumps into the window, send one relative move
@@ -260,7 +282,7 @@ orb create arch neueos-arm64
 orb create --arch amd64 arch neueos-amd64
 for m in neueos-arm64 neueos-amd64; do
   orb run -m $m sudo pacman -Syu --noconfirm --needed base-devel git rustup \
-    libxkbcommon wayland libinput seatd mesa
+    libxkbcommon wayland libinput seatd mesa libpipewire clang
   orb run -m $m -w "$PWD" rustup toolchain install     # reads rust-toolchain.toml
 done
 cargo xtask linux cargo xtask check && cargo xtask linux-amd64 cargo check --workspace
@@ -280,7 +302,8 @@ headless tests need `libwayland-client` (`wayland`) and Mesa's EGL (`mesa`).
 4. On the console, as the user:
    ```sh
    sudo pacman -Syu --needed base-devel git rustup rsync openssh sudo seatd mesa mesa-utils \
-       libinput vulkan-swrast vulkan-tools weston wayland-utils foot jq ydotool grim
+       libinput vulkan-swrast vulkan-tools weston wayland-utils foot jq ydotool grim clang \
+       pipewire wireplumber
    sudo systemctl enable --now sshd seatd
    sudo usermod -aG seat,video,input "$USER"
    sudo systemctl disable --now kmsconvt@tty1.service      # kmscon holds DRM master
