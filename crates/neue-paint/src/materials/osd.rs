@@ -1,5 +1,5 @@
 //! The on-screen display (task 3.14a): a rounded square of HUD material with a glyph (a
-//! speaker or a sun) and a bar of [`STEPS`] steps showing a level.
+//! speaker, a sun or a microphone) and a bar of [`STEPS`] steps showing a level.
 //!
 //! Colours and metrics come from [`neue_theme::materials::osd`].
 
@@ -28,6 +28,17 @@ pub enum Glyph {
     Muted,
     /// A sun.
     Brightness,
+    /// A microphone (task 3.14b).
+    Microphone,
+    /// A microphone struck through, and every step unlit.
+    MicrophoneMuted,
+}
+
+impl Glyph {
+    /// Whether it shows something muted: its steps are all unlit.
+    pub fn is_muted(self) -> bool {
+        matches!(self, Self::Muted | Self::MicrophoneMuted)
+    }
 }
 
 /// Draw the display filling `rect` (logical pixels; meant to be [`SIZE`] square) with
@@ -53,8 +64,10 @@ pub fn osd(
         Glyph::Volume => speaker(scene, center, waves(level), p),
         Glyph::Muted => speaker(scene, center, 0, p),
         Glyph::Brightness => sun(scene, center, p),
+        Glyph::Microphone => microphone(scene, center, false, p),
+        Glyph::MicrophoneMuted => microphone(scene, center, true, p),
     }
-    let lit = if glyph == Glyph::Muted { 0.0 } else { level };
+    let lit = if glyph.is_muted() { 0.0 } else { level };
     steps(scene, rect, lit, p);
 }
 
@@ -134,6 +147,52 @@ fn sun(scene: &mut Scene, c: Point, p: Palette) {
     }
 }
 
+/// A microphone on a stand in the glyph box around `c`; struck through when `muted`, with
+/// a gap cut around the stroke so it reads against the capsule.
+fn microphone(scene: &mut Scene, c: Point, muted: bool, p: Palette) {
+    let s = GLYPH_SIZE;
+    let at = |x: f64, y: f64| c + Vec2::new(x * s, y * s);
+    let (from, to) = (at(-0.30, -0.36), at(0.30, 0.34));
+    if muted {
+        // The glyph box clockwise, less a band along the slash the other way round.
+        let along = (to - from).normalize();
+        let side = Vec2::new(-along.y, along.x) * (0.065 * s);
+        let (a, b) = (from - along * s, to + along * s);
+        let mut clip = BezPath::new();
+        clip.move_to(at(-0.5, -0.5));
+        clip.line_to(at(0.5, -0.5));
+        clip.line_to(at(0.5, 0.5));
+        clip.line_to(at(-0.5, 0.5));
+        clip.close_path();
+        clip.move_to(a + side);
+        clip.line_to(b + side);
+        clip.line_to(b - side);
+        clip.line_to(a - side);
+        clip.close_path();
+        scene.push_clip(&clip);
+    }
+    let capsule = RoundedRect::from_rect(
+        Rect::from_points(at(-0.10, -0.38), at(0.10, 0.06)),
+        0.10 * s,
+    );
+    scene.fill(&capsule, p.glyph);
+    let stroke = Stroke::new(0.05 * s).with_caps(Cap::Round);
+    // The holder: a U under the capsule (angles grow clockwise, y pointing down).
+    let holder = Arc::new(at(0.0, -0.06), (0.18 * s, 0.18 * s), 0.0, PI, 0.0);
+    scene.stroke(&holder, &stroke, p.glyph);
+    scene.stroke(&Line::new(at(0.0, 0.12), at(0.0, 0.30)), &stroke, p.glyph);
+    scene.stroke(
+        &Line::new(at(-0.12, 0.30), at(0.12, 0.30)),
+        &stroke,
+        p.glyph,
+    );
+    if muted {
+        scene.pop_layer();
+        let slash = Stroke::new(0.06 * s).with_caps(Cap::Round);
+        scene.stroke(&Line::new(from, to), &slash, p.glyph);
+    }
+}
+
 #[cfg(test)]
 mod tests {
     use super::*;
@@ -141,7 +200,13 @@ mod tests {
 
     #[test]
     fn layers_are_balanced() {
-        for glyph in [Glyph::Volume, Glyph::Muted, Glyph::Brightness] {
+        for glyph in [
+            Glyph::Volume,
+            Glyph::Muted,
+            Glyph::Brightness,
+            Glyph::Microphone,
+            Glyph::MicrophoneMuted,
+        ] {
             let mut scene = Scene::new(SIZE, SIZE);
             let rect = Rect::new(0.0, 0.0, SIZE, SIZE);
             osd(

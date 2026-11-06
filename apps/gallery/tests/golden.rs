@@ -394,6 +394,8 @@ control_goldens! {
     shell_osd_volume: "shell-osd-volume", SHELL_OSD_SIZE, &[NORMAL], specimens::shell_osd(neue_kit::desktop::OsdGlyph::Volume, 9.25 / 16.0);
     shell_osd_muted: "shell-osd-muted", SHELL_OSD_SIZE, &[NORMAL], specimens::shell_osd(neue_kit::desktop::OsdGlyph::Muted, 9.25 / 16.0);
     shell_osd_brightness: "shell-osd-brightness", SHELL_OSD_SIZE, &[NORMAL], specimens::shell_osd(neue_kit::desktop::OsdGlyph::Brightness, 0.75);
+    shell_osd_microphone: "shell-osd-microphone", SHELL_OSD_SIZE, &[NORMAL], specimens::shell_osd(neue_kit::desktop::OsdGlyph::Microphone, 0.75);
+    shell_osd_microphone_muted: "shell-osd-microphone-muted", SHELL_OSD_SIZE, &[NORMAL], specimens::shell_osd(neue_kit::desktop::OsdGlyph::MicrophoneMuted, 0.75);
 
     context_menu: "context-menu", MENU_SIZE, &[MENU_OPEN, MENU_HIGHLIGHTED], specimens::context_menu(|_| (), specimens::command);
     context_submenu: "context-menu", SUBMENU_SIZE, &[MENU_SUBMENU], specimens::context_menu(|_| (), specimens::command);

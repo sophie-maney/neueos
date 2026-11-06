@@ -17,8 +17,9 @@ arch=(x86_64 aarch64)
 url="https://github.com/sophie-maney/neueos"
 license=(GPL-3.0-or-later)
 # `cargo` is provided by `rust` and by `rustup`; rust-toolchain.toml in the tree picks the
-# exact toolchain when rustup is used.
-makedepends=(cargo)
+# exact toolchain when rustup is used. `clang` runs bindgen for pipewire-rs, which reads
+# libpipewire's headers (ADR 0087).
+makedepends=(cargo clang libpipewire)
 # debug: no -debug packages. lto: Smithay and friends are built with Cargo's own settings.
 options=(!debug !lto)
 source=(neueos-src.tar.gz)
@@ -74,8 +75,10 @@ package_neue-session() {
 
 package_neue-shell() {
   pkgdesc="neueOS desktop shell: the menu bar (started by neue-comp)"
-  # libwayland-client is dlopen'd; wgpu draws through Vulkan or GL (mesa).
-  depends=(gcc-libs libxkbcommon mesa systemd wayland)
+  # libwayland-client is dlopen'd; wgpu draws through Vulkan or GL (mesa). libpipewire for
+  # the volume keys; the daemons themselves come with the session (ADR 0087).
+  depends=(gcc-libs libpipewire libxkbcommon mesa systemd wayland)
+  optdepends=('pipewire: audio (the volume keys)' 'wireplumber: the default sink and source')
   install -Dm755 "$(_target)/release/neue-shell" -t "$pkgdir/usr/bin"
   install -Dm644 "$srcdir/LICENSE" -t "$pkgdir/usr/share/licenses/$pkgname"
 }

@@ -39,31 +39,27 @@ pub fn step(level: f64, up: bool, fine: bool) -> f64 {
     (next / grid).clamp(0.0, 1.0)
 }
 
-/// The output volume as the shell keeps it until it talks to PipeWire (task 3.14b).
+/// The default sink's volume (on PipeWire's cubic scale, task 3.14b) and mute, as the
+/// volume keys change them.
 #[derive(Debug, Clone, Copy, PartialEq)]
 pub struct Volume {
-    /// 0 to 1.
+    /// 0 to 1; above 1 when something amplified it.
     pub level: f64,
     pub muted: bool,
 }
 
-impl Default for Volume {
-    fn default() -> Self {
-        Self {
-            level: 0.5,
-            muted: false,
-        }
-    }
-}
-
 impl Volume {
-    /// Applies a volume key. Up and down unmute and step; Mute toggles. Returns whether
-    /// the key was a volume key.
+    /// Applies a volume key. Up and down unmute and step; Mute toggles. Up leaves an
+    /// amplified level (above 1) alone rather than cut it to 1. Returns whether the key
+    /// was a volume key.
     pub fn apply(&mut self, key: SystemKey, fine: bool) -> bool {
         match key {
             SystemKey::VolumeUp | SystemKey::VolumeDown => {
                 self.muted = false;
-                self.level = step(self.level, key == SystemKey::VolumeUp, fine);
+                let up = key == SystemKey::VolumeUp;
+                if !(up && self.level >= 1.0) {
+                    self.level = step(self.level, up, fine);
+                }
             }
             SystemKey::Mute => self.muted = !self.muted,
             _ => return false,
@@ -172,13 +168,29 @@ mod tests {
 
     #[test]
     fn volume_keys_step_and_unmute_and_mute_toggles() {
-        let mut volume = Volume::default();
+        let mut volume = Volume {
+            level: 0.5,
+            muted: false,
+        };
         assert!(volume.apply(SystemKey::Mute, false));
         assert!(volume.muted);
         assert!(volume.apply(SystemKey::VolumeDown, false));
         assert!(!volume.muted);
         assert!(close(volume.level, 7.0 / 16.0));
         assert!(!volume.apply(SystemKey::BrightnessUp, false));
+    }
+
+    #[test]
+    fn up_keeps_an_amplified_volume() {
+        let mut volume = Volume {
+            level: 1.5,
+            muted: true,
+        };
+        assert!(volume.apply(SystemKey::VolumeUp, false));
+        assert!(close(volume.level, 1.5));
+        assert!(!volume.muted);
+        assert!(volume.apply(SystemKey::VolumeDown, false));
+        assert!(close(volume.level, 15.0 / 16.0));
     }
 
     fn fake(dir: &Path, name: &str, kind: &str, max: u32, now: u32) {

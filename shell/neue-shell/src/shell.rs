@@ -1088,7 +1088,7 @@ impl Application for Shell {
         self.start_global_menu(cx);
         Self::start_extras(cx);
         Self::start_tray(cx);
-        osd::Keys::start(cx, Message::Osd);
+        self.keys.start(cx, Message::Osd);
         self.load_apps(cx);
         self.tick(cx);
     }

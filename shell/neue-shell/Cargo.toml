@@ -24,6 +24,7 @@ tracing-subscriber.workspace = true
 zune-jpeg.workspace = true
 
 [target.'cfg(target_os = "linux")'.dependencies]
+neue-audio.workspace = true
 neue-dbus.workspace = true
 # inotify for appearance.toml (ADR 0075).
 rustix.workspace = true

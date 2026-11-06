@@ -47,7 +47,8 @@ jobs:
       # the tty backend), plus what the headless tests dlopen: libwayland-client for the
       # scripted clients, and Mesa's EGL with its software device (llvmpipe) for the render
       # tests (docs/dev-setup.md §1.2, ADR 0021), with libwayland-egl for neue-platform's
-      # driver test (wgpu's GL backend on Wayland, ADR 0033).
+      # driver test (wgpu's GL backend on Wayland, ADR 0033). libpipewire's headers and
+      # libclang for pipewire-rs's bindgen (neue-audio, ADR 0087).
       - name: Install Linux build dependencies
         if: runner.os == 'Linux'
         run: >-
@@ -55,6 +56,7 @@ jobs:
           libxkbcommon-dev libwayland-client0 libwayland-egl1
           libinput-dev libudev-dev libseat-dev libgbm-dev
           libegl1 libegl-mesa0 libgl1-mesa-dri
+          libpipewire-0.3-dev libclang-dev
 
       - name: cargo xtask check
         run: cargo xtask check

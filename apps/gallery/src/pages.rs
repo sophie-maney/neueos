@@ -239,11 +239,13 @@ fn shell(_: &mut PageHandles) -> Element<Message> {
                 .with(specimens::shell_desktop_photo(neue_kit::desktop::Fit::Fit)),
         ))
         .with(section(
-            "On-screen display for the volume and brightness keys: volume, muted, brightness",
+            "On-screen display for the volume, brightness and mic keys: volume, muted, brightness, microphone, microphone muted",
             Stack::row()
                 .with(specimens::shell_osd(OsdGlyph::Volume, 9.25 / 16.0))
                 .with(specimens::shell_osd(OsdGlyph::Muted, 9.25 / 16.0))
-                .with(specimens::shell_osd(OsdGlyph::Brightness, 0.75)),
+                .with(specimens::shell_osd(OsdGlyph::Brightness, 0.75))
+                .with(specimens::shell_osd(OsdGlyph::Microphone, 0.75))
+                .with(specimens::shell_osd(OsdGlyph::MicrophoneMuted, 0.75)),
         ))
         .into()
 }

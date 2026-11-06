@@ -170,6 +170,7 @@ These are user-facing names. Crates use the `neue-` prefix.
 | `neue-kit` | Widget tree on **`masonry_core`** (pinned git rev, hidden behind neue-kit's own API; ADR 0002), Masonry's layout, events, focus, animation (our springs on `on_anim_frame`; ADR 0036), text through **parley** and fontique, accessibility through **AccessKit**, menus with DBusMenu export, an Elm-style app model over retained widgets with typed handles, and background tasks that report with messages (ADR 0035) |
 | `neue-desktop` | freedesktop specs: desktop entries, icon themes, MIME (shared-mime-info), thumbnails, trash, recent files, autostart |
 | `neue-dbus` | zbus interfaces: DBusMenu, StatusNotifierItem/Watcher, Notifications, our private services |
+| `neue-audio` | PipeWire client (pipewire-rs, ADR 0087): sinks and sources, the default ones, volume and mute, on its own thread. Linux only |
 
 - **Masonry decision (ADR 0002):** build on `masonry_core` with our own sctk and winit
   drivers in `neue-platform`. The first Phase 2 task is a gate: if Masonry's pins, `imaging`
@@ -378,7 +379,7 @@ neueos/
 ├── AGENTS.md  PLAN.md  LICENSE  README.md
 ├── crates/                 # shared libraries
 │   ├── neue-paint/  neue-theme/  neue-platform/  neue-kit/
-│   ├── neue-desktop/  neue-dbus/  neue-config/  neue-ipc/
+│   ├── neue-desktop/  neue-dbus/  neue-audio/  neue-config/  neue-ipc/
 │   └── neue-protocols/     # private Wayland protocol XML + bindings
 ├── compositor/             # neue-comp, neuectl
 ├── shell/                  # neue-shell

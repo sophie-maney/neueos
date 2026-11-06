@@ -1,0 +1,26 @@
+[package]
+name = "neue-audio"
+description = "neueOS's PipeWire client: the default sink and source, their volume and mute, and the list of devices"
+version.workspace = true
+edition.workspace = true
+rust-version.workspace = true
+license.workspace = true
+repository.workspace = true
+publish.workspace = true
+
+# Linux-only (AGENTS.md platform matrix: anything using PipeWire); listed in xtask's
+# LINUX_ONLY_CRATES. The model (`State`, the volume scale, the metadata's JSON) has no
+# PipeWire in it; the backend links libpipewire (ADR 0087).
+[dependencies]
+serde.workspace = true
+serde_json.workspace = true
+tracing.workspace = true
+
+[target.'cfg(target_os = "linux")'.dependencies]
+pipewire.workspace = true
+
+[dev-dependencies]
+anyhow.workspace = true
+
+[lints]
+workspace = true
