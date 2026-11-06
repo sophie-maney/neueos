@@ -115,6 +115,38 @@ fn a_layer_surface_opens_per_output_and_closes_with_it() {
 }
 
 #[test]
+fn a_layer_surface_can_follow_its_content() {
+    /// Opens a corner panel sized by its content, and a bar that isn't.
+    struct Corner;
+    impl Application for Corner {
+        type Message = ();
+        fn start(&mut self, cx: &mut Cx<'_, ()>) {
+            let corner = LayerSpec::new("neue-notification", Anchor::TOP_RIGHT);
+            cx.open_window(
+                Window::new("Banners", (1, 1), Label::new("hi"))
+                    .layer(corner)
+                    .fit_content(),
+            );
+            let bar = LayerSpec::new("neue-menubar", Anchor::TOP_EDGE);
+            cx.open_window(Window::new("Bar", (0, 22), Label::new("bar")).layer(bar));
+            // A toplevel has no use for it and opens as usual.
+            cx.open_window(Window::new("Doc", (300, 200), Label::new("doc")).fit_content());
+        }
+        fn update(&mut self, _: &mut Cx<'_, ()>, (): ()) {}
+    }
+    let (_runner, host, _) = start(Corner);
+    let fits: Vec<Option<bool>> = host
+        .kinds
+        .values()
+        .map(|kind| match kind {
+            WindowKind::Layer(spec) => Some(spec.fit_content),
+            WindowKind::Toplevel => None,
+        })
+        .collect();
+    assert_eq!(fits, [Some(true), Some(false), None]);
+}
+
+#[test]
 fn the_window_list_reaches_the_app_and_requests_reach_the_compositor() {
     let (mut runner, mut host, _) = start(MiniShell::default());
     host.shell = true;

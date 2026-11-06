@@ -683,7 +683,7 @@ their goldens and the gallery's "Shell" page run on macOS.
       extra). Split because the surface can't be resized from an app yet (`neue-platform`
       opens every window with `WindowSizePolicy::User`) and a fixed, oversized transparent
       surface would swallow clicks meant for the apps under it (ADR 0090).
-- [ ] **3.15d1 Layer surface follows its content** · Opus. After 3.15c. Opt-in content
+- [x] **3.15d1 Layer surface follows its content** · Opus. After 3.15c. Opt-in content
       sizing for layer windows in `neue-platform` (the surface is resized as the root
       widget's size changes, with `WindowSizePolicy::Content` or an equivalent), passed
       through `LayerSpec` and `Window` in `neue-kit`. The input region is the content's
@@ -692,6 +692,14 @@ their goldens and the gallery's "Shell" page run on macOS.
       *Accept:* a headless `neue-comp` test with the real driver: a layer surface anchored
       top right takes the size of its content, follows it when it grows and shrinks, and a
       click outside the content reaches the client under it; kit test of the opt-in.
+      *Done:* ADR 0090 addendum. `LayerSpec::fit_content` (Masonry's
+      `WindowSizePolicy::Content`; `SetSize` becomes `set_size` rounded up, not resent
+      when unchanged, with the input region set to the content's rect in the same commit),
+      `neue_kit::Window::fit_content`, `Anchor::TOP_RIGHT`; `State::layer_geometry` in
+      `neue-comp` for tests. Tests: headless `platform_shell` (a 600×400 corner opens at
+      its 120×40 content, grows to 200×90 and shrinks to 80×30 with its buffer; a click
+      where it used to be reaches the zoomed window under it; fails without the opt-in), 1
+      kit test, 1 platform unit test (rounding). No VM check: nothing uses it until 3.15d3.
 - [ ] **3.15d2 Notification host** · Opus. After 3.15b; the surface it lives in comes from
       3.15d1. `neue_kit::desktop::NotificationHost`: a container widget that owns the
       `Notification` panels, applies `NotificationStack` placements on animation frames

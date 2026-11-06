@@ -13,8 +13,9 @@ use std::time::{Duration, Instant};
 
 use harness::Server;
 use masonry::core::{ErasedAction, NewWidget, WidgetId};
+use masonry::layout::Length;
 use masonry::peniko::Blob;
-use masonry::widgets::Label;
+use masonry::widgets::{Label, SizedBox};
 use neue_comp::WindowInfo;
 use neue_platform::desktop::{
     OutputEvent, OutputId, ShellEvent, ShellRequest, SystemKey, SystemKeyState, Toplevel,
@@ -23,7 +24,7 @@ use neue_platform::desktop::{
 use neue_platform::{
     Anchor, App, Ctx, LayerSpec, Options, TokenRequest, Waker, WindowId, WindowSpec,
 };
-use smithay::backend::input::{InputTime, KeyState as Key};
+use smithay::backend::input::{ButtonState, InputTime, KeyState as Key};
 use smithay::input::keyboard::Keycode;
 use wayland_client::Connection;
 
@@ -447,4 +448,134 @@ fn an_ordinary_client_has_no_shell_protocol() {
         neue_platform::wayland::run_with_connection(conn, &mut Probe(tx), options()).unwrap();
     });
     assert!(!rx.recv_timeout(Duration::from_secs(30)).unwrap());
+}
+
+const CORNER: &str = "test-corner";
+const BTN_LEFT: u32 = 0x110;
+
+/// A panel in the top right corner that follows its content (`LayerSpec::fit_content`), a
+/// `SizedBox` the test resizes over a channel.
+struct Corner {
+    started: Sender<Waker>,
+    sizes: Receiver<(f64, f64)>,
+    window: Option<WindowId>,
+}
+
+impl App for Corner {
+    fn on_start(&mut self, cx: &mut Ctx<'_>) {
+        cx.keep_alive();
+        let layer = LayerSpec {
+            fit_content: true,
+            ..LayerSpec::new(CORNER, Anchor::TOP_RIGHT)
+        };
+        let content = SizedBox::empty().size(Length::px(120.0), Length::px(40.0));
+        // Far bigger than the content: where it would stay without `fit_content`.
+        let window = cx.open_window(WindowSpec {
+            kind: neue_platform::WindowKind::Layer(layer),
+            ..WindowSpec::new("corner", (600, 400), NewWidget::new(content).erased())
+        });
+        self.window = Some(window);
+        self.started.send(cx.waker()).unwrap();
+    }
+
+    fn on_action(&mut self, _: &mut Ctx<'_>, _: WindowId, _: WidgetId, _: ErasedAction) {}
+
+    fn on_wake(&mut self, cx: &mut Ctx<'_>) {
+        while let Ok((width, height)) = self.sizes.try_recv() {
+            let root = cx.render_root(self.window.unwrap()).unwrap();
+            root.edit_base_layer(|mut root| {
+                let mut sized = root.downcast::<SizedBox>();
+                SizedBox::set_size(&mut sized, Length::px(width), Length::px(height));
+            });
+        }
+    }
+}
+
+/// The corner's rect (x, y, width, height) once the layer map has it at `size`.
+fn corner_at(server: &Server, size: (i32, i32)) -> (i32, i32, i32, i32) {
+    wait_for(&format!("the corner at {size:?}"), || {
+        let g = server.with_state(|s| s.layer_geometry(CORNER))?;
+        (g.size.w == size.0 && g.size.h == size.1).then_some((g.loc.x, g.loc.y, g.size.w, g.size.h))
+    })
+}
+
+/// The namespace of the layer surface under `(x, y)`, if the pointer would land on one.
+fn layer_under(server: &Server, x: i32, y: i32) -> Option<String> {
+    server.with_state(move |s| {
+        let (surface, _) = s.surface_under((f64::from(x), f64::from(y)).into())?;
+        let (layer, _) = s.layer_for_surface(&surface)?;
+        Some(layer.namespace().to_owned())
+    })
+}
+
+#[test]
+fn a_layer_surface_follows_its_content_and_lets_clicks_through_elsewhere() {
+    let server = Server::start_rendering();
+    let (out_w, _) = neue_comp::HEADLESS_OUTPUT_SIZE;
+    // A zoomed window under the corner, to catch the clicks that pass through.
+    let mut app = server.connect();
+    let mut doc = app.create_toplevel("Doc", "org.neueos.Doc", (300, 200));
+    let id = window(&server, "Doc").id;
+    server.ipc().action("zoom-window", Some(id)).unwrap();
+    app.ack_and_commit(&mut doc);
+    assert!(window(&server, "Doc").zoomed);
+
+    let stream = server.connect_shell_raw();
+    let (started, waker_rx) = mpsc::channel();
+    let (sizes, sizes_rx) = mpsc::channel();
+    std::thread::spawn(move || {
+        let mut corner = Corner {
+            started,
+            sizes: sizes_rx,
+            window: None,
+        };
+        let conn = Connection::from_socket(stream).unwrap();
+        let _ = neue_platform::wayland::run_with_connection(conn, &mut corner, options());
+    });
+    let waker = waker_rx.recv_timeout(Duration::from_secs(30)).unwrap();
+
+    // It takes the content's size, not the 600×400 it was opened with, in the corner.
+    let (x, y, ..) = corner_at(&server, (120, 40));
+    assert_eq!((x, y), (out_w - 120, 0));
+    // Its buffer is that size too: the pointer lands on it just inside its corners.
+    wait_for("the corner's buffer", || {
+        layer_under(&server, out_w - 120, 39)
+            .is_some()
+            .then_some(())
+    });
+    assert_eq!(layer_under(&server, out_w - 1, 0).as_deref(), Some(CORNER));
+
+    // It grows with the content…
+    sizes.send((200.0, 90.0)).unwrap();
+    waker.wake();
+    corner_at(&server, (200, 90));
+    wait_for("the grown buffer", || {
+        layer_under(&server, out_w - 200, 89)
+            .is_some()
+            .then_some(())
+    });
+
+    // …and shrinks with it; where it was is the window's again.
+    sizes.send((80.0, 30.0)).unwrap();
+    waker.wake();
+    corner_at(&server, (80, 30));
+    wait_for("the shrunk buffer", || {
+        layer_under(&server, out_w - 150, 60)
+            .is_none()
+            .then_some(())
+    });
+    assert_eq!(
+        layer_under(&server, out_w - 80, 29).as_deref(),
+        Some(CORNER)
+    );
+
+    // A click just outside the content, well inside the size it opened at, reaches the
+    // window under it.
+    server.with_state(move |s| {
+        s.move_pointer((f64::from(out_w - 100), 150.0).into(), InputTime::now());
+        s.press_button(BTN_LEFT, ButtonState::Pressed, InputTime::now());
+        s.press_button(BTN_LEFT, ButtonState::Released, InputTime::now());
+    });
+    app.roundtrip();
+    app.button_serial();
 }
