@@ -1,5 +1,6 @@
 //! The gallery's pages, one per widget (or family of widgets).
 
+use neue_kit::desktop::OsdGlyph;
 use neue_kit::tokens::metrics::spacing;
 use std::cell::RefCell;
 use std::rc::Rc;
@@ -236,6 +237,13 @@ fn shell(_: &mut PageHandles) -> Element<Message> {
                 .with(specimens::shell_desktop())
                 .with(specimens::shell_desktop_photo(neue_kit::desktop::Fit::Fill))
                 .with(specimens::shell_desktop_photo(neue_kit::desktop::Fit::Fit)),
+        ))
+        .with(section(
+            "On-screen display for the volume and brightness keys: volume, muted, brightness",
+            Stack::row()
+                .with(specimens::shell_osd(OsdGlyph::Volume, 9.25 / 16.0))
+                .with(specimens::shell_osd(OsdGlyph::Muted, 9.25 / 16.0))
+                .with(specimens::shell_osd(OsdGlyph::Brightness, 0.75)),
         ))
         .into()
 }

@@ -9,7 +9,9 @@ use masonry_core::core::{
 use masonry_core::dpi::PhysicalPosition;
 use masonry_core::kurbo::{Point, Vec2};
 use masonry_core::ui_events::pointer::PointerButtons;
-use smithay_client_toolkit::seat::keyboard::{KeyEvent, KeyboardHandler, Keysym, RawModifiers};
+use smithay_client_toolkit::seat::keyboard::{
+    KeyEvent, KeyboardHandler, Keysym, RawModifiers, RepeatInfo,
+};
 use smithay_client_toolkit::seat::pointer::{
     PointerEvent, PointerEventKind, PointerHandler, ThemeSpec, ThemedPointer,
 };
@@ -293,6 +295,23 @@ impl KeyboardHandler for State {
     ) {
         self.input.last_serial = Some(serial);
         self.key(&event, KeyState::Down, false);
+    }
+
+    /// The rate the shell's system keys repeat at (task 3.14a); sctk times other keys.
+    fn update_repeat_info(
+        &mut self,
+        _: &Connection,
+        _: &QueueHandle<Self>,
+        _: &wl_keyboard::WlKeyboard,
+        info: RepeatInfo,
+    ) {
+        self.desktop.repeat = match info {
+            RepeatInfo::Repeat { rate, delay } => Some((
+                std::time::Duration::from_millis(delay.into()),
+                std::time::Duration::from_secs(1) / rate.get(),
+            )),
+            RepeatInfo::Disable => None,
+        };
     }
 
     /// Compositor-side repeat (`wl_keyboard` v10).

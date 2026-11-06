@@ -57,7 +57,9 @@ first batch only changes are sent)
 - **neue-comp** (`src/neue_shell.rs`, `src/shell_launch.rs`): the global, the snapshots
   it diffs per window, key routing (`input.rs`), the minimise target
   (`State::minimize_target`), and starting and restarting the shell.
-- **neue-shell** (task 3.2 onward): menu bar, dock and OSDs.
+- **neue-platform** (`src/wayland/desktop.rs`): `ShellEvent`s for the app, and the
+  repeat of held system keys at `wl_keyboard.repeat_info`'s rate (ADR 0086).
+- **neue-shell** (task 3.2 onward): menu bar, dock and OSDs (`src/osd.rs`).
 
 ## Changing it
 A new request, event or enum entry is a new version: bump the interface version in the

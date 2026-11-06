@@ -31,6 +31,7 @@ mod icons;
 #[cfg(target_os = "linux")]
 mod menubar;
 mod menus;
+mod osd;
 mod outline;
 mod paths;
 mod popovers;

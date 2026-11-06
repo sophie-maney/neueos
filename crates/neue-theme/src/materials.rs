@@ -1407,6 +1407,62 @@ pub mod hud {
     }
 }
 
+/// The on-screen display (task 3.14a): a rounded square of HUD material near the bottom of
+/// the screen that shows a glyph and a level while a volume or brightness key is used.
+pub mod osd {
+    use std::time::Duration;
+
+    use super::{Backdrop, hud};
+    use crate::{Color, Variant, white};
+
+    /// Side of the square.
+    pub const SIZE: f64 = 200.0;
+    /// Corner radius.
+    pub const RADIUS: f64 = 20.0;
+    /// Distance from the bottom of the output to the square.
+    pub const BOTTOM_MARGIN: f64 = 140.0;
+    /// Side of the box the glyph is drawn in.
+    pub const GLYPH_SIZE: f64 = 100.0;
+    /// Distance from the top of the square to the glyph's centre.
+    pub const GLYPH_CENTER_Y: f64 = 86.0;
+    /// Steps in the level bar.
+    pub const STEPS: u32 = 16;
+    /// Size of one step, and the gap between two.
+    pub const STEP_WIDTH: f64 = 9.0;
+    pub const STEP_HEIGHT: f64 = 7.0;
+    pub const STEP_GAP: f64 = 2.0;
+    /// Distance from the bottom of the square to the bottom of the level bar.
+    pub const BAR_BOTTOM: f64 = 28.0;
+    /// How long it stays up after the last key before it fades out.
+    pub const HOLD: Duration = Duration::from_millis(1500);
+    /// How long after the fade starts the surface may be taken down: the fade's spring
+    /// (STANDARD) has settled by then.
+    pub const FADE: Duration = Duration::from_millis(700);
+
+    /// Colours of what the square shows; the square itself is [`hud::Palette`]'s.
+    #[derive(Clone, Copy, Debug, PartialEq)]
+    pub struct Palette {
+        /// The glyph and the lit steps.
+        pub glyph: Color,
+        /// An unlit step.
+        pub step_off: Color,
+    }
+
+    impl Palette {
+        pub fn new(variant: Variant, backdrop: Backdrop) -> Self {
+            let hud = hud::Palette::new(variant, backdrop);
+            Self {
+                glyph: hud.label,
+                step_off: if variant.is_increased_contrast() {
+                    white(0.40)
+                } else {
+                    white(0.20)
+                },
+            }
+        }
+    }
+}
+
 /// The desktop's default picture (task 3.2c): a sky, a sun (or moon) and three ranges of
 /// rolling hills, all vector so it is sharp at any size and scale.
 pub mod desktop {

@@ -46,6 +46,9 @@ pub(crate) struct RootWidget {
     /// Where the chrome ends, for the driver to tell the compositor (ADR 0064).
     chrome_height: Option<ChromeHeight>,
     sheet: Option<Attached>,
+    /// Fills the window with the theme's background. Layer surfaces don't: their
+    /// content is the shell's material (an OSD's rounded square leaves its corners clear).
+    fill: bool,
 }
 
 /// A sheet open on the window: the scrim over the content, and the sheet itself unless it
@@ -63,7 +66,14 @@ impl RootWidget {
             chrome: None,
             chrome_height: None,
             sheet: None,
+            fill: true,
         }
+    }
+
+    /// A root that leaves what its content doesn't paint transparent (a layer surface).
+    pub(crate) fn transparent(mut self) -> Self {
+        self.fill = false;
+        self
     }
 
     /// A root that draws its own chrome above `child`.
@@ -73,6 +83,7 @@ impl RootWidget {
             chrome: Some(chrome),
             chrome_height: Some(ChromeHeight::new()),
             sheet: None,
+            fill: true,
         }
     }
 
@@ -269,7 +280,7 @@ impl Widget for RootWidget {
         let top = self.chrome.as_ref().map_or(0.0, Chrome::height);
         let rect = Rect::new(0.0, top, size.width, size.height);
         // A HUD window's panel is the chrome's, over the whole window.
-        if self.chrome.as_ref().is_none_or(|chrome| !chrome.is_hud()) {
+        if self.fill && self.chrome.as_ref().is_none_or(|chrome| !chrome.is_hud()) {
             painter.fill_rect(rect, theme.colors().window_background);
         }
         if let Some(chrome) = &mut self.chrome {

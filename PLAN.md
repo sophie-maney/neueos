@@ -448,6 +448,9 @@ extras in the kit (3.11b) and the shell wiring (3.11c). The network extra follow
 same split: NetworkManager client (3.12a), icon extra in the kit (3.12b), shell wiring (3.12c).
 The status-icon tray follows it too: StatusNotifier watcher, host and item client in
 `neue-dbus` (3.13a), the tray area in the bar (3.13b), shell wiring (3.13c).
+Volume, brightness and OSDs are split into system keys, brightness and the OSD (3.14a),
+the PipeWire volume backend (3.14b), the volume extra (3.14c), and media keys and
+the keyboard backlight (3.14d).
 - **Exit:** log in from the greeter on your PC and use neueOS as the daily desktop.
 
 ### Phase 4: Overview and Spaces (L)

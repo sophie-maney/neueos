@@ -9,6 +9,8 @@ mod extras;
 #[cfg(target_os = "linux")]
 mod global_menu;
 #[cfg(target_os = "linux")]
+mod osd;
+#[cfg(target_os = "linux")]
 mod shell;
 #[cfg(target_os = "linux")]
 mod tray;

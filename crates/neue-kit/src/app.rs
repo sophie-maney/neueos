@@ -102,8 +102,9 @@ pub struct Window<M> {
     toolbar: Option<Element<M>>,
     /// A layer-shell surface instead of a toplevel.
     layer: Option<LayerSpec>,
-    /// The window's material is translucent: ask for blur behind it when offered.
-    blur_behind: bool,
+    /// The window's material is translucent: ask for blur behind it when offered, cut to
+    /// corners of this radius (0: square).
+    blur_behind: Option<f64>,
 }
 
 impl<M> std::fmt::Debug for Window<M> {
@@ -138,7 +139,7 @@ impl<M> Window<M> {
             hud: false,
             toolbar: None,
             layer: None,
-            blur_behind: false,
+            blur_behind: None,
         }
     }
 
@@ -218,7 +219,15 @@ impl<M> Window<M> {
     /// itself. Without blur, or with increased contrast, nothing is asked for.
     #[must_use]
     pub fn blur_behind(mut self) -> Self {
-        self.blur_behind = true;
+        self.blur_behind = Some(0.0);
+        self
+    }
+
+    /// [`Self::blur_behind`] for a material with rounded corners of `radius` (the OSD's
+    /// square): the blur stays inside them.
+    #[must_use]
+    pub fn blur_behind_rounded(mut self, radius: f64) -> Self {
+        self.blur_behind = Some(radius);
         self
     }
 
@@ -440,8 +449,10 @@ impl<M> Cx<'_, M> {
     pub fn open_window(&mut self, window: Window<M>) -> WindowId {
         let kind = window.chrome_kind();
         // A HUD's material is translucent; other windows say so themselves.
-        let blur = if window.blur_behind || kind == Some(ChromeKind::Hud) {
-            self.blur_request(kind == Some(ChromeKind::Hud))
+        let blur = if kind == Some(ChromeKind::Hud) {
+            self.blur_request(HUD_RADIUS)
+        } else if let Some(radius) = window.blur_behind {
+            self.blur_request(radius)
         } else {
             None
         };
@@ -450,8 +461,11 @@ impl<M> Cx<'_, M> {
         } else {
             Backdrop::Opaque
         };
-        let (root, wiring, toolbar_wiring) =
+        let (mut root, wiring, toolbar_wiring) =
             root_widget(&window.title, window.root, kind, window.toolbar, backdrop);
+        if window.layer.is_some() {
+            root = root.transparent();
+        }
         let chrome_height = root.chrome_height();
         let root = NewWidget::new(root);
         let root_id = root.id();
@@ -522,10 +536,8 @@ impl<M> Cx<'_, M> {
 
     /// What to ask the driver for a window that wants blur behind it: nothing unless the
     /// compositor offers it and the theme isn't increased contrast.
-    fn blur_request(&self, rounded: bool) -> Option<Blur> {
-        (self.backdrop() == Backdrop::Translucent).then_some(Blur {
-            corner_radius: if rounded { HUD_RADIUS } else { 0.0 },
-        })
+    fn blur_request(&self, corner_radius: f64) -> Option<Blur> {
+        (self.backdrop() == Backdrop::Translucent).then_some(Blur { corner_radius })
     }
 
     /// Replaces `window`'s menu bar (see [`Window::menu_bar`]); an empty menu removes it.

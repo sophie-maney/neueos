@@ -89,14 +89,15 @@ ssh neueos-vm '. ~/neueos/docs/vm-env.sh; neuectl screenshot /tmp/a.png'
 mkdir -p ~/Desktop/neueos-shots && scp 'neueos-vm:/tmp/*.png' ~/Desktop/neueos-shots/ && open ~/Desktop/neueos-shots
 ```
 
-**Scripted input.** Start ydotool's daemon once per boot (as root, socket owned by the
-user), then move, click and type:
+**Scripted input.** Start ydotool's daemon once per boot (the user is in the `input`
+group, which may write `/dev/uinput`, so no root is needed), then move, click and type:
 ```sh
-ssh -t neueos-vm 'sudo sh -c "setsid nohup ydotoold --socket-path=/tmp/.ydotool_socket --socket-own=1000:1000 >/dev/null 2>&1 </dev/null &"'
+ssh neueos-vm 'setsid nohup ydotoold --socket-path=/tmp/.ydotool_socket >/dev/null 2>&1 </dev/null &'
 ssh neueos-vm 'export YDOTOOL_SOCKET=/tmp/.ydotool_socket; ydotool mousemove -x 40 -y 40; ydotool click 0xC0; ydotool type "echo ok"; ydotool key 28:1 28:0'
 prlctl send-key-event neueos-vm -s 29 -e press     # key chords: press each (Ctrl=29), then release
 ssh neueos-vm '. ~/neueos/docs/vm-env.sh; click_in_window 100 50'   # click at (100,50) in the first window (scale 1)
 ssh neueos-vm '. ~/neueos/docs/vm-env.sh; sweep menu 30; sweep popover 30'   # count see-through frames while hovering popups (task 2.30)
+ssh neueos-vm 'export YDOTOOL_SOCKET=/tmp/.ydotool_socket; ydotool key 115:1 115:0'  # Volume Up (114 down, 113 mute, 225/224 brightness); hold with 114:1; sleep 1; 114:0
 ```
 
 **Logs:**

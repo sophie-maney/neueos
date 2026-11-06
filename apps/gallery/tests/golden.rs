@@ -15,8 +15,8 @@ use neue_gallery::specimens::{
     COLOR_WELL_SIZE, COMBO_SIZE, DATE_SIZE, FIELD_SIZE, ICONS_SIZE, MENU_SIZE, OUTLINE_SIZE,
     PATH_SIZE, POPOVER_SIZE, POPUP_SIZE, PROGRESS_SIZE, PULL_DOWN_SIZE, PUSH_BUTTON_SIZE,
     SCROLL_SIZE, SEGMENTED_SIZE, SHELL_BAR_SIZE, SHELL_DESKTOP_SIZE, SHELL_EXTRAS_SIZE,
-    SHELL_TRAY_SIZE, SIDEBAR_SIZE, SLIDER_SIZE, SPINNER_SIZE, SPLIT_SIZE, STEPPER_SIZE,
-    SUBMENU_SIZE, TABLE_SIZE, TABS_SIZE, TEXT_VIEW_SIZE, TOGGLE_SIZE,
+    SHELL_OSD_SIZE, SHELL_TRAY_SIZE, SIDEBAR_SIZE, SLIDER_SIZE, SPINNER_SIZE, SPLIT_SIZE,
+    STEPPER_SIZE, SUBMENU_SIZE, TABLE_SIZE, TABS_SIZE, TEXT_VIEW_SIZE, TOGGLE_SIZE,
 };
 use neue_kit::testing::{
     self, DISABLED, FOCUSED, Fixture, Goldens, INACTIVE, NORMAL, NavKey, PRESSED, State,
@@ -387,6 +387,13 @@ control_goldens! {
     shell_desktop: "shell-desktop", SHELL_DESKTOP_SIZE, &[NORMAL], specimens::shell_desktop();
     shell_desktop_fill: "shell-desktop-fill", SHELL_DESKTOP_SIZE, &[NORMAL], specimens::shell_desktop_photo(neue_kit::desktop::Fit::Fill);
     shell_desktop_fit: "shell-desktop-fit", SHELL_DESKTOP_SIZE, &[NORMAL], specimens::shell_desktop_photo(neue_kit::desktop::Fit::Fit);
+
+    // The on-screen display (3.14a): the volume at nine and a quarter steps (two waves, a
+    // quarter-lit step), muted (no waves, every step unlit) and the brightness at three
+    // quarters.
+    shell_osd_volume: "shell-osd-volume", SHELL_OSD_SIZE, &[NORMAL], specimens::shell_osd(neue_kit::desktop::OsdGlyph::Volume, 9.25 / 16.0);
+    shell_osd_muted: "shell-osd-muted", SHELL_OSD_SIZE, &[NORMAL], specimens::shell_osd(neue_kit::desktop::OsdGlyph::Muted, 9.25 / 16.0);
+    shell_osd_brightness: "shell-osd-brightness", SHELL_OSD_SIZE, &[NORMAL], specimens::shell_osd(neue_kit::desktop::OsdGlyph::Brightness, 0.75);
 
     context_menu: "context-menu", MENU_SIZE, &[MENU_OPEN, MENU_HIGHLIGHTED], specimens::context_menu(|_| (), specimens::command);
     context_submenu: "context-menu", SUBMENU_SIZE, &[MENU_SUBMENU], specimens::context_menu(|_| (), specimens::command);

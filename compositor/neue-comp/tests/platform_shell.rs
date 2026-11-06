@@ -17,9 +17,12 @@ use masonry::peniko::Blob;
 use masonry::widgets::Label;
 use neue_comp::WindowInfo;
 use neue_platform::desktop::{
-    OutputEvent, OutputId, ShellEvent, ShellRequest, Toplevel, ToplevelId,
+    OutputEvent, OutputId, ShellEvent, ShellRequest, SystemKey, SystemKeyState, Toplevel,
+    ToplevelId,
 };
 use neue_platform::{Anchor, App, Ctx, LayerSpec, Options, Waker, WindowId, WindowSpec};
+use smithay::backend::input::{InputTime, KeyState as Key};
+use smithay::input::keyboard::Keycode;
 use wayland_client::Connection;
 
 const NAMESPACE: &str = "test-bar";
@@ -109,6 +112,8 @@ struct Driver {
     failures: Vec<String>,
     /// The output of every `ShellEvent::FocusMenuBar`.
     focus_menu_bar: Vec<Option<OutputId>>,
+    /// Every `ShellEvent::SystemKey`, without modifiers.
+    system_keys: Vec<(SystemKey, SystemKeyState)>,
 }
 
 impl Driver {
@@ -140,6 +145,7 @@ impl Driver {
             outputs: Vec::new(),
             failures: Vec::new(),
             focus_menu_bar: Vec::new(),
+            system_keys: Vec::new(),
         };
         (driver, shell)
     }
@@ -169,6 +175,9 @@ impl Driver {
                 }
                 Ok(Report::Shell(ShellEvent::FocusMenuBar { output })) => {
                     self.focus_menu_bar.push(output);
+                }
+                Ok(Report::Shell(ShellEvent::SystemKey { key, state, .. })) => {
+                    self.system_keys.push((key, state));
                 }
                 Ok(Report::Started { .. }) => panic!("started twice"),
                 Err(_) => panic!("timed out waiting for {what}; got {:#?}", self.toplevels),
@@ -278,6 +287,56 @@ fn the_driver_as_shell_gets_outputs_and_windows_and_acts_on_them() {
     wait_for("the second bar to go", || {
         (bars(&server) == ["HEADLESS-1"]).then_some(())
     });
+}
+
+/// xkb keycodes (evdev + 8) in the default `us` keymap.
+const VOLUME_UP: u32 = 115 + 8;
+const MUTE: u32 = 113 + 8;
+
+fn key(server: &Server, code: u32, state: Key) {
+    server.with_state(move |s| s.press_key(Keycode::new(code), state, InputTime::now()));
+}
+
+#[test]
+fn system_keys_reach_the_driver_and_held_steps_repeat() {
+    let server = Server::start_rendering();
+    let (mut driver, shell) = Driver::start(&server);
+    assert!(shell);
+    driver.until("an output", |d| !d.outputs.is_empty());
+
+    // Held past the repeat delay, Volume Up repeats until it is released.
+    key(&server, VOLUME_UP, Key::Pressed);
+    driver.until("a repeat", |d| {
+        d.system_keys
+            .contains(&(SystemKey::VolumeUp, SystemKeyState::Repeated))
+    });
+    key(&server, VOLUME_UP, Key::Released);
+    driver.until("the release", |d| {
+        d.system_keys
+            .contains(&(SystemKey::VolumeUp, SystemKeyState::Released))
+    });
+    let repeats = driver.system_keys.len();
+
+    // Mute is a toggle: held, it doesn't repeat. Its release comes after the volume
+    // key's repeat has stopped.
+    key(&server, MUTE, Key::Pressed);
+    std::thread::sleep(Duration::from_millis(1000));
+    key(&server, MUTE, Key::Released);
+    driver.until("mute's release", |d| {
+        d.system_keys
+            .contains(&(SystemKey::Mute, SystemKeyState::Released))
+    });
+    assert_eq!(
+        driver.system_keys[0],
+        (SystemKey::VolumeUp, SystemKeyState::Pressed)
+    );
+    assert_eq!(
+        driver.system_keys[repeats..],
+        [
+            (SystemKey::Mute, SystemKeyState::Pressed),
+            (SystemKey::Mute, SystemKeyState::Released)
+        ]
+    );
 }
 
 #[test]

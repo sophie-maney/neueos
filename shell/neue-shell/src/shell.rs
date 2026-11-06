@@ -31,6 +31,7 @@ use neue_shell::windows::Windows;
 use crate::appearance;
 use crate::extras;
 use crate::global_menu::{self, Address, Input, MenuEvent, Menus};
+use crate::osd;
 use crate::tray;
 
 /// The bar's layer-shell namespace.
@@ -85,6 +86,8 @@ enum Message {
     TrayCall(Result<(), String>),
     /// A logind call finished.
     Login(Result<(), String>),
+    /// The system keys' timers and workers.
+    Osd(osd::Event),
     /// The configured picture was decoded, or why not.
     Picture(Result<(Picture, Fit), String>),
     /// `appearance.toml` changed.
@@ -232,6 +235,8 @@ struct Shell {
     /// NetworkManager as of its last change: the menu's indices are looked up here.
     network: Option<NetworkState>,
     tray: Tray,
+    /// The volume and brightness keys and their OSD.
+    keys: osd::Keys,
 }
 
 /// The global menu as the UI thread keeps it.
@@ -298,6 +303,7 @@ impl Shell {
             bluetooth: None,
             network: None,
             tray: Tray::default(),
+            keys: osd::Keys::default(),
         }
     }
 
@@ -1082,6 +1088,7 @@ impl Application for Shell {
         self.start_global_menu(cx);
         Self::start_extras(cx);
         Self::start_tray(cx);
+        osd::Keys::start(cx, Message::Osd);
         self.load_apps(cx);
         self.tick(cx);
     }
@@ -1189,6 +1196,7 @@ impl Application for Shell {
             }
             Message::Login(Ok(())) => {}
             Message::Login(Err(error)) => tracing::warn!(%error, "logind call failed"),
+            Message::Osd(event) => self.keys.event(cx, Message::Osd, event),
             Message::Picture(Ok((picture, fit))) => {
                 for background in self.backgrounds.values() {
                     background.desktop.set_photo(cx, picture.clone(), fit);
@@ -1223,6 +1231,15 @@ impl Application for Shell {
     }
 
     fn shell(&mut self, cx: &mut Cx<'_, Message>, event: ShellEvent) {
+        if let ShellEvent::SystemKey {
+            key,
+            state,
+            modifiers,
+        } = event
+        {
+            self.keys.key(cx, Message::Osd, key, state, modifiers);
+            return;
+        }
         if let ShellEvent::FocusMenuBar { output } = event {
             // Ctrl+F2: the first menu, from the keyboard. Right away, so that its popup
             // grabs with the event's serial.

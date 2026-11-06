@@ -1218,6 +1218,14 @@ pub fn shell_tray<M: Clone + 'static>(idle: M) -> Stack<M> {
         .with(bar("Gallery", &["File", "Edit", "View"], crowded))
 }
 
+/// Golden window size for the on-screen display: its square and the window's padding.
+pub const SHELL_OSD_SIZE: (u32, u32) = (216, 216);
+
+/// The on-screen display showing `glyph` at `level`, at rest.
+pub fn shell_osd(glyph: neue_kit::desktop::OsdGlyph, level: f64) -> neue_kit::desktop::Osd {
+    neue_kit::desktop::Osd::new(glyph, level)
+}
+
 /// The desktop background specimens' size: a 16:10 output, small.
 const DESKTOP_SPECIMEN: (f64, f64) = (320.0, 200.0);
 
