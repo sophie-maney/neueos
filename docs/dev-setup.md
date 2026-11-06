@@ -154,6 +154,23 @@ ssh -t neueos-vm 'sudo pkill -x mock_power_blue; sudo rm -f /usr/share/dbus-1/sy
 ```
 `--battery 20 --charging` set the battery.
 
+### 1.6c Mock NetworkManager (network extra)
+The VM has no Wi-Fi. `neue-dbus`'s `mock_network_manager` example serves a
+wired device (connected; `Disconnect` and `ActivateConnection` toggle it) and a Wi-Fi device
+with Home (saved, connected), Cafe (open) and Library (protected, not saved) on the
+**system** bus, and prints each call it gets. Stop the real NetworkManager and give root a
+policy for the name first.
+```sh
+ssh -t neueos-vm 'printf "%s\n" "<busconfig><policy user=\"root\"><allow own=\"org.freedesktop.NetworkManager\"/></policy><policy context=\"default\"><allow send_destination=\"org.freedesktop.NetworkManager\"/></policy></busconfig>" | sudo tee /usr/share/dbus-1/system.d/neue-mock-nm.conf >/dev/null; sudo systemctl reload dbus; sudo systemctl stop NetworkManager'
+ssh neueos-vm 'cd neueos && cargo build -p neue-dbus --example mock_network_manager'
+ssh -t neueos-vm 'sudo sh -c "setsid nohup ~sophie/neueos/target/debug/examples/mock_network_manager >/tmp/mock-nm.log 2>&1 </dev/null &"'
+ssh neueos-vm 'cat /tmp/mock-nm.log'                               # the calls the menu made
+ssh -t neueos-vm 'sudo pkill -x mock_network_m; sudo rm -f /usr/share/dbus-1/system.d/neue-mock-nm.conf; sudo systemctl reload dbus; sudo systemctl start NetworkManager'   # when done
+```
+Without a private system bus the example can also be tried in OrbStack:
+`orb run -m neueos-arm64 dbus-run-session -- sh -c 'DBUS_SYSTEM_BUS_ADDRESS=$DBUS_SESSION_BUS_ADDRESS target/neueos-arm64/debug/examples/mock_network_manager'`
+and `busctl --user …` against `org.freedesktop.NetworkManager`.
+
 ### 1.7 Known quirks
 - `ydotool mousemove --absolute` lands at twice the coordinates. Relative moves are 1:1.
 - Nested (winit) backend: after the pointer jumps into the window, send one relative move

@@ -397,9 +397,52 @@ their goldens and the gallery's "Shell" page run on macOS.
 - [ ] **3.12 Menu extra: network** · Sonnet. After 3.2b. NetworkManager over zbus: wired
       and Wi-Fi state in the icon, the Wi-Fi list with signal and lock, Wi-Fi on/off, join
       a saved or open network, disconnect. Joining a new protected network needs a secret
-      agent and is deferred (`nmtui` until then; note it in the plan).
-      *Accept:* unit tests against a mock NetworkManager; in the VM the wired connection
-      shows and can be toggled.
+      agent and is deferred (`nmtui` until then; note it in the plan). Split like 3.11 into
+      3.12a, 3.12b and 3.12c.
+- [x] **3.12a Network A: NetworkManager client** · Sonnet. After 3.2b. `neue-dbus::network`
+      (Linux-only, zbus proxies on the system bus) and plain models: `State` (Wi-Fi switch,
+      wired devices, the Wi-Fi device) with `Wired`, `Wifi` and `AccessPoint` (SSID, signal,
+      lock, saved, active). Calls: Wi-Fi on and off, scan, join (a saved or open network),
+      connect a wired device, disconnect. Change signals as a blocking "read again" iterator
+      (`NetworkChanges`, like `PowerChanges`). A `mock_network_manager` example for the VM
+      (`docs/dev-setup.md` §1.6c).
+      *Accept:* unit tests against a mock NetworkManager over `testing::pair()`: no devices,
+      wired up and down, Wi-Fi off and on, the AP list (merged by SSID, sorted, saved and
+      active marked), join saved, join open, a protected unsaved network refused, wired
+      connect and disconnect, a device or AP appearing and disappearing, noise not signalled.
+      *Done:* `neue_dbus::network::{Network, State, Wired, Wifi, AccessPoint, NetworkChanges}`.
+      A read is `GetAll` calls (NetworkManager has no object manager); devices and APs that
+      vanish mid-read are skipped. Unmanaged devices (`lo`) are left out; with several Wi-Fi
+      devices the first by interface name is used. Access points of one SSID are one entry
+      (the active one, else the strongest); hidden networks (no SSID) are not listed.
+      `join` activates the saved connection for the SSID (preferring one NetworkManager
+      lists as available for the device), else for an open network uses
+      `AddAndActivateConnection` with a minimal connection NetworkManager saves, else fails
+      with `Error::SecretRequired` (`AccessPoint::joinable` is false, so a menu can grey it
+      out). `connect` (wired) activates the device's first available connection
+      (`Error::NoConnection` without one); `disconnect` is `Device.Disconnect` for both
+      kinds. `NetworkChanges` watches every signal under NetworkManager's path and drops
+      `LastSeen`/`LastScan` and traffic counters; a scan still produces bursts, so 3.12c
+      debounces. 14 unit tests (arm64 Linux via `cargo xtask linux`). The example was
+      smoke-tested on a private bus with `busctl` (disconnect and activate move the wired
+      device's `State`; activating an AP moves `ActiveAccessPoint`). No ADR: zbus only, no
+      new dependency or protocol. Protected networks that aren't saved are deferred until a
+      secret agent exists (`nmtui` until then).
+- [ ] **3.12b Network B: icon extra in the kit** · Sonnet. Can start from 3.12a's shapes.
+      `ExtraIcon::Network` (wired, Wi-Fi with signal level, Wi-Fi off, disconnected),
+      original vector icons in `neue_paint::materials::menu_bar`, light and dark; portable
+      `NetworkView`, `NetworkCommand` and `bar::network_menu` (Wi-Fi switch, the network
+      list with a signal glyph, a lock and a tick on the active one, wired entries,
+      Disconnect), `BarContent::network` (`None` hides it). Gallery Shell page entries,
+      AccessKit labels.
+      *Accept:* goldens (states × light/dark × scale 1 and 2); kit tests.
+- [ ] **3.12c Network C: shell wiring** · Sonnet. After 3.12a and 3.12b. A worker thread in
+      `extras.rs` following NetworkManager (debounced), bar sync, the extra absent without
+      NetworkManager, menu actions through `cx.spawn` (Wi-Fi switch, join, connect,
+      disconnect, scan when the menu opens). Addendum to ADR 0083.
+      *Accept:* in the VM with the mock NetworkManager: the extra shows with screenshots, the
+      wired connection can be toggled, the Wi-Fi list shows and joining Home and Cafe reaches
+      the mock; the extra is gone with the mock stopped.
       *Owner:* Wi-Fi list and joining a saved network on the PC.
 - [ ] **3.13 Status-icon tray** · Sonnet. After 3.7a. `StatusNotifierWatcher` and a host in
       `neue-dbus`; icons by name or pixmap, tooltips, activation, and menus through the 3.7a

@@ -8,6 +8,8 @@
 //! - [`login`]: the logind calls behind the logo menu.
 //! - [`power`] and [`bluetooth`]: UPower's battery and BlueZ's adapter and devices, for the
 //!   battery and Bluetooth menu extras (task 3.11a).
+//! - [`network`]: NetworkManager's wired and Wi-Fi devices, for the network menu extra
+//!   (task 3.12a).
 //!
 //! The StatusNotifierItem host and our private services arrive
 //! with later Phase 3 tasks.
@@ -21,6 +23,7 @@ pub mod gmenu_client;
 pub mod login;
 pub mod menu;
 pub mod menu_client;
+pub mod network;
 pub mod power;
 pub mod registrar;
 pub mod testing;
@@ -71,4 +74,8 @@ pub enum Error {
     Name(String),
     #[error("an object is already exported at {0}")]
     PathTaken(String),
+    #[error("joining {0:?} needs a password, which isn't supported yet")]
+    SecretRequired(String),
+    #[error("{0} has no saved connection to connect with")]
+    NoConnection(String),
 }

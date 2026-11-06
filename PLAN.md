@@ -444,7 +444,8 @@ neue-platform and neue-kit (3.2a), the shell and its menu bar (3.2b) and the des
 background (3.2c). Super as ⌘ is split into the compositor remap (3.10a), the kit's
 command key (3.10b) and ⌘ in third-party menus (3.10c).
 Menu extras for battery and Bluetooth are split into the D-Bus clients (3.11a), icon
-extras in the kit (3.11b) and the shell wiring (3.11c).
+extras in the kit (3.11b) and the shell wiring (3.11c). The network extra follows the
+same split: NetworkManager client (3.12a), icon extra in the kit (3.12b), shell wiring (3.12c).
 - **Exit:** log in from the greeter on your PC and use neueOS as the daily desktop.
 
 ### Phase 4: Overview and Spaces (L)
