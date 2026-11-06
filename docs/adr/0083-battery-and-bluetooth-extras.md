@@ -1,4 +1,4 @@
-# 0083: Battery and Bluetooth menu extras in the shell
+# 0083: Battery, Bluetooth and network menu extras in the shell
 
 - **Status:** Accepted
 - **Date:** 2026-11-06
@@ -39,3 +39,19 @@ the two system services.
 - Testing in the VM uses `neue-dbus`'s `mock_power_bluetooth` example on the system bus
   (`docs/dev-setup.md` §1.6b).
 - The five-second poll costs one `GetAll` and one `GetManagedObjects` call per interval.
+
+## Addendum: the network extra (task 3.12c)
+`neue_dbus::network` (3.12a) and the bar's network extra (3.12b) are wired the same way:
+- **Worker.** `extras::run_network` follows NetworkManager on a thread of its own.
+  NetworkManager's signals come in bursts (every scan touches each access point), so the
+  worker reads once the signals have been quiet for 300 ms, but never waits more than 2 s
+  for a burst to end (`follow` takes the debounce; the other two workers pass none). The
+  5 s poll covers NetworkManager appearing and leaving.
+- **Absent means hidden.** NetworkManager off the bus, or on it with neither an Ethernet
+  nor a Wi-Fi device, is `None` and hides the extra.
+- **Actions** (`Shell::network_command`) look indices up in the last `State` and run each
+  call through `cx.spawn` on a fresh connection: Wi-Fi switch, join, connect, disconnect,
+  and a scan when the menu opens (skipped with Wi-Fi off; a scan NetworkManager refuses
+  as too soon is logged at debug level). Results are only logged; the change signals bring
+  the new state. A protected network that isn't saved can't be joined (the menu greys it
+  out; `nmtui` until a secret agent exists).
