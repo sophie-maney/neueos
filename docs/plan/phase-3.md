@@ -520,6 +520,20 @@ their goldens and the gallery's "Shell" page run on macOS.
       *Accept:* in the VM a tray app (`mock_sni_item`, then `nm-applet --indicator`) shows, its
       menu opens and its items act (the mock's log shows the calls).
       *Owner:* a real tray app on the PC.
+      *Done (not ticked, VM check open):* kit `MenuTitle::on_press` and `on_context` (a
+      primary press sends a message, a secondary one opens the menu or sends the context
+      message; Return, Space, Down, the menu key and the accessibility actions follow).
+      `neue_shell::bar::{TrayActions, update_tray_title}`; `tray::run` (worker: watcher,
+      host, menus read on threads, icons resolved from `IconThemePath`, the theme or the
+      pixmap) and the shell's `Tray` state; ADR 0084 addendum. 3 kit and 7 shell tests, and
+      an ignored test that runs the real worker against `mock_sni_item` on a private session
+      bus in OrbStack (the mock's log showed `Activate`, `ContextMenu` and `clicked 3`;
+      `mock_sni_item`'s menu now has the items under the root, as real apps do). **Not
+      done:** the bar in a running session: the VM's sudo refused `1234`, so the console
+      couldn't be taken over; the steps are in `docs/dev-setup.md` §1.6d. Tick this box once
+      they pass: the mock's disc shows left of the network extra, a left click logs
+      `Activate`, a right click opens the menu, Mark Attention turns the disc red, Quit
+      removes it; then `nm-applet --indicator` shows.
 - [ ] **3.14 Volume, brightness and OSDs** · Opus. After 3.1 and 3.2b. ADR for
       `pipewire-rs` (a C dependency, also used by 3.22). The volume extra (slider, mute,
       output device), media and volume keys routed by `neue-shell-v1`, brightness through

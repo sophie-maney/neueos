@@ -7,7 +7,7 @@
 use std::time::Duration;
 
 use neue_kit::desktop::{Backdrop, ExtraIcon, MenuBar, MenuTitle, NetworkIcon};
-use neue_kit::{Glyph, Handle, Icon, Menu, MenuItem};
+use neue_kit::{Cx, Glyph, Handle, Icon, Menu, MenuItem};
 
 /// What the logo menu offers.
 #[derive(Debug, Clone, Copy, PartialEq, Eq)]
@@ -451,15 +451,70 @@ impl TrayItemView {
     }
 }
 
-/// The tray's title for `view`, opening `menu`: an image extra named after the item with
+/// What a tray item does when it is used (ADR 0084 addendum): a primary press sends
+/// `press` (the app's `Activate`) and a secondary one opens `menu`, or sends `context`
+/// when there is no menu. Without a `press` the item behaves as a plain menu extra: any
+/// press opens `menu` (an item with `ItemIsMenu`, and the bars of tests and goldens).
+#[derive(Debug)]
+pub struct TrayActions<M> {
+    pub menu: Menu<M>,
+    pub press: Option<M>,
+    pub context: Option<M>,
+    /// Sent when the menu goes up and comes down (the shell keeps the tray's titles as
+    /// they are meanwhile).
+    pub on_open: Option<M>,
+    pub on_close: Option<M>,
+}
+
+impl<M> TrayActions<M> {
+    /// An item that opens `menu` on any press.
+    pub fn menu(menu: Menu<M>) -> Self {
+        Self {
+            menu,
+            press: None,
+            context: None,
+            on_open: None,
+            on_close: None,
+        }
+    }
+}
+
+/// Shows what `view` says on the tray title `handle` in place: its icon and name, its
+/// tooltip and whether it is hidden (passive).
+pub fn update_tray_title<M, N>(
+    handle: &Handle<MenuTitle<M>>,
+    cx: &mut Cx<'_, N>,
+    view: &TrayItemView,
+) {
+    handle.set_icon(cx, ExtraIcon::Image(view.shown_icon()), view.name());
+    handle.set_description(cx, (!view.tooltip.is_empty()).then(|| view.tooltip.clone()));
+    handle.set_hidden(cx, view.hidden());
+}
+
+/// The tray's title for `view` doing `actions`: an image extra named after the item with
 /// the tooltip as its description, hidden while the item is passive.
-pub fn tray_title<M: 'static>(view: &TrayItemView, menu: Menu<M>) -> MenuTitle<M> {
-    let title = MenuTitle::icon(
+pub fn tray_title<M: Clone + 'static>(
+    view: &TrayItemView,
+    actions: TrayActions<M>,
+) -> MenuTitle<M> {
+    let mut title = MenuTitle::icon(
         ExtraIcon::Image(view.shown_icon()),
         view.name().to_owned(),
-        menu,
+        actions.menu,
     )
     .hidden(view.hidden());
+    if let Some(press) = actions.press {
+        title = title.on_press(press);
+    }
+    if let Some(context) = actions.context {
+        title = title.on_context(context);
+    }
+    if let Some(open) = actions.on_open {
+        title = title.on_open(open);
+    }
+    if let Some(close) = actions.on_close {
+        title = title.on_close(close);
+    }
     if view.tooltip.is_empty() {
         title
     } else {
@@ -467,12 +522,12 @@ pub fn tray_title<M: 'static>(view: &TrayItemView, menu: Menu<M>) -> MenuTitle<M
     }
 }
 
-/// The tray's titles for `items`, in order (the first is rightmost), each opening
-/// `menu(item)`. `handles` gets one handle per title, to change it in place; pass the
+/// The tray's titles for `items`, in order (the first is rightmost), each doing
+/// `actions(item)`. `handles` gets one handle per title, to change it in place; pass the
 /// titles to [`Handle::set_tray`] when items come and go.
-pub fn tray_titles<M: 'static>(
+pub fn tray_titles<M: Clone + 'static>(
     items: &[TrayItemView],
-    menu: impl Fn(&TrayItemView) -> Menu<M>,
+    actions: impl Fn(&TrayItemView) -> TrayActions<M>,
     handles: &mut Vec<Handle<MenuTitle<M>>>,
 ) -> Vec<MenuTitle<M>> {
     handles.clear();
@@ -480,7 +535,7 @@ pub fn tray_titles<M: 'static>(
     items
         .iter()
         .zip(handles.iter_mut())
-        .map(|(item, handle)| tray_title(item, menu(item)).bind(handle))
+        .map(|(item, handle)| tray_title(item, actions(item)).bind(handle))
         .collect()
 }
 
@@ -543,7 +598,7 @@ pub struct BarContent {
 /// A menu bar showing `content` and the app's `menus` after its name, its logo menu
 /// sending `message(command)`, its network menu `network(command)`, its Bluetooth menu
 /// `bluetooth(command)` (the network menu also sends [`NetworkCommand::Scan`] when it
-/// opens) and each tray item's menu `tray(item)`; `handles` are pointed at the parts that change. `backdrop` is translucent when
+/// opens) and each tray item doing `tray(item)`; `handles` are pointed at the parts that change. `backdrop` is translucent when
 /// the compositor blurs behind the bar (task 3.5).
 #[expect(
     clippy::too_many_arguments,
@@ -555,7 +610,7 @@ pub fn menu_bar<M: Clone + 'static>(
     message: impl Fn(SystemCommand) -> M + Clone + 'static,
     network: impl Fn(NetworkCommand) -> M + Clone + 'static,
     bluetooth: impl Fn(BluetoothCommand) -> M + Clone + 'static,
-    tray: impl Fn(&TrayItemView) -> Menu<M>,
+    tray: impl Fn(&TrayItemView) -> TrayActions<M>,
     handles: &mut BarHandles<M>,
     backdrop: Backdrop,
 ) -> MenuBar<M> {
@@ -838,11 +893,15 @@ mod tests {
             tray_item(TrayStatus::Passive, true, false),
         ];
         let mut handles = Vec::new();
-        let titles = tray_titles::<()>(&items, |_| Menu::new(), &mut handles);
+        let titles = tray_titles::<()>(&items, |_| TrayActions::menu(Menu::new()), &mut handles);
         assert_eq!(titles.len(), 2);
         assert_eq!(handles.len(), 2);
         // Asking again for fewer items drops the old handles.
-        let titles = tray_titles::<()>(&items[..1], |_| Menu::new(), &mut handles);
+        let titles = tray_titles::<()>(
+            &items[..1],
+            |_| TrayActions::menu(Menu::new()),
+            &mut handles,
+        );
         assert_eq!((titles.len(), handles.len()), (1, 1));
     }
 }

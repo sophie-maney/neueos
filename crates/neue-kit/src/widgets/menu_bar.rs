@@ -548,6 +548,11 @@ pub(crate) enum TitleAction {
     /// The keyboard leaves its menu for the bar's next (`true`) or previous title; the
     /// bar takes this one.
     Step(bool),
+    /// A primary press on a title that acts on it ([`MenuTitle::on_press`]).
+    Pressed,
+    /// A secondary press on such a title that has no menu to open
+    /// ([`MenuTitle::on_context`]).
+    Context,
 }
 
 /// What opening a title's menu needs: an event (a press, a key) or a mutation (the bar
@@ -591,6 +596,9 @@ pub(crate) struct MenuTitleWidget {
     hidden: bool,
     /// What assistive technologies read after the name (a status icon's tooltip).
     description: Option<String>,
+    /// A primary press is the title's own action and the menu opens on a secondary one
+    /// (a status icon, [`MenuTitle::on_press`]).
+    pressable: bool,
     return_focus: Option<WidgetId>,
     replayer: ImagingReplayer,
 }
@@ -613,6 +621,7 @@ impl MenuTitleWidget {
             open: false,
             hidden: false,
             description: None,
+            pressable: false,
             return_focus: None,
             replayer: ImagingReplayer::new(),
         }
@@ -627,6 +636,28 @@ impl MenuTitleWidget {
 
     fn can_open(&self, ctx: &impl TitleCtx) -> bool {
         !self.hidden && !ctx.disabled() && !self.spec.0.is_empty()
+    }
+
+    /// The title's secondary action (a secondary press, the menu key): its menu, or for a
+    /// title with none the context message.
+    fn secondary(&mut self, ctx: &mut impl TitleCtx, keyboard: bool, pointer: Option<Point>) {
+        if self.hidden || ctx.disabled() {
+            return;
+        }
+        if self.spec.0.is_empty() {
+            ctx.report(TitleAction::Context);
+        } else {
+            self.open_menu(ctx, keyboard, pointer, None);
+        }
+    }
+
+    /// The title's primary action: the press message of a pressable title, else its menu.
+    fn primary(&mut self, ctx: &mut impl TitleCtx, keyboard: bool, pointer: Option<Point>) {
+        if !self.pressable {
+            self.open_menu(ctx, keyboard, pointer, None);
+        } else if !self.hidden && !ctx.disabled() {
+            ctx.report(TitleAction::Pressed);
+        }
     }
 
     /// Opens the menu right below the title, its left edge at the title's. `return_focus`:
@@ -707,20 +738,25 @@ impl Widget for MenuTitleWidget {
         _props: &mut PropertiesMut<'_>,
         event: &PointerEvent,
     ) {
-        if let PointerEvent::Down(PointerButtonEvent {
-            button: None | Some(PointerButton::Primary),
-            state,
-            ..
-        }) = event
+        let PointerEvent::Down(PointerButtonEvent { button, state, .. }) = event else {
+            return;
+        };
+        let secondary = matches!(button, Some(PointerButton::Secondary));
+        if !(matches!(button, None | Some(PointerButton::Primary)) || (secondary && self.pressable))
         {
-            // While its menu is up the menu took this press as an outside one and is
-            // closing: pressing the title again closes it rather than reopening it.
-            if ctx.get_attached_layer::<menu::MenuWidget>().is_none() {
-                let at = ctx.to_window(ctx.local_position(state.position));
-                self.open_menu(ctx, false, Some(at), None);
-            }
-            ctx.set_handled();
+            return;
         }
+        // While its menu is up the menu took this press as an outside one and is
+        // closing: pressing the title again closes it rather than reopening it.
+        if ctx.get_attached_layer::<menu::MenuWidget>().is_none() {
+            let at = ctx.to_window(ctx.local_position(state.position));
+            if secondary {
+                self.secondary(ctx, false, Some(at));
+            } else {
+                self.primary(ctx, false, Some(at));
+            }
+        }
+        ctx.set_handled();
     }
 
     fn on_text_event(
@@ -731,13 +767,24 @@ impl Widget for MenuTitleWidget {
     ) {
         match event {
             TextEvent::Keyboard(key) if key.state.is_down() => {
-                let opens = match &key.key {
-                    Key::Named(NamedKey::Enter | NamedKey::ArrowDown) => true,
+                let primary = match &key.key {
+                    Key::Named(NamedKey::Enter) => true,
                     Key::Character(c) => c == " ",
                     _ => false,
                 };
-                if opens {
-                    self.open_menu(ctx, true, None, None);
+                // A pressable title presses on Return and Space; its menu is Down's (and
+                // the menu key's).
+                let secondary = match &key.key {
+                    Key::Named(NamedKey::ArrowDown) => true,
+                    Key::Named(NamedKey::ContextMenu) => self.pressable,
+                    _ => false,
+                };
+                if primary {
+                    self.primary(ctx, true, None);
+                } else if secondary {
+                    self.secondary(ctx, true, None);
+                }
+                if primary || secondary {
                     ctx.set_handled();
                 }
             }
@@ -752,8 +799,10 @@ impl Widget for MenuTitleWidget {
         _props: &mut PropertiesMut<'_>,
         event: &AccessEvent,
     ) {
-        if event.action == Action::Click {
-            self.open_menu(ctx, true, None, None);
+        match event.action {
+            Action::Click => self.primary(ctx, true, None),
+            Action::ShowContextMenu if self.pressable => self.secondary(ctx, true, None),
+            _ => {}
         }
     }
 
@@ -896,6 +945,9 @@ impl Widget for MenuTitleWidget {
             node.set_description(description.clone());
         }
         node.add_action(Action::Click);
+        if self.pressable {
+            node.add_action(Action::ShowContextMenu);
+        }
         node.set_has_popup(HasPopup::Menu);
         node.set_expanded(self.open);
     }
@@ -1117,6 +1169,8 @@ pub struct MenuTitle<M> {
     items: Vec<Option<ItemHandler<M>>>,
     on_open: Option<ItemHandler<M>>,
     on_close: Option<ItemHandler<M>>,
+    on_press: Option<ItemHandler<M>>,
+    on_context: Option<ItemHandler<M>>,
 }
 
 impl<M> std::fmt::Debug for MenuTitle<M> {
@@ -1152,6 +1206,8 @@ impl<M: 'static> MenuTitle<M> {
             items,
             on_open: None,
             on_close: None,
+            on_press: None,
+            on_context: None,
         }
     }
 
@@ -1174,6 +1230,31 @@ impl<M: 'static> MenuTitle<M> {
         M: Clone,
     {
         self.on_close = Some(Box::new(move || message.clone()));
+        self
+    }
+
+    /// Makes a primary press the title's own action, sending `message`, and the menu opens
+    /// on a secondary press instead (Return and Space press; Down and the menu key open
+    /// the menu): a status icon whose click activates its app. [`Handle::set_menu`] doesn't
+    /// keep it.
+    #[must_use]
+    pub fn on_press(mut self, message: M) -> Self
+    where
+        M: Clone,
+    {
+        self.inner.widget.pressable = true;
+        self.on_press = Some(Box::new(move || message.clone()));
+        self
+    }
+
+    /// For a title with [`MenuTitle::on_press`]: sends `message` on a secondary press when
+    /// there is no menu to open (an app that draws its own context menu).
+    #[must_use]
+    pub fn on_context(mut self, message: M) -> Self
+    where
+        M: Clone,
+    {
+        self.on_context = Some(Box::new(move || message.clone()));
         self
     }
 
@@ -1215,22 +1296,50 @@ impl<M: 'static> From<MenuTitle<M>> for Element<M> {
         let mut element = Element::new(title.inner.erased());
         element.on_action(
             id,
-            title_handler(title.items, title.on_open, title.on_close),
+            title_handler(
+                title.items,
+                Callbacks {
+                    on_open: title.on_open,
+                    on_close: title.on_close,
+                    on_press: title.on_press,
+                    on_context: title.on_context,
+                },
+            ),
         );
         element
     }
 }
 
-/// Turns a title's actions into messages: the chosen item's, and the open and close ones
-/// if it has them.
+/// The messages of a title besides its items' (each optional).
+struct Callbacks<M> {
+    on_open: Option<ItemHandler<M>>,
+    on_close: Option<ItemHandler<M>>,
+    on_press: Option<ItemHandler<M>>,
+    on_context: Option<ItemHandler<M>>,
+}
+
+impl<M> Callbacks<M> {
+    fn none() -> Self {
+        Self {
+            on_open: None,
+            on_close: None,
+            on_press: None,
+            on_context: None,
+        }
+    }
+}
+
+/// Turns a title's actions into messages: the chosen item's, and the open, close and press
+/// ones if it has them.
 fn title_handler<M: 'static>(
     mut items: Vec<Option<ItemHandler<M>>>,
-    mut on_open: Option<ItemHandler<M>>,
-    mut on_close: Option<ItemHandler<M>>,
+    mut callbacks: Callbacks<M>,
 ) -> Handler<M> {
     Box::new(move |action| match *action.downcast_ref::<TitleAction>()? {
-        TitleAction::Opened => on_open.as_mut().map(|make| make()),
-        TitleAction::Closed => on_close.as_mut().map(|make| make()),
+        TitleAction::Opened => callbacks.on_open.as_mut().map(|make| make()),
+        TitleAction::Closed => callbacks.on_close.as_mut().map(|make| make()),
+        TitleAction::Pressed => callbacks.on_press.as_mut().map(|make| make()),
+        TitleAction::Context => callbacks.on_context.as_mut().map(|make| make()),
         TitleAction::Chosen(i) => items.get_mut(i)?.as_mut().map(|make| make()),
         TitleAction::Step(_) => None,
     })
@@ -1245,7 +1354,9 @@ impl<M: 'static> Handle<MenuTitle<M>> {
         let (spec, items) = menu.into_parts();
         cx.edit::<MenuTitleWidget, _>(self, |w| w.widget.spec = spec);
         let mut wiring = Wiring::default();
-        wiring.handlers.push((id, title_handler(items, None, None)));
+        wiring
+            .handlers
+            .push((id, title_handler(items, Callbacks::none())));
         cx.register_wiring(window, wiring);
     }
 }

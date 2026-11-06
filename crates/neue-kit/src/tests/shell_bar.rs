@@ -37,6 +37,13 @@ enum Msg {
     HideBluetooth(bool),
     /// Script: the tray's icons become these (name, tooltip, picture side in pixels).
     SetTray(Vec<TrayItem>),
+    /// Script: the tray's icons become two that act on a press: `Mail` with a menu and
+    /// `Bare` without.
+    SetPressTray,
+    /// A pressable tray icon was pressed.
+    Pressed(&'static str),
+    /// A pressable tray icon without a menu got a secondary press.
+    Context(&'static str),
     /// Script: tray icon `n` hides or shows.
     HideTray(usize, bool),
     /// Script: tray icon `n` changes its name and its tooltip.
@@ -185,6 +192,27 @@ impl Application for Bar {
                         tray_item(name, tooltip, side).bind(handle)
                     })
                     .collect();
+                self.bar.set_tray(cx, titles);
+            }
+            Msg::SetPressTray => {
+                self.tray = vec![Handle::default(); 2];
+                let [mail, bare] = &mut self.tray[..] else {
+                    unreachable!("two handles");
+                };
+                let titles = vec![
+                    tray_item("Mail", "", 16)
+                        .on_press(Msg::Pressed("Mail"))
+                        .on_context(Msg::Context("Mail"))
+                        .bind(mail),
+                    MenuTitle::icon(
+                        ExtraIcon::pixmap(16, 16, &[160; 16 * 16 * 4]).expect("a valid picture"),
+                        "Bare",
+                        Menu::new(),
+                    )
+                    .on_press(Msg::Pressed("Bare"))
+                    .on_context(Msg::Context("Bare"))
+                    .bind(bare),
+                ];
                 self.bar.set_tray(cx, titles);
             }
             Msg::HideTray(n, hidden) => self.tray[n].set_hidden(cx, hidden),
@@ -762,6 +790,84 @@ fn the_tooltip_is_the_description_and_icons_change_in_place() {
     runner.send(&mut host, Msg::RenameTray(0, "Chat, away", None));
     let _ = host.only().render();
     assert_eq!(description(&mut host, "Chat, away"), None);
+}
+
+/// A press of `button` on widget `id`.
+fn press_widget(
+    runner: &mut Runner<Bar>,
+    host: &mut FakeHost,
+    id: WidgetId,
+    button: PointerButton,
+) {
+    let at = bounds_of(host, id).center();
+    let harness = host.only();
+    harness.mouse_move(at);
+    harness.mouse_button_press(Some(button));
+    harness.mouse_button_release(Some(button));
+    deliver(runner, host);
+}
+
+#[test]
+fn a_pressable_tray_icon_sends_its_message_and_opens_its_menu_on_a_secondary_press() {
+    let (mut runner, mut host) = setup();
+    runner.send(&mut host, Msg::SetPressTray);
+    let _ = host.only().render();
+    let (mail, bare) = (id(&runner.app().tray[0]), id(&runner.app().tray[1]));
+
+    press_widget(&mut runner, &mut host, mail, PointerButton::Primary);
+    assert_eq!(runner.app().log, [Msg::Pressed("Mail")]);
+    assert_eq!(menus_open(&mut host), 0, "a primary press opens no menu");
+
+    press_widget(&mut runner, &mut host, mail, PointerButton::Secondary);
+    assert_eq!(menus_open(&mut host), 1);
+    click_item(&mut runner, &mut host, "Mail item");
+    assert_eq!(
+        runner.app().log,
+        [Msg::Pressed("Mail"), Msg::Item("Mail item")],
+        "the menu's items still send their messages, and a secondary press sends no Context"
+    );
+
+    // Without a menu a secondary press is the context message, a primary one the press.
+    press_widget(&mut runner, &mut host, bare, PointerButton::Secondary);
+    press_widget(&mut runner, &mut host, bare, PointerButton::Primary);
+    assert_eq!(menus_open(&mut host), 0);
+    assert_eq!(
+        runner.app().log[2..],
+        [Msg::Context("Bare"), Msg::Pressed("Bare")]
+    );
+}
+
+#[test]
+fn a_pressable_tray_icon_presses_on_return_and_opens_its_menu_on_down() {
+    let (mut runner, mut host) = setup();
+    runner.send(&mut host, Msg::SetPressTray);
+    let _ = host.only().render();
+    let mail = id(&runner.app().tray[0]);
+    host.only().focus_on(Some(mail));
+    named(&mut runner, &mut host, NamedKey::Enter);
+    assert_eq!(runner.app().log, [Msg::Pressed("Mail")]);
+    assert_eq!(menus_open(&mut host), 0);
+    named(&mut runner, &mut host, NamedKey::ArrowDown);
+    assert_eq!(menus_open(&mut host), 1);
+
+    // Assistive technologies click it.
+    host.only().focus_on(None);
+    let node = find(&mut host, Role::MenuItem, Some("Mail"))[0].node;
+    a11y(&mut host, node, Action::Click);
+    deliver(&mut runner, &mut host);
+    assert_eq!(
+        runner.app().log,
+        [Msg::Pressed("Mail"), Msg::Pressed("Mail")]
+    );
+}
+
+#[test]
+fn a_title_that_does_not_press_ignores_a_secondary_press() {
+    let (mut runner, mut host) = setup();
+    let app = id(&runner.app().app);
+    press_widget(&mut runner, &mut host, app, PointerButton::Secondary);
+    assert_eq!(menus_open(&mut host), 0);
+    assert!(runner.app().log.is_empty());
 }
 
 #[test]
