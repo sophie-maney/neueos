@@ -1386,6 +1386,23 @@ pub mod dock {
     /// How long an app has to show a window after a launch before its icon stops
     /// bouncing.
     pub const LAUNCH_TIMEOUT: Duration = Duration::from_secs(10);
+    /// The smallest and largest icon size the dock takes (`[dock] size`).
+    pub const ICON_RANGE: (f64, f64) = (16.0, 128.0);
+    /// The size a magnified icon grows to under the pointer by default
+    /// (`[dock] magnified-size`).
+    pub const MAGNIFIED: f64 = 96.0;
+    /// The largest size a magnified icon may grow to.
+    pub const MAGNIFIED_MAX: f64 = 256.0;
+    /// How many tiles from the pointer magnification reaches, on either side: an icon
+    /// this far away keeps its size. A whole number, so the icons grow by this many
+    /// icons' worth in all wherever the pointer is.
+    pub const MAGNIFY_REACH: f64 = 3.0;
+    /// How magnification sets in when the pointer comes onto the dock and dies away when
+    /// it leaves; along the dock, the icons follow the pointer at once.
+    pub const MAGNIFY: Spring = Spring::SNAPPY;
+    /// On the left and right edges, the space between the flat shelf's edges and the
+    /// icons on it (room for the running light on the screen's side).
+    pub const FLAT_INSET: f64 = 8.0;
 }
 
 /// The dark HUD panel: volume and brightness indicators, HUD windows.

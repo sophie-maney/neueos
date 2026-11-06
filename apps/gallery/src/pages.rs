@@ -1,6 +1,6 @@
 //! The gallery's pages, one per widget (or family of widgets).
 
-use neue_kit::desktop::OsdGlyph;
+use neue_kit::desktop::{DockEdge, OsdGlyph};
 use neue_kit::tokens::metrics::spacing;
 use std::cell::RefCell;
 use std::rc::Rc;
@@ -293,6 +293,23 @@ fn shell(handles: &mut PageHandles) -> Element<Message> {
             Stack::column().with(specimens::shell_dock(|key| {
                 Some(Message::Pressed(dock_key(key)))
             })),
+        ))
+        .with(section(
+            "Dock with magnification: point at it and the icons grow under the pointer (not with Motion reduced)",
+            Stack::column().with(specimens::shell_dock_with(
+                specimens::SHELL_DOCK_MAGNIFIED,
+                |key| Some(Message::Pressed(dock_key(key))),
+            )),
+        ))
+        .with(section(
+            "Dock on the left and right edges: a flat shelf, the lights towards the screen edge, icons bouncing away from it",
+            Stack::row()
+                .with(specimens::shell_dock_on(DockEdge::Left, |key| {
+                    Some(Message::Pressed(dock_key(key)))
+                }))
+                .with(specimens::shell_dock_on(DockEdge::Right, |key| {
+                    Some(Message::Pressed(dock_key(key)))
+                })),
         ))
         .with(section(
             "Notifications: a banner (point at it for its close button), a banner with an image, and an alert with two actions · Tab reaches each button, Space or Return activates, Escape closes · the status line shows what you did",

@@ -1,16 +1,17 @@
-//! The dock (task 3.16): [`crate::desktop::Dock`] draws the glass shelf
+//! The dock (tasks 3.16 and 3.17a): [`crate::desktop::Dock`] draws the glass shelf
 //! (`neue_paint::materials::dock_shelf`) with a tile per app standing on it: the app's
-//! icon (reflected in the glass), a light under it while the app runs, and a bounce while it
-//! launches or asks for attention.
+//! icon (reflected in the glass at the bottom), a light under it while the app runs, a
+//! bounce while it launches or asks for attention, and icons growing under the pointer
+//! when magnification is on. It stands on the bottom, left or right edge.
 //!
 //! The dock widget paints everything and takes the pointer; each tile is also a child
 //! widget ([`DockTileWidget`]) that only takes keyboard focus and speaks for its tile to
 //! assistive technology. Keys pressed on a tile bubble up to the dock, which knows the tile
 //! by the child's id.
 //!
-//! The layout is fixed by the tile count ([`dock_size`], [`dock_icon_rect`]), so the shell
-//! can tell the compositor where each app's icon is (its windows' minimise targets) without
-//! asking the widget.
+//! Where everything goes is [`DockLayout`]'s business (`dock_layout.rs`). The dock reports
+//! where its icons are whenever they move ([`Dock::on_placed`](crate::desktop::Dock)), so
+//! the shell can tell the compositor where each app's windows minimise to.
 
 use std::any::TypeId;
 use std::time::Duration;
@@ -23,23 +24,23 @@ use masonry_core::core::{
     WidgetId, WidgetMut, WidgetPod,
 };
 use masonry_core::imaging::Painter;
-use masonry_core::kurbo::{Axis, Point, Rect, RoundedRect, Size, Vec2};
+use masonry_core::kurbo::{Axis, Point, Rect, RoundedRect, Size};
 use masonry_core::layout::{LenReq, Length};
 use neue_paint::icon::{Icon, icon};
 use neue_paint::imaging::ImagingReplayer;
 use neue_paint::materials::dock_shelf::{
-    DEPTH, ShelfStyle, dock_shelf_with, placeholder_icon, reflected, running_indicator,
+    ShelfStyle, dock_shelf_with, placeholder_icon, reflected, running_indicator,
 };
 use neue_paint::materials::focus_ring;
 use neue_paint::{Backdrop, Scene};
 use neue_theme::materials::dock::{
-    ATTENTION_REST, BOUNCE_HEIGHT, BOUNCE_ROOM, FALL, ICON, ICON_BASE, RISE, RISE_TURN,
-    SIDE_PADDING, SPACING, STILL_LIFT,
+    ATTENTION_REST, BOUNCE_HEIGHT, FALL, MAGNIFY, RISE, RISE_TURN, STILL_LIFT,
 };
 use neue_theme::materials::dock_shelf::INDICATOR;
 use neue_theme::motion::SpringValue;
 use neue_theme::{Motion, SemanticColors, Theme};
 
+use super::dock_layout::{DockEdge, DockLayout, DockPlacement};
 use crate::theme::ThemeProp;
 
 /// Whether a dock icon bounces, and why.
@@ -69,33 +70,25 @@ pub struct DockTile {
     pub bounce: DockBounce,
 }
 
-/// The size of a dock with `count` tiles: the shelf's length, and the bounce room, the
-/// icons and the shelf below them stacked.
-pub fn dock_size(count: usize) -> Size {
-    #[expect(clippy::cast_precision_loss, reason = "a handful of tiles")]
-    let n = count as f64;
-    let tiles = if count == 0 {
-        0.0
-    } else {
-        n * ICON + (n - 1.0) * SPACING
-    };
-    Size::new(
-        2.0 * SIDE_PADDING + tiles,
-        BOUNCE_ROOM + ICON + DEPTH - ICON_BASE,
-    )
+/// What the dock emits.
+#[derive(Clone, Debug, PartialEq)]
+pub(crate) enum DockAction {
+    /// A tile was clicked (or pressed from the keyboard, or by an assistive technology):
+    /// its key.
+    Clicked(String),
+    /// The icons moved (tiles came or went, or magnification moved them): each tile's key
+    /// and its icon's rect at rest on the shelf, in the dock's coordinates.
+    Placed(Vec<(String, Rect)>),
 }
 
-/// Where tile `index`'s icon stands at rest, in the dock's coordinates.
-pub fn dock_icon_rect(index: usize) -> Rect {
-    #[expect(clippy::cast_precision_loss, reason = "a handful of tiles")]
-    let x = SIDE_PADDING + index as f64 * (ICON + SPACING);
-    Rect::new(x, BOUNCE_ROOM, x + ICON, BOUNCE_ROOM + ICON)
+/// Magnification: where the pointer is along the dock and how far the icons have grown.
+#[derive(Clone, Debug)]
+struct Magnify {
+    /// The pointer along the dock; kept when it leaves, so the icons shrink where they are.
+    pointer: Option<f64>,
+    /// 0 at rest, 1 grown in full.
+    amount: SpringValue,
 }
-
-/// What the dock emits when a tile is clicked (or pressed from the keyboard, or by an
-/// assistive technology): the tile's key.
-#[derive(Clone, Debug, PartialEq, Eq)]
-pub(crate) struct TileClicked(pub(crate) String);
 
 /// Where a bouncing icon is in its bounce.
 #[derive(Clone, Copy, Debug, PartialEq)]
@@ -211,6 +204,13 @@ impl Bounce {
     }
 }
 
+/// What a pointer move asks of the dock.
+#[derive(Clone, Copy, Debug, Default)]
+struct Hover {
+    layout: bool,
+    frames: bool,
+}
+
 /// One tile as the dock keeps it.
 #[derive(Debug)]
 struct Tile {
@@ -226,6 +226,12 @@ struct Tile {
 pub(crate) struct DockWidget {
     tiles: Vec<Tile>,
     pub(super) backdrop: Backdrop,
+    pub(super) layout: DockLayout,
+    magnify: Magnify,
+    /// Where the tiles are now, from the last layout pass.
+    placement: DockPlacement,
+    /// The icons' rects last reported.
+    placed: Vec<(String, Rect)>,
     /// The tile the pointer went down on.
     pressed: Option<usize>,
     replayer: ImagingReplayer,
@@ -236,6 +242,13 @@ impl DockWidget {
         let mut dock = Self {
             tiles: Vec::new(),
             backdrop: Backdrop::Opaque,
+            layout: DockLayout::default(),
+            magnify: Magnify {
+                pointer: None,
+                amount: SpringValue::new(0.0),
+            },
+            placement: DockPlacement::default(),
+            placed: Vec::new(),
             pressed: None,
             replayer: ImagingReplayer::new(),
         };
@@ -299,13 +312,38 @@ impl DockWidget {
         this.ctx.request_render();
     }
 
-    /// The tile whose column `x` (dock coordinates) is in: its icon and half the spacing
-    /// on either side.
-    fn tile_at(&self, x: f64) -> Option<usize> {
-        (0..self.tiles.len()).find(|&i| {
-            let icon = dock_icon_rect(i);
-            (icon.x0 - SPACING / 2.0..icon.x1 + SPACING / 2.0).contains(&x)
-        })
+    /// The tile at `p` (dock coordinates): its icon and half the spacing on either side,
+    /// along the dock.
+    fn tile_at(&self, p: Point) -> Option<usize> {
+        let (u, _) = self.layout.frame_of(p);
+        self.placement.tile_at(u)
+    }
+
+    /// The pointer moved to `at` (`None`: it left): the icons grow while it is over the
+    /// dock and shrink once it is off, unless magnification is off or motion reduced.
+    /// Returns whether the icons move: lay out again, and animate if `frames`.
+    fn hover(&mut self, at: Option<Point>, motion: Motion) -> Hover {
+        let mut hover = Hover::default();
+        if !self.layout.magnifies() {
+            return hover;
+        }
+        let over = at
+            .filter(|&p| !motion.reduced && self.layout.is_over(self.tiles.len(), p))
+            .map(|p| self.layout.frame_of(p).0);
+        let target = if over.is_some() { 1.0 } else { 0.0 };
+        let moved = over.is_some() && over != self.magnify.pointer;
+        if let Some(u) = over {
+            self.magnify.pointer = Some(u);
+        }
+        if self.magnify.amount.target() != target {
+            hover.frames = self
+                .magnify
+                .amount
+                .animate_to(target, motion.spring(MAGNIFY));
+            hover.layout = true;
+        }
+        hover.layout |= moved;
+        hover
     }
 
     /// The tile whose focus node `id` is.
@@ -315,8 +353,14 @@ impl DockWidget {
 
     fn click(&self, ctx: &mut EventCtx<'_>, index: usize) {
         if let Some(tile) = self.tiles.get(index) {
-            ctx.submit_action::<TileClicked>(TileClicked(tile.key.clone()));
+            ctx.submit_action::<DockAction>(DockAction::Clicked(tile.key.clone()));
         }
+    }
+
+    /// The icons' rects, for tests.
+    #[cfg(test)]
+    pub(crate) fn icons(&self) -> Vec<Rect> {
+        self.placement.icons.clone()
     }
 
     /// The tiles' bounces, for tests.
@@ -335,7 +379,7 @@ impl DockWidget {
 impl UsesProperty<ThemeProp> for DockWidget {}
 
 impl Widget for DockWidget {
-    type Action = TileClicked;
+    type Action = DockAction;
 
     fn register_children(&mut self, ctx: &mut RegisterCtx<'_>) {
         for tile in &mut self.tiles {
@@ -344,6 +388,17 @@ impl Widget for DockWidget {
     }
 
     fn update(&mut self, ctx: &mut UpdateCtx<'_>, props: &mut PropertiesMut<'_>, event: &Update) {
+        // The pointer left the window (Masonry sends no pointer event for that).
+        if matches!(event, Update::HoveredChanged(false)) {
+            let ThemeProp(theme) = *props.get::<ThemeProp>(ctx.property_cache());
+            let hover = self.hover(None, theme.motion());
+            if hover.frames {
+                ctx.request_anim_frame();
+            }
+            if hover.layout {
+                ctx.request_layout();
+            }
+        }
         if matches!(event, Update::WidgetAdded) {
             let ThemeProp(theme) = *props.get::<ThemeProp>(ctx.property_cache());
             let mut moving = false;
@@ -358,6 +413,7 @@ impl Widget for DockWidget {
 
     fn property_changed(&mut self, ctx: &mut UpdateCtx<'_>, property_type: TypeId) {
         if property_type == TypeId::of::<ThemeProp>() {
+            ctx.request_layout();
             ctx.request_render();
             // Reduced motion switched on or off: the next frame settles each bounce.
             ctx.request_anim_frame();
@@ -376,6 +432,15 @@ impl Widget for DockWidget {
         for tile in &mut self.tiles {
             moving |= tile.bounce.step(dt, theme.motion());
         }
+        let amount = self.magnify.amount.value();
+        if theme.motion().reduced {
+            self.magnify.amount.snap_to(0.0);
+        } else {
+            moving |= self.magnify.amount.step(dt);
+        }
+        if self.magnify.amount.value() != amount {
+            ctx.request_layout();
+        }
         if moving {
             ctx.request_anim_frame();
         }
@@ -385,13 +450,24 @@ impl Widget for DockWidget {
     fn on_pointer_event(
         &mut self,
         ctx: &mut EventCtx<'_>,
-        _props: &mut PropertiesMut<'_>,
+        props: &mut PropertiesMut<'_>,
         event: &PointerEvent,
     ) {
+        let ThemeProp(theme) = *props.get::<ThemeProp>(ctx.property_cache());
         match event {
+            PointerEvent::Move(update) => {
+                let local = ctx.local_position(update.current.position);
+                let hover = self.hover(Some(local), theme.motion());
+                if hover.frames {
+                    ctx.request_anim_frame();
+                }
+                if hover.layout {
+                    ctx.request_layout();
+                }
+            }
             PointerEvent::Down(down) => {
                 let local = ctx.local_position(down.state.position);
-                self.pressed = self.tile_at(local.x);
+                self.pressed = self.tile_at(local);
                 if self.pressed.is_some() {
                     ctx.capture_pointer();
                     ctx.request_paint_only();
@@ -401,7 +477,7 @@ impl Widget for DockWidget {
                 let local = ctx.local_position(up.state.position);
                 if let Some(index) = self.pressed.take() {
                     let inside = ctx.content_box().contains(local);
-                    if inside && self.tile_at(local.x) == Some(index) {
+                    if inside && self.tile_at(local) == Some(index) {
                         self.click(ctx, index);
                     }
                     ctx.request_paint_only();
@@ -453,22 +529,32 @@ impl Widget for DockWidget {
         _len_req: LenReq,
         _cross_length: Option<Length>,
     ) -> Length {
-        let size = dock_size(self.tiles.len());
+        let size = self.layout.size(self.tiles.len());
         Length::px(match axis {
             Axis::Horizontal => size.width,
             Axis::Vertical => size.height,
         })
     }
 
-    fn layout(&mut self, ctx: &mut LayoutCtx<'_>, _props: &PropertiesRef<'_>, size: Size) {
-        for (i, tile) in self.tiles.iter_mut().enumerate() {
-            let icon = dock_icon_rect(i);
-            // The icon and the shelf under it.
-            ctx.run_layout(
-                &mut tile.pod,
-                Size::new(icon.width(), (size.height - icon.y0).max(0.0)),
-            );
+    fn layout(&mut self, ctx: &mut LayoutCtx<'_>, _props: &PropertiesRef<'_>, _size: Size) {
+        self.placement = self.layout.place(
+            self.tiles.len(),
+            self.magnify.pointer,
+            self.magnify.amount.value(),
+        );
+        for (tile, icon) in self.tiles.iter_mut().zip(&self.placement.icons) {
+            ctx.run_layout(&mut tile.pod, icon.size());
             ctx.place_child(&mut tile.pod, icon.origin());
+        }
+        let placed: Vec<(String, Rect)> = self
+            .tiles
+            .iter()
+            .zip(&self.placement.icons)
+            .map(|(tile, icon)| (tile.key.clone(), *icon))
+            .collect();
+        if placed != self.placed {
+            self.placed = placed.clone();
+            ctx.submit_action::<DockAction>(DockAction::Placed(placed));
         }
     }
 
@@ -481,12 +567,13 @@ impl Widget for DockWidget {
         let ThemeProp(theme) = *props.get::<ThemeProp>(ctx.property_cache());
         let size = ctx.content_box().size();
         let mut scene = Scene::new(size.width, size.height);
-        let shelf = Rect::new(0.0, size.height - DEPTH, size.width, size.height);
-        let base = shelf.y0 + ICON_BASE;
+        let layout = self.layout;
+        let placement = &self.placement;
+        // Bounce metrics are for 48 px icons.
+        let outwards = layout.outwards() * layout.scale();
         let icons = |scene: &mut Scene| {
-            for (i, tile) in self.tiles.iter().enumerate() {
-                let rest = dock_icon_rect(i);
-                let rect = rest - Vec2::new(0.0, rest.y1 - base + tile.bounce.lift());
+            for ((i, tile), rest) in self.tiles.iter().enumerate().zip(&placement.icons) {
+                let rect = *rest + outwards * tile.bounce.lift();
                 let dimmed = self.pressed == Some(i);
                 if dimmed {
                     scene.push_opacity(0.6);
@@ -497,25 +584,37 @@ impl Widget for DockWidget {
                 }
             }
         };
-        dock_shelf_with(
-            &mut scene,
-            shelf,
-            ShelfStyle::Perspective,
-            theme.variant,
-            self.backdrop,
-            |scene| reflected(scene, base, |scene| icons(scene)),
-        );
-        for (i, tile) in self.tiles.iter().enumerate() {
-            if tile.running {
-                let x = dock_icon_rect(i).center().x;
-                running_indicator(
-                    &mut scene,
-                    Point::new(x, shelf.y1 - INDICATOR.1 - 1.0),
-                    theme.variant,
-                );
+        // The shelf and the lights on it are drawn as at the bottom and turned onto the
+        // edge; the icons stand upright wherever the dock is.
+        let shelf = layout.shelf_rect(placement);
+        let bottom = layout.edge == DockEdge::Bottom;
+        // A flat shelf's outer corners are past the screen edge.
+        scene.push_clip(&size.to_rect());
+        scene.with_transform(layout.frame_transform(), |scene| {
+            let style = if bottom {
+                ShelfStyle::Perspective
+            } else {
+                ShelfStyle::Flat
+            };
+            dock_shelf_with(scene, shelf, style, theme.variant, self.backdrop, |scene| {
+                // Only the shelf seen in perspective reflects the icons.
+                if bottom {
+                    reflected(scene, layout.base_line(), |scene| icons(scene));
+                }
+            });
+            for (tile, span) in self.tiles.iter().zip(&placement.spans) {
+                if tile.running {
+                    let u = (span.0 + span.1) / 2.0;
+                    running_indicator(
+                        scene,
+                        Point::new(u, layout.frame_depth() - INDICATOR.1 - 1.0),
+                        theme.variant,
+                    );
+                }
             }
-        }
+        });
         icons(&mut scene);
+        scene.pop_layer();
         self.replayer.replay(&scene, ctx.scale_factor(), painter);
     }
 
@@ -622,11 +721,8 @@ impl Widget for DockTileWidget {
         _len_req: LenReq,
         _cross_length: Option<Length>,
     ) -> Length {
-        let size = dock_size(1);
-        Length::px(match axis {
-            Axis::Horizontal => ICON,
-            Axis::Vertical => size.height - BOUNCE_ROOM,
-        })
+        let _ = axis;
+        Length::px(neue_theme::materials::dock::ICON)
     }
 
     fn layout(&mut self, _ctx: &mut LayoutCtx<'_>, _props: &PropertiesRef<'_>, _size: Size) {}
@@ -643,7 +739,7 @@ impl Widget for DockTileWidget {
         let ThemeProp(theme) = *props.get::<ThemeProp>(ctx.property_cache());
         let size = ctx.content_box().size();
         let mut scene = Scene::new(size.width, size.height);
-        let outline = RoundedRect::from_rect(Rect::new(0.0, 0.0, ICON, ICON), ICON * 0.2);
+        let outline = RoundedRect::from_rect(size.to_rect(), size.width.min(size.height) * 0.2);
         focus_ring(&mut scene, outline, theme.variant);
         ImagingReplayer::new().replay(&scene, ctx.scale_factor(), painter);
     }
@@ -775,15 +871,5 @@ mod tests {
         assert!(bounce.set(DockBounce::None, FULL));
         run(&mut bounce, 1);
         assert!(!bounce.moving());
-    }
-
-    #[test]
-    fn tiles_sit_side_by_side_inside_the_shelf() {
-        assert_eq!(dock_size(0).width, 2.0 * SIDE_PADDING);
-        let size = dock_size(3);
-        let last = dock_icon_rect(2);
-        assert_eq!(last.x1 + SIDE_PADDING, size.width);
-        assert_eq!(dock_icon_rect(1).x0 - dock_icon_rect(0).x1, SPACING);
-        assert_eq!(last.y1 + DEPTH - ICON_BASE, size.height);
     }
 }

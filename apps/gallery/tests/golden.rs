@@ -14,10 +14,11 @@ use neue_gallery::specimens::{
     self, BEVEL_SIZE, CALENDAR_SIZE, CHROME_SIZE, COLLECTION_SIZE, COLOR_PANEL_SIZE,
     COLOR_WELL_SIZE, COMBO_SIZE, DATE_SIZE, FIELD_SIZE, ICONS_SIZE, MENU_SIZE, OUTLINE_SIZE,
     PATH_SIZE, POPOVER_SIZE, POPUP_SIZE, PROGRESS_SIZE, PULL_DOWN_SIZE, PUSH_BUTTON_SIZE,
-    SCROLL_SIZE, SEGMENTED_SIZE, SHELL_BAR_SIZE, SHELL_DESKTOP_SIZE, SHELL_DOCK_SIZE,
-    SHELL_EXTRAS_SIZE, SHELL_NOTIFICATION_SIZE, SHELL_NOTIFICATION_STACK_SIZE, SHELL_OSD_SIZE,
-    SHELL_TRAY_SIZE, SIDEBAR_SIZE, SLIDER_SIZE, SPINNER_SIZE, SPLIT_SIZE, STEPPER_SIZE,
-    SUBMENU_SIZE, TABLE_SIZE, TABS_SIZE, TEXT_VIEW_SIZE, TOGGLE_SIZE,
+    SCROLL_SIZE, SEGMENTED_SIZE, SHELL_BAR_SIZE, SHELL_DESKTOP_SIZE, SHELL_DOCK_MAGNIFIED,
+    SHELL_DOCK_MAGNIFIED_SIZE, SHELL_DOCK_SIDE_SIZE, SHELL_DOCK_SIZE, SHELL_EXTRAS_SIZE,
+    SHELL_NOTIFICATION_SIZE, SHELL_NOTIFICATION_STACK_SIZE, SHELL_OSD_SIZE, SHELL_TRAY_SIZE,
+    SIDEBAR_SIZE, SLIDER_SIZE, SPINNER_SIZE, SPLIT_SIZE, STEPPER_SIZE, SUBMENU_SIZE, TABLE_SIZE,
+    TABS_SIZE, TEXT_VIEW_SIZE, TOGGLE_SIZE,
 };
 use neue_kit::testing::{
     self, DISABLED, FOCUSED, Fixture, Goldens, INACTIVE, NORMAL, NavKey, PRESSED, State,
@@ -48,6 +49,13 @@ const SCROLLER_HOVERED: State = ("scroller-hovered", |f: &mut Fixture| {
 /// A dock icon asking for attention 150 ms into its bounce.
 const BOUNCING: State = ("bouncing", |f: &mut Fixture| {
     f.advance(Duration::from_millis(150))
+});
+
+/// The pointer just right of the second dock icon's middle, the icons grown in full.
+const MAGNIFIED: State = ("magnified", |f: &mut Fixture| {
+    let over = SHELL_DOCK_MAGNIFIED.rest(4).icons[1].center();
+    f.hover_at_px(over.x + 10.0, over.y);
+    f.advance(Duration::from_secs(1));
 });
 
 /// The default button at the brightest point of its pulse.
@@ -413,6 +421,11 @@ control_goldens! {
     // under it), asking for attention, without an icon (running) and not running; the
     // attention tile mid-bounce.
     shell_dock: "shell-dock", SHELL_DOCK_SIZE, &[NORMAL, BOUNCING], specimens::shell_dock::<()>(|_| None);
+    // Magnification (3.17a): the icons grown around the pointer, the shelf stretched under
+    // them; the dock on the left and right edges, on its flat shelf, mid-bounce.
+    shell_dock_magnified: "shell-dock-magnified", SHELL_DOCK_MAGNIFIED_SIZE, &[MAGNIFIED], specimens::shell_dock_with::<()>(SHELL_DOCK_MAGNIFIED, |_| None);
+    shell_dock_left: "shell-dock-left", SHELL_DOCK_SIDE_SIZE, &[NORMAL, BOUNCING], specimens::shell_dock_on::<()>(neue_kit::desktop::DockEdge::Left, |_| None);
+    shell_dock_right: "shell-dock-right", SHELL_DOCK_SIDE_SIZE, &[NORMAL, BOUNCING], specimens::shell_dock_on::<()>(neue_kit::desktop::DockEdge::Right, |_| None);
 
     // Notifications (3.15b): a banner at rest, with the pointer on its close button and
     // with keyboard focus; a banner with an image; an alert with two actions, at rest and
