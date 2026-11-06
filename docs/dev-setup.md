@@ -244,6 +244,26 @@ Expected: `Paused Paused` (the key went to the playing one). `playerctl play` re
 (it has no `CanPlay`); use `gdbus call --session --dest org.mpris.MediaPlayer2.alpha
 --object-path /org/mpris/MediaPlayer2 --method org.mpris.MediaPlayer2.Player.Play`.
 
+### 1.6g Notifications: send some from the shell
+The shell owns `org.freedesktop.Notifications`. The VM has no `notify-send`; `gdbus` (and
+`gdbus monitor` for `ActionInvoked`, `NotificationClosed`) does the same. With the session
+up (§1.3) and the session bus at `$XDG_RUNTIME_DIR/bus`:
+```sh
+ssh neueos-vm '. ~/neueos/docs/vm-env.sh; export DBUS_SESSION_BUS_ADDRESS=unix:path=$XDG_RUNTIME_DIR/bus
+  setsid nohup gdbus monitor --session --dest org.freedesktop.Notifications >/tmp/sig.log 2>&1 </dev/null &
+  gdbus call --session --dest org.freedesktop.Notifications --object-path /org/freedesktop/Notifications \
+    --method org.freedesktop.Notifications.Notify Chat "uint32 0" dialog-information Hello "A banner" \
+    "[\"default\",\"Open\",\"reply\",\"Reply\"]" "{\"urgency\": <byte 2>}" "int32 -1"
+  neuectl screenshot /tmp/a.png'
+```
+Arguments in order: app name, replace id (`uint32 N`), icon, summary, body, actions, hints,
+timeout in ms (`int32 -1` default, `int32 0` stays). Do Not Disturb is `[notifications]
+do-not-disturb = true` in `~/.config/neueos/shell.toml` (read with each notification);
+`banner-timeout` is the default time in ms. Banners sit at the top right (a button at
+x ≈ 968, y ≈ 66 for the topmost; `ydotool mousemove --absolute` lands at twice, §1.7).
+Move the pointer away and back for hovering: a banner that appears under a still pointer
+gets no enter event.
+
 ### 1.7 Known quirks
 - `ydotool mousemove --absolute` lands at twice the coordinates. Relative moves are 1:1.
 - Nested (winit) backend: after the pointer jumps into the window, send one relative move

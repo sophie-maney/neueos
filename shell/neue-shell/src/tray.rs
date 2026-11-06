@@ -20,8 +20,8 @@ use neue_shell::bar::{TrayItemView, TrayStatus};
 
 /// The theme icon names are looked up in, and the one after it (ADR 0070). Until a setting
 /// for the icon theme exists, this is the one neueOS ships.
-const ICON_THEME: &str = "neueOS";
-const FALLBACK_THEME: &str = "Papirus";
+pub(crate) const ICON_THEME: &str = "neueOS";
+pub(crate) const FALLBACK_THEME: &str = "Papirus";
 
 /// Icons are loaded for this scale, so that they stay sharp on a doubled output (the bar
 /// fits them to [`TRAY_ICON_SIZE`] whatever their size).
