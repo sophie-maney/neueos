@@ -678,25 +678,52 @@ their goldens and the gallery's "Shell" page run on macOS.
       client's window forward from no focus; an unfocused ordinary client only gets
       attention; tokens single-use; the test fails without the grant). No VM check: nothing
       in the shell asks for a token until 3.15d.
-- [ ] **3.15d Shell wiring** · Sonnet. After 3.15a–c. The shell owns the name and shows
-      banners top right under the bar on the output with the active window, stacked
-      (a kit container that hosts `Notification`s and applies `NotificationStack`, in one
-      layer surface sized to its `extent()`, ADR 0090),
-      timing out (paused while hovered); replace-id updates in place; critical and
-      never-expiring (`expire_timeout` 0) notifications show as alerts that stay until
-      dismissed (`Lifetime::Never`, ADR 0089). A click on a banner sends
-      `ActivationToken` and `ActionInvoked("default")` and closes it (unless `resident`);
-      the action buttons send their keys. App icon from `app_icon` or `desktop-entry`
-      through the icon theme, or `image-data`/`image-path`. A notifications extra at the
-      far right of the bar (dimmed while Do Not Disturb is on) with a menu holding a Do
-      Not Disturb toggle
-      saved to config; in Phase 6 a click on it opens the Notification Center.
-      *Accept:* goldens of the extra (on, Do Not Disturb); in the VM `notify-send` with
-      `--action`, `--urgency=critical`, `--replace-id`, `--expire-time` and `--wait`
-      behaves as expected (screenshots, `notify-send` prints the chosen action), and Do Not
-      Disturb hides banners.
+- [ ] **3.15d Shell wiring**, split into 3.15d1–d4 (a layer surface that follows its
+      content, the kit container that hosts the panels, the shell wiring, and the bar
+      extra). Split because the surface can't be resized from an app yet (`neue-platform`
+      opens every window with `WindowSizePolicy::User`) and a fixed, oversized transparent
+      surface would swallow clicks meant for the apps under it (ADR 0090).
+- [ ] **3.15d1 Layer surface follows its content** · Opus. After 3.15c. Opt-in content
+      sizing for layer windows in `neue-platform` (the surface is resized as the root
+      widget's size changes, with `WindowSizePolicy::Content` or an equivalent), passed
+      through `LayerSpec` and `Window` in `neue-kit`. The input region is the content's
+      rect, so clicks outside it reach the windows below. The winit driver ignores it. ADR
+      (addendum to 0066/0090).
+      *Accept:* a headless `neue-comp` test with the real driver: a layer surface anchored
+      top right takes the size of its content, follows it when it grows and shrinks, and a
+      click outside the content reaches the client under it; kit test of the opt-in.
+- [ ] **3.15d2 Notification host** · Opus. After 3.15b; the surface it lives in comes from
+      3.15d1. `neue_kit::desktop::NotificationHost`: a container widget that owns the
+      `Notification` panels, applies `NotificationStack` placements on animation frames
+      and reports its `extent()` as its size. Add, replace in place (`set_content`),
+      remove (slides out), and per-id `NotificationEvent`s to the app. Respects reduced
+      motion.
+      *Accept:* gallery Shell page entry; goldens of a stack of three (one an alert) ×
+      light/dark × scale 1 and 2; tests for slide in and out, closing up, replacement,
+      resizing to `extent()`, and keyboard reach of every panel's buttons.
+- [ ] **3.15d3 Notifications in the shell** · Sonnet. After 3.15a–c, 3.15d1 and
+      3.15d2. The shell owns `org.freedesktop.Notifications` and shows banners top right
+      under the bar on the output with the active window, in one layer surface per
+      output sized by the host, stacked, timing out (paused while hovered); replace-id
+      updates in place; critical and never-expiring (`expire_timeout` 0) notifications
+      show as alerts that stay until dismissed (`Lifetime::Never`, ADR 0089). A click on
+      a banner sends `ActivationToken` (`Cx::activation_token`, 3.15c) and
+      `ActionInvoked("default")` and closes it (unless `resident`); the action buttons
+      send their keys. App icon from `app_icon` or `desktop-entry` through the icon
+      theme, or `image-data`/`image-path`. Do Not Disturb (`shell.toml`
+      `[notifications] do-not-disturb`) hides banners, and the store still counts them.
+      *Accept:* in the VM `notify-send` with `--action`, `--urgency=critical`,
+      `--replace-id`, `--expire-time` and `--wait` behaves as expected (screenshots,
+      `notify-send` prints the chosen action), and Do Not Disturb hides banners.
       *Owner:* a real app's notification (a browser or a chat client) opens the app
       window on click.
+- [ ] **3.15d4 Notifications extra in the bar** · Sonnet. After 3.15a (independent of
+      the rest). A notifications extra at the far right of the bar, dimmed while Do Not
+      Disturb is on, with a menu holding a Do Not Disturb toggle saved to `shell.toml`
+      (the shell follows the file); in Phase 6 a click on it opens the Notification Center.
+      Icon in `neue-paint`/`neue-theme` as the other extras', light and dark.
+      *Accept:* goldens of the extra (on, Do Not Disturb) × light/dark × scale 1 and 2;
+      menu tests (the toggle's message, its check state); gallery Shell page entry.
 
 ## C. Dock
 - [ ] **3.16 Dock A: shelf, launching and running apps** · Opus. After 3.1–3.3. The
