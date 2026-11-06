@@ -69,6 +69,15 @@ pub struct Picture {
     id: u64,
 }
 
+/// Pictures are equal when they are the same decoded picture (or a clone of it).
+impl PartialEq for Picture {
+    fn eq(&self, other: &Self) -> bool {
+        self.id == other.id
+    }
+}
+
+impl Eq for Picture {}
+
 impl fmt::Debug for Picture {
     fn fmt(&self, f: &mut fmt::Formatter<'_>) -> fmt::Result {
         f.debug_struct("Picture")

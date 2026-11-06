@@ -353,6 +353,12 @@ fn shell(handles: &mut PageHandles) -> Element<Message> {
                 )),
         ))
         .with(section(
+            "Dock with thumbnails of the minimised windows: a wide document (the app's icon in its corner) and a tall terminal, fitted to their tiles",
+            Stack::row().with(specimens::shell_dock_thumbnails(DockEdge::Bottom, |key| {
+                Some(Message::Pressed(dock_key(key)))
+            })),
+        ))
+        .with(section(
             "Notifications: a banner (point at it for its close button), a banner with an image, and an alert with two actions · Tab reaches each button, Space or Return activates, Escape closes · the status line shows what you did",
             Stack::column()
                 .with(specimens::shell_banner(notification_event))

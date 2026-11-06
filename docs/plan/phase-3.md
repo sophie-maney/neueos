@@ -808,7 +808,7 @@ their goldens and the gallery's "Shell" page run on macOS.
       placeholder, the minimise rectangles reaching the compositor (debug log) and a
       zoomed window stopping above the shelf. Not done: blur under the shelf, hover labels,
       keyboard focus for the dock surface, the app's own window icon (ADR 0092).
-- [ ] **3.17 Dock B: magnification, edges and editing**, split into 3.17a–d (the layout
+- [x] **3.17 Dock B: magnification, edges and editing**, split into 3.17a–d (the layout
       rework, editing and menus, the Trash and minimised tiles, thumbnails).
 - [x] **3.17a Magnification and left/right edges** · Opus. After 3.16. Both rewrite the
       dock's layout (`dock_size`, `dock_icon_rect`), hit-testing and the minimise
@@ -900,7 +900,7 @@ their goldens and the gallery's "Shell" page run on macOS.
       Trash enabled) and Empty Trash clearing `files/` and `info/` (disabled again). Not
       done: thumbnails (3.17d), confirmation before Empty Trash, other volumes' trash, files
       dropped on the Trash, a narrow divider; real hardware.
-- [ ] **3.17d Minimised-window thumbnails** · Opus. After 3.17c. The shell has no
+- [x] **3.17d Minimised-window thumbnails** · Opus. After 3.17c. The shell has no
       toplevel-capture client: add `ext-image-copy-capture` with
       `ext-foreign-toplevel-image-capture-source` to `neue-platform` (session, shm buffers,
       frame loop, `window-<id>` identifiers; ADR 0023 is the compositor side), a
@@ -909,6 +909,28 @@ their goldens and the gallery's "Shell" page run on macOS.
       *Accept:* a platform test against the headless compositor; goldens; in the VM,
       minimise a window and check that its tile shows the thumbnail, and that it stops
       updating requests when the window is restored or closed.
+      *Owner:* thumbnails on the PC (a GTK and a Firefox window minimised: content and
+      colours right, nothing stutters while a minimised window plays video).
+      *Done:* ADR 0096. `neue-platform` `wayland/capture.rs` (bound with `neue_shell_v1`
+      only, plus `ext-foreign-toplevel-list-v1` for the handles); `ShellRequest::Thumbnail
+      { toplevel, max_side }`, `ShellEvent::Thumbnail(id, ToplevelImage)` (premultiplied
+      RGBA, box-filtered to `max_side` in the driver); one shm buffer per session, the next
+      frame 500 ms after the last. `dock_shelf::minimised_window` takes the thumbnail
+      (fitted, rounded, a shadow; tokens `THUMBNAIL_*`, palette `thumbnail_shadow`);
+      `DockTile::thumbnail`; `Picture: PartialEq` (by id); `ImagingReplayer::evict_unused`
+      (the dock's texture cache no longer grows with thumbnails and magnified sizes). The
+      shell asks for each minimised tile's window at its largest size × 2 and stops when
+      the tile goes. Goldens: `shell-dock-thumbnails` and `-thumbnails-left` × light/dark
+      × 1 and 2; gallery entry. Tests: 4 driver (scaling, formats), 1 platform against the
+      headless compositor (thumbnail of a minimised window, a new one when it draws, the
+      session ending on stop and on close; `State::capture_session_count`), 1 replayer, 1
+      paint. Checked in the VM (1024×768, release build from OrbStack): foot minimised
+      after `ls` (its tile shows the terminal, foot's icon in the corner; screenshots), and
+      again after typing (the new content), restore stopping the capture (no more frames,
+      debug log), close while minimised stopping it too. foot draws nothing while
+      minimised (no frame callbacks), so its thumbnail stays as it was minimised; the
+      platform test covers a client that commits while minimised. Not done: dmabuf, title
+      bars in the picture; real hardware.
 
 ## D. Session
 - [ ] **3.18 Lock screen** · Opus. After 3.2b. An `ext-session-lock-v1` client on linen

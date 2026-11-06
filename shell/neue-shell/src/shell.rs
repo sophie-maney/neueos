@@ -1360,6 +1360,11 @@ impl Application for Shell {
             }
             return;
         }
+        if let ShellEvent::Thumbnail(window, image) = &event {
+            self.dock.thumbnail(*window, image);
+            self.dock.sync(cx, &self.windows, &self.apps);
+            return;
+        }
         self.windows.apply(event);
         self.dock.sync(cx, &self.windows, &self.apps);
         self.app_changed(cx);

@@ -40,6 +40,7 @@ use masonry_core::kurbo::{Axis, Point, Rect, RoundedRect, Size};
 use masonry_core::layout::{LenReq, Length};
 use neue_paint::icon::{Icon, icon};
 use neue_paint::imaging::ImagingReplayer;
+use neue_paint::materials::desktop::Picture;
 use neue_paint::materials::dock_shelf::{
     ShelfStyle, dock_divider, dock_shelf_with, minimised_window, placeholder_icon, reflected,
     running_indicator,
@@ -79,8 +80,9 @@ pub enum DockTileKind {
     /// An app, or anything shown as an icon on the shelf (the Trash).
     #[default]
     App,
-    /// A minimised window: a small window with the app's icon (the tile's `icon`) in its
-    /// corner. It can't be dragged.
+    /// A minimised window: its thumbnail (the tile's `thumbnail`; a drawing of a window
+    /// while there is none) with the app's icon (the tile's `icon`) in its corner. It
+    /// can't be dragged.
     Minimised,
     /// The line between the dock's sections. It takes a tile's room, but is no tile to
     /// the pointer or the keyboard.
@@ -103,6 +105,8 @@ pub struct DockTile {
     /// The tile stays where it is: it can be clicked, but not dragged. (Minimised windows
     /// and dividers never can.)
     pub fixed: bool,
+    /// A minimised window's picture; other kinds ignore it.
+    pub thumbnail: Option<Picture>,
 }
 
 impl DockTile {
@@ -299,6 +303,7 @@ struct Hover {
 struct Tile {
     key: String,
     icon: Option<Icon>,
+    thumbnail: Option<Picture>,
     kind: DockTileKind,
     fixed: bool,
     running: bool,
@@ -314,6 +319,7 @@ impl Tile {
         Self {
             key: tile.key.clone(),
             icon: None,
+            thumbnail: None,
             kind: tile.kind,
             fixed: tile.is_fixed(),
             running: false,
@@ -371,6 +377,7 @@ impl DockWidget {
             // Moving once added, with the theme known.
             kept.bounce.kind = tile.bounce;
             kept.icon = tile.icon;
+            kept.thumbnail = tile.thumbnail;
             kept.running = tile.running;
             dock.tiles.push(kept);
         }
@@ -404,6 +411,7 @@ impl DockWidget {
             kept.kind = tile.kind;
             kept.fixed = tile.is_fixed();
             kept.icon = tile.icon;
+            kept.thumbnail = tile.thumbnail;
             kept.running = tile.running;
             if kept.bounce.kind != tile.bounce || !kept.bounce.moving() {
                 kept.bounce.set(tile.bounce, motion);
@@ -1066,6 +1074,9 @@ impl Widget for DockWidget {
         }
         scene.pop_layer();
         self.replayer.replay(&scene, ctx.scale_factor(), painter);
+        // Thumbnails change and icons are placed at every magnified size: keep only what
+        // this paint drew.
+        self.replayer.evict_unused();
     }
 
     fn accessibility_role(&self) -> Role {
@@ -1090,13 +1101,14 @@ impl Widget for DockWidget {
     }
 }
 
-/// Draws `tile` in its icon's `rect`: its icon (or the placeholder), a minimised window,
-/// or the divider.
+/// Draws `tile` in its icon's `rect`: its icon (or the placeholder), a minimised window
+/// (its thumbnail, or a drawing of one), or the divider.
 fn draw_tile(scene: &mut Scene, rect: Rect, tile: &Tile, theme: &Theme, edge: DockEdge) {
     match tile.kind {
         DockTileKind::App => draw_icon(scene, rect, tile.icon.as_ref(), theme),
         DockTileKind::Minimised => {
-            minimised_window(scene, rect, theme.variant, |scene, badge| {
+            let thumbnail = tile.thumbnail.as_ref();
+            minimised_window(scene, rect, theme.variant, thumbnail, |scene, badge| {
                 if let Some(app) = &tile.icon {
                     draw_icon(scene, badge, Some(app), theme);
                 }

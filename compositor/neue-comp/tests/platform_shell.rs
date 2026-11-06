@@ -19,7 +19,7 @@ use masonry::widgets::{Label, SizedBox};
 use neue_comp::WindowInfo;
 use neue_platform::desktop::{
     OutputEvent, OutputId, ShellEvent, ShellRequest, SystemKey, SystemKeyState, Toplevel,
-    ToplevelId,
+    ToplevelId, ToplevelImage,
 };
 use neue_platform::{
     Anchor, App, Ctx, LayerSpec, Options, TokenRequest, Waker, WindowId, WindowSpec,
@@ -142,6 +142,8 @@ struct Driver {
     focus_menu_bar: Vec<Option<OutputId>>,
     /// Every `ShellEvent::SystemKey`, without modifiers.
     system_keys: Vec<(SystemKey, SystemKeyState)>,
+    /// Every `ShellEvent::Thumbnail`.
+    thumbnails: Vec<(ToplevelId, ToplevelImage)>,
 }
 
 impl Driver {
@@ -176,6 +178,7 @@ impl Driver {
             failures: Vec::new(),
             focus_menu_bar: Vec::new(),
             system_keys: Vec::new(),
+            thumbnails: Vec::new(),
         };
         (driver, shell)
     }
@@ -217,6 +220,9 @@ impl Driver {
                 }
                 Ok(Report::Shell(ShellEvent::SystemKey { key, state, .. })) => {
                     self.system_keys.push((key, state));
+                }
+                Ok(Report::Shell(ShellEvent::Thumbnail(id, image))) => {
+                    self.thumbnails.push((id, image));
                 }
                 Ok(Report::Token(token)) => self.tokens.push(token),
                 Ok(Report::Started { .. }) => panic!("started twice"),
@@ -578,4 +584,68 @@ fn a_layer_surface_follows_its_content_and_lets_clicks_through_elsewhere() {
     });
     app.roundtrip();
     app.button_serial();
+}
+
+/// The premultiplied RGBA of the middle pixel of `image`.
+fn middle(image: &ToplevelImage) -> [u8; 4] {
+    let at = ((image.height / 2 * image.width + image.width / 2) * 4) as usize;
+    image.pixels[at..at + 4].try_into().unwrap()
+}
+
+#[test]
+fn thumbnails_of_a_minimised_window_follow_it_and_stop() {
+    let server = Server::start_rendering();
+    let mut app = server.connect();
+    let mut doc = app.create_toplevel("Doc", "org.neueos.A", (80, 40));
+    app.fill(&mut doc, 0xffc0_3020);
+
+    let (mut driver, _) = Driver::start(&server);
+    driver.until("the window", |d| d.toplevel("Doc").is_some());
+    let (id, _) = driver.toplevel("Doc").unwrap();
+    driver.send(ShellRequest::Minimize(id));
+    driver.until("Doc to be minimised", |d| {
+        d.toplevel("Doc").is_some_and(|(_, t)| t.minimized)
+    });
+
+    // Scaled down to fit 20 px, keeping its proportions.
+    driver.send(ShellRequest::Thumbnail {
+        toplevel: id,
+        max_side: Some(20),
+    });
+    driver.until("a thumbnail", |d| !d.thumbnails.is_empty());
+    let (of, image) = driver.thumbnails[0].clone();
+    assert_eq!(of, id);
+    assert_eq!((image.width, image.height), (20, 10));
+    assert_eq!(middle(&image), [0xc0, 0x30, 0x20, 0xff]);
+
+    // The window draws while minimised: a new thumbnail follows.
+    app.fill(&mut doc, 0xff20_40c0);
+    driver.until("a blue thumbnail", |d| {
+        d.thumbnails
+            .last()
+            .is_some_and(|(_, image)| middle(image) == [0x20, 0x40, 0xc0, 0xff])
+    });
+
+    // Stopping ends the session.
+    driver.send(ShellRequest::Thumbnail {
+        toplevel: id,
+        max_side: None,
+    });
+    wait_for("the session to end", || {
+        (server.with_state(|state| state.capture_session_count()) == 0).then_some(())
+    });
+
+    // So does the window closing.
+    driver.send(ShellRequest::Thumbnail {
+        toplevel: id,
+        max_side: Some(20),
+    });
+    let before = driver.thumbnails.len();
+    driver.until("a thumbnail again", |d| d.thumbnails.len() > before);
+    assert_eq!(server.with_state(|state| state.capture_session_count()), 1);
+    app.destroy_toplevel(doc);
+    driver.until("the window to close", |d| d.toplevel("Doc").is_none());
+    wait_for("the session to end with the window", || {
+        (server.with_state(|state| state.capture_session_count()) == 0).then_some(())
+    });
 }

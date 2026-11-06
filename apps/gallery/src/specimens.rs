@@ -1387,6 +1387,67 @@ pub fn shell_dock_sections<M: 'static>(
         .on_click(make)
 }
 
+/// A made-up window's picture, `w` × `h` pixels: a title strip, then lines of text on
+/// `body` (straight RGB), as a thumbnail of it would look.
+fn window_picture(w: u32, h: u32, body: [u8; 3], ink: [u8; 3]) -> neue_kit::desktop::Picture {
+    let mut rgba = Vec::with_capacity((w * h * 4) as usize);
+    for y in 0..h {
+        for x in 0..w {
+            let header = y < h / 8;
+            // Text: a line every 8 px from below the header, ragged on the right.
+            let line = y > h / 8 + 4 && (y % 8) < 3 && x > 6 && x < w - 6 - (y * 7) % (w / 3);
+            let rgb = if header {
+                [0xd4, 0xd6, 0xda]
+            } else if line {
+                ink
+            } else {
+                body
+            };
+            rgba.extend_from_slice(&rgb);
+            rgba.push(255);
+        }
+    }
+    neue_kit::desktop::Picture::from_rgba8(w, h, &rgba)
+        .unwrap_or_else(|| unreachable!("w × h pixels make a picture"))
+}
+
+/// [`shell_dock_sections_tiles`] (full) with thumbnails of the minimised windows: a wide
+/// document and a tall terminal.
+pub fn shell_dock_thumbnails_tiles() -> Vec<neue_kit::desktop::DockTile> {
+    let mut tiles = shell_dock_sections_tiles(true);
+    for tile in &mut tiles {
+        tile.thumbnail = match tile.key.as_str() {
+            "window" => Some(window_picture(
+                160,
+                100,
+                [0xfa, 0xfa, 0xf8],
+                [0x70, 0x74, 0x7a],
+            )),
+            "window-2" => Some(window_picture(
+                80,
+                120,
+                [0x24, 0x28, 0x2e],
+                [0x8c, 0xd0, 0x8a],
+            )),
+            _ => None,
+        };
+    }
+    tiles
+}
+
+/// The dock with [`shell_dock_thumbnails_tiles`] on `edge`.
+pub fn shell_dock_thumbnails<M: 'static>(
+    edge: neue_kit::desktop::DockEdge,
+    make: impl FnMut(&str) -> Option<M> + 'static,
+) -> neue_kit::desktop::Dock<M> {
+    neue_kit::desktop::Dock::new(shell_dock_thumbnails_tiles())
+        .layout(neue_kit::desktop::DockLayout {
+            edge,
+            ..neue_kit::desktop::DockLayout::default()
+        })
+        .on_click(make)
+}
+
 /// The dock with [`shell_dock_tiles`]; `make` turns a click on a tile into a message.
 pub fn shell_dock<M: 'static>(
     make: impl FnMut(&str) -> Option<M> + 'static,

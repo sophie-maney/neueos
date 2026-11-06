@@ -713,6 +713,13 @@ impl ToplevelCaptureSourceHandler for State {
     }
 }
 
+impl State {
+    /// How many capture sessions are open, of outputs and windows (for tests).
+    pub fn capture_session_count(&self) -> usize {
+        self.screencopy.sessions.len()
+    }
+}
+
 impl ImageCopyCaptureHandler for State {
     fn image_copy_capture_state(&mut self) -> &mut ImageCopyCaptureState {
         &mut self.screencopy.copy_state

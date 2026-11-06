@@ -20,6 +20,9 @@
 //!   the trash has anything in it (polled every `TRASH_POLL` on a thread, since the shell
 //!   has no file watcher), opens it with `xdg-open` and empties it from its menu; a
 //!   minimised window's tile restores it, from its click or its menu.
+//! - Thumbnails (task 3.17d, ADR 0096): each minimised window's tile shows a picture of
+//!   it, captured by the compositor (`ShellRequest::Thumbnail`) at the size its tile grows
+//!   to, for as long as the tile is there.
 //!
 //! The dock lives on the first output; when that output goes away it moves to another.
 
@@ -31,7 +34,7 @@ use neue_dbus::settings::Settings as SettingsClient;
 use neue_desktop::{AppDatabase, IconLoader, IconLookup, LaunchOptions, Trash, TrashState};
 use neue_kit::desktop::{
     Anchor, Dock as DockView, DockBounce, DockTile, DockTileKind, LayerKeyboard, LayerSpec,
-    OutputId, ShellLayer, ShellRequest, ToplevelId,
+    OutputId, Picture, ShellLayer, ShellRequest, ToplevelId, ToplevelImage,
 };
 use neue_kit::desktop::{DockEdge, DockLayout, Margin, Rect};
 use neue_kit::{Cx, Handle, Icon, Menu, MenuItem, WindowId};
@@ -121,6 +124,10 @@ pub struct DockHost<M> {
     shown: Vec<DockTile>,
     /// The minimise rectangle last sent for each window.
     sent: BTreeMap<ToplevelId, (i32, i32, i32, i32)>,
+    /// The minimised windows whose thumbnails were asked for, at what size in pixels.
+    watched: BTreeMap<ToplevelId, u32>,
+    /// The latest thumbnail of each watched window.
+    thumbnails: HashMap<ToplevelId, Picture>,
     /// The launch deadline a timer is running for.
     timer: Option<Instant>,
     /// The user's trash; `None` without a home directory.
@@ -143,6 +150,8 @@ impl<M: Send + 'static> DockHost<M> {
             loading: HashSet::new(),
             shown: Vec::new(),
             sent: BTreeMap::new(),
+            watched: BTreeMap::new(),
+            thumbnails: HashMap::new(),
             timer: None,
             trash: Trash::home(),
             polling: false,
@@ -535,6 +544,7 @@ impl<M: Send + 'static> DockHost<M> {
         self.model.update(windows, apps, now);
         let tiles = self.model.tiles(windows, apps);
         self.load_icons(cx, &tiles);
+        self.watch_thumbnails(cx, &tiles);
         let shown: Vec<DockTile> = tiles.iter().map(|tile| self.view(tile)).collect();
         if let Some(surface) = self.surface.as_ref().filter(|s| s.ready) {
             if shown != self.shown {
@@ -578,6 +588,65 @@ impl<M: Send + 'static> DockHost<M> {
                 TileKind::Divider => DockTileKind::Divider,
             },
             fixed: tile.kind != TileKind::App,
+            thumbnail: match tile.kind {
+                TileKind::Minimised(window) => self.thumbnails.get(&window).cloned(),
+                _ => None,
+            },
+        }
+    }
+
+    /// A new thumbnail of `window` came; the next [`DockHost::sync`] shows it.
+    pub fn thumbnail(&mut self, window: ToplevelId, image: &ToplevelImage) {
+        if !self.watched.contains_key(&window) {
+            return;
+        }
+        match Picture::from_premultiplied_rgba8(image.width, image.height, &image.pixels) {
+            Some(picture) => {
+                self.thumbnails.insert(window, picture);
+            }
+            None => tracing::debug!(?window, ?image, "a thumbnail of the wrong size"),
+        }
+    }
+
+    /// Asks for thumbnails of the minimised windows among `tiles`, and stops those of
+    /// windows no longer there (restored or closed).
+    fn watch_thumbnails(&mut self, cx: &mut Cx<'_, M>, tiles: &[Tile]) {
+        // Sharp at the largest size a tile grows to.
+        let points = self.layout.magnified.unwrap_or(0.0).max(self.layout.icon);
+        #[expect(
+            clippy::cast_possible_truncation,
+            clippy::cast_sign_loss,
+            reason = "the dock's icon size, at most 256 px, at twice its scale"
+        )]
+        let side = (points * ICON_SCALE).ceil() as u32;
+        let minimised: HashSet<ToplevelId> = tiles
+            .iter()
+            .filter_map(|t| match t.kind {
+                TileKind::Minimised(window) => Some(window),
+                _ => None,
+            })
+            .collect();
+        let gone: Vec<ToplevelId> = self
+            .watched
+            .keys()
+            .filter(|w| !minimised.contains(w))
+            .copied()
+            .collect();
+        for window in gone {
+            self.watched.remove(&window);
+            self.thumbnails.remove(&window);
+            cx.shell(ShellRequest::Thumbnail {
+                toplevel: window,
+                max_side: None,
+            });
+        }
+        for window in minimised {
+            if self.watched.insert(window, side) != Some(side) {
+                cx.shell(ShellRequest::Thumbnail {
+                    toplevel: window,
+                    max_side: Some(side),
+                });
+            }
         }
     }
 

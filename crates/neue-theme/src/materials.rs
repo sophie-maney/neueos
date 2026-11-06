@@ -1284,6 +1284,13 @@ pub mod dock_shelf {
     /// The app's icon on a minimised window's tile, as a share of the tile's side; it
     /// stands in the tile's bottom right corner.
     pub const WINDOW_BADGE: f64 = 0.5;
+    /// Corner radius of a minimised window's thumbnail, as a share of the tile's side.
+    pub const THUMBNAIL_RADIUS: f64 = 0.03;
+    /// Blur (standard deviation) of the shadow under a thumbnail, as a share of the
+    /// tile's side.
+    pub const THUMBNAIL_SHADOW_BLUR: f64 = 0.035;
+    /// How far down the shadow under a thumbnail falls, as a share of the tile's side.
+    pub const THUMBNAIL_SHADOW_OFFSET: f64 = 0.02;
     /// Thickness of the line between the dock's sections.
     pub const DIVIDER_WIDTH: f64 = 1.0;
     /// How far the divider stops short of the icons' height, as a share of it, at each end.
@@ -1311,6 +1318,8 @@ pub mod dock_shelf {
         pub placeholder: [Color; 3],
         /// A minimised window's tile: its body, top and bottom, its rim and its title bar.
         pub window: [Color; 4],
+        /// The shadow under a minimised window's thumbnail.
+        pub thumbnail_shadow: Color,
         /// The line between the dock's sections.
         pub divider: Color,
     }
@@ -1345,6 +1354,7 @@ pub mod dock_shelf {
                         black(0.34 + edge_boost),
                         black(0.10 + edge_boost / 2.0),
                     ],
+                    thumbnail_shadow: black(0.35),
                     divider: black(0.30 + edge_boost),
                 },
                 Appearance::Dark => Self {
@@ -1369,6 +1379,7 @@ pub mod dock_shelf {
                         black(0.60 + edge_boost),
                         black(0.22 + edge_boost / 2.0),
                     ],
+                    thumbnail_shadow: black(0.60),
                     divider: white(0.34 + edge_boost),
                 },
             }

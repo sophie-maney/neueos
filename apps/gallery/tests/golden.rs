@@ -453,6 +453,10 @@ control_goldens! {
     shell_dock_sections: "shell-dock-sections", SHELL_DOCK_SECTIONS_SIZE, &[NORMAL], specimens::shell_dock_sections::<()>(true, neue_kit::desktop::DockEdge::Bottom, |_| None);
     shell_dock_sections_empty: "shell-dock-sections-empty", SHELL_DOCK_SECTIONS_SIZE, &[NORMAL], specimens::shell_dock_sections::<()>(false, neue_kit::desktop::DockEdge::Bottom, |_| None);
     shell_dock_sections_left: "shell-dock-sections-left", SHELL_DOCK_SECTIONS_SIDE_SIZE, &[NORMAL], specimens::shell_dock_sections::<()>(true, neue_kit::desktop::DockEdge::Left, |_| None);
+    // Thumbnails (3.17d): the minimised windows' pictures, wide and tall, with the app's
+    // icon in the corner of the first; down the flat shelf too.
+    shell_dock_thumbnails: "shell-dock-thumbnails", SHELL_DOCK_SECTIONS_SIZE, &[NORMAL], specimens::shell_dock_thumbnails::<()>(neue_kit::desktop::DockEdge::Bottom, |_| None);
+    shell_dock_thumbnails_left: "shell-dock-thumbnails-left", SHELL_DOCK_SECTIONS_SIDE_SIZE, &[NORMAL], specimens::shell_dock_thumbnails::<()>(neue_kit::desktop::DockEdge::Left, |_| None);
 
     // Notifications (3.15b): a banner at rest, with the pointer on its close button and
     // with keyboard focus; a banner with an image; an alert with two actions, at rest and

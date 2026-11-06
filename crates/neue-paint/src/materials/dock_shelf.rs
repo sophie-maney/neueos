@@ -10,18 +10,20 @@
 //!
 //! Also here: the running indicator that glows on the shelf under an app's icon, the
 //! tile shown for an app without an icon, the divider between the dock's sections and the
-//! tile of a minimised window.
+//! tile of a minimised window (its thumbnail, or a drawing of a window while there is none).
 
 use neue_theme::materials::dock_shelf::{
     DIVIDER_INSET, DIVIDER_WIDTH, EDGE, FLAT_RADIUS, INDICATOR, INDICATOR_GLOW, PERSPECTIVE_INSET,
-    PLACEHOLDER_RADIUS, Palette, REFLECTION_SCALE, SHEEN_HEIGHT, WINDOW_BADGE, WINDOW_RADIUS,
-    WINDOW_TITLE,
+    PLACEHOLDER_RADIUS, Palette, REFLECTION_SCALE, SHEEN_HEIGHT, THUMBNAIL_RADIUS,
+    THUMBNAIL_SHADOW_BLUR, THUMBNAIL_SHADOW_OFFSET, WINDOW_BADGE, WINDOW_RADIUS, WINDOW_TITLE,
 };
 use vello_common::kurbo::{
-    Affine, BezPath, Ellipse, Line, Point, Rect, RoundedRect, Shape, Stroke,
+    Affine, BezPath, Ellipse, Line, Point, Rect, RoundedRect, Shape, Stroke, Vec2,
 };
 use vello_common::peniko::Gradient;
 
+use crate::icon::draw_raster;
+use crate::materials::desktop::Picture;
 use crate::scene::Scene;
 use crate::{Backdrop, Variant};
 
@@ -213,19 +215,40 @@ pub fn dock_divider(scene: &mut Scene, rect: Rect, vertical: bool, variant: impl
     scene.fill(&line, p.divider);
 }
 
-/// Draw the tile of a minimised window filling the square `rect`: a small window (a title
-/// bar over a body), and `badge`, if any, drawn by the caller in the rect it is given, in
-/// its bottom right corner. A thumbnail of the window replaces the body later.
+/// Draw the tile of a minimised window filling the square `rect`: its `thumbnail` fitted
+/// in the tile over a soft shadow, or a small window (a title bar over a body) while there
+/// is none; then `badge`, if any, drawn by the caller in the rect it is given, in its bottom
+/// right corner.
 pub fn minimised_window(
     scene: &mut Scene,
     rect: Rect,
     variant: impl Into<Variant>,
+    thumbnail: Option<&Picture>,
     badge: impl FnOnce(&mut Scene, Rect),
 ) {
     let variant = variant.into();
     let p = Palette::new(variant, Backdrop::Opaque);
     let side = rect.width().min(rect.height());
     let card = rect.inset(-side * 0.06);
+    match thumbnail {
+        Some(picture) => draw_thumbnail(scene, card, side, picture, &p),
+        None => draw_window(scene, card, side, &p),
+    }
+    let size = card.width().min(card.height()) * WINDOW_BADGE;
+    let corner = side * 0.02;
+    badge(
+        scene,
+        Rect::new(
+            card.x1 - size - corner,
+            card.y1 - size - corner,
+            card.x1 - corner,
+            card.y1 - corner,
+        ),
+    );
+}
+
+/// The drawing of a window filling `card`, for a tile `side` long.
+fn draw_window(scene: &mut Scene, card: Rect, side: f64, p: &Palette) {
     let radius = side * WINDOW_RADIUS;
     let shape = RoundedRect::from_rect(card, radius);
     scene.fill(
@@ -245,16 +268,33 @@ pub fn minimised_window(
         &Stroke::new(1.0),
         p.window[2],
     );
-    let size = card.width().min(card.height()) * WINDOW_BADGE;
-    let corner = side * 0.02;
-    badge(
-        scene,
-        Rect::new(
-            card.x1 - size - corner,
-            card.y1 - size - corner,
-            card.x1 - corner,
-            card.y1 - corner,
-        ),
+}
+
+/// `picture` as large as fits in `area` (keeping its proportions, centred), over a
+/// shadow, for a tile `side` long.
+fn draw_thumbnail(scene: &mut Scene, area: Rect, side: f64, picture: &Picture, p: &Palette) {
+    let (pw, ph) = (f64::from(picture.width()), f64::from(picture.height()));
+    let k = (area.width() / pw).min(area.height() / ph);
+    // Whole logical pixels, as the picture is placed (`draw_raster`).
+    let (w, h) = ((pw * k).round().max(1.0), (ph * k).round().max(1.0));
+    let x = (area.x0 + (area.width() - w) / 2.0).round();
+    let y = (area.y0 + (area.height() - h) / 2.0).round();
+    let at = Rect::new(x, y, x + w, y + h);
+    let radius = (side * THUMBNAIL_RADIUS).min(w / 2.0).min(h / 2.0);
+    scene.blurred_rounded_rect(
+        at + Vec2::new(0.0, side * THUMBNAIL_SHADOW_OFFSET),
+        radius,
+        side * THUMBNAIL_SHADOW_BLUR,
+        p.thumbnail_shadow,
+    );
+    let shape = RoundedRect::from_rect(at, radius);
+    scene.push_clip(&shape);
+    draw_raster(scene, at, picture);
+    scene.pop_layer();
+    scene.stroke(
+        &RoundedRect::from_rect(at.inset(-0.5), (radius - 0.5).max(0.0)),
+        &Stroke::new(1.0),
+        p.window[2],
     );
 }
 
@@ -338,20 +378,24 @@ mod tests {
 
     #[test]
     fn a_minimised_window_hands_its_badge_the_bottom_right_and_balances_layers() {
+        let picture = Picture::from_rgba8(4, 2, &[200; 32]).expect("a picture");
         for variant in [Appearance::Light, Appearance::Dark] {
-            let mut scene = Scene::new(48.0, 48.0);
-            let mut badge = None;
-            minimised_window(
-                &mut scene,
-                Rect::new(0.0, 0.0, 48.0, 48.0),
-                variant,
-                |_, rect| badge = Some(rect),
-            );
-            assert_eq!(scene.open_layers(), 0);
-            let badge = badge.expect("the badge is drawn by the caller");
-            assert!(badge.x1 < 48.0 && badge.y1 < 48.0);
-            assert!(badge.x0 > 12.0 && badge.y0 > 12.0, "{badge:?}");
-            assert!((badge.width() - badge.height()).abs() < 1e-9);
+            for thumbnail in [None, Some(&picture)] {
+                let mut scene = Scene::new(48.0, 48.0);
+                let mut badge = None;
+                minimised_window(
+                    &mut scene,
+                    Rect::new(0.0, 0.0, 48.0, 48.0),
+                    variant,
+                    thumbnail,
+                    |_, rect| badge = Some(rect),
+                );
+                assert_eq!(scene.open_layers(), 0);
+                let badge = badge.expect("the badge is drawn by the caller");
+                assert!(badge.x1 < 48.0 && badge.y1 < 48.0);
+                assert!(badge.x0 > 12.0 && badge.y0 > 12.0, "{badge:?}");
+                assert!((badge.width() - badge.height()).abs() < 1e-9);
+            }
         }
     }
 

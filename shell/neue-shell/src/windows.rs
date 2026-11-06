@@ -35,6 +35,8 @@ impl Windows {
             }
             // The bars handle it (`Shell::shell`).
             ShellEvent::FocusMenuBar { .. } | ShellEvent::SystemKey { .. } => {}
+            // The dock handles it (`Shell::shell`).
+            ShellEvent::Thumbnail(..) => {}
         }
     }
 

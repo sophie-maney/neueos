@@ -2,6 +2,10 @@
 //! outputs, so it can put a layer surface on each, and the compositor's window list and
 //! window requests through `neue_shell_v1` (ADR 0066).
 //!
+//! Thumbnails of windows (task 3.17d, ADR 0096) come from `ext-image-copy-capture` with
+//! toplevel sources: [`ShellRequest::Thumbnail`] starts and stops them, and
+//! [`ShellEvent::Thumbnail`] brings each new image.
+//!
 //! Only the Wayland driver fills these in. The winit driver reports no outputs and no
 //! shell protocol, and drops shell requests.
 
@@ -96,7 +100,27 @@ pub enum ToplevelMenu {
     },
 }
 
-/// What the compositor tells the shell (`neue_shell_v1`).
+/// A picture of a window's content, as [`ShellEvent::Thumbnail`] brings it.
+#[derive(Clone, PartialEq, Eq)]
+pub struct ToplevelImage {
+    /// Width in pixels, at least 1.
+    pub width: u32,
+    /// Height in pixels, at least 1.
+    pub height: u32,
+    /// Premultiplied RGBA8, row by row from the top left, `width × height × 4` bytes.
+    pub pixels: std::sync::Arc<[u8]>,
+}
+
+impl std::fmt::Debug for ToplevelImage {
+    fn fmt(&self, f: &mut std::fmt::Formatter<'_>) -> std::fmt::Result {
+        f.debug_struct("ToplevelImage")
+            .field("width", &self.width)
+            .field("height", &self.height)
+            .finish_non_exhaustive()
+    }
+}
+
+/// What the compositor tells the shell (`neue_shell_v1`, and window captures).
 #[derive(Debug, Clone, PartialEq, Eq)]
 pub enum ShellEvent {
     /// A window appeared or changed: its whole state, sent when the compositor finishes a
@@ -123,6 +147,10 @@ pub enum ShellEvent {
         /// The modifiers held (Shift+Alt steps finer, as on the Mac).
         modifiers: ChordModifiers,
     },
+    /// A new picture of a window asked for with [`ShellRequest::Thumbnail`]: the first
+    /// once the capture starts, then one each time the window changes, at most every
+    /// half second.
+    Thumbnail(ToplevelId, ToplevelImage),
 }
 
 /// A key the compositor hands to the shell (`neue_shell_v1`'s `system_key`).
@@ -216,5 +244,13 @@ pub enum ShellRequest {
         toplevel: ToplevelId,
         surface: crate::WindowId,
         rect: Option<(i32, i32, i32, i32)>,
+    },
+    /// Keep sending [`ShellEvent::Thumbnail`]s of `toplevel`, each scaled down to fit in
+    /// `max_side` pixels square (never up); `None` stops them. Asking again changes the
+    /// size. They stop on their own when the window closes, and never come when the
+    /// compositor can't capture windows.
+    Thumbnail {
+        toplevel: ToplevelId,
+        max_side: Option<u32>,
     },
 }

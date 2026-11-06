@@ -256,7 +256,7 @@ pub fn icon(scene: &mut Scene, rect: Rect, icon: &Icon, color: Color, variant: V
 
 /// Draws a raster icon centred in `rect` at the largest whole-logical-pixel size that fits,
 /// keeping its aspect. The texture is resampled from the picture at the device scale.
-fn draw_raster(scene: &mut Scene, rect: Rect, picture: &Picture) {
+pub(crate) fn draw_raster(scene: &mut Scene, rect: Rect, picture: &Picture) {
     let (pw, ph) = (f64::from(picture.width()), f64::from(picture.height()));
     let k = (rect.width() / pw).min(rect.height() / ph);
     // Sizes are below 65536 (a picture's sides are), so the casts keep their value.
