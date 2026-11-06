@@ -131,6 +131,7 @@ pub(crate) use zoom::ZoomWidget;
 
 use crate::Cx;
 use crate::element::{Element, Handle, Wiring};
+use crate::menu::Menu;
 
 /// A line of text.
 ///
@@ -519,16 +520,27 @@ impl Handle<Osd> {
 /// icons (for the bounce and magnified icons) and at the ends (for the dock to grow into)
 /// is for the pointer to pass through ([`DockLayout::pass_through`]). Tab reaches each
 /// tile; Space or Return clicks it.
+///
+/// Tiles can be dragged: along the dock to another place ([`Self::on_move`]) or off it
+/// ([`Self::on_remove`]). The dock doesn't reorder its tiles itself: the app answers with
+/// new tiles ([`Handle::set_tiles`]), and the tiles slide to their new places. A secondary
+/// click, the Menu key or Shift-F10 on a tile asks for the tile's menu
+/// ([`Self::on_menu`]), which the app shows with [`Handle::show_menu`].
 pub struct Dock<M> {
     inner: NewWidget<DockWidget>,
-    on_click: Option<DockClick<M>>,
+    on_click: Option<DockKey<M>>,
     on_placed: Option<DockPlaced<M>>,
+    on_move: Option<DockMove<M>>,
+    on_remove: Option<DockKey<M>>,
+    on_menu: Option<DockKey<M>>,
 }
 
-/// The app's closure for a click on a dock tile.
-type DockClick<M> = Box<dyn FnMut(&str) -> Option<M>>;
+/// The app's closure for something done to a dock tile, by its key.
+type DockKey<M> = Box<dyn FnMut(&str) -> Option<M>>;
 /// The app's closure for the dock's icons moving.
 type DockPlaced<M> = Box<dyn FnMut(&[(String, Rect)]) -> Option<M>>;
+/// The app's closure for a tile dragged to another place.
+type DockMove<M> = Box<dyn FnMut(&str, usize) -> Option<M>>;
 
 impl<M> std::fmt::Debug for Dock<M> {
     fn fmt(&self, f: &mut std::fmt::Formatter<'_>) -> std::fmt::Result {
@@ -536,6 +548,9 @@ impl<M> std::fmt::Debug for Dock<M> {
             .field("inner", &self.inner)
             .field("on_click", &self.on_click.is_some())
             .field("on_placed", &self.on_placed.is_some())
+            .field("on_move", &self.on_move.is_some())
+            .field("on_remove", &self.on_remove.is_some())
+            .field("on_menu", &self.on_menu.is_some())
             .finish()
     }
 }
@@ -547,6 +562,9 @@ impl<M: 'static> Dock<M> {
             inner: NewWidget::new(DockWidget::new(tiles)),
             on_click: None,
             on_placed: None,
+            on_move: None,
+            on_remove: None,
+            on_menu: None,
         }
     }
 
@@ -574,6 +592,30 @@ impl<M: 'static> Dock<M> {
         self
     }
 
+    /// Sends the message `make` returns when a tile is dragged to another place and
+    /// dropped: its key and its index in the new order. Without it the tile goes back.
+    #[must_use]
+    pub fn on_move(mut self, make: impl FnMut(&str, usize) -> Option<M> + 'static) -> Self {
+        self.on_move = Some(Box::new(make));
+        self
+    }
+
+    /// Sends the message `make` returns when a tile is dragged off the dock and dropped
+    /// there: its key. Without it the tile goes back.
+    #[must_use]
+    pub fn on_remove(mut self, make: impl FnMut(&str) -> Option<M> + 'static) -> Self {
+        self.on_remove = Some(Box::new(make));
+        self
+    }
+
+    /// Sends the message `make` returns when a tile's menu is wanted: its key. Answer with
+    /// [`Handle::show_menu`].
+    #[must_use]
+    pub fn on_menu(mut self, make: impl FnMut(&str) -> Option<M> + 'static) -> Self {
+        self.on_menu = Some(Box::new(make));
+        self
+    }
+
     /// [`Backdrop::Translucent`] when the window asked for blur behind it
     /// ([`crate::Cx::backdrop`]).
     #[must_use]
@@ -594,22 +636,53 @@ impl<M: 'static> From<Dock<M>> for Element<M> {
     fn from(dock: Dock<M>) -> Self {
         let id = dock.inner.id();
         let mut element = Element::new(dock.inner.erased());
-        let (mut on_click, mut on_placed) = (dock.on_click, dock.on_placed);
-        if on_click.is_some() || on_placed.is_some() {
-            element.on_action(id, move |action| match action.downcast_ref()? {
-                DockAction::Clicked(key) => on_click.as_mut()?(key),
-                DockAction::Placed(icons) => on_placed.as_mut()?(icons),
-            });
-        }
+        let Dock {
+            mut on_click,
+            mut on_placed,
+            mut on_move,
+            mut on_remove,
+            mut on_menu,
+            ..
+        } = dock;
+        element.on_action(id, move |action| match action.downcast_ref()? {
+            DockAction::Clicked(key) => on_click.as_mut()?(key),
+            DockAction::Placed(icons) => on_placed.as_mut()?(icons),
+            DockAction::Moved(key, to) => on_move.as_mut()?(key, *to),
+            DockAction::Removed(key) => on_remove.as_mut()?(key),
+            DockAction::Menu(key) => on_menu.as_mut()?(key),
+        });
         element
     }
 }
 
 impl<M> Handle<Dock<M>> {
     /// Shows `tiles`, left to right (top to bottom on the sides). A tile keeps its bounce
-    /// and keyboard focus across updates by its key.
+    /// and keyboard focus across updates by its key, and slides from where it was shown to
+    /// its new place.
     pub fn set_tiles<N>(&self, cx: &mut Cx<'_, N>, tiles: Vec<DockTile>) {
         cx.edit::<DockWidget, _>(self, |mut dock| DockWidget::edit_tiles(&mut dock, tiles));
+    }
+
+    /// Shows `menu` as tile `key`'s menu, against its icon, if the dock asked for it
+    /// ([`Dock::on_menu`]) and the tile is still there. Choosing an item sends its
+    /// message.
+    pub fn show_menu(&self, cx: &mut Cx<'_, M>, key: &str, menu: Menu<M>)
+    where
+        M: 'static,
+    {
+        let Some(window) = cx.window_of(self) else {
+            return;
+        };
+        let (spec, items) = menu.into_parts();
+        let mut owner = None;
+        cx.edit::<DockWidget, _>(self, |mut dock| {
+            owner = DockWidget::show_menu(&mut dock, key, spec);
+        });
+        if let Some(owner) = owner {
+            let mut wiring = Wiring::default();
+            wiring.handlers.push((owner, context::handler(items)));
+            cx.register_wiring(window, wiring);
+        }
     }
 }
 

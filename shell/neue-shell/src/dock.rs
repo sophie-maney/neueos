@@ -6,6 +6,12 @@
 //! ([`AppDatabase::find_by_app_id`]); a window whose app id finds none is its app id's own
 //! tile, and one without an app id is a tile of its own. The process side (the surface,
 //! icons, launching) is `src/dock_host.rs`.
+//!
+//! Editing (task 3.17b, ADR 0094): an app with a desktop entry can be kept in the dock
+//! ([`Dock::pin`]), let go ([`Dock::unpin`]), or dragged to another place, which keeps it
+//! there ([`Dock::move_tile`]). The kept apps stay in front of the others, so a tile
+//! dropped among those lands after the last kept one. Entries of `pinned` that aren't
+//! installed stay where they were, after the kept app before them.
 
 use std::collections::{BTreeMap, HashMap};
 use std::time::Instant;
@@ -174,6 +180,111 @@ impl Dock {
     pub fn next_deadline(&self) -> Option<Instant> {
         self.launching.values().min().copied()
     }
+
+    /// The apps kept in the dock, as `[dock] pinned` lists them.
+    pub fn pinned(&self) -> &[String] {
+        &self.pinned
+    }
+
+    /// Keeps tile `key`'s app in the dock, after the apps kept already (where it is
+    /// shown). Returns whether that changed anything; an app without a desktop entry can't
+    /// be kept.
+    pub fn pin(&mut self, key: &str, windows: &Windows, apps: &AppDatabase) -> bool {
+        let tiles = self.tiles(windows, apps);
+        if !tiles.iter().any(|t| t.key == key && t.entry.is_some()) {
+            return false;
+        }
+        let mut kept = kept_keys(&tiles);
+        if !kept.iter().any(|k| k == key) {
+            kept.push(key.to_owned());
+        }
+        self.keep(&kept, apps)
+    }
+
+    /// Lets tile `key`'s app go from the dock: its tile stays while it has windows.
+    /// Returns whether that changed anything.
+    pub fn unpin(&mut self, key: &str, windows: &Windows, apps: &AppDatabase) -> bool {
+        let mut kept = kept_keys(&self.tiles(windows, apps));
+        kept.retain(|k| k != key);
+        self.keep(&kept, apps)
+    }
+
+    /// Tile `key` was dragged to index `to` of the tiles as shown: its app is kept in the
+    /// dock there, among the kept apps (after the last one before `to`). Returns whether
+    /// that changed anything; an app without a desktop entry stays where it was.
+    pub fn move_tile(
+        &mut self,
+        key: &str,
+        to: usize,
+        windows: &Windows,
+        apps: &AppDatabase,
+    ) -> bool {
+        let tiles = self.tiles(windows, apps);
+        let Some(from) = tiles.iter().position(|t| t.key == key && t.entry.is_some()) else {
+            return false;
+        };
+        let mut order: Vec<&Tile> = tiles.iter().collect();
+        let moved = order.remove(from);
+        order.insert(to.min(order.len()), moved);
+        let kept: Vec<String> = order
+            .into_iter()
+            .filter(|t| t.pinned || t.key == key)
+            .map(|t| t.key.clone())
+            .collect();
+        self.keep(&kept, apps)
+    }
+
+    /// Makes `kept` (tile keys, in order) the apps kept in the dock. Entries already in
+    /// `pinned` keep their spelling, and those that aren't installed stay after the kept
+    /// app before them; new ones are written as their key. Returns whether `pinned`
+    /// changed.
+    fn keep(&mut self, kept: &[String], apps: &AppDatabase) -> bool {
+        // Entries not installed before any that is, then each installed one (its key and
+        // entries) followed by the ones not installed after it.
+        let mut lead = Vec::new();
+        let mut groups: Vec<(String, Vec<String>)> = Vec::new();
+        for wanted in &self.pinned {
+            match pinned_key(wanted, apps) {
+                // A second entry for the same app is left out.
+                Some(key) if groups.iter().any(|(k, _)| *k == key) => {}
+                Some(key) => groups.push((key, vec![wanted.clone()])),
+                None => match groups.last_mut() {
+                    Some((_, entries)) => entries.push(wanted.clone()),
+                    None => lead.push(wanted.clone()),
+                },
+            }
+        }
+        let mut pinned = lead;
+        for key in kept {
+            match groups.iter_mut().find(|(k, _)| k == key) {
+                Some((_, entries)) => pinned.append(entries),
+                None => pinned.push(key.clone()),
+            }
+        }
+        // Apps let go: the entries not installed after them stay, at the end.
+        for (_, entries) in groups {
+            pinned.extend(entries.into_iter().skip(1));
+        }
+        let changed = pinned != self.pinned;
+        self.pinned = pinned;
+        changed
+    }
+}
+
+/// The keys of the kept tiles, in order.
+fn kept_keys(tiles: &[Tile]) -> Vec<String> {
+    tiles
+        .iter()
+        .filter(|t| t.pinned)
+        .map(|t| t.key.clone())
+        .collect()
+}
+
+/// The tile key an entry of `pinned` stands for, if its app is installed.
+fn pinned_key(wanted: &str, apps: &AppDatabase) -> Option<String> {
+    apps.by_id(wanted)
+        .or_else(|| apps.find_by_app_id(wanted))
+        .map(entry_key)
 }
 
 /// The tile index each window minimises to: `(window, tile)`.
@@ -355,6 +466,105 @@ mod tests {
         windows.apply(ShellEvent::Active(Some(c)));
         assert_eq!(dock.click(key, &windows, &apps), Click::Activate(a));
         assert_eq!(dock.click("gone", &windows, &apps), Click::Nothing);
+    }
+
+    fn keys(dock: &Dock, windows: &Windows, apps: &AppDatabase) -> Vec<String> {
+        dock.tiles(windows, apps)
+            .into_iter()
+            .map(|t| t.key)
+            .collect()
+    }
+
+    const FOOT: &str = "org.codeberg.dnkl.foot";
+    const FILES: &str = "org.gnome.Nautilus";
+
+    #[test]
+    fn a_dragged_tile_is_kept_where_it_lands() {
+        let (_dir, apps) = apps();
+        let mut dock = Dock::new(vec![
+            "gone-before".into(),
+            "foot".into(),
+            "gone-after".into(),
+            "org.gnome.Nautilus.desktop".into(),
+        ]);
+        let windows = Windows::default();
+        assert_eq!(keys(&dock, &windows, &apps), [FOOT, FILES]);
+        assert!(dock.move_tile(FOOT, 1, &windows, &apps));
+        assert_eq!(keys(&dock, &windows, &apps), [FILES, FOOT]);
+        // Spellings kept; what isn't installed stays after the app it followed.
+        assert_eq!(
+            dock.pinned(),
+            [
+                "gone-before",
+                "org.gnome.Nautilus.desktop",
+                "foot",
+                "gone-after"
+            ]
+        );
+        // Dropped where it is: nothing changes.
+        assert!(!dock.move_tile(FOOT, 1, &windows, &apps));
+        assert!(!dock.move_tile("nothing", 0, &windows, &apps));
+    }
+
+    #[test]
+    fn a_running_app_dragged_into_the_dock_is_kept_there() {
+        let (_dir, apps) = apps();
+        let mut dock = Dock::new(vec!["org.gnome.Nautilus".into()]);
+        let mut windows = Windows::default();
+        open(&mut windows, 1, window("foot", 1));
+        open(&mut windows, 2, window("org.example.Chat", 2));
+        assert_eq!(
+            keys(&dock, &windows, &apps),
+            [FILES, FOOT, "org.example.Chat"]
+        );
+        // In front of Files.
+        assert!(dock.move_tile(FOOT, 0, &windows, &apps));
+        assert_eq!(dock.pinned(), [FOOT, "org.gnome.Nautilus"]);
+        let tiles = dock.tiles(&windows, &apps);
+        assert!(tiles[0].pinned && tiles[0].key == FOOT);
+        // A kept app dropped after a running one lands after the last kept one.
+        assert!(dock.move_tile(FOOT, 2, &windows, &apps));
+        assert_eq!(
+            keys(&dock, &windows, &apps),
+            [FILES, FOOT, "org.example.Chat"]
+        );
+        assert_eq!(dock.pinned(), ["org.gnome.Nautilus", FOOT]);
+        // An app without a desktop entry can't be kept.
+        assert!(!dock.move_tile("org.example.Chat", 0, &windows, &apps));
+        assert!(!dock.pin("org.example.Chat", &windows, &apps));
+    }
+
+    #[test]
+    fn keep_in_dock_pins_and_unpins() {
+        let (_dir, apps) = apps();
+        let mut dock = Dock::new(vec!["missing".into(), "org.gnome.Nautilus".into()]);
+        let mut windows = Windows::default();
+        open(&mut windows, 1, window("foot", 1));
+        assert!(dock.pin(FOOT, &windows, &apps));
+        assert!(!dock.pin(FOOT, &windows, &apps));
+        assert_eq!(dock.pinned(), ["missing", "org.gnome.Nautilus", FOOT]);
+        // Let go while running: the tile stays, no longer kept, after the kept ones.
+        assert!(dock.unpin(FILES, &windows, &apps));
+        assert_eq!(dock.pinned(), ["missing", FOOT]);
+        assert!(dock.unpin(FOOT, &windows, &apps));
+        assert_eq!(dock.pinned(), ["missing"]);
+        let tiles = dock.tiles(&windows, &apps);
+        assert_eq!(tiles.len(), 1);
+        assert!(!tiles[0].pinned && tiles[0].running());
+        assert!(!dock.unpin(FOOT, &windows, &apps));
+    }
+
+    #[test]
+    fn a_tile_dragged_off_and_quit_leaves() {
+        let (_dir, apps) = apps();
+        let mut dock = Dock::new(vec!["foot".into(), "org.gnome.Nautilus".into()]);
+        let mut windows = Windows::default();
+        let id = open(&mut windows, 1, window("foot", 1));
+        // Removing a running app lets it go; its tile goes when its window does.
+        assert!(dock.unpin(FOOT, &windows, &apps));
+        assert_eq!(keys(&dock, &windows, &apps), [FILES, FOOT]);
+        windows.apply(ShellEvent::Closed(id));
+        assert_eq!(keys(&dock, &windows, &apps), [FILES]);
     }
 
     #[test]

@@ -145,6 +145,13 @@ impl Fixture {
         self.harness.mouse_button_press(None);
     }
 
+    /// Holds the primary button down `(x, y)` logical pixels from the widget's top left
+    /// corner (as [`hover_at_px`](Self::hover_at_px)); moves from there drag.
+    pub fn press_at_px(&mut self, x: f64, y: f64) {
+        self.hover_at_px(x, y);
+        self.harness.mouse_button_press(None);
+    }
+
     /// Clicks the secondary button over the widget's middle (opens a context menu), and
     /// leaves the pointer there.
     pub fn context_click(&mut self) {

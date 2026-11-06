@@ -1,5 +1,6 @@
 //! The client side of `neue-settingsd` (`org.neueos.Settings1`, ADR 0074), as far as the
-//! shell needs it: read and set a boolean key, and hear that settings changed. The service
+//! shell needs it: read and set a boolean key, set a list of strings (the dock's kept
+//! apps, task 3.17b), and hear that settings changed. The service
 //! is the only writer of the neueOS TOML files (ADR 0004), so the notifications extra's Do
 //! Not Disturb toggle (task 3.15d4) goes through it.
 
@@ -52,6 +53,18 @@ impl Settings {
             Some(INTERFACE),
             "Set",
             &(key, Value::Bool(value)),
+        )?;
+        Ok(())
+    }
+
+    /// Sets the list of strings `key` (`shell.dock.pinned`) in the user's file.
+    pub fn set_strings(&self, key: &str, values: &[String]) -> Result<(), Error> {
+        self.conn.call_method(
+            Some(DESTINATION),
+            PATH,
+            Some(INTERFACE),
+            "Set",
+            &(key, Value::from(values.to_vec())),
         )?;
         Ok(())
     }
@@ -112,9 +125,11 @@ mod tests {
         zbus::fdo::Error::InvalidArgs(err.to_string())
     }
 
-    /// A stand-in for the service: one boolean key.
+    /// A stand-in for the service: one boolean key and one list of strings.
+    #[derive(Default)]
     struct Fake {
         value: bool,
+        pinned: Vec<String>,
     }
 
     #[zbus::interface(name = "org.neueos.Settings1")]
@@ -125,6 +140,7 @@ mod tests {
                     Value::Bool(self.value).try_into().map_err(wrong)
                 }
                 "shell.desktop.fit" => Value::from("fill").try_into().map_err(wrong),
+                "shell.dock.pinned" => Value::from(self.pinned.clone()).try_into().map_err(wrong),
                 _ => Err(zbus::fdo::Error::InvalidArgs(format!("unknown key {key}"))),
             }
         }
@@ -135,10 +151,15 @@ mod tests {
             value: OwnedValue,
             #[zbus(signal_emitter)] emitter: SignalEmitter<'_>,
         ) -> zbus::fdo::Result<()> {
-            if key != "shell.notifications.do-not-disturb" {
-                return Err(zbus::fdo::Error::InvalidArgs(format!("unknown key {key}")));
+            match key {
+                "shell.notifications.do-not-disturb" => {
+                    self.value = bool::try_from(value).map_err(wrong)?;
+                }
+                "shell.dock.pinned" => {
+                    self.pinned = Vec::<String>::try_from(value).map_err(wrong)?;
+                }
+                _ => return Err(zbus::fdo::Error::InvalidArgs(format!("unknown key {key}"))),
             }
-            self.value = bool::try_from(value).map_err(wrong)?;
             Self::changed(&emitter, HashMap::new(), Vec::new()).await?;
             Ok(())
         }
@@ -156,10 +177,7 @@ mod tests {
     #[test]
     fn a_boolean_is_read_set_and_followed() {
         let (server, client) = crate::testing::pair().unwrap();
-        server
-            .object_server()
-            .at(PATH, Fake { value: false })
-            .unwrap();
+        server.object_server().at(PATH, Fake::default()).unwrap();
         let settings = Settings::new(client);
         assert!(!settings.get_bool(KEY).unwrap());
 
@@ -178,15 +196,34 @@ mod tests {
     }
 
     #[test]
+    fn a_list_of_strings_is_set() {
+        let (server, client) = crate::testing::pair().unwrap();
+        server.object_server().at(PATH, Fake::default()).unwrap();
+        let settings = Settings::new(client);
+        let pinned = vec!["foot".to_owned(), "org.gnome.Nautilus".to_owned()];
+        settings.set_strings("shell.dock.pinned", &pinned).unwrap();
+        let reply = settings
+            .conn
+            .call_method(
+                Some(DESTINATION),
+                PATH,
+                Some(INTERFACE),
+                "Get",
+                &("shell.dock.pinned",),
+            )
+            .unwrap();
+        let value: OwnedValue = reply.body().deserialize().unwrap();
+        assert_eq!(Vec::<String>::try_from(value).unwrap(), pinned);
+        settings.set_strings("shell.dock.pinned", &[]).unwrap();
+    }
+
+    #[test]
     fn a_missing_service_unknown_key_or_other_type_is_an_error() {
         let (_server, client) = crate::testing::pair().unwrap();
         assert!(Settings::new(client).get_bool(KEY).is_err());
 
         let (server, client) = crate::testing::pair().unwrap();
-        server
-            .object_server()
-            .at(PATH, Fake { value: false })
-            .unwrap();
+        server.object_server().at(PATH, Fake::default()).unwrap();
         let settings = Settings::new(client);
         assert!(settings.get_bool("shell.nothing").is_err());
         assert!(settings.get_bool("shell.desktop.fit").is_err());
