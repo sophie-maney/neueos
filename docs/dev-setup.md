@@ -278,6 +278,17 @@ ssh neueos-vm '. ~/neueos/docs/vm-env.sh; export YDOTOOL_SOCKET=/tmp/.ydotool_so
   ydotool mousemove --absolute -x 50 -y 300; ydotool mousemove -x 1 -y 0; ydotool click 0xC0
   sleep 2.3; neuectl screenshot /tmp/bounce.png; grep "minimise rectangle" /tmp/comp.log | tail -3'
 ```
+Editing (task 3.17b) saves `pinned` through `neue-settingsd`: start it as in §1.6a first.
+A drag is a button held down (`ydotool click 0x40`), relative moves, then a release
+(`0x80`); `0xC1` is a secondary click. Tile `i` (from 0) of `n` is centred at
+x = 512 − (52n − 4)/2 + 52i + 24, y 726:
+```sh
+ssh neueos-vm '. ~/neueos/docs/vm-env.sh; export YDOTOOL_SOCKET=/tmp/.ydotool_socket
+  ydotool mousemove --absolute -x 217 -y 363; ydotool mousemove -x 1 -y 0   # tile 0 of 4
+  ydotool click 0x40; for i in $(seq 11); do ydotool mousemove -x 10 -y -1; sleep 0.03; done
+  neuectl screenshot /tmp/drag.png; ydotool click 0x80; sleep 1; cat ~/.config/neueos/shell.toml'
+```
+Moving up 150 px instead drags the tile off the dock.
 
 ### 1.7 Known quirks
 - `ydotool mousemove --absolute` lands at twice the coordinates. Relative moves are 1:1.

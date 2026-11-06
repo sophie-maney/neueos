@@ -732,6 +732,7 @@ impl MenuTitleWidget {
             on_step: Some(step),
             on_change: Some(changed),
             return_focus,
+            beside: None,
         };
         menu::open(
             ctx,

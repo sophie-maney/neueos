@@ -37,9 +37,29 @@ pub struct PageHandles {
     /// to it.
     pub notifications: Handle<neue_kit::desktop::NotificationHost<Message>>,
     pub posted: u32,
+    /// The Shell page's dock, and its tiles in their order (tiles dragged off are gone).
+    pub dock: Handle<neue_kit::desktop::Dock<Message>>,
+    pub dock_tiles: Vec<neue_kit::desktop::DockTile>,
 }
 
 impl PageHandles {
+    /// Moves the Shell page's dock tile `key` to index `to`, or takes it off (`None`).
+    pub fn move_dock_tile(
+        &mut self,
+        cx: &mut neue_kit::Cx<'_, Message>,
+        key: &str,
+        to: Option<usize>,
+    ) {
+        let Some(from) = self.dock_tiles.iter().position(|t| t.key == key) else {
+            return;
+        };
+        let tile = self.dock_tiles.remove(from);
+        if let Some(to) = to {
+            self.dock_tiles.insert(to.min(self.dock_tiles.len()), tile);
+        }
+        self.dock.set_tiles(cx, self.dock_tiles.clone());
+    }
+
     /// Posts another notification on the Shell page's stack: banners and alerts in turn.
     pub fn post_notification(&mut self, cx: &mut neue_kit::Cx<'_, Message>) {
         self.posted += 1;
@@ -289,10 +309,17 @@ fn shell(handles: &mut PageHandles) -> Element<Message> {
                 .with(specimens::shell_osd(OsdGlyph::Keyboard, 0.5)),
         ))
         .with(section(
-            "Dock: an app running (the light under it), one asking for attention (it bounces; with Motion reduced it stands raised), one without an icon, and one not running · click a tile or Tab to it and press Space · the status line shows the tile",
-            Stack::column().with(specimens::shell_dock(|key| {
-                Some(Message::Pressed(dock_key(key)))
-            })),
+            "Dock: an app running (the light under it), one asking for attention (it bounces; with Motion reduced it stands raised), one without an icon, and one not running · click a tile or Tab to it and press Space · drag a tile along the dock to move it, or up off it to remove it · secondary-click a tile (or the Menu key) for its menu · the status line shows what you did",
+            {
+                handles.dock_tiles = specimens::shell_dock_tiles();
+                Stack::column().with(
+                    specimens::shell_dock(|key| Some(Message::Pressed(dock_key(key))))
+                        .on_move(|key, to| Some(Message::DockMoved(key.to_owned(), to)))
+                        .on_remove(|key| Some(Message::DockRemoved(key.to_owned())))
+                        .on_menu(|key| Some(Message::DockMenu(key.to_owned())))
+                        .bind(&mut handles.dock),
+                )
+            },
         ))
         .with(section(
             "Dock with magnification: point at it and the icons grow under the pointer (not with Motion reduced)",

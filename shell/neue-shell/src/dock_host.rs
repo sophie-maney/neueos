@@ -11,21 +11,27 @@
 //!   (`set_minimize_rectangle`, ADR 0066 §10), where the dock last reported it (it moves
 //!   with magnification), sent when it changes.
 //!
+//! - Editing (task 3.17b, ADR 0094): a tile dragged to another place is kept in the dock
+//!   there, one dragged off is let go, and a tile's menu lists the app's windows, Keep in
+//!   Dock, and Open or Quit (which asks each window to close). Each change of the kept
+//!   apps is saved as `[dock] pinned` through `neue-settingsd`, on a thread.
+//!
 //! The dock lives on the first output; when that output goes away it moves to another.
 
 use std::collections::{BTreeMap, HashMap, HashSet};
 use std::time::Instant;
 
 use neue_config::{DockConfig, Layers, ShellConfig};
+use neue_dbus::settings::Settings as SettingsClient;
 use neue_desktop::{AppDatabase, IconLoader, IconLookup, LaunchOptions};
 use neue_kit::desktop::{
     Anchor, Dock as DockView, DockBounce, DockTile, LayerKeyboard, LayerSpec, OutputId, ShellLayer,
     ShellRequest, ToplevelId,
 };
 use neue_kit::desktop::{DockEdge, DockLayout, Margin, Rect};
-use neue_kit::{Cx, Handle, Icon, WindowId};
+use neue_kit::{Cx, Handle, Icon, Menu, MenuItem, WindowId};
 use neue_shell::dock::{Click, Dock, Tile, minimize_targets};
-use neue_shell::windows::Windows;
+use neue_shell::windows::{Windows, app_name};
 
 use crate::tray::{FALLBACK_THEME, ICON_THEME};
 
@@ -33,6 +39,8 @@ use crate::tray::{FALLBACK_THEME, ICON_THEME};
 const NAMESPACE: &str = "neue-dock";
 /// Icons are loaded for this scale, so they stay sharp on a doubled output.
 const ICON_SCALE: f64 = 2.0;
+/// The `neue-settingsd` key of the apps kept in the dock.
+const PINNED_KEY: &str = "shell.dock.pinned";
 
 /// What the surface, the icon loader, the compositor and the timers tell the dock.
 #[derive(Debug, Clone)]
@@ -53,6 +61,20 @@ pub enum Event {
     },
     /// A launch may have run out of time.
     Deadline,
+    /// A tile was dragged to index `to` of the tiles shown.
+    Moved { key: String, to: usize },
+    /// A tile was dragged off the dock.
+    Removed(String),
+    /// A tile's menu is wanted.
+    MenuWanted(String),
+    /// A window was chosen from its app's menu.
+    Activate(ToplevelId),
+    /// Keep in Dock was chosen: whether the app is now to be kept.
+    Keep { key: String, keep: bool },
+    /// Quit was chosen: every window of the app is asked to close.
+    Quit(String),
+    /// Saving `[dock] pinned` finished.
+    Saved(Result<(), String>),
 }
 
 struct Surface<M> {
@@ -113,6 +135,14 @@ impl<M: Send + 'static> DockHost<M> {
             .layout(self.layout)
             .on_click(move |key| Some(wrap(Event::Clicked(key.to_owned()))))
             .on_placed(move |icons| Some(wrap(Event::Placed(icons.to_vec()))))
+            .on_move(move |key, to| {
+                Some(wrap(Event::Moved {
+                    key: key.to_owned(),
+                    to,
+                }))
+            })
+            .on_remove(move |key| Some(wrap(Event::Removed(key.to_owned()))))
+            .on_menu(move |key| Some(wrap(Event::MenuWanted(key.to_owned()))))
             .bind(&mut view);
         let size = self.layout.size(self.shown.len());
         let insets = self.layout.pass_through();
@@ -238,7 +268,120 @@ impl<M: Send + 'static> DockHost<M> {
                 self.timer = None;
                 self.sync(cx, windows, apps);
             }
+            Event::Moved { key, to } => {
+                let changed = self.model.move_tile(&key, to, windows, apps);
+                self.kept_changed(cx, changed, windows, apps);
+            }
+            Event::Removed(key) => {
+                let changed = self.model.unpin(&key, windows, apps);
+                self.kept_changed(cx, changed, windows, apps);
+            }
+            Event::Keep { key, keep } => {
+                let changed = if keep {
+                    self.model.pin(&key, windows, apps)
+                } else {
+                    self.model.unpin(&key, windows, apps)
+                };
+                self.kept_changed(cx, changed, windows, apps);
+            }
+            Event::MenuWanted(key) => self.show_menu(cx, &key, windows, apps),
+            Event::Activate(window) => cx.shell(ShellRequest::Activate(window)),
+            Event::Quit(key) => {
+                let tiles = self.model.tiles(windows, apps);
+                for tile in tiles.iter().filter(|t| t.key == key) {
+                    for &window in &tile.windows {
+                        cx.shell(ShellRequest::Close(window));
+                    }
+                }
+            }
+            Event::Saved(Ok(())) => tracing::debug!("saved the apps kept in the dock"),
+            Event::Saved(Err(error)) => tracing::warn!(
+                %error,
+                "the apps kept in the dock were not saved: is neue-settingsd running?"
+            ),
         }
+    }
+
+    /// The kept apps changed (`changed`) or a drag was refused: shows the tiles as they
+    /// are now (a refused drag slides back) and saves `[dock] pinned` if it changed.
+    fn kept_changed(
+        &mut self,
+        cx: &mut Cx<'_, M>,
+        changed: bool,
+        windows: &Windows,
+        apps: &AppDatabase,
+    ) {
+        self.sync(cx, windows, apps);
+        if !changed {
+            return;
+        }
+        let pinned = self.model.pinned().to_vec();
+        tracing::debug!(?pinned, "the apps kept in the dock changed");
+        let wrap = self.wrap;
+        cx.spawn(move |_| {
+            wrap(Event::Saved(
+                SettingsClient::session()
+                    .and_then(|settings| settings.set_strings(PINNED_KEY, &pinned))
+                    .map_err(|e| e.to_string()),
+            ))
+        });
+    }
+
+    /// Shows tile `key`'s menu: the app's windows (the active one checked), Keep in Dock,
+    /// and Quit while it runs or Open while it doesn't.
+    fn show_menu(&mut self, cx: &mut Cx<'_, M>, key: &str, windows: &Windows, apps: &AppDatabase) {
+        let Some(surface) = self.surface.as_ref().filter(|s| s.ready) else {
+            return;
+        };
+        let tiles = self.model.tiles(windows, apps);
+        let Some(tile) = tiles.iter().find(|t| t.key == key) else {
+            return;
+        };
+        let wrap = self.wrap;
+        let mut menu = Menu::new();
+        let active = windows.active_id();
+        for &id in &tile.windows {
+            let Some((_, window)) = windows.iter().find(|(w, _)| *w == id) else {
+                continue;
+            };
+            let title = if window.title.trim().is_empty() {
+                app_name(window)
+            } else {
+                window.title.clone()
+            };
+            menu = menu.with(
+                MenuItem::new(title)
+                    .checked(Some(id) == active)
+                    .on_choose_with(move || wrap(Event::Activate(id))),
+            );
+        }
+        if tile.running() {
+            menu = menu.separator();
+        }
+        let (keep, owned) = (!tile.pinned, key.to_owned());
+        menu = menu.with(
+            MenuItem::new("Keep in Dock")
+                .checked(tile.pinned)
+                .disabled(tile.entry.is_none())
+                .on_choose_with(move || {
+                    wrap(Event::Keep {
+                        key: owned.clone(),
+                        keep,
+                    })
+                }),
+        );
+        menu = menu.separator();
+        let owned = key.to_owned();
+        menu = if tile.running() {
+            menu.with(
+                MenuItem::new("Quit").on_choose_with(move || wrap(Event::Quit(owned.clone()))),
+            )
+        } else {
+            menu.with(
+                MenuItem::new("Open").on_choose_with(move || wrap(Event::Clicked(owned.clone()))),
+            )
+        };
+        surface.view.show_menu(cx, key, menu);
     }
 
     fn click(&mut self, cx: &mut Cx<'_, M>, key: &str, windows: &Windows, apps: &AppDatabase) {

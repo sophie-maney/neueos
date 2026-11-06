@@ -43,7 +43,7 @@ use neue_paint::materials::{
     menu_separator, menu_signal, slider, slider_value_at, submenu_arrow,
 };
 use neue_paint::{Backdrop, Scene};
-use neue_platform::{PopupBlur, PopupBlurRequest};
+use neue_platform::{PopoverAnchor, PopoverRequest, PopupBlur, PopupBlurRequest, Side};
 use neue_theme::materials::menu::{
     ACCESSORY_GAP, ARROW_WIDTH, DRAG_THRESHOLD, ITEM_HEIGHT, LABEL_INSET, LOCK_HEIGHT, LOCK_WIDTH,
     MARK_SIZE, MIN_WIDTH, PADDING_Y, Palette, RADIUS, RIM, SEPARATOR_HEIGHT, SHADOW_OFFSET,
@@ -99,6 +99,10 @@ pub(crate) struct Anchor {
     /// The menu replaces another menu of the same bar (switching menus): what had focus
     /// before that one opened, which focus goes back to. `None`: what has focus now.
     pub(crate) return_focus: Option<Option<WidgetId>>,
+    /// The menu goes flush against this rect (window coordinates), centred on this side
+    /// of it if there is room (a dock tile's menu), placed as a popover is; `at` is
+    /// then only where Masonry puts the layer before the platform places it.
+    pub(crate) beside: Option<(Rect, Side)>,
 }
 
 impl Anchor {
@@ -114,6 +118,7 @@ impl Anchor {
             on_step: None,
             on_change: None,
             return_focus: None,
+            beside: None,
         }
     }
 }
@@ -211,16 +216,25 @@ pub(crate) fn open(
         anchor.highlight,
     );
     OPENED.with(|n| n.set(n.get() + 1));
-    ctx.create_menu(popup_menu(menu), anchor.at);
+    ctx.create_menu(popup_menu(menu, anchor.beside), anchor.at);
 }
 
 /// `menu` as a popup layer's root: it asks for a blur behind its panel (honoured when the
-/// compositor offers one; see [`BackdropProp`]).
-fn popup_menu(menu: MenuWidget) -> NewWidget<MenuWidget> {
-    NewWidget::new(menu).with_props(PopupBlur(Some(PopupBlurRequest {
+/// compositor offers one; see [`BackdropProp`]), and to be placed `beside` a rect if
+/// given.
+fn popup_menu(menu: MenuWidget, beside: Option<(Rect, Side)>) -> NewWidget<MenuWidget> {
+    let blur = PopupBlur(Some(PopupBlurRequest {
         radius: RADIUS,
         arrow: 0.0,
-    })))
+    }));
+    // The shadow reaches further down than to the sides; the box then sits that much
+    // further from the anchor below it, which reads as part of the gap.
+    let beside = PopoverAnchor(beside.map(|(anchor, side)| PopoverRequest {
+        anchor,
+        side,
+        reach: SHADOW_REACH,
+    }));
+    NewWidget::new(menu).with_props((blur, beside))
 }
 
 /// State one menu and its submenus share.
@@ -556,7 +570,7 @@ impl MenuWidget {
         } else {
             OnReady::Nothing
         };
-        let menu = popup_menu(MenuWidget::new(spec, chain, on_ready, 0.0, None));
+        let menu = popup_menu(MenuWidget::new(spec, chain, on_ready, 0.0, None), None);
         self.submenu = Some((i, menu.id()));
         ctx.attach(menu, at);
         ctx.repaint();

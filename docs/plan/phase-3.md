@@ -842,13 +842,37 @@ their goldens and the gallery's "Shell" page run on macOS.
       zoomed window stopping at the shelf (x 64, width 960), a launch bounce away from the
       right edge, minimise rectangles in the turned surface. Not done: changing the edge
       while the shell runs; real hardware.
-- [ ] **3.17b Editing and context menus** · Sonnet (Opus if the drag gesture proves
+- [x] **3.17b Editing and context menus** · Sonnet (Opus if the drag gesture proves
       fiddly). After 3.17a. Drag to rearrange, drag off to remove, Keep in Dock (writes
       `[dock] pinned`), and a context menu (existing `ContextMenu` widget) with the app's
       windows, Keep in Dock, and Quit.
       *Accept:* model tests (reorder, remove, pin, unpin); goldens of the dragging state;
       in the VM, drags and menu clicks with `ydotool`, the resulting `pinned` list and
       screenshots.
+      *Owner:* dragging and the menus feel right with a real mouse and trackpad.
+      *Done:* ADR 0094. Done in Opus. The menu is the existing menu machinery rather than
+      the `ContextMenu` widget: the dock asks the app for a tile's menu
+      (`Dock::on_menu`, `Handle::show_menu`), owned by the tile's focus node and placed
+      beside the icon like a popover (`menu::Anchor::beside`). `Dock::on_move` and
+      `on_remove`; the dragged icon stays inside the surface, which keeps
+      `dock::DRAG_ROOM` beyond the icons (+24 px at 48 px icons); tiles slide from where
+      they were shown (`dock::SLIDE`); tokens `DRAG_THRESHOLD`, `REMOVE_DISTANCE`,
+      `REMOVING_OPACITY`, `MENU_GAP`. Model: `Dock::{pin, unpin, move_tile, pinned}`;
+      saved through `neue-settingsd` (`Settings::set_strings`). Menu: the windows (active
+      checked), Keep in Dock, Quit or Open. Goldens: `shell-dock` gains `dragging` and
+      `removing` × light/dark × 1 and 2; every dock golden but the magnified one grew by
+      the drag room. Gallery: the Shell page's first dock can be rearranged and has a
+      menu. Tests: 4 model, 5 kit (move, refusal, removal, the menu from a click, the
+      Menu key and AccessKit), 2 layout, 1 settings client. Checked in the VM (1024×768,
+      four kept apps): foot dragged to third place (screenshot mid-drag with the gap, then
+      settled), Alacritty dragged up past the surface (faded at its edge) and dropped off,
+      `pinned` rewritten by neue-settingsd each time; foot's menu centred above it (its
+      window checked, Keep in Dock, Quit); Keep in Dock unchecked (unpinned, the tile
+      stays while running), Quit closing its window and the tile going; a running
+      unpinned foot dragged to first place and kept; a click launching Firefox and a click
+      restoring minimised foot. Not done: the icon following the pointer beyond the
+      surface (a Wayland drag icon), the poof, press-and-hold for the menu, keyboard
+      reordering; real hardware.
 - [ ] **3.17c Trash and minimised tiles** · Sonnet. After 3.17b (and 3.3). The Trash tile
       (empty/full, Empty Trash) and tiles for minimised windows (a thumbnail via toplevel
       capture, ADR 0023; click restores). Split again if the thumbnail plumbing is large.

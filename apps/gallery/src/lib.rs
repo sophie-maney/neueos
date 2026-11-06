@@ -89,6 +89,11 @@ pub enum Message {
     /// The Shell page: post another notification; what was done to notification `id`.
     PostNotification,
     Notification(u32, neue_kit::desktop::NotificationEvent),
+    /// The Shell page's dock: a tile dragged to another place (its key and index), off
+    /// the dock, or its menu asked for.
+    DockMoved(String, usize),
+    DockRemoved(String),
+    DockMenu(String),
 }
 
 fn appearance_label(theme: Theme) -> String {
@@ -428,6 +433,27 @@ impl Application for Gallery {
                 self.status
                     .set_text(cx, format!("Pressed “{what}” on notification {id}"));
                 self.handles.notifications.dismiss(cx, id);
+            }
+            Message::DockMoved(key, to) => {
+                self.handles.move_dock_tile(cx, &key, Some(to));
+                self.status
+                    .set_text(cx, format!("Moved “{key}” to place {}", to + 1));
+            }
+            Message::DockRemoved(key) => {
+                self.handles.move_dock_tile(cx, &key, None);
+                self.status
+                    .set_text(cx, format!("Removed “{key}” from the dock"));
+            }
+            Message::DockMenu(key) => {
+                let menu = neue_kit::Menu::new()
+                    .with(
+                        neue_kit::MenuItem::new("Keep in Dock")
+                            .checked(true)
+                            .on_choose(Message::Pressed("Keep in Dock")),
+                    )
+                    .separator()
+                    .with(neue_kit::MenuItem::new("Quit").on_choose(Message::Pressed("Quit")));
+                self.handles.dock.show_menu(cx, &key, menu);
             }
             Message::Radio(n) => {
                 // The app owns the choice: the others turn off.

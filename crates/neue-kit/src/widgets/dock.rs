@@ -12,16 +12,28 @@
 //! Where everything goes is [`DockLayout`]'s business (`dock_layout.rs`). The dock reports
 //! where its icons are whenever they move ([`Dock::on_placed`](crate::desktop::Dock)), so
 //! the shell can tell the compositor where each app's windows minimise to.
+//!
+//! Editing (task 3.17b, ADR 0094): a tile pressed and moved past [`DRAG_THRESHOLD`] is
+//! dragged. Its icon follows the pointer inside the surface (which keeps
+//! [`DRAG_ROOM`](neue_theme::materials::dock::DRAG_ROOM) beyond the icons for it), the others open a gap where it would land, and dropping it
+//! asks the app to move it there; dragged more than `REMOVE_DISTANCE` off the dock, the
+//! gap closes and dropping it asks the app to take it off. The dock never reorders its
+//! tiles itself: the app answers with new tiles, and every tile slides from where it was
+//! shown to its new place ([`SLIDE`]), so a drop, a refusal and tiles coming and going all
+//! move smoothly. A secondary click, the Menu key or Shift-F10 on a tile, or an assistive
+//! technology asks the app for the tile's menu, which it shows with
+//! `Handle::show_menu`, centred above the icon (beside it on the sides).
 
 use std::any::TypeId;
+use std::collections::HashMap;
 use std::time::Duration;
 
 use masonry_core::accesskit::{Action, Node, Role};
-use masonry_core::core::keyboard::{Key, NamedKey};
+use masonry_core::core::keyboard::{Key, Modifiers, NamedKey};
 use masonry_core::core::{
-    AccessCtx, AccessEvent, ChildrenIds, EventCtx, LayoutCtx, MeasureCtx, PaintCtx, PointerEvent,
-    PropertiesMut, PropertiesRef, RegisterCtx, TextEvent, Update, UpdateCtx, UsesProperty, Widget,
-    WidgetId, WidgetMut, WidgetPod,
+    AccessCtx, AccessEvent, ChildrenIds, EventCtx, LayoutCtx, MeasureCtx, PaintCtx, PointerButton,
+    PointerEvent, PropertiesMut, PropertiesRef, RegisterCtx, TextEvent, Update, UpdateCtx,
+    UsesProperty, Widget, WidgetId, WidgetMut, WidgetPod,
 };
 use masonry_core::imaging::Painter;
 use masonry_core::kurbo::{Axis, Point, Rect, RoundedRect, Size};
@@ -33,14 +45,18 @@ use neue_paint::materials::dock_shelf::{
 };
 use neue_paint::materials::focus_ring;
 use neue_paint::{Backdrop, Scene};
+use neue_platform::Side;
 use neue_theme::materials::dock::{
-    ATTENTION_REST, BOUNCE_HEIGHT, FALL, MAGNIFY, RISE, RISE_TURN, STILL_LIFT,
+    ATTENTION_REST, BOUNCE_HEIGHT, DRAG_THRESHOLD, FALL, MAGNIFY, MENU_GAP, REMOVING_OPACITY, RISE,
+    RISE_TURN, SLIDE, STILL_LIFT,
 };
 use neue_theme::materials::dock_shelf::INDICATOR;
 use neue_theme::motion::SpringValue;
 use neue_theme::{Motion, SemanticColors, Theme};
 
 use super::dock_layout::{DockEdge, DockLayout, DockPlacement};
+use super::menu::{self, Anchor, Chosen};
+use crate::menu::MenuSpec;
 use crate::theme::ThemeProp;
 
 /// Whether a dock icon bounces, and why.
@@ -79,6 +95,45 @@ pub(crate) enum DockAction {
     /// The icons moved (tiles came or went, or magnification moved them): each tile's key
     /// and its icon's rect at rest on the shelf, in the dock's coordinates.
     Placed(Vec<(String, Rect)>),
+    /// A tile was dragged to another place and dropped: its key and its index in the new
+    /// order.
+    Moved(String, usize),
+    /// A tile was dragged off the dock and dropped there: its key.
+    Removed(String),
+    /// A tile's menu is wanted: its key. The app shows it with `Handle::show_menu`.
+    Menu(String),
+}
+
+/// A press on a tile, which becomes a drag once the pointer moves far enough.
+#[derive(Clone, Debug)]
+struct Press {
+    key: String,
+    /// Where the pointer went down, in the dock.
+    at: Point,
+    /// Where on the icon: a share of its size along the dock and away from the edge.
+    grab: (f64, f64),
+}
+
+/// A tile being dragged.
+#[derive(Clone, Debug)]
+struct Drag {
+    key: String,
+    grab: (f64, f64),
+    /// The pointer, in the dock (it may be beyond the surface).
+    pointer: Point,
+    /// Where the tile lands among the others if dropped now; `None`: off the dock.
+    slot: Option<usize>,
+}
+
+/// A tile's menu, asked of the app and not shown yet.
+#[derive(Clone, Debug)]
+struct MenuRequest {
+    key: String,
+    /// The icon grown by [`MENU_GAP`], in window coordinates: the menu goes against it.
+    anchor: Rect,
+    side: Side,
+    /// Asked for from the keyboard: the first item is highlighted.
+    keyboard: bool,
 }
 
 /// Magnification: where the pointer is along the dock and how far the icons have grown.
@@ -218,7 +273,23 @@ struct Tile {
     icon: Option<Icon>,
     running: bool,
     bounce: Bounce,
+    /// How far the icon is from its place along the dock and away from the edge, sliding
+    /// back to 0 after the order changed.
+    slide: (SpringValue, SpringValue),
     pod: WidgetPod<DockTileWidget>,
+}
+
+impl Tile {
+    fn new(tile: &DockTile) -> Self {
+        Self {
+            key: tile.key.clone(),
+            icon: None,
+            running: false,
+            bounce: Bounce::new(),
+            slide: (SpringValue::new(0.0), SpringValue::new(0.0)),
+            pod: WidgetPod::new(DockTileWidget::new(tile)),
+        }
+    }
 }
 
 /// The Masonry widget behind [`crate::desktop::Dock`].
@@ -228,12 +299,19 @@ pub(crate) struct DockWidget {
     pub(super) backdrop: Backdrop,
     pub(super) layout: DockLayout,
     magnify: Magnify,
-    /// Where the tiles are now, from the last layout pass.
+    /// The tiles as shown, by index: in their order, but a dragged tile in its slot or
+    /// nowhere (off the dock).
+    order: Vec<usize>,
+    /// Where the tiles shown are now, in `order`.
     placement: DockPlacement,
     /// The icons' rects last reported.
     placed: Vec<(String, Rect)>,
     /// The tile the pointer went down on.
-    pressed: Option<usize>,
+    press: Option<Press>,
+    drag: Option<Drag>,
+    menu: Option<MenuRequest>,
+    /// What had keyboard focus before a tile's menu opened.
+    return_focus: Option<WidgetId>,
     replayer: ImagingReplayer,
 }
 
@@ -247,31 +325,35 @@ impl DockWidget {
                 pointer: None,
                 amount: SpringValue::new(0.0),
             },
+            order: (0..tiles.len()).collect(),
             placement: DockPlacement::default(),
             placed: Vec::new(),
-            pressed: None,
+            press: None,
+            drag: None,
+            menu: None,
+            return_focus: None,
             replayer: ImagingReplayer::new(),
         };
         for tile in tiles {
-            let mut bounce = Bounce::new();
+            let mut kept = Tile::new(&tile);
             // Moving once added, with the theme known.
-            bounce.kind = tile.bounce;
-            dock.tiles.push(Tile {
-                pod: WidgetPod::new(DockTileWidget::new(&tile)),
-                key: tile.key,
-                icon: tile.icon,
-                running: tile.running,
-                bounce,
-            });
+            kept.bounce.kind = tile.bounce;
+            kept.icon = tile.icon;
+            kept.running = tile.running;
+            dock.tiles.push(kept);
         }
         dock
     }
 
     /// Shows `tiles` in this order. Tiles whose key was there before keep their bounce
-    /// (and keyboard focus); others come and go.
+    /// (and keyboard focus) and slide from where they were to their new place; others come
+    /// and go.
     pub(crate) fn edit_tiles(this: &mut WidgetMut<'_, Self>, tiles: Vec<DockTile>) {
         let ThemeProp(theme) = *this.get_prop::<ThemeProp>();
         let motion = theme.motion();
+        let shown: HashMap<String, (f64, f64)> = (0..this.widget.tiles.len())
+            .filter_map(|i| Some((this.widget.tiles[i].key.clone(), this.widget.shown(i)?)))
+            .collect();
         let mut old = std::mem::take(&mut this.widget.tiles);
         let mut moving = false;
         for tile in tiles {
@@ -284,13 +366,7 @@ impl DockWidget {
                 }
                 None => {
                     this.ctx.children_changed();
-                    Tile {
-                        key: tile.key.clone(),
-                        icon: None,
-                        running: false,
-                        bounce: Bounce::new(),
-                        pod: WidgetPod::new(DockTileWidget::new(&tile)),
-                    }
+                    Tile::new(&tile)
                 }
             };
             kept.icon = tile.icon;
@@ -304,7 +380,20 @@ impl DockWidget {
         for gone in old {
             this.ctx.remove_child(gone.pod);
         }
-        this.widget.pressed = None;
+        let dock = &mut *this.widget;
+        // A press or drag on a tile that went away ends.
+        if let Some(press) = &dock.press
+            && dock.index_of(&press.key).is_none()
+        {
+            dock.press = None;
+            dock.drag = None;
+        }
+        let from: Vec<_> = dock
+            .tiles
+            .iter()
+            .map(|t| shown.get(&t.key).copied())
+            .collect();
+        moving |= dock.reflow(&from, motion);
         if moving {
             this.ctx.request_anim_frame();
         }
@@ -316,7 +405,232 @@ impl DockWidget {
     /// along the dock.
     fn tile_at(&self, p: Point) -> Option<usize> {
         let (u, _) = self.layout.frame_of(p);
-        self.placement.tile_at(u)
+        self.order.get(self.placement.tile_at(u)?).copied()
+    }
+
+    fn index_of(&self, key: &str) -> Option<usize> {
+        self.tiles.iter().position(|t| t.key == key)
+    }
+
+    /// Whether tile `index` is the one being dragged.
+    fn is_dragged(&self, index: usize) -> bool {
+        self.drag
+            .as_ref()
+            .is_some_and(|d| self.tiles.get(index).is_some_and(|t| t.key == d.key))
+    }
+
+    /// The tiles as shown (see [`Self::order`]) and where they go. Off the dock, the
+    /// others close up in the middle of the surface, which still has room for all.
+    fn arrange(&self) -> (Vec<usize>, DockPlacement) {
+        let count = self.tiles.len();
+        let mut order: Vec<usize> = (0..count).collect();
+        if let Some(drag) = &self.drag
+            && let Some(index) = self.index_of(&drag.key)
+        {
+            order.retain(|&i| i != index);
+            if let Some(slot) = drag.slot {
+                order.insert(slot.min(order.len()), index);
+            }
+        }
+        let mut placement = self.layout.place(
+            order.len(),
+            self.magnify.pointer,
+            self.magnify.amount.value(),
+        );
+        #[expect(clippy::cast_precision_loss, reason = "a handful of tiles")]
+        let missing = (count - order.len()) as f64;
+        if missing > 0.0 {
+            self.layout
+                .shift(&mut placement, missing * self.layout.pitch() / 2.0);
+        }
+        (order, placement)
+    }
+
+    /// Tile `index`'s icon as drawn, before any bounce: under the pointer while dragged,
+    /// else its place and how far it has yet to slide.
+    fn drawn(&self, index: usize) -> Option<Rect> {
+        let tile = self.tiles.get(index)?;
+        if let Some(drag) = self.drag.as_ref().filter(|d| d.key == tile.key) {
+            return Some(
+                self.layout
+                    .dragged(self.tiles.len(), drag.pointer, drag.grab),
+            );
+        }
+        let at = self.order.iter().position(|&i| i == index)?;
+        let place = *self.placement.icons.get(at)?;
+        Some(
+            place
+                + self
+                    .layout
+                    .along(tile.slide.0.value(), tile.slide.1.value()),
+        )
+    }
+
+    /// Where tile `index`'s icon is drawn: its middle from the dock's middle along it, and
+    /// from the screen edge. The dock's middle stays put on the screen as tiles come and
+    /// go, so this is where it is on the screen.
+    fn shown(&self, index: usize) -> Option<(f64, f64)> {
+        let (u, v) = self.layout.frame_of(self.drawn(index)?.center());
+        Some((u - self.layout.middle(self.tiles.len()), v))
+    }
+
+    /// Arranges the tiles anew (their order or the drag changed); each tile with a place
+    /// in `from` (by index, as [`Self::shown`] gave it) slides from there to its new place.
+    /// Returns whether any slides.
+    fn reflow(&mut self, from: &[Option<(f64, f64)>], motion: Motion) -> bool {
+        (self.order, self.placement) = self.arrange();
+        let middle = self.layout.middle(self.tiles.len());
+        let mut moving = false;
+        for (&index, place) in self.order.iter().zip(&self.placement.icons) {
+            let (Some(Some((u0, v0))), Some(tile)) = (from.get(index), self.tiles.get_mut(index))
+            else {
+                continue;
+            };
+            let (u, v) = self.layout.frame_of(place.center());
+            tile.slide.0.snap_to(u0 - (u - middle));
+            tile.slide.1.snap_to(v0 - v);
+            moving |= tile.slide.0.animate_to(0.0, motion.spring(SLIDE));
+            moving |= tile.slide.1.animate_to(0.0, motion.spring(SLIDE));
+        }
+        moving
+    }
+
+    /// Where every tile is shown, by index (see [`Self::shown`]).
+    fn snapshot(&self) -> Vec<Option<(f64, f64)>> {
+        (0..self.tiles.len()).map(|i| self.shown(i)).collect()
+    }
+
+    /// Where a tile dragged with the pointer at `p`, held `grab` of the way across its
+    /// icon, lands among the others: the place under its icon's middle, or `None` off the
+    /// dock.
+    fn slot_at(&self, p: Point, grab: (f64, f64)) -> Option<usize> {
+        let count = self.tiles.len();
+        if count == 0 || self.layout.is_off(p) {
+            return None;
+        }
+        let (u, _) = self
+            .layout
+            .frame_of(self.layout.dragged(count, p, grab).center());
+        let all = self
+            .layout
+            .place(count, self.magnify.pointer, self.magnify.amount.value());
+        let first = all.spans.first().map_or(0.0, |s| s.0);
+        Some(
+            all.tile_at(u)
+                .unwrap_or(if u < first { 0 } else { count - 1 }),
+        )
+    }
+
+    /// The pointer moved to `p` (in the dock) with the button down: a press far enough
+    /// from where it went down becomes a drag, and a drag follows it.
+    fn drag_to(&mut self, ctx: &mut EventCtx<'_>, p: Point, motion: Motion) {
+        let Some(press) = &self.press else {
+            return;
+        };
+        if self.drag.is_none() {
+            if (p - press.at).hypot() < DRAG_THRESHOLD {
+                return;
+            }
+            self.drag = Some(Drag {
+                key: press.key.clone(),
+                grab: press.grab,
+                pointer: press.at,
+                slot: self.index_of(&press.key),
+            });
+        }
+        let from = self.snapshot();
+        let Some(drag) = self.drag.as_mut() else {
+            return;
+        };
+        drag.pointer = p;
+        let (grab, slot) = (drag.grab, drag.slot);
+        let new = self.slot_at(p, grab);
+        if new != slot {
+            if let Some(drag) = self.drag.as_mut() {
+                drag.slot = new;
+            }
+            if self.reflow(&from, motion) {
+                ctx.request_anim_frame();
+            }
+            ctx.request_layout();
+        }
+        ctx.request_paint_only();
+    }
+
+    /// The drag ends: dropped (`true`) the app is asked to move the tile to its slot or
+    /// take it off the dock; cancelled, it goes back. Either way it slides from under the
+    /// pointer to its place, and the tiles close up behind it.
+    fn end_drag(&mut self, ctx: &mut EventCtx<'_>, dropped: bool, motion: Motion) {
+        let from = self.snapshot();
+        let Some(drag) = self.drag.take() else {
+            return;
+        };
+        let was = self.index_of(&drag.key);
+        if self.reflow(&from, motion) {
+            ctx.request_anim_frame();
+        }
+        ctx.request_layout();
+        ctx.request_paint_only();
+        if !dropped {
+            return;
+        }
+        match drag.slot {
+            None => ctx.submit_action::<DockAction>(DockAction::Removed(drag.key)),
+            Some(slot) if Some(slot) != was => {
+                ctx.submit_action::<DockAction>(DockAction::Moved(drag.key, slot));
+            }
+            Some(_) => {}
+        }
+    }
+
+    /// Asks the app for tile `index`'s menu, to go against its icon as shown now.
+    fn ask_menu(&mut self, ctx: &mut EventCtx<'_>, index: usize, keyboard: bool) {
+        let Some(icon) = self.drawn(index) else {
+            return;
+        };
+        let grown = icon.inflate(MENU_GAP, MENU_GAP);
+        let anchor = Rect::from_origin_size(ctx.to_window(grown.origin()), grown.size());
+        let side = match self.layout.edge {
+            DockEdge::Bottom => Side::Top,
+            DockEdge::Left => Side::Right,
+            DockEdge::Right => Side::Left,
+        };
+        let key = self.tiles[index].key.clone();
+        self.menu = Some(MenuRequest {
+            key: key.clone(),
+            anchor,
+            side,
+            keyboard,
+        });
+        ctx.submit_action::<DockAction>(DockAction::Menu(key));
+    }
+
+    /// Opens `spec` as tile `key`'s menu if the dock asked for it and the tile is still
+    /// there. The tile's focus node owns the menu: it receives the item chosen. Returns
+    /// its id.
+    pub(crate) fn show_menu(
+        this: &mut WidgetMut<'_, Self>,
+        key: &str,
+        spec: MenuSpec,
+    ) -> Option<WidgetId> {
+        let request = this.widget.menu.take().filter(|r| r.key == key)?;
+        let index = this.widget.index_of(key)?;
+        let dock = &mut *this.widget;
+        let pod = &mut dock.tiles[index].pod;
+        let owner = pod.id();
+        let mut tile = this.ctx.get_mut(pod);
+        let anchor = Anchor {
+            beside: Some((request.anchor, request.side)),
+            ..Anchor::at(request.anchor.origin())
+        };
+        menu::open(
+            &mut tile.ctx,
+            spec,
+            anchor,
+            request.keyboard,
+            &mut dock.return_focus,
+        );
+        Some(owner)
     }
 
     /// The pointer moved to `at` (`None`: it left): the icons grow while it is over the
@@ -373,6 +687,23 @@ impl DockWidget {
     #[cfg(test)]
     pub(crate) fn tile_ids(&self) -> Vec<WidgetId> {
         self.tiles.iter().map(|t| t.pod.id()).collect()
+    }
+
+    /// The keys of the tiles laid out, in the order shown, for tests.
+    #[cfg(test)]
+    pub(crate) fn shown_keys(&self) -> Vec<String> {
+        self.order
+            .iter()
+            .map(|&i| self.tiles[i].key.clone())
+            .collect()
+    }
+
+    /// Each tile's key and its icon as drawn (before any bounce), for tests.
+    #[cfg(test)]
+    pub(crate) fn drawn_icons(&self) -> Vec<(String, Option<Rect>)> {
+        (0..self.tiles.len())
+            .map(|i| (self.tiles[i].key.clone(), self.drawn(i)))
+            .collect()
     }
 }
 
@@ -431,6 +762,13 @@ impl Widget for DockWidget {
         let mut moving = false;
         for tile in &mut self.tiles {
             moving |= tile.bounce.step(dt, theme.motion());
+            if theme.motion().reduced {
+                tile.slide.0.finish();
+                tile.slide.1.finish();
+            } else {
+                moving |= tile.slide.0.step(dt);
+                moving |= tile.slide.1.step(dt);
+            }
         }
         let amount = self.magnify.amount.value();
         if theme.motion().reduced {
@@ -454,36 +792,67 @@ impl Widget for DockWidget {
         event: &PointerEvent,
     ) {
         let ThemeProp(theme) = *props.get::<ThemeProp>(ctx.property_cache());
+        let motion = theme.motion();
         match event {
             PointerEvent::Move(update) => {
                 let local = ctx.local_position(update.current.position);
-                let hover = self.hover(Some(local), theme.motion());
+                let hover = self.hover(Some(local), motion);
                 if hover.frames {
                     ctx.request_anim_frame();
                 }
                 if hover.layout {
                     ctx.request_layout();
                 }
+                self.drag_to(ctx, local, motion);
             }
-            PointerEvent::Down(down) => {
+            PointerEvent::Down(down) if self.press.is_none() => {
                 let local = ctx.local_position(down.state.position);
-                self.pressed = self.tile_at(local);
-                if self.pressed.is_some() {
-                    ctx.capture_pointer();
-                    ctx.request_paint_only();
+                let Some(index) = self.tile_at(local) else {
+                    return;
+                };
+                if down.button == Some(PointerButton::Secondary) {
+                    self.ask_menu(ctx, index, false);
+                    ctx.set_handled();
+                    return;
                 }
+                let Some(icon) = self.drawn(index) else {
+                    return;
+                };
+                // Where on the icon it was taken, so it stays under the pointer that way.
+                let (u, v) = self.layout.frame_of(local);
+                let (uc, vc) = self.layout.frame_of(icon.center());
+                let size = icon.width().max(1.0);
+                let grab = (
+                    (0.5 + (u - uc) / size).clamp(0.0, 1.0),
+                    (0.5 + (v - vc) / size).clamp(0.0, 1.0),
+                );
+                self.press = Some(Press {
+                    key: self.tiles[index].key.clone(),
+                    at: local,
+                    grab,
+                });
+                ctx.capture_pointer();
+                ctx.request_paint_only();
             }
-            PointerEvent::Up(up) => {
+            PointerEvent::Up(up) if up.button != Some(PointerButton::Secondary) => {
                 let local = ctx.local_position(up.state.position);
-                if let Some(index) = self.pressed.take() {
+                let Some(press) = self.press.take() else {
+                    return;
+                };
+                if self.drag.is_some() {
+                    self.end_drag(ctx, true, motion);
+                } else {
                     let inside = ctx.content_box().contains(local);
-                    if inside && self.tile_at(local) == Some(index) {
+                    let index = self.index_of(&press.key);
+                    if inside && let Some(index) = index.filter(|&i| self.tile_at(local) == Some(i))
+                    {
                         self.click(ctx, index);
                     }
-                    ctx.request_paint_only();
                 }
+                ctx.request_paint_only();
             }
-            PointerEvent::Cancel(..) if self.pressed.take().is_some() => {
+            PointerEvent::Cancel(..) if self.press.take().is_some() => {
+                self.end_drag(ctx, false, motion);
                 ctx.request_paint_only();
             }
             _ => {}
@@ -496,12 +865,20 @@ impl Widget for DockWidget {
         _props: &mut PropertiesMut<'_>,
         event: &TextEvent,
     ) {
-        if let TextEvent::Keyboard(key) = event
-            && is_press_key(&key.key)
-            && let Some(index) = self.tile_of(ctx.target())
-        {
+        let TextEvent::Keyboard(key) = event else {
+            return;
+        };
+        let Some(index) = self.tile_of(ctx.target()) else {
+            return;
+        };
+        if is_press_key(&key.key) {
             if !key.state.is_down() {
                 self.click(ctx, index);
+            }
+            ctx.set_handled();
+        } else if is_menu_key(&key.key, key.modifiers) {
+            if key.state.is_down() {
+                self.ask_menu(ctx, index, true);
             }
             ctx.set_handled();
         }
@@ -513,12 +890,15 @@ impl Widget for DockWidget {
         _props: &mut PropertiesMut<'_>,
         event: &AccessEvent,
     ) {
-        if event.action == Action::Click
-            && let Some(index) = self.tile_of(ctx.target())
-        {
-            self.click(ctx, index);
-            ctx.set_handled();
+        let Some(index) = self.tile_of(ctx.target()) else {
+            return;
+        };
+        match event.action {
+            Action::Click => self.click(ctx, index),
+            Action::ShowContextMenu => self.ask_menu(ctx, index, true),
+            _ => return,
         }
+        ctx.set_handled();
     }
 
     fn measure(
@@ -537,20 +917,25 @@ impl Widget for DockWidget {
     }
 
     fn layout(&mut self, ctx: &mut LayoutCtx<'_>, _props: &PropertiesRef<'_>, _size: Size) {
-        self.placement = self.layout.place(
-            self.tiles.len(),
-            self.magnify.pointer,
-            self.magnify.amount.value(),
-        );
-        for (tile, icon) in self.tiles.iter_mut().zip(&self.placement.icons) {
+        (self.order, self.placement) = self.arrange();
+        let mut places = vec![None; self.tiles.len()];
+        for (&index, icon) in self.order.iter().zip(&self.placement.icons) {
+            places[index] = Some(*icon);
+        }
+        for (i, place) in places.iter().enumerate() {
+            // A tile dragged off the dock has its focus node under the pointer.
+            let Some(icon) = place.or_else(|| self.drawn(i)) else {
+                continue;
+            };
+            let tile = &mut self.tiles[i];
             ctx.run_layout(&mut tile.pod, icon.size());
             ctx.place_child(&mut tile.pod, icon.origin());
         }
         let placed: Vec<(String, Rect)> = self
-            .tiles
+            .order
             .iter()
             .zip(&self.placement.icons)
-            .map(|(tile, icon)| (tile.key.clone(), *icon))
+            .map(|(&i, icon)| (self.tiles[i].key.clone(), *icon))
             .collect();
         if placed != self.placed {
             self.placed = placed.clone();
@@ -571,10 +956,22 @@ impl Widget for DockWidget {
         let placement = &self.placement;
         // Bounce metrics are for 48 px icons.
         let outwards = layout.outwards() * layout.scale();
+        let pressed = self
+            .press
+            .as_ref()
+            .filter(|_| self.drag.is_none())
+            .map(|p| p.key.as_str());
         let icons = |scene: &mut Scene| {
-            for ((i, tile), rest) in self.tiles.iter().enumerate().zip(&placement.icons) {
-                let rect = *rest + outwards * tile.bounce.lift();
-                let dimmed = self.pressed == Some(i);
+            for &i in &self.order {
+                let tile = &self.tiles[i];
+                if self.is_dragged(i) {
+                    continue;
+                }
+                let Some(drawn) = self.drawn(i) else {
+                    continue;
+                };
+                let rect = drawn + outwards * tile.bounce.lift();
+                let dimmed = pressed == Some(tile.key.as_str());
                 if dimmed {
                     scene.push_opacity(0.6);
                 }
@@ -602,9 +999,10 @@ impl Widget for DockWidget {
                     reflected(scene, layout.base_line(), |scene| icons(scene));
                 }
             });
-            for (tile, span) in self.tiles.iter().zip(&placement.spans) {
-                if tile.running {
-                    let u = (span.0 + span.1) / 2.0;
+            for (&i, span) in self.order.iter().zip(&placement.spans) {
+                let tile = &self.tiles[i];
+                if tile.running && !self.is_dragged(i) {
+                    let u = (span.0 + span.1) / 2.0 + tile.slide.0.value();
                     running_indicator(
                         scene,
                         Point::new(u, layout.frame_depth() - INDICATOR.1 - 1.0),
@@ -614,6 +1012,20 @@ impl Widget for DockWidget {
             }
         });
         icons(&mut scene);
+        // The dragged icon over everything, faded while dropping it takes it off.
+        if let Some(drag) = &self.drag
+            && let Some(index) = self.index_of(&drag.key)
+            && let Some(rect) = self.drawn(index)
+        {
+            let off = drag.slot.is_none();
+            if off {
+                scene.push_opacity(REMOVING_OPACITY);
+            }
+            draw_icon(&mut scene, rect, self.tiles[index].icon.as_ref(), &theme);
+            if off {
+                scene.pop_layer();
+            }
+        }
         scene.pop_layer();
         self.replayer.replay(&scene, ctx.scale_factor(), painter);
     }
@@ -655,6 +1067,15 @@ fn is_press_key(key: &Key) -> bool {
     matches!(key, Key::Character(c) if c == " ") || *key == Key::Named(NamedKey::Enter)
 }
 
+/// The Menu key, or Shift-F10.
+fn is_menu_key(key: &Key, modifiers: Modifiers) -> bool {
+    match key {
+        Key::Named(NamedKey::ContextMenu) => true,
+        Key::Named(NamedKey::F10) => modifiers == Modifiers::SHIFT,
+        _ => false,
+    }
+}
+
 /// A tile's keyboard focus and its node for assistive technology; the dock paints it,
 /// except for the focus ring.
 #[derive(Debug)]
@@ -691,7 +1112,8 @@ impl DockTileWidget {
 impl UsesProperty<ThemeProp> for DockTileWidget {}
 
 impl Widget for DockTileWidget {
-    type Action = masonry_core::core::NoAction;
+    /// The item chosen from the tile's menu, which it owns.
+    type Action = Chosen;
 
     fn register_children(&mut self, _ctx: &mut RegisterCtx<'_>) {}
 
@@ -764,6 +1186,7 @@ impl Widget for DockTileWidget {
     ) {
         node.set_label(self.name.clone());
         node.add_action(Action::Click);
+        node.add_action(Action::ShowContextMenu);
         let state = match (self.launching, self.attention, self.running) {
             (true, _, _) => Some("Opening"),
             (_, true, _) => Some("Wants attention"),

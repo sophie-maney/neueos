@@ -15,8 +15,8 @@
 
 use masonry_core::kurbo::{Affine, Insets, Point, Rect, Size, Vec2};
 use neue_theme::materials::dock::{
-    BOUNCE_ROOM, FLAT_INSET, ICON, ICON_BASE, ICON_RANGE, MAGNIFIED_MAX, MAGNIFY_REACH,
-    SIDE_PADDING, SPACING,
+    BOUNCE_ROOM, DRAG_ROOM, FLAT_INSET, ICON, ICON_BASE, ICON_RANGE, MAGNIFIED_MAX, MAGNIFY_REACH,
+    REMOVE_DISTANCE, SIDE_PADDING, SPACING,
 };
 use neue_theme::materials::dock_shelf::{DEPTH, FLAT_RADIUS};
 
@@ -120,7 +120,7 @@ impl DockLayout {
         (self.growth() * MAGNIFY_REACH).ceil()
     }
 
-    fn pitch(&self) -> f64 {
+    pub(crate) fn pitch(&self) -> f64 {
         self.icon + SPACING
     }
 
@@ -157,9 +157,11 @@ impl DockLayout {
         self.shelf_depth().max(self.base() + self.icon)
     }
 
-    /// The surface's depth: the band, room for a magnified icon and for a bounce.
+    /// The surface's depth: the band, room for a magnified icon and for a bounce, and at
+    /// least [`DRAG_ROOM`] for an icon dragged off the dock.
     fn depth(&self) -> f64 {
-        self.base() + self.icon + self.growth() + self.bounce_room()
+        let drag_room = (DRAG_ROOM * self.scale()).ceil();
+        self.base() + self.icon + (self.growth() + self.bounce_room()).max(drag_room)
     }
 
     /// The dock's length at rest.
@@ -197,6 +199,50 @@ impl DockLayout {
             DockEdge::Left => Insets::new(0.0, ends, beyond, ends),
             DockEdge::Right => Insets::new(beyond, ends, 0.0, ends),
         }
+    }
+
+    /// `du` along the dock and `dv` away from the screen edge, in the surface.
+    pub(crate) fn along(&self, du: f64, dv: f64) -> Vec2 {
+        match self.edge {
+            DockEdge::Bottom => Vec2::new(du, -dv),
+            DockEdge::Left => Vec2::new(dv, du),
+            DockEdge::Right => Vec2::new(-dv, du),
+        }
+    }
+
+    /// The middle of the surface with `count` tiles, along the dock: where the dock's
+    /// centre stays on the screen whatever its length.
+    pub(crate) fn middle(&self, count: usize) -> f64 {
+        self.length(count) / 2.0
+    }
+
+    /// Whether an icon dragged with the pointer at `p` (in the surface) leaves the dock
+    /// when dropped: the pointer is more than [`REMOVE_DISTANCE`] beyond the band.
+    pub(crate) fn is_off(&self, p: Point) -> bool {
+        self.frame_of(p).1 > self.band() + REMOVE_DISTANCE * self.scale()
+    }
+
+    /// Where an icon dragged with the pointer at `p` (in the surface) is drawn: at its
+    /// size at rest, the pointer `grab` of the way across it (along the dock, away from
+    /// the edge), kept inside the surface of `count` tiles.
+    pub(crate) fn dragged(&self, count: usize, p: Point, grab: (f64, f64)) -> Rect {
+        let (u, v) = self.frame_of(p);
+        let size = self.icon;
+        let u0 = (u - grab.0 * size).clamp(0.0, (self.length(count) - size).max(0.0));
+        let v0 = (v - grab.1 * size).clamp(0.0, self.depth() - size);
+        self.surface_rect((u0, u0 + size), (v0, v0 + size))
+    }
+
+    /// Moves `placement` by `du` along the dock.
+    pub(crate) fn shift(&self, placement: &mut DockPlacement, du: f64) {
+        let by = self.along(du, 0.0);
+        for icon in &mut placement.icons {
+            *icon = *icon + by;
+        }
+        for span in &mut placement.spans {
+            *span = (span.0 + du, span.1 + du);
+        }
+        placement.shelf = (placement.shelf.0 + du, placement.shelf.1 + du);
     }
 
     /// `p` (in the surface) along the dock and away from the screen edge.
@@ -358,23 +404,73 @@ mod tests {
     }
 
     #[test]
-    fn the_default_is_the_dock_of_3_16() {
+    fn the_default_is_the_dock_of_3_16_with_room_to_drag() {
         let layout = DockLayout::default();
         let size = layout.size(3);
+        // The bounce needs less room than a dragged icon.
+        const { assert!(BOUNCE_ROOM < DRAG_ROOM) };
         assert_eq!(
             size,
-            Size::new(2.0 * 22.0 + 3.0 * 48.0 + 2.0 * 4.0, 24.0 + 48.0 + 18.0)
+            Size::new(2.0 * 22.0 + 3.0 * 48.0 + 2.0 * 4.0, DRAG_ROOM + 48.0 + 18.0)
         );
         let rest = layout.rest(3);
-        assert_eq!(rest.icons[0], Rect::new(22.0, 24.0, 70.0, 72.0));
+        assert_eq!(
+            rest.icons[0],
+            Rect::new(22.0, DRAG_ROOM, 70.0, DRAG_ROOM + 48.0)
+        );
         assert_eq!(rest.icons[1].x0 - rest.icons[0].x1, SPACING);
         assert_eq!(rest.icons[2].x1 + SIDE_PADDING, size.width);
-        assert_eq!(layout.band(), size.height - BOUNCE_ROOM);
-        assert_eq!(
-            layout.pass_through(),
-            Insets::new(0.0, BOUNCE_ROOM, 0.0, 0.0)
-        );
+        assert_eq!(layout.band(), size.height - DRAG_ROOM);
+        assert_eq!(layout.pass_through(), Insets::new(0.0, DRAG_ROOM, 0.0, 0.0));
         assert!(!layout.magnifies());
+    }
+
+    #[test]
+    fn a_dragged_icon_stays_in_the_surface_and_leaves_past_the_band() {
+        let layout = DockLayout::default();
+        let size = layout.size(3);
+        let band_top = size.height - layout.band();
+        // Held by its middle, the icon is centred on the pointer.
+        let p = Point::new(100.0, band_top + 10.0);
+        let icon = layout.dragged(3, p, (0.5, 0.5));
+        assert_eq!(icon.center(), p);
+        assert!(!layout.is_off(p));
+        // Far above and past the end: kept in the surface, off the dock.
+        let far = Point::new(size.width + 50.0, -200.0);
+        let icon = layout.dragged(3, far, (0.5, 0.5));
+        assert_eq!(icon, Rect::new(size.width - 48.0, 0.0, size.width, 48.0));
+        assert!(layout.is_off(far));
+        assert!(!layout.is_off(Point::new(0.0, band_top - REMOVE_DISTANCE + 1.0)));
+        assert!(layout.is_off(Point::new(0.0, band_top - REMOVE_DISTANCE - 1.0)));
+        // Off the left edge's band, outwards is to the right.
+        let left = DockLayout {
+            edge: DockEdge::Left,
+            ..DockLayout::default()
+        };
+        let beyond = left.band() + REMOVE_DISTANCE + 1.0;
+        assert!(left.is_off(Point::new(beyond, 30.0)));
+        assert!(!left.is_off(Point::new(left.band(), 30.0)));
+    }
+
+    #[test]
+    fn shifting_moves_icons_spans_and_shelf_along_the_dock() {
+        for edge in [DockEdge::Bottom, DockEdge::Left] {
+            let layout = DockLayout {
+                edge,
+                ..DockLayout::default()
+            };
+            let rest = layout.rest(2);
+            let mut shifted = rest.clone();
+            layout.shift(&mut shifted, 26.0);
+            assert_eq!(shifted.icons[1], rest.icons[1] + layout.along(26.0, 0.0));
+            assert_eq!(shifted.spans[0].0, rest.spans[0].0 + 26.0);
+            assert_eq!(shifted.shelf.1, rest.shelf.1 + 26.0);
+            // The middle of one tile fewer, shifted half a pitch, is the middle of all.
+            let mut fewer = layout.rest(1);
+            layout.shift(&mut fewer, layout.pitch() / 2.0);
+            let mid = |p: &DockPlacement| (p.shelf.0 + p.shelf.1) / 2.0;
+            assert!(close(mid(&fewer), layout.middle(2)), "{edge:?}");
+        }
     }
 
     #[test]
@@ -481,7 +577,7 @@ mod tests {
             ..DockLayout::default()
         };
         let size = left.size(3);
-        assert_eq!(size.width, FLAT_INSET + 48.0 + BOUNCE_ROOM);
+        assert_eq!(size.width, FLAT_INSET + 48.0 + DRAG_ROOM);
         assert_eq!(size.height, DockLayout::default().size(3).width);
         let rest = left.rest(3);
         assert_eq!(

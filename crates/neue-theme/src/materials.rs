@@ -1403,6 +1403,22 @@ pub mod dock {
     /// On the left and right edges, the space between the flat shelf's edges and the
     /// icons on it (room for the running light on the screen's side).
     pub const FLAT_INSET: f64 = 8.0;
+    /// Room beyond the icons for an icon dragged off the dock (at least this much,
+    /// whatever the bounce and magnification need). The pointer passes through it.
+    pub const DRAG_ROOM: f64 = ICON;
+    /// How far past the dock at rest the pointer takes a dragged icon off the dock:
+    /// dropped there, it leaves the dock.
+    pub const REMOVE_DISTANCE: f64 = ICON / 2.0;
+    /// How opaque a dragged icon is while dropping it would take it off the dock.
+    pub const REMOVING_OPACITY: f32 = 0.5;
+    /// How icons slide to their new places when the dock's order changes: a gap opening
+    /// under a dragged icon, a dropped icon settling in its place, tiles coming and going.
+    pub const SLIDE: Spring = Spring::STANDARD;
+    /// The space between a tile's icon and its menu.
+    pub const MENU_GAP: f64 = 6.0;
+    /// How far the pointer moves with the button down on a tile before the tile is
+    /// dragged (a shorter move is still a click).
+    pub const DRAG_THRESHOLD: f64 = 4.0;
 }
 
 /// The dark HUD panel: volume and brightness indicators, HUD windows.

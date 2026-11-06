@@ -58,6 +58,26 @@ const MAGNIFIED: State = ("magnified", |f: &mut Fixture| {
     f.advance(Duration::from_secs(1));
 });
 
+/// The dock's first tile held by its middle and dragged over the second: the second has
+/// slid into its place.
+const DRAGGING: State = ("dragging", |f: &mut Fixture| {
+    let rest = neue_kit::desktop::DockLayout::default().rest(4);
+    let from = rest.icons[0].center();
+    f.press_at_px(from.x, from.y);
+    let over = rest.icons[1].center();
+    f.hover_at_px(over.x + 6.0, over.y - 14.0);
+    f.advance(Duration::from_secs(1));
+});
+
+/// The dock's third tile dragged up off the dock: the others have closed up, and it fades.
+const REMOVING: State = ("removing", |f: &mut Fixture| {
+    let rest = neue_kit::desktop::DockLayout::default().rest(4);
+    let from = rest.icons[2].center();
+    f.press_at_px(from.x, from.y);
+    f.hover_at_px(from.x + 10.0, 0.0);
+    f.advance(Duration::from_secs(1));
+});
+
 /// The default button at the brightest point of its pulse.
 const PULSE_PEAK: State = ("pulse", |f: &mut Fixture| {
     f.advance(DEFAULT_BUTTON_PULSE / 2)
@@ -420,7 +440,7 @@ control_goldens! {
     // The dock (3.16): four tiles on the glass shelf, reflected in it: running (the light
     // under it), asking for attention, without an icon (running) and not running; the
     // attention tile mid-bounce.
-    shell_dock: "shell-dock", SHELL_DOCK_SIZE, &[NORMAL, BOUNCING], specimens::shell_dock::<()>(|_| None);
+    shell_dock: "shell-dock", SHELL_DOCK_SIZE, &[NORMAL, BOUNCING, DRAGGING, REMOVING], specimens::shell_dock::<()>(|_| None);
     // Magnification (3.17a): the icons grown around the pointer, the shelf stretched under
     // them; the dock on the left and right edges, on its flat shelf, mid-bounce.
     shell_dock_magnified: "shell-dock-magnified", SHELL_DOCK_MAGNIFIED_SIZE, &[MAGNIFIED], specimens::shell_dock_with::<()>(SHELL_DOCK_MAGNIFIED, |_| None);

@@ -1290,9 +1290,9 @@ pub fn shell_osd(glyph: neue_kit::desktop::OsdGlyph, level: f64) -> neue_kit::de
     neue_kit::desktop::Osd::new(glyph, level)
 }
 
-/// Golden window size for the dock: four tiles on the shelf, the bounce room above them and
-/// the window's padding.
-pub const SHELL_DOCK_SIZE: (u32, u32) = (264, 106);
+/// Golden window size for the dock: four tiles on the shelf, the room above them for a
+/// bounce or a dragged icon, and the window's padding.
+pub const SHELL_DOCK_SIZE: (u32, u32) = (264, 130);
 
 /// The dock's tiles: the sample vector icon (running), a raster icon (asking for
 /// attention), an app without an icon (the placeholder; running) and the sample icon again
@@ -1338,8 +1338,8 @@ pub const SHELL_DOCK_MAGNIFIED: neue_kit::desktop::DockLayout = neue_kit::deskto
 pub const SHELL_DOCK_MAGNIFIED_SIZE: (u32, u32) = (552, 154);
 
 /// Golden window size for the dock on the left or right edge: four tiles down the flat
-/// shelf, the bounce room beside them and the window's padding.
-pub const SHELL_DOCK_SIDE_SIZE: (u32, u32) = (96, 264);
+/// shelf, the room beside them for a bounce or a dragged icon, and the window's padding.
+pub const SHELL_DOCK_SIDE_SIZE: (u32, u32) = (120, 264);
 
 /// The dock with [`shell_dock_tiles`] and `layout`; `make` turns a click on a tile into a
 /// message.

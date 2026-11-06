@@ -151,6 +151,7 @@ impl PopUpWidget {
             on_step: None,
             on_change: None,
             return_focus: None,
+            beside: None,
         };
         menu::open(
             ctx,

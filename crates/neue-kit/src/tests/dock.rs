@@ -2,31 +2,47 @@
 //! an assistive technology's click become the tile's key; tiles are labelled buttons; a
 //! tile's bounce goes on across updates and stops after the bounce under way; icons grow
 //! under the pointer and shrink when it leaves (not under reduced motion), and the dock
-//! reports where they are; on the left edge the tiles run downwards.
+//! reports where they are; on the left edge the tiles run downwards. Editing (3.17b): a
+//! tile dragged along the dock opens a gap and asks to move, dragged off it asks to go,
+//! and the tiles slide to where the app puts them; a tile's menu is asked for by a
+//! secondary click, the Menu key or an assistive technology and opens against its icon.
 
 use masonry_core::accesskit::Role;
 use masonry_core::core::{PointerButton, PointerEvent};
 use std::sync::Arc;
 
-use masonry_core::kurbo::{Point, Rect};
+use masonry_core::accesskit::Action;
+use masonry_core::kurbo::{Point, Rect, Vec2};
+use neue_platform::{PopoverAnchor, Side};
+use neue_theme::materials::dock::MENU_GAP;
 
 use super::*;
 use crate::desktop::{Dock, DockBounce, DockEdge, DockLayout, DockTile};
-use crate::widgets::DockWidget;
+use crate::widgets::{DockWidget, MenuWidget};
+use crate::{Menu, MenuItem};
 
 #[derive(Debug, Clone)]
 enum DockMsg {
     Clicked(String),
     Placed(Vec<(String, Rect)>),
     Tiles(Vec<DockTile>),
+    Moved(String, usize),
+    Removed(String),
+    MenuWanted(String),
+    Chose(&'static str, String),
 }
 
 #[derive(Default)]
 struct Shelf {
     layout: DockLayout,
     dock: Handle<Dock<DockMsg>>,
+    /// The tiles shown; empty: the two of [`Shelf::start`].
+    tiles: Vec<DockTile>,
+    /// Moves are taken (the tiles reordered) unless this is set.
+    refuse: bool,
     clicked: Vec<String>,
     placed: Vec<Vec<(String, Rect)>>,
+    edits: Vec<String>,
 }
 
 const MAGNIFIED: DockLayout = DockLayout {
@@ -49,14 +65,20 @@ impl Application for Shelf {
     type Message = DockMsg;
 
     fn start(&mut self, cx: &mut Cx<'_, DockMsg>) {
-        let dock = Dock::new(vec![
-            tile("files", true, DockBounce::None),
-            tile("term", false, DockBounce::None),
-        ])
-        .layout(self.layout)
-        .on_click(|key| Some(DockMsg::Clicked(key.to_owned())))
-        .on_placed(|icons| Some(DockMsg::Placed(icons.to_vec())))
-        .bind(&mut self.dock);
+        if self.tiles.is_empty() {
+            self.tiles = vec![
+                tile("files", true, DockBounce::None),
+                tile("term", false, DockBounce::None),
+            ];
+        }
+        let dock = Dock::new(self.tiles.clone())
+            .layout(self.layout)
+            .on_click(|key| Some(DockMsg::Clicked(key.to_owned())))
+            .on_placed(|icons| Some(DockMsg::Placed(icons.to_vec())))
+            .on_move(|key, to| Some(DockMsg::Moved(key.to_owned(), to)))
+            .on_remove(|key| Some(DockMsg::Removed(key.to_owned())))
+            .on_menu(|key| Some(DockMsg::MenuWanted(key.to_owned())))
+            .bind(&mut self.dock);
         let size = self.layout.size(3);
         #[expect(
             clippy::cast_possible_truncation,
@@ -75,6 +97,32 @@ impl Application for Shelf {
             DockMsg::Clicked(key) => self.clicked.push(key),
             DockMsg::Placed(icons) => self.placed.push(icons),
             DockMsg::Tiles(tiles) => self.dock.set_tiles(cx, tiles),
+            DockMsg::Moved(key, to) => {
+                self.edits.push(format!("move {key} {to}"));
+                if !self.refuse
+                    && let Some(i) = self.tiles.iter().position(|t| t.key == key)
+                {
+                    let moved = self.tiles.remove(i);
+                    self.tiles.insert(to, moved);
+                    self.dock.set_tiles(cx, self.tiles.clone());
+                }
+            }
+            DockMsg::Removed(key) => {
+                self.edits.push(format!("remove {key}"));
+                self.tiles.retain(|t| t.key != key);
+                self.dock.set_tiles(cx, self.tiles.clone());
+            }
+            DockMsg::MenuWanted(key) => {
+                self.edits.push(format!("menu {key}"));
+                let menu = Menu::new()
+                    .with(
+                        MenuItem::new("Keep in Dock")
+                            .on_choose(DockMsg::Chose("keep", key.clone())),
+                    )
+                    .with(MenuItem::new("Quit").on_choose(DockMsg::Chose("quit", key.clone())));
+                self.dock.show_menu(cx, &key, menu);
+            }
+            DockMsg::Chose(item, key) => self.edits.push(format!("{item} {key}")),
         }
     }
 }
@@ -84,15 +132,35 @@ fn setup() -> (Runner<Shelf>, FakeHost) {
 }
 
 fn setup_with(layout: DockLayout, reduced_motion: bool) -> (Runner<Shelf>, FakeHost) {
+    setup_shelf(
+        Shelf {
+            layout,
+            ..Shelf::default()
+        },
+        reduced_motion,
+    )
+}
+
+/// The default dock with three tiles: a, b and c.
+fn setup_three() -> (Runner<Shelf>, FakeHost) {
+    setup_shelf(
+        Shelf {
+            tiles: ["a", "b", "c"]
+                .map(|k| tile(k, false, DockBounce::None))
+                .to_vec(),
+            ..Shelf::default()
+        },
+        false,
+    )
+}
+
+fn setup_shelf(shelf: Shelf, reduced_motion: bool) -> (Runner<Shelf>, FakeHost) {
     let theme = Theme {
         reduced_motion,
         ..Theme::default()
     };
     let mut runner = Runner::new(
-        Shelf {
-            layout,
-            ..Shelf::default()
-        },
+        shelf,
         Settings {
             theme,
             ..Settings::default()
@@ -298,4 +366,183 @@ fn on_the_left_edge_tiles_run_downwards() {
     let point = at(&runner, &mut host, second.x, second.y);
     click_at(&mut runner, &mut host, point);
     assert_eq!(runner.app().clicked, ["term"]);
+}
+
+/// Presses the primary button at `from` (in the dock) and moves to each point of `path`,
+/// leaving the button down.
+fn drag(runner: &mut Runner<Shelf>, host: &mut FakeHost, from: Point, path: &[Point]) {
+    let start = at(runner, host, from.x, from.y);
+    host.only().mouse_move(start);
+    host.only().mouse_button_press(Some(PointerButton::Primary));
+    for p in path {
+        let p = at(runner, host, p.x, p.y);
+        host.only().mouse_move(p);
+    }
+    deliver(runner, host);
+}
+
+fn release(runner: &mut Runner<Shelf>, host: &mut FakeHost) {
+    host.only()
+        .mouse_button_release(Some(PointerButton::Primary));
+    deliver(runner, host);
+}
+
+fn shown(runner: &Runner<Shelf>, host: &mut FakeHost) -> Vec<String> {
+    dock(runner, host, DockWidget::shown_keys)
+}
+
+fn drawn(runner: &Runner<Shelf>, host: &mut FakeHost, key: &str) -> Rect {
+    dock(runner, host, DockWidget::drawn_icons)
+        .into_iter()
+        .find(|(k, _)| k == key)
+        .and_then(|(_, r)| r)
+        .expect("the tile is drawn")
+}
+
+#[test]
+fn dragging_a_tile_opens_a_gap_and_dropping_moves_it() {
+    let (mut runner, mut host) = setup_three();
+    let rest = DockLayout::default().rest(3);
+    let a = rest.icons[0].center();
+    let over_b = rest.icons[1].center() + Vec2::new(5.0, -10.0);
+    drag(&mut runner, &mut host, a, &[a + Vec2::new(2.0, 0.0)]);
+    // Under the threshold: still a press.
+    assert_eq!(shown(&runner, &mut host), ["a", "b", "c"]);
+    drag_on(&mut runner, &mut host, &[over_b]);
+    assert_eq!(shown(&runner, &mut host), ["b", "a", "c"]);
+    // The dragged icon is under the pointer, held where it was taken.
+    assert_eq!(drawn(&runner, &mut host, "a").center(), over_b);
+    // b slides into the first place.
+    settle(&mut host);
+    assert_eq!(drawn(&runner, &mut host, "b"), rest.icons[0]);
+
+    release(&mut runner, &mut host);
+    assert_eq!(runner.app().edits, ["move a 1"]);
+    assert!(runner.app().clicked.is_empty());
+    // The app moved it: it slides from where it was dropped into its new place.
+    assert_eq!(shown(&runner, &mut host), ["b", "a", "c"]);
+    assert_eq!(drawn(&runner, &mut host, "a").center(), over_b);
+    settle(&mut host);
+    assert_eq!(drawn(&runner, &mut host, "a"), rest.icons[1]);
+}
+
+#[test]
+fn a_refused_move_slides_back() {
+    let (mut runner, mut host) = setup_three();
+    runner.app_mut().refuse = true;
+    let rest = DockLayout::default().rest(3);
+    let a = rest.icons[0].center();
+    drag(&mut runner, &mut host, a, &[rest.icons[2].center()]);
+    assert_eq!(shown(&runner, &mut host), ["b", "c", "a"]);
+    release(&mut runner, &mut host);
+    assert_eq!(runner.app().edits, ["move a 2"]);
+    assert_eq!(shown(&runner, &mut host), ["a", "b", "c"]);
+    assert_ne!(drawn(&runner, &mut host, "a"), rest.icons[0]);
+    settle(&mut host);
+    assert_eq!(drawn(&runner, &mut host, "a"), rest.icons[0]);
+}
+
+#[test]
+fn dragged_off_the_dock_a_tile_is_removed() {
+    let (mut runner, mut host) = setup_three();
+    let layout = DockLayout::default();
+    let rest = layout.rest(3);
+    let c = rest.icons[2].center();
+    let band_top = layout.size(3).height - layout.band();
+    // Just above the shelf it is still on the dock; well above, off it.
+    drag(
+        &mut runner,
+        &mut host,
+        c,
+        &[Point::new(c.x, band_top - 5.0)],
+    );
+    assert_eq!(shown(&runner, &mut host), ["a", "b", "c"]);
+    drag_on(&mut runner, &mut host, &[Point::new(c.x, -100.0)]);
+    assert_eq!(shown(&runner, &mut host), ["a", "b"]);
+    // The others close up in the middle; the dragged icon stays inside the surface.
+    settle(&mut host);
+    let middle = layout.size(3).width / 2.0;
+    let (a, b) = (
+        drawn(&runner, &mut host, "a"),
+        drawn(&runner, &mut host, "b"),
+    );
+    assert!(((a.x0 + b.x1) / 2.0 - middle).abs() < 1e-9);
+    assert_eq!(drawn(&runner, &mut host, "c").y0, 0.0);
+    release(&mut runner, &mut host);
+    assert_eq!(runner.app().edits, ["remove c"]);
+    assert_eq!(shown(&runner, &mut host), ["a", "b"]);
+    // The surface shrank by a tile around the same middle: nothing jumps.
+    assert_eq!(drawn(&runner, &mut host, "a"), layout.rest(2).icons[0]);
+}
+
+#[test]
+fn a_secondary_click_asks_for_the_menu_and_it_opens_above_the_icon() {
+    let (mut runner, mut host) = setup_three();
+    let rest = DockLayout::default().rest(3);
+    let b = at(
+        &runner,
+        &mut host,
+        rest.icons[1].center().x,
+        rest.icons[1].center().y,
+    );
+    host.only().mouse_move(b);
+    host.only()
+        .mouse_button_press(Some(PointerButton::Secondary));
+    host.only()
+        .mouse_button_release(Some(PointerButton::Secondary));
+    deliver(&mut runner, &mut host);
+    assert_eq!(runner.app().edits, ["menu b"]);
+    assert_eq!(super::menus::menus_open(&mut host), 1);
+    // It asks to go centred above the icon, the gap away.
+    let tile = dock(&runner, &mut host, DockWidget::tile_ids)[1];
+    let request = host.only().render_root().edit_widget(tile, |w| {
+        let menu = w.ctx.get_attached_layer::<MenuWidget>()?;
+        Some(menu)
+    });
+    let menu = request.expect("the tile owns the menu");
+    let PopoverAnchor(Some(request)) = *host
+        .only()
+        .get_widget_with_id(menu)
+        .get_prop::<PopoverAnchor>()
+    else {
+        panic!("no placement request");
+    };
+    assert_eq!(request.side, Side::Top);
+    let icon = Rect::from_origin_size(
+        at(&runner, &mut host, rest.icons[1].x0, rest.icons[1].y0),
+        rest.icons[1].size(),
+    );
+    assert_eq!(request.anchor, icon.inflate(MENU_GAP, MENU_GAP));
+    super::menus::click_item(&mut runner, &mut host, "Quit");
+    assert_eq!(runner.app().edits, ["menu b", "quit b"]);
+}
+
+#[test]
+fn the_menu_key_and_assistive_technology_ask_for_the_menu() {
+    let (mut runner, mut host) = setup_three();
+    let tiles = dock(&runner, &mut host, DockWidget::tile_ids);
+    let node = host.only().access_node(tiles[0]).expect("a node");
+    assert!(node.data().supports_action(Action::ShowContextMenu));
+    host.only().focus_on(Some(tiles[0]));
+    super::menus::named(&mut runner, &mut host, NamedKey::ContextMenu);
+    assert_eq!(super::menus::menus_open(&mut host), 1);
+    // Opened from the keyboard, the first item is highlighted.
+    assert_eq!(
+        super::menus::focused(&mut host).as_deref(),
+        Some("Keep in Dock")
+    );
+    super::menus::named(&mut runner, &mut host, NamedKey::Enter);
+    super::menus::a11y(&mut host, tiles[2].into(), Action::ShowContextMenu);
+    deliver(&mut runner, &mut host);
+    assert_eq!(super::menus::menus_open(&mut host), 1);
+    assert_eq!(runner.app().edits, ["menu a", "keep a", "menu c"]);
+}
+
+/// Moves the pointer on to each point of `path` (in the dock), the button still down.
+fn drag_on(runner: &mut Runner<Shelf>, host: &mut FakeHost, path: &[Point]) {
+    for p in path {
+        let p = at(runner, host, p.x, p.y);
+        host.only().mouse_move(p);
+    }
+    deliver(runner, host);
 }
