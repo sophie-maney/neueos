@@ -1326,6 +1326,67 @@ pub fn shell_alert<M: 'static>(
     .on_event(make)
 }
 
+/// Golden window size for the notification stack: three panels, the gaps between them,
+/// their margins and the window's padding.
+pub const SHELL_NOTIFICATION_STACK_SIZE: (u32, u32) = (384, 262);
+
+/// The stack of notifications at rest: a banner on top, an alert with two actions under
+/// it and a banner with an image at the bottom. `make` turns what the user does to
+/// notification `id` into a message.
+pub fn shell_notification_stack<M: 'static>(
+    make: impl FnMut(u32, neue_kit::desktop::NotificationEvent) -> Option<M> + 'static,
+) -> neue_kit::desktop::NotificationHost<M> {
+    use neue_kit::desktop::NotificationContent;
+    let (title, body) = notification_text();
+    neue_kit::desktop::NotificationHost::new()
+        .with(
+            1,
+            NotificationContent {
+                title: "Holiday photos".to_owned(),
+                body: "Twelve new photos were added to the shared album.".to_owned(),
+                app_icon: Some(sample_icon()),
+                image: Some(demo_picture()),
+                ..Default::default()
+            },
+        )
+        .with(
+            2,
+            NotificationContent {
+                title: title.clone(),
+                body: body.clone(),
+                app_icon: Some(sample_icon()),
+                actions: vec!["Snooze".to_owned(), "Join".to_owned()],
+                ..Default::default()
+            },
+        )
+        .with(
+            3,
+            NotificationContent {
+                title: "Downloads".to_owned(),
+                body: "\u{201c}neueos-x86_64.iso\u{201d} has finished downloading.".to_owned(),
+                app_icon: Some(sample_icon()),
+                ..Default::default()
+            },
+        )
+        .on_event(make)
+}
+
+/// The `n`th notification posted on the gallery's stack: odd ones are banners, even ones
+/// alerts.
+pub fn posted_notification(n: u32) -> neue_kit::desktop::NotificationContent {
+    neue_kit::desktop::NotificationContent {
+        title: format!("Notification {n}"),
+        body: "Posted from the gallery's Shell page.".to_owned(),
+        app_icon: Some(sample_icon()),
+        actions: if n.is_multiple_of(2) {
+            vec!["Later".to_owned(), "Open".to_owned()]
+        } else {
+            Vec::new()
+        },
+        ..Default::default()
+    }
+}
+
 /// The desktop background specimens' size: a 16:10 output, small.
 const DESKTOP_SPECIMEN: (f64, f64) = (320.0, 200.0);
 

@@ -25,8 +25,8 @@ use crate::menubar::MenuBars;
 use crate::task::{Mailbox, Sender, Task};
 use crate::theme;
 use crate::widgets::{
-    self, ButtonWidget, Chrome, ChromeKind, FieldAction, Popover, PopoverWidget, Pressed, Rewired,
-    RootAction, RootWidget, RowsWidget, Sheet, SheetButtons, SheetKey,
+    self, ButtonWidget, Chrome, ChromeKind, FieldAction, PanelGone, Popover, PopoverWidget,
+    Pressed, Rewired, RootAction, RootWidget, RowsWidget, Sheet, SheetButtons, SheetKey,
 };
 
 /// An app: its state is the model, [`Application::Message`] is everything that can happen
@@ -1036,6 +1036,17 @@ impl<A: Application> Runner<A> {
         };
         if action.is::<Rewired>() {
             return self.rewire(host, window, widget);
+        }
+        // A notification host's panel left: forget its handlers, then the host's own
+        // handler reports it.
+        if action.is::<PanelGone>()
+            && let Some(kit) = &mut self.kit
+        {
+            Cx {
+                host: &mut *host,
+                kit,
+            }
+            .prune_handlers(window);
         }
         // A text field's selection ended: it becomes the primary selection, whether or not
         // the field has a handler.

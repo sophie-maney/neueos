@@ -81,3 +81,34 @@ Replacements (`replaces_id`) update a notification in place.
   is drawn into the old buffer and cut at its edge. The stack's `extent()` (the larger of
   the current and resting heights) grows when a panel is pushed, before the panels have
   moved, so at most the first frame of a slide loses a few pixels.
+
+## Addendum (2026-11-06, task 3.15d2): the notification host
+- **`neue_kit::desktop::NotificationHost<M>`** owns one `Notification` panel per id and a
+  `NotificationStack`, stepped in its own `on_anim_frame` with the theme's motion. Its
+  size is `WIDTH + 2 × MARGIN` by `extent() + 2 × MARGIN` (one pixel square when empty,
+  so a `fit_content` layer surface never asks for a zero size); panels are placed at the
+  stack's `(x, y)` and clipped at the host's edge. 3.15d3 anchors its surface so the
+  panels' own margin makes the gap to the screen edge and the bar.
+- **API.** The builder takes `with(id, content)` (panels at rest, for the gallery and
+  goldens), `on_event(|id, event|)` and `on_gone(|id|)`; the handle has `show(id,
+  content)` (a new panel slides in on top; an id already there is replaced in place with
+  `edit_content`, and one sliding out comes back) and `dismiss(id)`. The host never
+  dismisses by itself: the app decides (the store sends `NotificationClosed`).
+- **Heights.** A panel's height comes from its text, known only at measure. `show` pushes
+  it to the stack at height 0 (the slide starts at once) and `measure`/`layout` give the
+  stack the measured heights, moving the others on their spring (with an animation frame
+  requested through `mutate_self_later`, as layout can't ask for one). Before the host's
+  first layout, heights are taken without moving, so the panels it was built with are at
+  rest.
+- **Wiring panels added at run time.** The host widget keeps the app's event closure
+  type-erased (`Rc<RefCell<…>>` as `Box<dyn Any>`); `show` builds the new panel's handlers
+  from it and registers them with the window, as `Stack::push` does. When a panel has slid
+  out the host removes it and emits `PanelGone(id)`: the kit prunes the window's handlers,
+  then the host's handler turns it into the `on_gone` message.
+- **Hit testing.** Panel margins overlap in the gaps (2 × 14 px of margin, 10 px of gap),
+  so the host overrides `find_widget_under_pointer`: a point goes to the panel whose slot
+  (the panel plus half the gap above and below) it is in. A lower panel's close button,
+  which stands 5 px into the gap, still gets its clicks.
+- **Keyboard and assistive technology.** Children are listed top to bottom, so Tab goes
+  down the stack through each panel and its buttons; a panel sliding out is disabled at
+  once (no focus, no clicks).
