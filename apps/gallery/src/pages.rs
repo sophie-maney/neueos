@@ -223,19 +223,34 @@ fn shell(handles: &mut PageHandles) -> Element<Message> {
             Disconnect(_) => "Disconnect",
         })
     };
+    let notifications = |command: neue_shell::bar::NotificationsCommand| {
+        use neue_shell::bar::NotificationsCommand::SetDoNotDisturb;
+        Message::Pressed(match command {
+            SetDoNotDisturb(true) => "Turn Do Not Disturb On",
+            SetDoNotDisturb(false) => "Turn Do Not Disturb Off",
+        })
+    };
     Stack::column()
         .spacing(spacing::L)
         .with(heading(
             "Shell",
             "The menu bar on every display: press the logo for the system menu, the clock \
-             for today's date, the battery, volume, network and Bluetooth icons for their menus \
+             for today's date, the battery, volume, network, Bluetooth and notifications icons \
+             for their menus \
              (drag the volume slider, or step it with Left and Right) · Space, \
              Return or Down open a focused title · the status line shows what you chose \
              (nothing here locks or shuts down)",
         ))
         .with(section(
             "Menu bar, an app active",
-            Stack::column().with(specimens::shell_bar("Gallery", send, volume, network, bluetooth)),
+            Stack::column().with(specimens::shell_bar(
+                "Gallery",
+                send,
+                volume,
+                network,
+                bluetooth,
+                notifications,
+            )),
         ))
         .with(section(
             "Menu bar, no window active",
@@ -245,10 +260,11 @@ fn shell(handles: &mut PageHandles) -> Element<Message> {
                 volume,
                 network,
                 bluetooth,
+                notifications,
             )),
         ))
         .with(section(
-            "Menu extras: batteries (full, charging, half, low, empty), network (wired, none, Wi-Fi with 3, 2, 1 and no arcs, off), Bluetooth (off, on, connected), volume (full, two thirds, a third, silent, muted)",
+            "Menu extras: batteries (full, charging, half, low, empty), network (wired, none, Wi-Fi with 3, 2, 1 and no arcs, off), Bluetooth (off, on, connected), volume (full, two thirds, a third, silent, muted), notifications (on, Do Not Disturb)",
             Stack::column().with(specimens::shell_extras()),
         ))
         .with(section(

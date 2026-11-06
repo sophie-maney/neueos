@@ -58,3 +58,27 @@ what apps send, time it out, and answer clicks with the app's signals.
   and the notifications stay open; the notifier notices at the next one (`cx.windows()`)
   and opens a new surface on the active output. The older banners are not brought back.
 - Not shown yet: `body-markup`, inline replies, sounds (ADR 0089).
+
+## Addendum (task 3.15d4): the notifications extra
+- **Where and what.** A bell at the far right of the bar (the first `with_extra`, so the
+  clock moves one place left), always shown, with one menu item, Do Not Disturb, ticked
+  while it is on. The icon is a procedural bell (`neue_paint::materials::menu_bar::bell`,
+  tokens in `neue_theme::materials::menu_bar`), drawn as a bar label like the others and
+  faded (`OFF_OPACITY`) while Do Not Disturb is on. `ExtraIcon::Notifications`. A click
+  opens the menu until the Notification Center exists (Phase 6).
+- **Saving goes through `neue-settingsd`** (ADR 0004: it is the only writer of the TOML
+  files, ADR 0074). The new `neue_dbus::settings::Settings` client (`get_bool`,
+  `set_bool`, `changes`) calls `Set("shell.notifications.do-not-disturb", b)` on a thread
+  of its own. The shell does not change the icon itself: it follows the key.
+- **Following** is one worker (`extras::run_do_not_disturb`, the same `follow` loop as
+  the battery's): it reads the key at start, on each `Changed` signal of the service
+  (its own sets and hand edits of any layer) and every five seconds; while the service
+  isn't on the session bus it reads `shell.toml` itself, so a hand edit is still seen
+  and a service that starts later changes nothing. If the service is missing, choosing
+  the item logs a warning and nothing changes.
+- **Kit:** `Menu::choose(index)` returns the message an item sends, so that menus built
+  outside `neue-kit` can be tested (the golden fixture drops handlers).
+- **Gallery:** the bar specimen's window is 560 px wide (the extra made the bar need more
+  than 520); a popup under the rightmost extra can't be shown in a fixture (they don't
+  flip as the compositor's positioner does), so there is no open-menu golden for it.
+

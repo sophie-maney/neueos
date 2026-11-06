@@ -6,7 +6,7 @@
 
 use neue_theme::materials::menu_bar::{
     BLUETOOTH_STROKE, EDGE, LABEL_BASELINE, LABEL_EMBOSS_OFFSET, LOGO_STROKE, NETWORK_STROKE,
-    OFF_OPACITY, Palette, TRAY_DARK_OPACITY, UNLIT_OPACITY, VOLUME_STROKE,
+    NOTIFICATIONS_STROKE, OFF_OPACITY, Palette, TRAY_DARK_OPACITY, UNLIT_OPACITY, VOLUME_STROKE,
 };
 use vello_common::kurbo::{
     Arc, BezPath, Cap, Circle, Join, Point, Rect, RoundedRect, Stroke, Vec2,
@@ -20,7 +20,8 @@ use crate::{Backdrop, Variant};
 
 pub use neue_theme::materials::menu_bar::{
     BATTERY_HEIGHT, BATTERY_WIDTH, BLUETOOTH_HEIGHT, BLUETOOTH_WIDTH, FONT_SIZE, HEIGHT, LOGO_SIZE,
-    NETWORK_HEIGHT, NETWORK_WIDTH, VOLUME_HEIGHT, VOLUME_WIDTH,
+    NETWORK_HEIGHT, NETWORK_WIDTH, NOTIFICATIONS_HEIGHT, NOTIFICATIONS_WIDTH, VOLUME_HEIGHT,
+    VOLUME_WIDTH,
 };
 
 /// How many arcs a Wi-Fi fan has.
@@ -388,6 +389,65 @@ pub fn speaker_label(
     );
     speaker(scene, rect, lit, p.label);
     if muted {
+        scene.pop_layer();
+    }
+}
+
+/// Draw the notifications bell in `rect` (a [`NOTIFICATIONS_WIDTH`] by
+/// [`NOTIFICATIONS_HEIGHT`] box) in `color`: a dome that flares into a rim, and the clapper
+/// below it.
+pub fn bell(scene: &mut Scene, rect: Rect, color: Color) {
+    let c = rect.center();
+    let (top, rim) = (rect.y0 + 1.6, rect.y1 - 3.2);
+    let (shoulder, flare) = (3.6, rect.width() / 2.0 - 0.8);
+    let mut body = BezPath::new();
+    body.move_to((c.x - flare, rim));
+    // Up the left side to the crown and down the right: a dome that flares at the rim.
+    body.curve_to(
+        (c.x - shoulder, rim - 1.0),
+        (c.x - shoulder, top + 2.2),
+        (c.x - shoulder + 0.4, top + 2.2),
+    );
+    body.curve_to(
+        (c.x - shoulder + 0.8, top),
+        (c.x + shoulder - 0.8, top),
+        (c.x + shoulder - 0.4, top + 2.2),
+    );
+    body.curve_to(
+        (c.x + shoulder, top + 2.2),
+        (c.x + shoulder, rim - 1.0),
+        (c.x + flare, rim),
+    );
+    body.close_path();
+    scene.fill(&body, color);
+    scene.fill(&Circle::new((c.x, top - 0.2), 0.9), color);
+    // The clapper hangs from the rim.
+    let stroke = Stroke::new(NOTIFICATIONS_STROKE).with_caps(Cap::Round);
+    let mut clapper = BezPath::new();
+    clapper.move_to((c.x - 1.4, rect.y1 - 1.6));
+    clapper.line_to((c.x + 1.4, rect.y1 - 1.6));
+    scene.stroke(&clapper, &stroke, color);
+}
+
+/// Draw the bell in `rect` as a menu-bar label: its embossed shadow, then the bell, faded
+/// while Do Not Disturb is on.
+pub fn bell_label(
+    scene: &mut Scene,
+    rect: Rect,
+    do_not_disturb: bool,
+    variant: impl Into<Variant>,
+) {
+    let p = Palette::new(variant.into(), Backdrop::default());
+    if do_not_disturb {
+        scene.push_opacity(OFF_OPACITY);
+    }
+    bell(
+        scene,
+        rect + Vec2::new(0.0, LABEL_EMBOSS_OFFSET),
+        p.label_shadow,
+    );
+    bell(scene, rect, p.label);
+    if do_not_disturb {
         scene.pop_layer();
     }
 }

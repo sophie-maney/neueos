@@ -1156,6 +1156,12 @@ pub mod menu_bar {
     pub const NETWORK_HEIGHT: f64 = 13.0;
     /// Stroke width of the Wi-Fi arcs and the wired chevrons.
     pub const NETWORK_STROKE: f64 = 1.5;
+    /// Width of the notifications extra's icon: the bell.
+    pub const NOTIFICATIONS_WIDTH: f64 = 13.0;
+    /// Height of the notifications extra's icon.
+    pub const NOTIFICATIONS_HEIGHT: f64 = 13.0;
+    /// Stroke width of the bell's rim and clapper.
+    pub const NOTIFICATIONS_STROKE: f64 = 1.4;
     /// Width of the volume icon's box: the speaker and its three waves.
     pub const VOLUME_WIDTH: f64 = 18.0;
     /// Height of the volume icon's box.

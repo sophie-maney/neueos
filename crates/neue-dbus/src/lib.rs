@@ -14,6 +14,8 @@
 //! - [`mpris`]: media players, for the media keys (task 3.14d).
 //! - [`notifications`]: the `org.freedesktop.Notifications` server, owned by the shell
 //!   (task 3.15a).
+//! - [`settings`]: the client of `neue-settingsd`, for the notifications extra's Do Not Disturb
+//!   toggle (task 3.15d4).
 //! - [`status_notifier`]: the StatusNotifierItem tray protocol: watcher, host and item client
 //!   (task 3.13a).
 //!
@@ -33,6 +35,7 @@ pub mod network;
 pub mod notifications;
 pub mod power;
 pub mod registrar;
+pub mod settings;
 pub mod status_notifier;
 pub mod testing;
 
@@ -50,6 +53,7 @@ pub use menu::{Layout, MENU_ROOT, MenuExport, MenuIcon, MenuNode, NodeKind, Togg
 pub use menu_client::{MenuChanged, MenuClient, MenuSignals};
 pub use notifications::Notifications;
 pub use registrar::Registrar;
+pub use settings::Settings;
 pub use status_notifier::{Host, HostEvent, ItemInfo, StatusItem, Watcher};
 
 /// Connects to the session bus, ready for [`MenuExport`]s.
