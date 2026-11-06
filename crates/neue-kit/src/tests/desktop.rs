@@ -69,7 +69,8 @@ impl Application for MiniShell {
             ShellEvent::Active(id) => self.active = id,
             ShellEvent::ActionFailed { .. }
             | ShellEvent::FocusMenuBar { .. }
-            | ShellEvent::SystemKey { .. } => {}
+            | ShellEvent::SystemKey { .. }
+            | ShellEvent::Thumbnail(..) => {}
         }
     }
 }

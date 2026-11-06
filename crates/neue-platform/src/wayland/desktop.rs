@@ -93,6 +93,13 @@ impl Desktop {
             .find_map(|(output, oid)| (*oid == id).then_some(output))
     }
 
+    /// The identifier (`window-N`) of `id`, if it's still open.
+    pub(super) fn identifier(&self, id: ToplevelId) -> Option<&str> {
+        self.toplevels
+            .values()
+            .find_map(|t| (t.id == id).then_some(t.current.identifier.as_str()))
+    }
+
     fn proxy(&self, id: ToplevelId) -> Option<&NeueShellToplevelV1> {
         self.toplevels
             .values()
@@ -149,6 +156,8 @@ impl Desktop {
                 let (x, y, w, h) = rect.unwrap_or_default();
                 window(toplevel).map(|proxy| proxy.set_minimize_rectangle(wl, x, y, w, h))
             }
+            // Window captures (`State::thumbnail_request`), not this protocol.
+            ShellRequest::Thumbnail { .. } => None,
         };
     }
 }
@@ -288,6 +297,10 @@ impl State {
     /// Sends the shell requests the app queued.
     pub(super) fn send_shell_requests(&mut self) {
         for request in std::mem::take(&mut self.reg.shell_requests) {
+            if let ShellRequest::Thumbnail { toplevel, max_side } = request {
+                self.thumbnail_request(toplevel, max_side);
+                continue;
+            }
             let windows = &self.reg.windows;
             self.desktop
                 .send(request, &self.qh, |id| windows.get(&id).map(|w| &w.surf.wl));
@@ -424,6 +437,7 @@ impl Dispatch2<NeueShellToplevelV1, State> for ShellToplevelData {
         if let Event::Closed = event {
             if let Some(t) = state.desktop.toplevels.remove(&key) {
                 t.proxy.destroy();
+                state.forget_thumbnail(t.id);
                 if t.announced {
                     state.events.push(AppEvent::Shell(ShellEvent::Closed(t.id)));
                 }

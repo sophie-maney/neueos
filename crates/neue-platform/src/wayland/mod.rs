@@ -23,6 +23,7 @@
 
 mod access;
 mod blur;
+mod capture;
 mod clipboard;
 mod desktop;
 mod handle;
@@ -169,6 +170,8 @@ pub fn run_with_connection(
     ));
     let reg = Registry::new(waker);
     let g = Globals::bind(&globals, &qh, &reg.blur)?;
+    let desktop = desktop::Desktop::bind(&globals, &qh);
+    let captures = capture::Captures::bind(&globals, &qh, desktop.has_shell());
     let mut state = State {
         reg,
         events: Vec::new(),
@@ -187,7 +190,8 @@ pub fn run_with_connection(
         registry: RegistryState::new(&globals),
         seats: SeatState::new(&globals, &qh),
         outputs: OutputState::new(&globals, &qh),
-        desktop: desktop::Desktop::bind(&globals, &qh),
+        desktop,
+        captures,
         input: seat::Input::default(),
         loop_handle: event_loop.handle(),
         qh,
@@ -618,6 +622,8 @@ struct State {
     outputs: OutputState,
     /// Outputs as the app knows them, and `neue_shell_v1`.
     desktop: desktop::Desktop,
+    /// Window thumbnails for the shell.
+    captures: capture::Captures,
     input: seat::Input,
     clipboard: Clipboard,
     access_tx: Sender<(WindowId, AccessEvent)>,

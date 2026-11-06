@@ -5,7 +5,7 @@
 //! renders, so commands are replayed without a root scale. Procedural textures are still
 //! generated at the device scale (`PaintCtx::scale_factor`) so they stay sharp.
 
-use std::collections::HashMap;
+use std::collections::{HashMap, HashSet};
 
 use imaging::record::Glyph;
 use imaging::{BlurredRoundedRect, Brush, ClipRef, Composite, GroupRef, ImageBrush, Painter};
@@ -22,12 +22,22 @@ pub struct ImagingReplayer {
     /// Texture tiles per `(cache_key, scale bits)`. `ImageData` shares its pixels, and the
     /// stable blob id lets backends cache the upload too.
     textures: HashMap<(u64, u64), ImageData>,
+    /// Textures used since the last [`ImagingReplayer::evict_unused`].
+    used: HashSet<(u64, u64)>,
 }
 
 impl ImagingReplayer {
     /// A replayer with an empty texture cache.
     pub fn new() -> Self {
         Self::default()
+    }
+
+    /// Drops the cached textures not used since the last call. For a widget that replays
+    /// everything it draws each paint, calling this after each keeps the cache to what it
+    /// shows (textures that change, like window thumbnails, would otherwise pile up).
+    pub fn evict_unused(&mut self) {
+        let used = std::mem::take(&mut self.used);
+        self.textures.retain(|key, _| used.contains(key));
     }
 
     /// Replay `scene` into `painter`. Coordinates stay logical; `scale` is the device scale
@@ -150,6 +160,7 @@ impl ImagingReplayer {
     /// The cached tile of `texture` at `scale`, rendering it on first use.
     fn texture(&mut self, texture: &TextureBrush, scale: f64) -> ImageData {
         let key = (texture.texture.cache_key(), scale.to_bits());
+        self.used.insert(key);
         self.textures
             .entry(key)
             .or_insert_with(|| {
@@ -191,5 +202,23 @@ mod tests {
             replayer.replay(&scene, scale, &mut Painter::new(&mut recorded));
         }
         assert_eq!(replayer.textures.len(), 2);
+    }
+
+    #[test]
+    fn evicting_keeps_only_what_was_drawn_since() {
+        let scene = demo::sheet(Appearance::Dark);
+        let mut replayer = ImagingReplayer::new();
+        for scale in [1.0, 2.0] {
+            let mut recorded = record::Scene::new();
+            replayer.replay(&scene, scale, &mut Painter::new(&mut recorded));
+        }
+        replayer.evict_unused();
+        assert_eq!(replayer.textures.len(), 2);
+        let mut recorded = record::Scene::new();
+        replayer.replay(&scene, 2.0, &mut Painter::new(&mut recorded));
+        replayer.evict_unused();
+        assert_eq!(replayer.textures.len(), 1);
+        replayer.evict_unused();
+        assert!(replayer.textures.is_empty());
     }
 }
