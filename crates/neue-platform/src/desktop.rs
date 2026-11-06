@@ -208,4 +208,13 @@ pub enum ShellRequest {
         modifiers: ChordModifiers,
         keysym: u32,
     },
+    /// Where `toplevel` minimises to and restores from: `rect` (x, y, width, height in
+    /// logical pixels) on the layer surface of the app's window `surface`, the dock tile of
+    /// its app. It follows the surface when that moves. `None` unsets it. Dropped when
+    /// `surface` isn't open.
+    SetMinimizeRectangle {
+        toplevel: ToplevelId,
+        surface: crate::WindowId,
+        rect: Option<(i32, i32, i32, i32)>,
+    },
 }

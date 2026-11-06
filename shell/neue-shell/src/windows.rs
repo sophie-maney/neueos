@@ -43,6 +43,11 @@ impl Windows {
         self.windows.get(&self.active?)
     }
 
+    /// Every window, by id (the order they opened in: ids grow).
+    pub fn iter(&self) -> impl Iterator<Item = (ToplevelId, &Toplevel)> {
+        self.windows.iter().map(|(id, w)| (*id, w))
+    }
+
     /// The active window's id.
     pub fn active_id(&self) -> Option<ToplevelId> {
         self.active

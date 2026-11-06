@@ -205,6 +205,10 @@ pub struct LayerSpec {
     /// on an axis anchored to both edges the compositor still stretches the surface.
     /// Wayland only: the winit driver ignores it.
     pub fit_content: bool,
+    /// With `fit_content`: logical pixels at the top of the content that the pointer
+    /// passes through, for content that now and then reaches up out of its place (the
+    /// dock's icons bounce into it). 0 by default.
+    pub pass_through_top: u32,
 }
 
 impl LayerSpec {
@@ -221,6 +225,7 @@ impl LayerSpec {
             output: None,
             pointer: true,
             fit_content: false,
+            pass_through_top: 0,
         }
     }
 }

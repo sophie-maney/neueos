@@ -289,6 +289,12 @@ fn shell(handles: &mut PageHandles) -> Element<Message> {
                 .with(specimens::shell_osd(OsdGlyph::Keyboard, 0.5)),
         ))
         .with(section(
+            "Dock: an app running (the light under it), one asking for attention (it bounces; with Motion reduced it stands raised), one without an icon, and one not running · click a tile or Tab to it and press Space · the status line shows the tile",
+            Stack::column().with(specimens::shell_dock(|key| {
+                Some(Message::Pressed(dock_key(key)))
+            })),
+        ))
+        .with(section(
             "Notifications: a banner (point at it for its close button), a banner with an image, and an alert with two actions · Tab reaches each button, Space or Return activates, Escape closes · the status line shows what you did",
             Stack::column()
                 .with(specimens::shell_banner(notification_event))
@@ -310,6 +316,16 @@ fn shell(handles: &mut PageHandles) -> Element<Message> {
 }
 
 /// The status line's word for what was done to a notification (hovering isn't shown).
+/// The status line's name for a click on dock tile `key`.
+fn dock_key(key: &str) -> &'static str {
+    match key {
+        "Sample" => "Dock: Sample",
+        "Chat" => "Dock: Chat",
+        "No Icon" => "Dock: No Icon",
+        _ => "Dock: Idle",
+    }
+}
+
 fn notification_event(event: neue_kit::desktop::NotificationEvent) -> Option<Message> {
     use neue_kit::desktop::NotificationEvent::{Action, Activated, Closed, Hovered};
     Some(Message::Pressed(match event {

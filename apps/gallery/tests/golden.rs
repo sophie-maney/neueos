@@ -14,10 +14,10 @@ use neue_gallery::specimens::{
     self, BEVEL_SIZE, CALENDAR_SIZE, CHROME_SIZE, COLLECTION_SIZE, COLOR_PANEL_SIZE,
     COLOR_WELL_SIZE, COMBO_SIZE, DATE_SIZE, FIELD_SIZE, ICONS_SIZE, MENU_SIZE, OUTLINE_SIZE,
     PATH_SIZE, POPOVER_SIZE, POPUP_SIZE, PROGRESS_SIZE, PULL_DOWN_SIZE, PUSH_BUTTON_SIZE,
-    SCROLL_SIZE, SEGMENTED_SIZE, SHELL_BAR_SIZE, SHELL_DESKTOP_SIZE, SHELL_EXTRAS_SIZE,
-    SHELL_NOTIFICATION_SIZE, SHELL_NOTIFICATION_STACK_SIZE, SHELL_OSD_SIZE, SHELL_TRAY_SIZE,
-    SIDEBAR_SIZE, SLIDER_SIZE, SPINNER_SIZE, SPLIT_SIZE, STEPPER_SIZE, SUBMENU_SIZE, TABLE_SIZE,
-    TABS_SIZE, TEXT_VIEW_SIZE, TOGGLE_SIZE,
+    SCROLL_SIZE, SEGMENTED_SIZE, SHELL_BAR_SIZE, SHELL_DESKTOP_SIZE, SHELL_DOCK_SIZE,
+    SHELL_EXTRAS_SIZE, SHELL_NOTIFICATION_SIZE, SHELL_NOTIFICATION_STACK_SIZE, SHELL_OSD_SIZE,
+    SHELL_TRAY_SIZE, SIDEBAR_SIZE, SLIDER_SIZE, SPINNER_SIZE, SPLIT_SIZE, STEPPER_SIZE,
+    SUBMENU_SIZE, TABLE_SIZE, TABS_SIZE, TEXT_VIEW_SIZE, TOGGLE_SIZE,
 };
 use neue_kit::testing::{
     self, DISABLED, FOCUSED, Fixture, Goldens, INACTIVE, NORMAL, NavKey, PRESSED, State,
@@ -43,6 +43,11 @@ const SCROLLER_HOVERED: State = ("scroller-hovered", |f: &mut Fixture| {
     f.scroll(0.0, -60.0);
     f.hover_at(0.95, 0.5);
     f.advance(Duration::from_secs(1));
+});
+
+/// A dock icon asking for attention 150 ms into its bounce.
+const BOUNCING: State = ("bouncing", |f: &mut Fixture| {
+    f.advance(Duration::from_millis(150))
 });
 
 /// The default button at the brightest point of its pulse.
@@ -403,6 +408,11 @@ control_goldens! {
     shell_osd_microphone: "shell-osd-microphone", SHELL_OSD_SIZE, &[NORMAL], specimens::shell_osd(neue_kit::desktop::OsdGlyph::Microphone, 0.75);
     shell_osd_microphone_muted: "shell-osd-microphone-muted", SHELL_OSD_SIZE, &[NORMAL], specimens::shell_osd(neue_kit::desktop::OsdGlyph::MicrophoneMuted, 0.75);
     shell_osd_keyboard: "shell-osd-keyboard", SHELL_OSD_SIZE, &[NORMAL], specimens::shell_osd(neue_kit::desktop::OsdGlyph::Keyboard, 0.5);
+
+    // The dock (3.16): four tiles on the glass shelf, reflected in it: running (the light
+    // under it), asking for attention, without an icon (running) and not running; the
+    // attention tile mid-bounce.
+    shell_dock: "shell-dock", SHELL_DOCK_SIZE, &[NORMAL, BOUNCING], specimens::shell_dock::<()>(|_| None);
 
     // Notifications (3.15b): a banner at rest, with the pointer on its close button and
     // with keyboard focus; a banner with an image; an alert with two actions, at rest and

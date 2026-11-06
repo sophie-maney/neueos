@@ -23,6 +23,7 @@ mod colors;
 mod controls;
 mod dates;
 mod desktop;
+mod dock;
 mod editmenu;
 mod fields;
 mod grid;

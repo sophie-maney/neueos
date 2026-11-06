@@ -1,6 +1,6 @@
 [package]
 name = "neue-shell"
-description = "neueOS's desktop shell: the menu bar on every output (and later the dock, notifications and more)"
+description = "neueOS's desktop shell: the menu bar on every output, the dock, notifications and more"
 version.workspace = true
 edition.workspace = true
 rust-version.workspace = true

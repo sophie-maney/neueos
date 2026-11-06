@@ -1255,7 +1255,7 @@ pub mod menu_bar {
 /// The dock shelf: translucent glass, seen in perspective or flat.
 pub mod dock_shelf {
     use super::{Backdrop, on_backdrop};
-    use crate::{Appearance, Color, Variant, black, rgba, white};
+    use crate::{Appearance, Color, Variant, black, grey, rgba, white};
 
     /// Height of the shelf in perspective.
     pub const DEPTH: f64 = 24.0;
@@ -1268,6 +1268,15 @@ pub mod dock_shelf {
     pub const EDGE: f64 = 1.0;
     /// Share of the shelf's height that the sheen covers, from its far edge.
     pub const SHEEN_HEIGHT: f64 = 0.45;
+    /// How much a reflection is squashed: the glass is seen at a slant, so an icon's
+    /// mirror image is this share of its height.
+    pub const REFLECTION_SCALE: f64 = 0.5;
+    /// The running indicator's core, width and height.
+    pub const INDICATOR: (f64, f64) = (6.0, 3.0);
+    /// How far the indicator's glow reaches past its core (the blur's spread).
+    pub const INDICATOR_GLOW: f64 = 3.0;
+    /// Corner radius of the placeholder tile, as a share of its side.
+    pub const PLACEHOLDER_RADIUS: f64 = 0.22;
 
     /// Colours of the shelf.
     #[derive(Clone, Copy, Debug, PartialEq)]
@@ -1282,6 +1291,13 @@ pub mod dock_shelf {
         pub side_edge: Color,
         /// Line along the near edge, where the glass meets the screen.
         pub bottom_edge: Color,
+        /// Opacity of the icons' reflections in the glass.
+        pub reflection: f32,
+        /// The running indicator: its bright core and the glow around it.
+        pub indicator: [Color; 2],
+        /// The tile shown for an app without an icon: its gradient, top and bottom, and
+        /// its rim.
+        pub placeholder: [Color; 3],
     }
 
     impl Palette {
@@ -1302,6 +1318,12 @@ pub mod dock_shelf {
                     top_edge: white(0.70 + edge_boost),
                     side_edge: white(0.45 + edge_boost),
                     bottom_edge: black(0.22 + edge_boost),
+                    reflection: if contrast { 0.0 } else { 0.30 },
+                    indicator: [
+                        rgba(0.92, 0.98, 1.0, 1.0),
+                        rgba(0.30, 0.72, 1.0, if contrast { 1.0 } else { 0.85 }),
+                    ],
+                    placeholder: [grey(0.94), grey(0.76), black(0.30 + edge_boost)],
                 },
                 Appearance::Dark => Self {
                     fill: on_backdrop(
@@ -1313,10 +1335,57 @@ pub mod dock_shelf {
                     top_edge: white(0.32 + edge_boost),
                     side_edge: white(0.20 + edge_boost),
                     bottom_edge: black(0.60 + edge_boost),
+                    reflection: if contrast { 0.0 } else { 0.40 },
+                    indicator: [
+                        rgba(0.86, 0.95, 1.0, 1.0),
+                        rgba(0.36, 0.70, 1.0, if contrast { 1.0 } else { 0.75 }),
+                    ],
+                    placeholder: [grey(0.58), grey(0.40), black(0.55 + edge_boost)],
                 },
             }
         }
     }
+}
+
+/// The dock (task 3.16): its tiles on the shelf, and how they bounce. Sizes are logical
+/// pixels on the bottom edge.
+pub mod dock {
+    use std::time::Duration;
+
+    use crate::Spring;
+
+    /// An app's icon on the dock.
+    pub const ICON: f64 = 48.0;
+    /// Space between two tiles.
+    pub const SPACING: f64 = 4.0;
+    /// Space between the shelf's ends and the first and last tile; at least the shelf's
+    /// perspective inset, so the icons stand inside its far edge.
+    pub const SIDE_PADDING: f64 = 22.0;
+    /// How deep into the shelf an icon's bottom stands, from the shelf's far edge.
+    pub const ICON_BASE: f64 = 6.0;
+    /// How high a bouncing icon jumps.
+    pub const BOUNCE_HEIGHT: f64 = 22.0;
+    /// Room above the icons for the bounce. The pointer passes through it.
+    pub const BOUNCE_ROOM: f64 = 24.0;
+    /// How high an icon asking for attention stands while motion is reduced (it doesn't
+    /// bounce).
+    pub const STILL_LIFT: f64 = 8.0;
+    /// The rise of a bounce: the icon turns back down once it is this share of
+    /// [`BOUNCE_HEIGHT`] up.
+    pub const RISE: Spring = Spring {
+        response: 0.5,
+        damping_ratio: 1.0,
+    };
+    /// Where a rising icon turns back down, as a share of [`BOUNCE_HEIGHT`].
+    pub const RISE_TURN: f64 = 0.9;
+    /// The fall of a bounce, ending when the icon lands on the shelf.
+    pub const FALL: Spring = Spring::BOUNCY;
+    /// The rest between two bounces of an icon asking for attention (a launching icon
+    /// bounces without rest).
+    pub const ATTENTION_REST: Duration = Duration::from_millis(500);
+    /// How long an app has to show a window after a launch before its icon stops
+    /// bouncing.
+    pub const LAUNCH_TIMEOUT: Duration = Duration::from_secs(10);
 }
 
 /// The dark HUD panel: volume and brightness indicators, HUD windows.

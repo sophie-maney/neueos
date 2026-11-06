@@ -5,6 +5,8 @@
 #[cfg(target_os = "linux")]
 mod appearance;
 #[cfg(target_os = "linux")]
+mod dock_host;
+#[cfg(target_os = "linux")]
 mod extras;
 #[cfg(target_os = "linux")]
 mod global_menu;

@@ -264,6 +264,21 @@ x ≈ 968, y ≈ 66 for the topmost; `ydotool mousemove --absolute` lands at twi
 Move the pointer away and back for hovering: a banner that appears under a still pointer
 gets no enter event.
 
+### 1.6h The dock
+The dock sits at the bottom centre of the first output, one 48 px tile per app 4 px apart
+(foot, pinned by default, is the first). At 1024×768 with one tile its icon is at
+x 488–536, y 702–750: `ydotool mousemove --absolute -x 255 -y 363` lands on it (§1.7).
+Pin other apps with `[dock] pinned = ["foot", "org.gnome.Nautilus.desktop"]` in
+`~/.config/neueos/shell.toml` (read when the shell starts). An attention bounce, from
+foot's system bell while it is not focused, and the minimise rectangles in the
+compositor's log (`RUST_LOG=…,neue_comp::neue_shell=debug`):
+```sh
+ssh neueos-vm '. ~/neueos/docs/vm-env.sh; export YDOTOOL_SOCKET=/tmp/.ydotool_socket
+  ydotool type "sleep 2; tput bel"; ydotool key 28:1 28:0
+  ydotool mousemove --absolute -x 50 -y 300; ydotool mousemove -x 1 -y 0; ydotool click 0xC0
+  sleep 2.3; neuectl screenshot /tmp/bounce.png; grep "minimise rectangle" /tmp/comp.log | tail -3'
+```
+
 ### 1.7 Known quirks
 - `ydotool mousemove --absolute` lands at twice the coordinates. Relative moves are 1:1.
 - Nested (winit) backend: after the pointer jumps into the window, send one relative move

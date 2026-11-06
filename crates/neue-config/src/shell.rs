@@ -1,5 +1,5 @@
-//! `shell.toml`: settings of `neue-shell` (task 3.2c; notifications, task 3.15a). The menu bar, dock and the rest join
-//! this file with their tasks.
+//! `shell.toml`: settings of `neue-shell` (task 3.2c; notifications, task 3.15a; the dock,
+//! task 3.16). The menu bar and the rest join this file with their tasks.
 
 use std::path::PathBuf;
 
@@ -16,6 +16,27 @@ pub struct ShellConfig {
     pub desktop: DesktopConfig,
     /// `[notifications]`: banners and Do Not Disturb.
     pub notifications: NotificationsConfig,
+    /// `[dock]`: the apps kept in the dock.
+    pub dock: DockConfig,
+}
+
+/// `[dock]`.
+#[derive(Debug, Clone, PartialEq, Serialize, Deserialize)]
+#[serde(default, rename_all = "kebab-case")]
+pub struct DockConfig {
+    /// The apps kept in the dock, left to right: desktop file IDs
+    /// (`org.gnome.Nautilus.desktop`, the suffix optional) or the app ids of their windows
+    /// (`foot`). Apps that aren't installed are left out. Default: a terminal (`foot`),
+    /// until neueOS's own apps arrive.
+    pub pinned: Vec<String>,
+}
+
+impl Default for DockConfig {
+    fn default() -> Self {
+        Self {
+            pinned: vec!["foot".to_owned()],
+        }
+    }
 }
 
 impl ConfigFile for ShellConfig {
@@ -106,6 +127,22 @@ mod tests {
         assert_eq!(config.notifications.banner_timeout, 8000);
         std::fs::write(&file, "[notifications]\nbanner-timeout = 10\n").unwrap();
         assert!(load::<ShellConfig>(&layers).is_err());
+    }
+
+    #[test]
+    fn the_dock_keeps_a_terminal_unless_told_otherwise() {
+        let config = load::<ShellConfig>(&Layers::none()).unwrap().config;
+        assert_eq!(config.dock.pinned, ["foot"]);
+        let dir = tempfile::tempdir().unwrap();
+        std::fs::write(
+            dir.path().join("shell.toml"),
+            "[dock]\npinned = [\"org.gnome.Nautilus.desktop\", \"foot\"]\n",
+        )
+        .unwrap();
+        let config = load::<ShellConfig>(&Layers::from_dirs([dir.path().to_owned()]))
+            .unwrap()
+            .config;
+        assert_eq!(config.dock.pinned, ["org.gnome.Nautilus.desktop", "foot"]);
     }
 
     #[test]

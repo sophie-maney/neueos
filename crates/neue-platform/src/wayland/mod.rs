@@ -428,6 +428,8 @@ struct ContentSized {
     /// Whether the pointer reaches it ([`LayerSpec::pointer`]); the input region is then
     /// the content's rect.
     pointer: bool,
+    /// The strip at the top the pointer passes through ([`LayerSpec::pass_through_top`]).
+    pass_through_top: u32,
     /// The logical size last asked of the compositor.
     sent: Option<(u32, u32)>,
 }
@@ -704,6 +706,7 @@ impl State {
         let content = match &spec.kind {
             WindowKind::Layer(layer) if layer.fit_content => Some(ContentSized {
                 pointer: layer.pointer,
+                pass_through_top: layer.pass_through_top,
                 sent: None,
             }),
             _ => None,
@@ -997,7 +1000,12 @@ impl State {
                             content.sent = Some(logical);
                             w.free_size = logical;
                             if content.pointer {
-                                set_input_rect(&self.g.compositor, layer.wl_surface(), logical);
+                                set_input_rect(
+                                    &self.g.compositor,
+                                    layer.wl_surface(),
+                                    logical,
+                                    content.pass_through_top,
+                                );
                             }
                             tracing::debug!(%id, ?logical, "layer surface follows its content");
                             layer.set_size(logical.0, logical.1);
@@ -1502,12 +1510,18 @@ fn content_logical(width: u32, height: u32, scale: f64) -> (u32, u32) {
     (px(width), px(height))
 }
 
-/// Makes `size` (logical, from the surface's origin) the surface's input region, with the
-/// next commit.
-fn set_input_rect(compositor: &CompositorState, surface: &wl_surface::WlSurface, size: (u32, u32)) {
+/// Makes `size` (logical, from the surface's origin) less a strip `top` tall at the top the
+/// surface's input region, with the next commit.
+fn set_input_rect(
+    compositor: &CompositorState,
+    surface: &wl_surface::WlSurface,
+    size: (u32, u32),
+    top: u32,
+) {
     match Region::new(compositor) {
         Ok(region) => {
-            region.add(0, 0, size.0 as i32, size.1 as i32);
+            let top = top.min(size.1);
+            region.add(0, top as i32, size.0 as i32, (size.1 - top) as i32);
             surface.set_input_region(Some(region.wl_region()));
         }
         Err(err) => tracing::debug!(%err, "no wl_region for the layer's content"),

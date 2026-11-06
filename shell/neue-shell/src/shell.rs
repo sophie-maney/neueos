@@ -31,6 +31,7 @@ use neue_shell::search::{self, Entry};
 use neue_shell::windows::Windows;
 
 use crate::appearance;
+use crate::dock_host::{self, DockHost};
 use crate::extras;
 use crate::global_menu::{self, Address, Input, MenuEvent, Menus};
 use crate::notify::{self, Notifier};
@@ -103,6 +104,8 @@ enum Message {
     Osd(osd::Event),
     /// The notification server, the banners and their timers (task 3.15d3).
     Notify(notify::Event),
+    /// The dock's surface, clicks, icons and launches (task 3.16).
+    Dock(dock_host::Event),
     /// The configured picture was decoded, or why not.
     Picture(Result<(Picture, Fit), String>),
     /// `appearance.toml` changed.
@@ -254,6 +257,7 @@ struct Shell {
     keys: osd::Keys,
     /// The notification server and its banners.
     notifications: Notifier<Message>,
+    dock: DockHost<Message>,
 }
 
 /// The global menu as the UI thread keeps it.
@@ -326,6 +330,7 @@ impl Shell {
             tray: Tray::default(),
             keys: osd::Keys::default(),
             notifications: Notifier::new(Message::Notify),
+            dock: DockHost::new(Message::Dock),
         }
     }
 
@@ -1158,6 +1163,8 @@ impl Application for Shell {
         for output in cx.outputs() {
             self.open_background(cx, output.id);
             self.open_bar(cx, output.id);
+            // On the first output; a no-op for the others.
+            self.dock.open(cx, output.id);
         }
         self.load_picture(cx);
         self.watch_appearance(cx);
@@ -1204,6 +1211,7 @@ impl Application for Shell {
             }
             Message::Apps(apps) => {
                 self.apps = apps;
+                self.dock.sync(cx, &self.windows, &self.apps);
                 if self.set_fallback() {
                     self.refresh(cx);
                 }
@@ -1293,6 +1301,7 @@ impl Application for Shell {
                 }
             }
             Message::Notify(event) => self.notifications.event(cx, event),
+            Message::Dock(event) => self.dock.event(cx, event, &self.windows, &self.apps),
             Message::Volume(command) => self.keys.volume_command(command),
             Message::Picture(Ok((picture, fit))) => {
                 for background in self.backgrounds.values() {
@@ -1313,6 +1322,7 @@ impl Application for Shell {
             OutputEvent::Added(info) => {
                 self.open_background(cx, info.id);
                 self.open_bar(cx, info.id);
+                self.dock.open(cx, info.id);
             }
             // The layer surface follows the output's size on its own.
             OutputEvent::Changed(_) => {}
@@ -1323,6 +1333,8 @@ impl Application for Shell {
                 if let Some(bar) = self.bars.remove(&id) {
                     cx.close_window(bar.window);
                 }
+                let next = cx.outputs().into_iter().map(|o| o.id).find(|&o| o != id);
+                self.dock.output_removed(cx, id, next);
             }
         }
     }
@@ -1349,6 +1361,7 @@ impl Application for Shell {
             return;
         }
         self.windows.apply(event);
+        self.dock.sync(cx, &self.windows, &self.apps);
         self.app_changed(cx);
         self.follow_menus(cx);
     }
