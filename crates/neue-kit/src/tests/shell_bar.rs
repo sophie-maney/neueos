@@ -2,7 +2,8 @@
 //! a title's menu opening below it, choosing, the keyboard, and changing a title; the
 //! active app's menus being replaced, and their open and close messages (3.7a); moving
 //! between menus by pointing and with Left and Right, and opening the first menu from the
-//! keyboard (3.7b); and icon extras that change and hide (3.11b).
+//! keyboard (3.7b); icon extras that change and hide (3.11b); and the tray's status icons
+//! that come and go, read their tooltip and give way to the titles (3.13b).
 
 use masonry_core::accesskit::{Action, Role};
 use masonry_core::core::PointerButton;
@@ -34,6 +35,29 @@ enum Msg {
     SetNetwork(ExtraIcon, &'static str),
     /// Script: the Bluetooth extra hides or shows.
     HideBluetooth(bool),
+    /// Script: the tray's icons become these (name, tooltip, picture side in pixels).
+    SetTray(Vec<TrayItem>),
+    /// Script: tray icon `n` hides or shows.
+    HideTray(usize, bool),
+    /// Script: tray icon `n` changes its name and its tooltip.
+    RenameTray(usize, &'static str, Option<String>),
+}
+
+/// A status icon's name, tooltip and picture side.
+type TrayItem = (&'static str, &'static str, u32);
+
+/// A tray icon named `name` with `tooltip`, a grey square of `side` pixels, and a menu with
+/// one item, `name item`.
+fn tray_item(name: &'static str, tooltip: &'static str, side: u32) -> MenuTitle<Msg> {
+    let item: &'static str = Box::leak(format!("{name} item").into_boxed_str());
+    let rgba = vec![160; (side * side * 4) as usize];
+    let icon = ExtraIcon::pixmap(side, side, &rgba).expect("a valid picture");
+    MenuTitle::icon(
+        icon,
+        name,
+        Menu::new().with(MenuItem::new(item).on_choose(Msg::Item(item))),
+    )
+    .description(tooltip)
 }
 
 /// An app menu titled `name`, with an item `name item`, reporting opening and closing.
@@ -58,6 +82,7 @@ struct Bar {
     battery: Handle<MenuTitle<Msg>>,
     network: Handle<MenuTitle<Msg>>,
     bluetooth: Handle<MenuTitle<Msg>>,
+    tray: Vec<Handle<MenuTitle<Msg>>>,
     log: Vec<Msg>,
 }
 
@@ -128,7 +153,15 @@ impl Application for Bar {
                 )
                 .hidden(true)
                 .bind(&mut self.bluetooth),
-            )
+            );
+        // Two status icons, of other sizes than the tray's: the first is rightmost.
+        self.tray = vec![Handle::default(), Handle::default()];
+        let [first, second] = &mut self.tray[..] else {
+            unreachable!("two handles");
+        };
+        let bar = bar
+            .with_tray(tray_item("Chat", "Chat: 2 unread", 24).bind(first))
+            .with_tray(tray_item("Sync", "Sync: idle", 48).bind(second))
             .bind(&mut self.bar);
         // The bar is the surface's root, as in the shell; the window is taller so that the
         // menus fit in the fake host.
@@ -143,6 +176,23 @@ impl Application for Bar {
             Msg::SetBattery(icon, name) => self.battery.set_icon(cx, icon, name),
             Msg::SetNetwork(icon, name) => self.network.set_icon(cx, icon, name),
             Msg::HideBluetooth(hidden) => self.bluetooth.set_hidden(cx, hidden),
+            Msg::SetTray(items) => {
+                self.tray = vec![Handle::default(); items.len()];
+                let titles = items
+                    .into_iter()
+                    .zip(&mut self.tray)
+                    .map(|((name, tooltip, side), handle)| {
+                        tray_item(name, tooltip, side).bind(handle)
+                    })
+                    .collect();
+                self.bar.set_tray(cx, titles);
+            }
+            Msg::HideTray(n, hidden) => self.tray[n].set_hidden(cx, hidden),
+            Msg::RenameTray(n, name, tooltip) => {
+                let icon = ExtraIcon::pixmap(1, 1, &[0, 0, 0, 255]).expect("a valid picture");
+                self.tray[n].set_icon(cx, icon, name);
+                self.tray[n].set_description(cx, tooltip);
+            }
             Msg::SetMenus(names) => {
                 self.bar
                     .set_menus(cx, names.into_iter().map(app_menu).collect());
@@ -325,8 +375,8 @@ fn app_menus_are_replaced_whole() {
     assert!(title(&mut host, "Window").is_none());
     assert_eq!(
         find(&mut host, Role::MenuItem, None).len(),
-        6,
-        "logo, app, clock, battery, network and the hidden Bluetooth"
+        8,
+        "logo, app, clock, battery, network, the hidden Bluetooth and the two tray icons"
     );
 }
 
@@ -617,4 +667,175 @@ fn network_items_show_and_read_their_signal() {
     assert_eq!(described("Cafe").as_deref(), Some("good signal"));
     click_item(&mut runner, &mut host, "Cafe");
     assert_eq!(runner.app().log, [Msg::Item("Cafe")]);
+}
+
+/// The description of the node labelled `label`.
+fn description(host: &mut FakeHost, label: &str) -> Option<String> {
+    let harness = host.only();
+    let _ = harness.render();
+    let state = harness.access_tree().state();
+    let mut stack = vec![state.root()];
+    while let Some(node) = stack.pop() {
+        if node.role() == Role::MenuItem && node.label().as_deref() == Some(label) {
+            return node.data().description().map(str::to_owned);
+        }
+        stack.extend(node.children());
+    }
+    panic!("no title {label:?}");
+}
+
+#[test]
+fn tray_icons_sit_left_of_the_extras_one_size_whatever_their_picture() {
+    use neue_theme::materials::menu_bar::TRAY_ICON_SIZE;
+    let (runner, mut host) = setup();
+    let network = bounds_of(&mut host, id(&runner.app().network));
+    let chat = bounds_of(&mut host, id(&runner.app().tray[0]));
+    let sync = bounds_of(&mut host, id(&runner.app().tray[1]));
+    // The first icon is rightmost, left of the Bluetooth extra (hidden here) and the
+    // network one; they abut.
+    assert!((chat.x1 - network.x0).abs() < 0.5, "{chat:?} {network:?}");
+    assert!((sync.x1 - chat.x0).abs() < 0.5, "{sync:?} {chat:?}");
+    // A 24 px and a 48 px picture are fitted to the tray's size.
+    for icon in [chat, sync] {
+        assert!((icon.width() - (TRAY_ICON_SIZE + PADDING).ceil()).abs() < 0.5);
+        assert!((icon.height() - HEIGHT).abs() < 0.5);
+    }
+}
+
+#[test]
+fn tray_icons_come_and_go_without_the_bar_being_rebuilt() {
+    let (mut runner, mut host) = setup();
+    let bar = id(&runner.app().bar);
+    let app = bounds_of(&mut host, id(&runner.app().app));
+    runner.send(
+        &mut host,
+        Msg::SetTray(vec![("Mail", "", 16), ("Chat", "", 16), ("VPN", "", 16)]),
+    );
+    let _ = host.only().render();
+    assert_eq!(id(&runner.app().bar), bar);
+    assert_eq!(find(&mut host, Role::MenuBar, None).len(), 1);
+    assert!(title(&mut host, "Sync").is_none(), "the old icons are gone");
+    let (mail, chat, vpn) = (
+        title(&mut host, "Mail").unwrap(),
+        title(&mut host, "Chat").unwrap(),
+        title(&mut host, "VPN").unwrap(),
+    );
+    assert!(
+        mail.x0 > chat.x0 && chat.x0 > vpn.x0,
+        "the first is rightmost"
+    );
+    // The rest of the bar stayed where it was.
+    assert_eq!(bounds_of(&mut host, id(&runner.app().app)), app);
+
+    // A new icon's menu acts.
+    let vpn_id = id(&runner.app().tray[2]);
+    click_widget(&mut runner, &mut host, vpn_id);
+    assert_eq!(menus_open(&mut host), 1);
+    click_item(&mut runner, &mut host, "VPN item");
+    assert_eq!(runner.app().log, [Msg::Item("VPN item")]);
+
+    runner.send(&mut host, Msg::SetTray(Vec::new()));
+    let _ = host.only().render();
+    assert!(title(&mut host, "Mail").is_none() && title(&mut host, "VPN").is_none());
+}
+
+#[test]
+fn the_tooltip_is_the_description_and_icons_change_in_place() {
+    let (mut runner, mut host) = setup();
+    assert_eq!(
+        description(&mut host, "Chat").as_deref(),
+        Some("Chat: 2 unread")
+    );
+    // The name and the tooltip change; the icon stays where it is.
+    let before = bounds_of(&mut host, id(&runner.app().tray[0]));
+    runner.send(
+        &mut host,
+        Msg::RenameTray(0, "Chat, away", Some("Chat: away".to_owned())),
+    );
+    let _ = host.only().render();
+    assert!(title(&mut host, "Chat").is_none());
+    assert_eq!(
+        description(&mut host, "Chat, away").as_deref(),
+        Some("Chat: away")
+    );
+    assert_eq!(bounds_of(&mut host, id(&runner.app().tray[0])), before);
+    runner.send(&mut host, Msg::RenameTray(0, "Chat, away", None));
+    let _ = host.only().render();
+    assert_eq!(description(&mut host, "Chat, away"), None);
+}
+
+#[test]
+fn a_hidden_tray_icon_takes_no_room_until_shown() {
+    let (mut runner, mut host) = setup();
+    let chat = bounds_of(&mut host, id(&runner.app().tray[0]));
+    let sync = bounds_of(&mut host, id(&runner.app().tray[1]));
+    runner.send(&mut host, Msg::HideTray(0, true));
+    let _ = host.only().render();
+    assert!(bounds_of(&mut host, id(&runner.app().tray[0])).width() < 0.5);
+    // The next one moves right to take its place.
+    let moved = bounds_of(&mut host, id(&runner.app().tray[1]));
+    assert!((moved.x1 - chat.x1).abs() < 0.5, "{moved:?} {chat:?}");
+    runner.send(&mut host, Msg::HideTray(0, false));
+    let _ = host.only().render();
+    assert_eq!(bounds_of(&mut host, id(&runner.app().tray[1])), sync);
+}
+
+const MANY: [&str; 16] = [
+    "t0", "t1", "t2", "t3", "t4", "t5", "t6", "t7", "t8", "t9", "t10", "t11", "t12", "t13", "t14",
+    "t15",
+];
+
+#[test]
+fn tray_icons_that_do_not_fit_before_the_titles_are_left_out_last_first() {
+    use neue_theme::materials::menu_bar::TRAY_OVERFLOW_GAP;
+    let (mut runner, mut host) = setup();
+    let files = bounds_of(&mut host, id(&runner.app().app));
+    runner.send(
+        &mut host,
+        Msg::SetTray(MANY.iter().map(|n| (*n, "", 16)).collect()),
+    );
+    let _ = host.only().render();
+    let shown: Vec<_> = MANY
+        .iter()
+        .filter_map(|n| title(&mut host, n).map(|r| (*n, r)))
+        .collect();
+    assert!(
+        !shown.is_empty() && shown.len() < MANY.len(),
+        "{} of {} shown",
+        shown.len(),
+        MANY.len()
+    );
+    // The first ones are kept, and the last one shown keeps clear of the titles.
+    for (i, (name, _)) in shown.iter().enumerate() {
+        assert_eq!(*name, MANY[i]);
+    }
+    let edge = shown.last().unwrap().1.x0;
+    let titles_end = title(&mut host, "Edit").unwrap().x1;
+    assert!(
+        edge >= titles_end + TRAY_OVERFLOW_GAP - 0.5,
+        "{edge} {titles_end}"
+    );
+    assert!(files.x0 < edge);
+    // A stashed icon isn't in the accessibility tree, so nothing can open it.
+    let nodes = find(&mut host, Role::MenuItem, None).len();
+    // Logo, app, Edit, clock, battery, network and the hidden Bluetooth, and the icons shown.
+    assert_eq!(nodes, 7 + shown.len());
+
+    // Fewer icons: all of them show again.
+    runner.send(
+        &mut host,
+        Msg::SetTray(MANY[..3].iter().map(|n| (*n, "", 16)).collect()),
+    );
+    let _ = host.only().render();
+    assert!(MANY[..3].iter().all(|n| title(&mut host, n).is_some()));
+}
+
+#[test]
+fn a_pixmap_icon_needs_exactly_its_pixels() {
+    assert!(matches!(
+        ExtraIcon::pixmap(2, 2, &[255; 16]),
+        Some(ExtraIcon::Image(_))
+    ));
+    assert!(ExtraIcon::pixmap(2, 2, &[255; 15]).is_none());
+    assert!(ExtraIcon::pixmap(0, 2, &[]).is_none());
 }

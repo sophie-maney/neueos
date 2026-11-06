@@ -488,7 +488,7 @@ their goldens and the gallery's "Shell" page run on macOS.
       session bus: the host registers, the mock item is added with its tooltip, pixmap and
       menu, `Activate` reaches it, a menu click turns its status to NeedsAttention (a
       `changed` event), and killing it removes it. Clippy and tests pass on arm64 Linux.
-- [ ] **3.13b Status-icon tray B: the tray area in the bar** · Sonnet. After 3.13a. The kit
+- [x] **3.13b Status-icon tray B: the tray area in the bar** · Sonnet. After 3.13a. The kit
       and `neue_shell::bar`: a dynamic group of extras that can gain and lose items without
       rebuilding the bar, an `ExtraIcon::Image` (a named icon or an RGBA pixmap, one fixed
       size, light and dark treatment), the tooltip as accessible description, `Passive` items
@@ -497,12 +497,26 @@ their goldens and the gallery's "Shell" page run on macOS.
       placement and the overflow policy.
       *Accept:* gallery entry; goldens (states × light/dark × scale 1 and 2); kit and shell
       tests.
+      *Done:* ADR 0085. Kit: `ExtraIcon::Image(Icon)` (16 px, `ExtraIcon::pixmap` from RGBA;
+      `ExtraIcon` is no longer `Copy`), `MenuBar::{with_tray, min_width}`,
+      `Handle<MenuBar>::set_tray`, `MenuTitle::description` and `Handle::set_description`;
+      icons that don't fit before the titles are stashed, newest first. Paint:
+      `materials::menu_bar::image_label` (pictures softened on the dark bar). Theme:
+      `TRAY_ICON_SIZE`, `TRAY_DARK_OPACITY`, `TRAY_OVERFLOW_GAP`. `neue_shell::bar`:
+      `TrayStatus`, `TrayItemView`, `tray_title`, `tray_titles`, `BarContent::tray`,
+      `BarHandles::tray`; `menu_bar` takes a closure for each item's menu (the shell passes an
+      empty one until 3.13c). Goldens: new `shell-tray` (items in each state, a crowded bar,
+      a tray menu open); the existing ones are unchanged. 7 kit, 4 shell and 1 paint tests;
+      gallery Shell page has the tray section. Not checked: a bar in a running session
+      (nothing feeds the tray until 3.13c).
 - [ ] **3.13c Status-icon tray C: shell wiring** · Sonnet. After 3.13a and 3.13b. The shell
       owns the watcher (`Watcher::own`) and runs the host on a worker; the bar follows
       `HostEvent`s; named icons resolve through `neue-desktop`'s icon theme (and the item's
       `IconThemePath`); a click calls `Activate`, or opens the DBusMenu when `ItemIsMenu` is
       set; right click opens the menu (or `ContextMenu` without one); menu items send
-      `clicked` through `cx.spawn`. Addendum to ADR 0084.
+      `clicked` through `cx.spawn`. Addendum to ADR 0084. Needs a kit addition first (ADR 0085
+      §8): a tray title that sends a message on a primary press and opens its menu on a
+      secondary one (today a press opens the menu).
       *Accept:* in the VM a tray app (`mock_sni_item`, then `nm-applet --indicator`) shows, its
       menu opens and its items act (the mock's log shows the calls).
       *Owner:* a real tray app on the PC.

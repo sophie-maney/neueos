@@ -221,6 +221,8 @@ impl Shell {
                 // Shown once the network worker finds a network device.
                 network: None,
                 bluetooth: None,
+                // Filled by the tray's worker (task 3.13c).
+                tray: Vec::new(),
             },
             windows,
             about: None,
@@ -657,6 +659,8 @@ impl Shell {
             Message::System,
             Message::Network,
             Message::Bluetooth,
+            // The items' menus come with the tray's wiring (task 3.13c).
+            |_| neue_kit::Menu::new(),
             &mut handles,
             cx.backdrop(),
         );

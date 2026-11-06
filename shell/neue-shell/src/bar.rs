@@ -1,12 +1,13 @@
 //! The menu bar's pieces (task 3.2b): the logo menu, the active app's name, the app's own
-//! menus (the global menu, task 3.7a), and the clock, battery, network and Bluetooth extras
-//! (tasks 3.11b and 3.12b), put together in a [`MenuBar`]. Portable: the shell builds one per output, and the
+//! menus (the global menu, task 3.7a), the clock, battery, network and Bluetooth extras
+//! (tasks 3.11b and 3.12b) and the status-icon tray (task 3.13b), put together in a
+//! [`MenuBar`]. Portable: the shell builds one per output, and the
 //! gallery's Shell page and the goldens build the same.
 
 use std::time::Duration;
 
 use neue_kit::desktop::{Backdrop, ExtraIcon, MenuBar, MenuTitle, NetworkIcon};
-use neue_kit::{Handle, Menu, MenuItem};
+use neue_kit::{Glyph, Handle, Icon, Menu, MenuItem};
 
 /// What the logo menu offers.
 #[derive(Debug, Clone, Copy, PartialEq, Eq)]
@@ -395,6 +396,94 @@ pub fn bluetooth_menu<M: 'static>(
     menu
 }
 
+/// The state of a status item (StatusNotifier's `Status`).
+#[derive(Debug, Clone, Copy, PartialEq, Eq)]
+pub enum TrayStatus {
+    /// Nothing to show: the item is hidden (apps use it for "idle").
+    Passive,
+    Active,
+    /// Wants attention: shows its attention icon, if it has one.
+    NeedsAttention,
+}
+
+/// A status item as the tray shows it; `neue-dbus`'s `ItemInfo` is mapped to it (task
+/// 3.13c, which resolves icon names to pictures).
+#[derive(Debug, Clone, PartialEq, Eq)]
+pub struct TrayItemView {
+    /// The item's identity (`bus/path`), to match it to its handle across changes.
+    pub id: String,
+    /// Its name, what assistive technologies read first (an app's title).
+    pub title: String,
+    pub status: TrayStatus,
+    /// Its icon; `None` while none could be found (a placeholder shows).
+    pub icon: Option<Icon>,
+    /// The icon for [`TrayStatus::NeedsAttention`].
+    pub attention_icon: Option<Icon>,
+    /// Its tooltip, read as the description. Empty for none.
+    pub tooltip: String,
+}
+
+impl TrayItemView {
+    /// Whether the item has no place in the bar (it is [`TrayStatus::Passive`]).
+    pub fn hidden(&self) -> bool {
+        self.status == TrayStatus::Passive
+    }
+
+    /// The icon to show: the attention icon while the item needs attention (if it has
+    /// one), else its icon, else a placeholder, so that an item with an icon the shell
+    /// couldn't resolve still shows.
+    pub fn shown_icon(&self) -> Icon {
+        let attention = (self.status == TrayStatus::NeedsAttention)
+            .then(|| self.attention_icon.clone())
+            .flatten();
+        attention
+            .or_else(|| self.icon.clone())
+            .unwrap_or_else(|| Icon::from(Glyph::Document))
+    }
+
+    /// What assistive technologies call the item: its title, else its id.
+    fn name(&self) -> &str {
+        if self.title.is_empty() {
+            &self.id
+        } else {
+            &self.title
+        }
+    }
+}
+
+/// The tray's title for `view`, opening `menu`: an image extra named after the item with
+/// the tooltip as its description, hidden while the item is passive.
+pub fn tray_title<M: 'static>(view: &TrayItemView, menu: Menu<M>) -> MenuTitle<M> {
+    let title = MenuTitle::icon(
+        ExtraIcon::Image(view.shown_icon()),
+        view.name().to_owned(),
+        menu,
+    )
+    .hidden(view.hidden());
+    if view.tooltip.is_empty() {
+        title
+    } else {
+        title.description(view.tooltip.clone())
+    }
+}
+
+/// The tray's titles for `items`, in order (the first is rightmost), each opening
+/// `menu(item)`. `handles` gets one handle per title, to change it in place; pass the
+/// titles to [`Handle::set_tray`] when items come and go.
+pub fn tray_titles<M: 'static>(
+    items: &[TrayItemView],
+    menu: impl Fn(&TrayItemView) -> Menu<M>,
+    handles: &mut Vec<Handle<MenuTitle<M>>>,
+) -> Vec<MenuTitle<M>> {
+    handles.clear();
+    handles.resize_with(items.len(), Handle::default);
+    items
+        .iter()
+        .zip(handles.iter_mut())
+        .map(|(item, handle)| tray_title(item, menu(item)).bind(handle))
+        .collect()
+}
+
 /// Handles to the parts of one bar that change.
 #[derive(Debug)]
 pub struct BarHandles<M> {
@@ -410,6 +499,8 @@ pub struct BarHandles<M> {
     pub network: Handle<MenuTitle<M>>,
     /// The Bluetooth extra (hidden without an adapter).
     pub bluetooth: Handle<MenuTitle<M>>,
+    /// The tray's status icons, one per [`BarContent::tray`] item in the same order.
+    pub tray: Vec<Handle<MenuTitle<M>>>,
     /// The Help title, which menu search opens under (unbound when the bar has none).
     pub help: Handle<MenuTitle<M>>,
 }
@@ -423,6 +514,7 @@ impl<M> Default for BarHandles<M> {
             battery: Handle::default(),
             network: Handle::default(),
             bluetooth: Handle::default(),
+            tray: Vec::new(),
             help: Handle::default(),
         }
     }
@@ -443,19 +535,27 @@ pub struct BarContent {
     pub network: Option<NetworkView>,
     /// The Bluetooth extra's state; `None` (no adapter) hides it.
     pub bluetooth: Option<BluetoothView>,
+    /// The tray's status items, left of the other extras (the first is rightmost); more
+    /// can come later through [`Handle::set_tray`] on [`BarHandles::bar`].
+    pub tray: Vec<TrayItemView>,
 }
 
 /// A menu bar showing `content` and the app's `menus` after its name, its logo menu
-/// sending `message(command)`, its network menu `network(command)` and its Bluetooth menu
+/// sending `message(command)`, its network menu `network(command)`, its Bluetooth menu
 /// `bluetooth(command)` (the network menu also sends [`NetworkCommand::Scan`] when it
-/// opens); `handles` are pointed at the parts that change. `backdrop` is translucent when
+/// opens) and each tray item's menu `tray(item)`; `handles` are pointed at the parts that change. `backdrop` is translucent when
 /// the compositor blurs behind the bar (task 3.5).
+#[expect(
+    clippy::too_many_arguments,
+    reason = "one closure for each menu that sends commands; a struct would only rename them"
+)]
 pub fn menu_bar<M: Clone + 'static>(
     content: &BarContent,
     menus: Vec<MenuTitle<M>>,
     message: impl Fn(SystemCommand) -> M + Clone + 'static,
     network: impl Fn(NetworkCommand) -> M + Clone + 'static,
     bluetooth: impl Fn(BluetoothCommand) -> M + Clone + 'static,
+    tray: impl Fn(&TrayItemView) -> Menu<M>,
     handles: &mut BarHandles<M>,
     backdrop: Backdrop,
 ) -> MenuBar<M> {
@@ -487,7 +587,7 @@ pub fn menu_bar<M: Clone + 'static>(
                 .bold(true)
                 .bind(&mut handles.app),
         );
-    menus
+    let bar = menus
         .into_iter()
         .fold(bar, MenuBar::with_menu)
         .with_extra(
@@ -517,7 +617,10 @@ pub fn menu_bar<M: Clone + 'static>(
             )
             .hidden(content.bluetooth.is_none())
             .bind(&mut handles.bluetooth),
-        )
+        );
+    tray_titles(&content.tray, tray, &mut handles.tray)
+        .into_iter()
+        .fold(bar, MenuBar::with_tray)
         .bind(&mut handles.bar)
 }
 
@@ -681,5 +784,65 @@ mod tests {
         assert_eq!(sub(wired(true, true)), ["Disconnect"]);
         assert_eq!(sub(wired(false, true)), ["Connect"]);
         assert_eq!(sub(wired(false, false)), ["Cable Unplugged"]);
+    }
+
+    fn tray_item(status: TrayStatus, icon: bool, attention: bool) -> TrayItemView {
+        let picture = |v: u8| {
+            let ExtraIcon::Image(icon) = ExtraIcon::pixmap(1, 1, &[v, v, v, 255]).unwrap() else {
+                unreachable!("a pixmap is an image");
+            };
+            icon
+        };
+        TrayItemView {
+            id: ":1.7/StatusNotifierItem".to_owned(),
+            title: "Chat".to_owned(),
+            status,
+            icon: icon.then(|| picture(10)),
+            attention_icon: attention.then(|| picture(200)),
+            tooltip: "2 unread".to_owned(),
+        }
+    }
+
+    #[test]
+    fn a_tray_item_shows_its_attention_icon_only_while_it_needs_attention() {
+        let active = tray_item(TrayStatus::Active, true, true);
+        let icon = active.icon.clone().unwrap();
+        assert_eq!(active.shown_icon(), icon, "active: its icon");
+        let needy = tray_item(TrayStatus::NeedsAttention, true, true);
+        assert_eq!(needy.shown_icon(), needy.attention_icon.clone().unwrap());
+        // Without an attention icon it keeps its own.
+        let needy = tray_item(TrayStatus::NeedsAttention, true, false);
+        assert_eq!(needy.shown_icon(), needy.icon.clone().unwrap());
+    }
+
+    #[test]
+    fn a_tray_item_without_an_icon_shows_a_placeholder() {
+        let lost = tray_item(TrayStatus::Active, false, false);
+        assert_eq!(lost.shown_icon(), Icon::from(Glyph::Document));
+    }
+
+    #[test]
+    fn passive_items_are_hidden_and_the_name_falls_back_to_the_id() {
+        assert!(tray_item(TrayStatus::Passive, true, false).hidden());
+        assert!(!tray_item(TrayStatus::Active, true, false).hidden());
+        let mut item = tray_item(TrayStatus::Active, true, false);
+        assert_eq!(item.name(), "Chat");
+        item.title.clear();
+        assert_eq!(item.name(), ":1.7/StatusNotifierItem");
+    }
+
+    #[test]
+    fn tray_titles_come_in_order_one_handle_each() {
+        let items = vec![
+            tray_item(TrayStatus::Active, true, false),
+            tray_item(TrayStatus::Passive, true, false),
+        ];
+        let mut handles = Vec::new();
+        let titles = tray_titles::<()>(&items, |_| Menu::new(), &mut handles);
+        assert_eq!(titles.len(), 2);
+        assert_eq!(handles.len(), 2);
+        // Asking again for fewer items drops the old handles.
+        let titles = tray_titles::<()>(&items[..1], |_| Menu::new(), &mut handles);
+        assert_eq!((titles.len(), handles.len()), (1, 1));
     }
 }

@@ -227,6 +227,10 @@ fn shell(_: &mut PageHandles) -> Element<Message> {
             Stack::column().with(specimens::shell_extras()),
         ))
         .with(section(
+            "Status-icon tray, left of the clock: active, needs attention (its attention icon), passive (hidden), no icon found (placeholder) and a glyph; below, a bar too narrow for all of them leaves out the last",
+            Stack::column().with(specimens::shell_tray(Message::Pressed("Tray"))),
+        ))
+        .with(section(
             "Desktop picture: built-in, and a photo filling and fitting the output",
             Stack::row()
                 .with(specimens::shell_desktop())

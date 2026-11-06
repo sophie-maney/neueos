@@ -15,8 +15,8 @@ use neue_gallery::specimens::{
     COLOR_WELL_SIZE, COMBO_SIZE, DATE_SIZE, FIELD_SIZE, ICONS_SIZE, MENU_SIZE, OUTLINE_SIZE,
     PATH_SIZE, POPOVER_SIZE, POPUP_SIZE, PROGRESS_SIZE, PULL_DOWN_SIZE, PUSH_BUTTON_SIZE,
     SCROLL_SIZE, SEGMENTED_SIZE, SHELL_BAR_SIZE, SHELL_DESKTOP_SIZE, SHELL_EXTRAS_SIZE,
-    SIDEBAR_SIZE, SLIDER_SIZE, SPINNER_SIZE, SPLIT_SIZE, STEPPER_SIZE, SUBMENU_SIZE, TABLE_SIZE,
-    TABS_SIZE, TEXT_VIEW_SIZE, TOGGLE_SIZE,
+    SHELL_TRAY_SIZE, SIDEBAR_SIZE, SLIDER_SIZE, SPINNER_SIZE, SPLIT_SIZE, STEPPER_SIZE,
+    SUBMENU_SIZE, TABLE_SIZE, TABS_SIZE, TEXT_VIEW_SIZE, TOGGLE_SIZE,
 };
 use neue_kit::testing::{
     self, DISABLED, FOCUSED, Fixture, Goldens, INACTIVE, NORMAL, NavKey, PRESSED, State,
@@ -217,6 +217,13 @@ const BLUETOOTH_OPEN: State = ("bluetooth-open", |f: &mut Fixture| {
     f.press_at(1.0 - 179.0 / f64::from(w), 11.0 / f64::from(h));
 });
 
+/// A tray icon (the sync app's, with its attention icon) pressed: its menu opens below it,
+/// the icon highlighted.
+const TRAY_OPEN: State = ("tray-open", |f: &mut Fixture| {
+    let (w, h) = SHELL_TRAY_SIZE;
+    f.press_at(310.0 / f64::from(w), 11.0 / f64::from(h));
+});
+
 const OPEN_BY_KEY: State = ("open-by-key", |f: &mut Fixture| {
     f.focus();
     f.press_key(NavKey::Down);
@@ -371,6 +378,9 @@ control_goldens! {
 
     // The battery, network (3.12b) and Bluetooth extras' icons in each state (3.11b).
     shell_extras: "shell-extras", SHELL_EXTRAS_SIZE, &[NORMAL], specimens::shell_extras();
+
+    // The status-icon tray (3.13b): items in each state, and a bar too narrow for them all.
+    shell_tray: "shell-tray", SHELL_TRAY_SIZE, &[NORMAL, TRAY_OPEN], specimens::shell_tray(());
 
     // The desktop background (3.2c): the built-in picture, and a photo filling the output
     // (cut off at the sides) and fitting inside it (black bars).
