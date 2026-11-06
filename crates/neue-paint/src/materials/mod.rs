@@ -14,6 +14,7 @@ pub mod hud;
 mod linen;
 mod menu;
 pub mod menu_bar;
+pub mod notification;
 pub mod osd;
 mod path_control;
 mod popover;

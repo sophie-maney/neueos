@@ -1,0 +1,56 @@
+# 0090: Notification banners and alerts: one widget with button children, a portable stack model
+
+- **Status:** Accepted
+- **Date:** 2026-11-06
+
+## Context
+Task 3.15b, the second part of notifications (ADR 0089). The shell (3.15d) shows each
+notification as a banner, or as an alert when it has actions or never expires, stacked at
+the top right of the screen under the menu bar. The widget must be portable (gallery,
+goldens on macOS), keyboard operable, and expose its buttons to assistive technology.
+Replacements (`replaces_id`) update a notification in place.
+
+## Decision
+1. **Material.** `neue_paint::materials::notification`, tokens in
+   `neue_theme::materials::notification`: a 340 px panel with 8 px corners, a top-to-bottom
+   grey gradient (light) or charcoal (dark), a rim and top highlight, a soft shadow; the
+   app icon (40 px) or an image in its place with the icon as an 18 px badge; a bold title
+   on one line and the body on at most two, both ending in an ellipsis when cut; an alert
+   has an 84 px column of up to two action buttons split by hairlines; the close button is
+   an 18 px disc over the top left corner. `Parts` computes every rect so the widget, the
+   material and the tests agree. The widget is the panel plus a 14 px margin on every side
+   (shadow and close button), so its height follows the text (at least 60 px of panel).
+2. **One widget, button children.** `neue_kit::desktop::Notification<M>` takes a
+   `NotificationContent` (title, body, app icon, image, action labels) and reports a
+   `NotificationEvent` (`Activated`, `Closed`, `Action(i)`, `Hovered(bool)`) through
+   `on_event`. The close button and `MAX_ACTIONS` (2) action buttons are child widgets, so
+   each is its own AccessKit button and Tab reaches it; unused action buttons are stashed.
+   Because the children always exist, `Handle::set_content` can turn a banner into an
+   alert and back in place, with the message handlers registered once at build time.
+   Further actions are left out (the shell keeps `default` for a click on the panel).
+3. **Input.** A click on the panel (not its margin) is `Activated`; the close button is
+   shown while the pointer is over the panel or while it is focused. The panel takes focus
+   too: Space or Return activate, Escape closes. Hovering is reported once each way so the
+   shell can pause the timeout (`Store::pause`). Access clicks bubbling from a button do
+   not activate the panel.
+4. **Accessibility.** A banner is a `Group`, an alert an `Alert`; the label is the title,
+   the description the body, live polite; the buttons are labelled "Close" and their
+   action's label.
+5. **Stack model.** `neue_kit::desktop::NotificationStack` is plain data stepped by the
+   caller's clock: newest on top sliding in from the right (`SLIDE`, the gentle spring)
+   while the others move down (`SHIFT`, standard); a removed panel slides out and keeps
+   its place until gone, then the ones below close up; pushing an id already there resizes
+   it in place (or brings it back if leaving); reduced motion jumps. It reports
+   `placements()` (x offset, y, height) and `extent()`, the larger of the current and
+   resting height: the size the stack's surface needs. It is in the kit, not the shell, so
+   the widget that hosts the panels can drive it.
+
+## Consequences
+- 3.15d hosts the panels: a container widget applying `NotificationStack` placements on
+  animation frames, in one layer surface per output anchored top right `SCREEN_GAP` from
+  the edge and under the bar's exclusive zone, resized to `extent()`. Resizing a layer
+  surface from the app is not in `neue-kit` yet; 3.15d adds it (or sizes the surface for
+  the most panels it shows).
+- The transparent margin around each panel takes pointer input that lands there; clicks in
+  it do nothing. A future input-region request could pass them through.
+- Body markup and inline replies stay out (ADR 0089 capabilities).

@@ -17,6 +17,7 @@ mod icon;
 mod label;
 mod menu;
 mod menu_bar;
+mod notification;
 mod osd;
 mod outline;
 mod path;
@@ -73,6 +74,8 @@ pub(crate) use label::LabelWidget;
 pub(crate) use menu::{MenuRowWidget, MenuWidget};
 pub use menu_bar::{ExtraIcon, MenuBar, MenuTitle, NetworkIcon};
 pub(crate) use menu_bar::{MenuBarWidget, MenuTitleWidget};
+pub(crate) use notification::{NoteButtonWidget, NotificationWidget};
+pub use notification::{NotificationContent, NotificationEvent};
 pub(crate) use osd::OsdWidget;
 pub use outline::Outline;
 pub use path::PathControl;
@@ -494,6 +497,97 @@ impl Handle<Osd> {
     /// passed.
     pub fn hide<M>(&self, cx: &mut Cx<'_, M>) {
         cx.edit::<OsdWidget, _>(self, |mut osd| OsdWidget::edit_hide(&mut osd));
+    }
+}
+
+/// A notification: a banner (the app's icon or an image, a bold title, the body cut to
+/// two lines, and a close button while the pointer is over it), or an alert when it has
+/// action buttons. It is `tokens::materials::notification::WIDTH` wide plus `MARGIN` on
+/// every side for its shadow and close button; its height follows the text.
+pub struct Notification<M> {
+    inner: NewWidget<NotificationWidget>,
+    on_event: Option<Box<dyn FnMut(NotificationEvent) -> Option<M>>>,
+}
+
+impl<M> std::fmt::Debug for Notification<M> {
+    fn fmt(&self, f: &mut std::fmt::Formatter<'_>) -> std::fmt::Result {
+        f.debug_struct("Notification")
+            .field("inner", &self.inner)
+            .field("on_event", &self.on_event.is_some())
+            .finish()
+    }
+}
+
+impl<M: 'static> Notification<M> {
+    /// Showing `content`.
+    pub fn new(content: NotificationContent) -> Self {
+        Self {
+            inner: NewWidget::new(NotificationWidget::new(content)),
+            on_event: None,
+        }
+    }
+
+    /// [`Backdrop::Translucent`] when the window asked for blur behind it
+    /// ([`crate::Cx::backdrop`]).
+    #[must_use]
+    pub fn backdrop(mut self, backdrop: Backdrop) -> Self {
+        self.inner.widget.backdrop = backdrop;
+        self
+    }
+
+    /// Sends the message `make` returns for what the user does (`None`: nothing).
+    #[must_use]
+    pub fn on_event(mut self, make: impl FnMut(NotificationEvent) -> Option<M> + 'static) -> Self {
+        self.on_event = Some(Box::new(make));
+        self
+    }
+
+    /// Points `handle` at this notification.
+    #[must_use]
+    pub fn bind(self, handle: &mut Handle<Self>) -> Self {
+        *handle = Handle::new(self.inner.id());
+        self
+    }
+}
+
+impl<M: 'static> From<Notification<M>> for Element<M> {
+    fn from(notification: Notification<M>) -> Self {
+        let id = notification.inner.id();
+        let close = notification.inner.widget.close_id();
+        let actions = notification.inner.widget.action_ids();
+        let mut element = Element::new(notification.inner.erased());
+        let Some(make) = notification.on_event else {
+            return element;
+        };
+        // Every handler reaches the one closure.
+        let make = std::rc::Rc::new(std::cell::RefCell::new(make));
+        let shared = std::rc::Rc::clone(&make);
+        element.on_action(id, move |action| {
+            let notification::PanelEvent(event) = *action.downcast_ref()?;
+            (shared.borrow_mut())(event)
+        });
+        let shared = std::rc::Rc::clone(&make);
+        element.on_action(close, move |action| {
+            action.is::<notification::ButtonPressed>().then_some(())?;
+            (shared.borrow_mut())(NotificationEvent::Closed)
+        });
+        for (i, id) in actions.into_iter().enumerate() {
+            let shared = std::rc::Rc::clone(&make);
+            element.on_action(id, move |action| {
+                action.is::<notification::ButtonPressed>().then_some(())?;
+                (shared.borrow_mut())(NotificationEvent::Action(i))
+            });
+        }
+        element
+    }
+}
+
+impl<M> Handle<Notification<M>> {
+    /// Shows `content` in place (a notification replaced by its app).
+    pub fn set_content<N>(&self, cx: &mut Cx<'_, N>, content: NotificationContent) {
+        cx.edit::<NotificationWidget, _>(self, |mut notification| {
+            NotificationWidget::edit_content(&mut notification, content);
+        });
     }
 }
 

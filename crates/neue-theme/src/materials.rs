@@ -1469,6 +1469,158 @@ pub mod osd {
     }
 }
 
+/// Notification banners and alerts (task 3.15b): a light panel (dark in the dark
+/// appearance) with the app's icon, a bold title and up to two lines of body; an alert adds
+/// a column of action buttons on the right. They stack at the top right of the screen,
+/// under the menu bar.
+pub mod notification {
+    use super::{Backdrop, on_backdrop};
+    use crate::{Appearance, Color, Spring, Variant, black, grey, rgba, white};
+
+    /// Width of the panel.
+    pub const WIDTH: f64 = 340.0;
+    /// Corner radius of the panel.
+    pub const RADIUS: f64 = crate::radii::PANEL;
+    /// Rim thickness.
+    pub const RIM: f64 = 1.0;
+    /// Space between the panel's edge and the icon and text.
+    pub const PADDING: f64 = 10.0;
+    /// Side of the square the app icon (or the image) is drawn in.
+    pub const ICON_SIZE: f64 = 40.0;
+    /// Side of the app icon drawn as a badge on an image's bottom right corner.
+    pub const BADGE_SIZE: f64 = 18.0;
+    /// Corner radius of an image.
+    pub const IMAGE_RADIUS: f64 = 4.0;
+    /// Space between the icon and the text.
+    pub const ICON_GAP: f64 = 10.0;
+    /// Space between the title and the body.
+    pub const TITLE_GAP: f64 = 1.0;
+    /// Lines of body text shown; the rest is cut off with an ellipsis.
+    pub const BODY_LINES: usize = 2;
+    /// The shortest panel: the icon and the padding around it.
+    pub const MIN_HEIGHT: f64 = ICON_SIZE + 2.0 * PADDING;
+    /// Width of an alert's column of action buttons.
+    pub const ACTIONS_WIDTH: f64 = 84.0;
+    /// Action buttons an alert shows; further actions are left out.
+    pub const MAX_ACTIONS: usize = 2;
+    /// Space kept clear on either side of an action button's label.
+    pub const ACTION_PADDING: f64 = 6.0;
+    /// Diameter of the close button.
+    pub const CLOSE_SIZE: f64 = 18.0;
+    /// How far inside the panel's top left corner the close button's centre is.
+    pub const CLOSE_INSET: f64 = 4.0;
+    /// How far the drop shadow sits below the panel.
+    pub const SHADOW_OFFSET: f64 = 2.0;
+    /// Blur radius (standard deviation) of the drop shadow.
+    pub const SHADOW_BLUR: f64 = 4.0;
+    /// Room kept around the panel on every side for the shadow and the close button,
+    /// which stands out over the top left corner.
+    pub const MARGIN: f64 = 3.0 * SHADOW_BLUR + SHADOW_OFFSET;
+    /// Space between the screen's right edge (and the menu bar) and the stack of panels.
+    pub const SCREEN_GAP: f64 = 10.0;
+    /// Space between two panels in the stack.
+    pub const SPACING: f64 = 10.0;
+    /// The spring a panel slides in and out on.
+    pub const SLIDE: Spring = Spring::GENTLE;
+    /// The spring the panels below move on when one comes or goes.
+    pub const SHIFT: Spring = Spring::STANDARD;
+
+    /// Colours of a banner or an alert.
+    #[derive(Clone, Copy, Debug, PartialEq)]
+    pub struct Palette {
+        /// Drop shadow.
+        pub shadow: Color,
+        /// Body, top and bottom.
+        pub fill: [Color; 2],
+        /// Rim, inside the outline.
+        pub rim: Color,
+        /// A light line just inside the rim along the top.
+        pub highlight: Color,
+        /// The title.
+        pub title: Color,
+        /// The body text.
+        pub body: Color,
+        /// Lines between the content and the action buttons, and between two buttons.
+        pub divider: Color,
+        /// An action button's label.
+        pub action: Color,
+        /// An action button held down.
+        pub action_pressed: Color,
+        /// The close button's disc: at rest, and while the pointer is over it or holds it.
+        pub close: [Color; 2],
+        /// The ring around the close button's disc.
+        pub close_ring: Color,
+        /// The cross in the close button.
+        pub close_cross: Color,
+    }
+
+    impl Palette {
+        /// Colours for `variant` on `backdrop`; increased contrast firms up the rim and
+        /// the text and makes the body opaque.
+        pub fn new(variant: Variant, backdrop: Backdrop) -> Self {
+            let backdrop = backdrop.for_variant(variant);
+            let p = match variant.appearance {
+                Appearance::Light => Self {
+                    shadow: black(0.35),
+                    fill: on_backdrop(
+                        [
+                            rgba(0.965, 0.965, 0.965, 0.92),
+                            rgba(0.875, 0.875, 0.88, 0.92),
+                        ],
+                        backdrop,
+                        0.6,
+                    ),
+                    rim: black(0.22),
+                    highlight: white(0.85),
+                    title: grey(0.08),
+                    body: grey(0.22),
+                    divider: black(0.16),
+                    action: grey(0.12),
+                    action_pressed: black(0.12),
+                    close: [grey(0.30), grey(0.12)],
+                    close_ring: white(0.95),
+                    close_cross: white(0.95),
+                },
+                Appearance::Dark => Self {
+                    shadow: black(0.65),
+                    fill: on_backdrop(
+                        [rgba(0.25, 0.25, 0.255, 0.90), rgba(0.17, 0.17, 0.175, 0.90)],
+                        backdrop,
+                        0.15,
+                    ),
+                    rim: white(0.18),
+                    highlight: white(0.10),
+                    title: white(0.94),
+                    body: white(0.72),
+                    divider: white(0.14),
+                    action: white(0.90),
+                    action_pressed: white(0.12),
+                    close: [grey(0.72), grey(0.88)],
+                    close_ring: black(0.60),
+                    close_cross: grey(0.10),
+                },
+            };
+            if !variant.is_increased_contrast() {
+                return p;
+            }
+            match variant.appearance {
+                Appearance::Light => Self {
+                    rim: black(0.60),
+                    divider: black(0.45),
+                    body: grey(0.10),
+                    ..p
+                },
+                Appearance::Dark => Self {
+                    rim: white(0.55),
+                    divider: white(0.40),
+                    body: white(0.92),
+                    ..p
+                },
+            }
+        }
+    }
+}
+
 /// The desktop's default picture (task 3.2c): a sky, a sun (or moon) and three ranges of
 /// rolling hills, all vector so it is sharp at any size and scale.
 pub mod desktop {

@@ -7,11 +7,11 @@ use neue_theme::{Appearance, Backdrop, Theme, Variant};
 use crate::widgets::{
     BevelWidget, ButtonWidget, CalendarWidget, CellWidget, CollectionItemWidget, ColorWellWidget,
     ColumnHeaderWidget, DateFieldWidget, DesktopWidget, FieldWidget, HeaderWidget, HsAreaWidget,
-    IconWidget, LabelWidget, MenuBarWidget, MenuRowWidget, MenuTitleWidget, MenuWidget, OsdWidget,
-    PathWidget, PopoverWidget, ProgressWidget, RootWidget, RowsWidget, ScrollWidget,
-    ScrollerWidget, SegmentedWidget, SeparatorWidget, SheetWidget, SliderWidget, SpecimenWidget,
-    SpinnerWidget, SplitWidget, StackWidget, StepperWidget, TabViewWidget, TextViewWidget,
-    ToggleWidget, ToolbarButtonWidget, ToolbarWidget,
+    IconWidget, LabelWidget, MenuBarWidget, MenuRowWidget, MenuTitleWidget, MenuWidget,
+    NoteButtonWidget, NotificationWidget, OsdWidget, PathWidget, PopoverWidget, ProgressWidget,
+    RootWidget, RowsWidget, ScrollWidget, ScrollerWidget, SegmentedWidget, SeparatorWidget,
+    SheetWidget, SliderWidget, SpecimenWidget, SpinnerWidget, SplitWidget, StackWidget,
+    StepperWidget, TabViewWidget, TextViewWidget, ToggleWidget, ToolbarButtonWidget, ToolbarWidget,
 };
 
 /// The app's [`Theme`], as a default property of every neue-kit widget.
@@ -69,6 +69,8 @@ pub(crate) fn default_properties_on(theme: Theme, backdrop: Backdrop) -> Default
     props.insert::<MenuBarWidget, _>(ThemeProp(theme));
     props.insert::<DesktopWidget, _>(ThemeProp(theme));
     props.insert::<OsdWidget, _>(ThemeProp(theme));
+    props.insert::<NotificationWidget, _>(ThemeProp(theme));
+    props.insert::<NoteButtonWidget, _>(ThemeProp(theme));
     props.insert::<MenuTitleWidget, _>(ThemeProp(theme));
     props.insert::<ButtonWidget, _>(ThemeProp(theme));
     props.insert::<BevelWidget, _>(ThemeProp(theme));

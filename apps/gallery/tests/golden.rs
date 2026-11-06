@@ -15,8 +15,9 @@ use neue_gallery::specimens::{
     COLOR_WELL_SIZE, COMBO_SIZE, DATE_SIZE, FIELD_SIZE, ICONS_SIZE, MENU_SIZE, OUTLINE_SIZE,
     PATH_SIZE, POPOVER_SIZE, POPUP_SIZE, PROGRESS_SIZE, PULL_DOWN_SIZE, PUSH_BUTTON_SIZE,
     SCROLL_SIZE, SEGMENTED_SIZE, SHELL_BAR_SIZE, SHELL_DESKTOP_SIZE, SHELL_EXTRAS_SIZE,
-    SHELL_OSD_SIZE, SHELL_TRAY_SIZE, SIDEBAR_SIZE, SLIDER_SIZE, SPINNER_SIZE, SPLIT_SIZE,
-    STEPPER_SIZE, SUBMENU_SIZE, TABLE_SIZE, TABS_SIZE, TEXT_VIEW_SIZE, TOGGLE_SIZE,
+    SHELL_NOTIFICATION_SIZE, SHELL_OSD_SIZE, SHELL_TRAY_SIZE, SIDEBAR_SIZE, SLIDER_SIZE,
+    SPINNER_SIZE, SPLIT_SIZE, STEPPER_SIZE, SUBMENU_SIZE, TABLE_SIZE, TABS_SIZE, TEXT_VIEW_SIZE,
+    TOGGLE_SIZE,
 };
 use neue_kit::testing::{
     self, DISABLED, FOCUSED, Fixture, Goldens, INACTIVE, NORMAL, NavKey, PRESSED, State,
@@ -403,9 +404,22 @@ control_goldens! {
     shell_osd_microphone_muted: "shell-osd-microphone-muted", SHELL_OSD_SIZE, &[NORMAL], specimens::shell_osd(neue_kit::desktop::OsdGlyph::MicrophoneMuted, 0.75);
     shell_osd_keyboard: "shell-osd-keyboard", SHELL_OSD_SIZE, &[NORMAL], specimens::shell_osd(neue_kit::desktop::OsdGlyph::Keyboard, 0.5);
 
+    // Notifications (3.15b): a banner at rest, with the pointer on its close button and
+    // with keyboard focus; a banner with an image; an alert with two actions, at rest and
+    // with the pointer on its close button.
+    shell_banner: "shell-banner", SHELL_NOTIFICATION_SIZE, &[NORMAL, NOTE_CLOSE_HOVERED, FOCUSED], specimens::shell_banner(|_| None);
+    shell_banner_image: "shell-banner-image", SHELL_NOTIFICATION_SIZE, &[NORMAL], specimens::shell_banner_image(|_| None);
+    shell_alert: "shell-alert", SHELL_NOTIFICATION_SIZE, &[NORMAL, NOTE_CLOSE_HOVERED], specimens::shell_alert(|_| None);
+
     context_menu: "context-menu", MENU_SIZE, &[MENU_OPEN, MENU_HIGHLIGHTED], specimens::context_menu(|_| (), specimens::command);
     context_submenu: "context-menu", SUBMENU_SIZE, &[MENU_SUBMENU], specimens::context_menu(|_| (), specimens::command);
 }
+
+/// The pointer on a notification's close button, over the panel's top left corner.
+const NOTE_CLOSE_HOVERED: State = ("close-hovered", |f: &mut Fixture| {
+    use neue_kit::tokens::materials::notification::{CLOSE_INSET, MARGIN};
+    f.hover_at_px(MARGIN + CLOSE_INSET, MARGIN + CLOSE_INSET);
+});
 
 /// The pointer over the traffic lights (between close and minimise): every glyph shows.
 const LIGHTS_HOVERED: State = ("lights-hovered", |f: &mut Fixture| {

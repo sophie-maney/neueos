@@ -1268,6 +1268,64 @@ pub fn shell_osd(glyph: neue_kit::desktop::OsdGlyph, level: f64) -> neue_kit::de
     neue_kit::desktop::Osd::new(glyph, level)
 }
 
+/// Golden window size for a notification: the panel, the room around it for its shadow and
+/// close button, and the window's padding.
+pub const SHELL_NOTIFICATION_SIZE: (u32, u32) = (384, 116);
+
+/// A banner's text: the body runs past two lines, so it is cut with an ellipsis.
+fn notification_text() -> (String, String) {
+    (
+        "Design review".to_owned(),
+        "The review of the new dock starts in 15 minutes in the small meeting room. Bring \
+         the sketches from Tuesday so that we can go through them together."
+            .to_owned(),
+    )
+}
+
+/// A banner with the sample app icon. `make` turns what the user does into a message.
+pub fn shell_banner<M: 'static>(
+    make: impl FnMut(neue_kit::desktop::NotificationEvent) -> Option<M> + 'static,
+) -> neue_kit::desktop::Notification<M> {
+    let (title, body) = notification_text();
+    neue_kit::desktop::Notification::new(neue_kit::desktop::NotificationContent {
+        title,
+        body,
+        app_icon: Some(sample_icon()),
+        ..Default::default()
+    })
+    .on_event(make)
+}
+
+/// A banner with an image (the demo picture), the app icon a badge on it, and a one-line
+/// body.
+pub fn shell_banner_image<M: 'static>(
+    make: impl FnMut(neue_kit::desktop::NotificationEvent) -> Option<M> + 'static,
+) -> neue_kit::desktop::Notification<M> {
+    neue_kit::desktop::Notification::new(neue_kit::desktop::NotificationContent {
+        title: "Holiday photos".to_owned(),
+        body: "Twelve new photos were added to the shared album.".to_owned(),
+        app_icon: Some(sample_icon()),
+        image: Some(demo_picture()),
+        ..Default::default()
+    })
+    .on_event(make)
+}
+
+/// An alert with two actions.
+pub fn shell_alert<M: 'static>(
+    make: impl FnMut(neue_kit::desktop::NotificationEvent) -> Option<M> + 'static,
+) -> neue_kit::desktop::Notification<M> {
+    let (title, body) = notification_text();
+    neue_kit::desktop::Notification::new(neue_kit::desktop::NotificationContent {
+        title,
+        body,
+        app_icon: Some(sample_icon()),
+        actions: vec!["Snooze".to_owned(), "Join".to_owned()],
+        ..Default::default()
+    })
+    .on_event(make)
+}
+
 /// The desktop background specimens' size: a 16:10 output, small.
 const DESKTOP_SPECIMEN: (f64, f64) = (320.0, 200.0);
 
