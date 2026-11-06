@@ -371,13 +371,27 @@ their goldens and the gallery's "Shell" page run on macOS.
       only logs Bluetooth commands until 3.11c. Goldens: `shell-bar` gained battery-open and
       bluetooth-open states (the old ones changed: the extras are in the bar) and
       `shell-extras` shows batteries and Bluetooth icons in each state; 3 kit tests.
-- [ ] **3.11c Battery and Bluetooth C: shell wiring** · Sonnet. After 3.11a and 3.11b. A
+- [x] **3.11c Battery and Bluetooth C: shell wiring** · Sonnet. After 3.11a and 3.11b. A
       worker thread (as the global menu's) following UPower and BlueZ, bar sync, extras
       absent without a battery or an adapter, menu actions (power toggle, connect,
       disconnect). ADR for the extras.
       *Accept:* in the VM with a mock UPower and BlueZ on the system bus: both extras show
       with screenshots, the Bluetooth menu toggles and connects (checked on the mock), and
       neither shows with the mocks stopped.
+      *Done (ADR 0083):* `neue-shell`'s `extras.rs` (Linux-only): a worker thread per service
+      on the system bus, each sending a snapshot (`Option<BatteryView>`, `Option<State>`) when
+      it changes: it reads at start, on each `PowerChanges`/`BluetoothChanges` signal and
+      every 5 s (signals don't cover a service starting or stopping). A failed read counts
+      as `None`, which hides the extra. The shell keeps BlueZ's `State` to turn the menu's
+      device indices into object paths; `set_powered`, `connect` and `disconnect` run
+      through `cx.spawn` and only log their result (the state comes back by signal).
+      `neue-dbus` example `mock_power_bluetooth` serves the mocks (`docs/dev-setup.md`
+      §1.6b). Unit tests: view mapping and the follow loop (4, on Linux). *VM:* with the
+      mock both extras appeared with their menus (64 %, 3:12 remaining; adapter, three
+      devices); Turn Bluetooth Off and On reached the mock (`Powered = false`/`true`) and the
+      menu followed; Connect on Keyboard reached the mock and gained its tick; stopping the
+      mock hid both within 5 s. Not checked: Disconnect and the failing `Broken` device (the
+      same code path as Connect; the failure only logs).
       *Owner:* battery on a laptop if one is available; pairing and connecting a device on
       the PC.
 - [ ] **3.12 Menu extra: network** · Sonnet. After 3.2b. NetworkManager over zbus: wired
