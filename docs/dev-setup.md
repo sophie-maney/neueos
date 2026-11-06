@@ -173,6 +173,20 @@ Without a private system bus the example can also be tried in OrbStack:
 `orb run -m neueos-arm64 dbus-run-session -- sh -c 'DBUS_SYSTEM_BUS_ADDRESS=$DBUS_SESSION_BUS_ADDRESS target/neueos-arm64/debug/examples/mock_network_manager'`
 and `busctl --user …` against `org.freedesktop.NetworkManager`.
 
+### 1.6d Tray apps: the watcher, the host and a mock item (status-icon tray)
+Until the shell owns the StatusNotifierWatcher (3.13c), `neue-dbus`'s `sni_host` example
+owns it on the **session** bus and prints what a tray would show (items added, changed and
+removed, with icon, status, tooltip and menu path); `mock_sni_item` is a stand-in tray app
+(a drawn blue icon, a tooltip, a menu; its Mark Attention item turns the icon red; `--named`
+gives the icon by theme name) that prints the calls it gets. Run them in the VM's session
+(over ssh, with the session's bus address) or in OrbStack under `dbus-run-session`.
+```sh
+orb run -m neueos-arm64 dbus-run-session -- sh -c 'target/neueos-arm64/debug/examples/sni_host & sleep 1; target/neueos-arm64/debug/examples/mock_sni_item'
+```
+A real tray app (`nm-applet --indicator`) can replace the mock. Menu clicks can be sent
+with `busctl --user call <service> /StatusNotifierItem/Menu com.canonical.dbusmenu Event
+isvu 3 clicked i 0 0`.
+
 ### 1.7 Known quirks
 - `ydotool mousemove --absolute` lands at twice the coordinates. Relative moves are 1:1.
 - Nested (winit) backend: after the pointer jumps into the window, send one relative move

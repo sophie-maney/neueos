@@ -475,11 +475,37 @@ their goldens and the gallery's "Shell" page run on macOS.
       `docs/dev-setup.md` §1.6c. Tick this box once they pass: extra shows, Wired
       connection 1 toggles, Home and Cafe join (the mock log shows the calls), Library is
       greyed, and the extra is gone with the mock stopped.
-- [ ] **3.13 Status-icon tray** · Sonnet. After 3.7a. `StatusNotifierWatcher` and a host in
-      `neue-dbus`; icons by name or pixmap, tooltips, activation, and menus through the 3.7a
-      DBusMenu client.
-      *Accept:* unit tests; in the VM a tray app (`nm-applet --indicator` or a test SNI
-      item) shows, its menu opens and its items act.
+- [x] **3.13a Status-icon tray A: watcher, host and item client** · Sonnet. After 3.7a.
+      Split from 3.13 (same shape as 3.12). `neue_dbus::status_notifier`: the
+      `StatusNotifierWatcher` the shell owns, a threadless `Host` and the item client; icons by
+      name or pixmap, tooltips, activation, and menus through the 3.7a DBusMenu client. ADR 0084.
+      *Accept:* unit tests; the host and watcher on a real bus with a mock item.
+      *Done:* `Watcher` (`own` takes the name and forgets departed connections, `serve` for
+      tests), `WatcherSignals`, `ItemInfo`/`StatusItem`/`ItemSignals`, `Host`
+      (`announce`, `initial`, `registered`/`unregistered`/`changed` returning `HostEvent`, the
+      actions, `menu`). 9 unit and 7 peer-to-peer tests (`tests/status_notifier.rs`); examples
+      `sni_host` and `mock_sni_item` (`docs/dev-setup.md` §1.6d). Checked in OrbStack on a real
+      session bus: the host registers, the mock item is added with its tooltip, pixmap and
+      menu, `Activate` reaches it, a menu click turns its status to NeedsAttention (a
+      `changed` event), and killing it removes it. Clippy and tests pass on arm64 Linux.
+- [ ] **3.13b Status-icon tray B: the tray area in the bar** · Sonnet. After 3.13a. The kit
+      and `neue_shell::bar`: a dynamic group of extras that can gain and lose items without
+      rebuilding the bar, an `ExtraIcon::Image` (a named icon or an RGBA pixmap, one fixed
+      size, light and dark treatment), the tooltip as accessible description, `Passive` items
+      hidden and a `NeedsAttention` item showing its attention icon. Placement: left of the
+      other extras (right to left: clock, battery, network, Bluetooth, tray). ADR for the
+      placement and the overflow policy.
+      *Accept:* gallery entry; goldens (states × light/dark × scale 1 and 2); kit and shell
+      tests.
+- [ ] **3.13c Status-icon tray C: shell wiring** · Sonnet. After 3.13a and 3.13b. The shell
+      owns the watcher (`Watcher::own`) and runs the host on a worker; the bar follows
+      `HostEvent`s; named icons resolve through `neue-desktop`'s icon theme (and the item's
+      `IconThemePath`); a click calls `Activate`, or opens the DBusMenu when `ItemIsMenu` is
+      set; right click opens the menu (or `ContextMenu` without one); menu items send
+      `clicked` through `cx.spawn`. Addendum to ADR 0084.
+      *Accept:* in the VM a tray app (`mock_sni_item`, then `nm-applet --indicator`) shows, its
+      menu opens and its items act (the mock's log shows the calls).
+      *Owner:* a real tray app on the PC.
 - [ ] **3.14 Volume, brightness and OSDs** · Opus. After 3.1 and 3.2b. ADR for
       `pipewire-rs` (a C dependency, also used by 3.22). The volume extra (slider, mute,
       output device), media and volume keys routed by `neue-shell-v1`, brightness through
