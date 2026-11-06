@@ -443,6 +443,8 @@ it are numbered from 3.31. The shell skeleton (3.2) is split into shell surfaces
 neue-platform and neue-kit (3.2a), the shell and its menu bar (3.2b) and the desktop
 background (3.2c). Super as ⌘ is split into the compositor remap (3.10a), the kit's
 command key (3.10b) and ⌘ in third-party menus (3.10c).
+Menu extras for battery and Bluetooth are split into the D-Bus clients (3.11a), icon
+extras in the kit (3.11b) and the shell wiring (3.11c).
 - **Exit:** log in from the greeter on your PC and use neueOS as the daily desktop.
 
 ### Phase 4: Overview and Spaces (L)
