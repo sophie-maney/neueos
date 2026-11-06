@@ -83,6 +83,7 @@ impl OsdWidget {
             Glyph::Brightness => "Brightness",
             Glyph::Microphone => "Microphone",
             Glyph::MicrophoneMuted => "Microphone muted",
+            Glyph::Keyboard => "Keyboard brightness",
         }
     }
 }

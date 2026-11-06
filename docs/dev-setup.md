@@ -226,6 +226,24 @@ it, drag the slider or choose an output, then read `wpctl get-volume
 `neue-audio`'s example drives the backend without the shell: `cargo run -p neue-audio
 --example audio -- volume 0.5` (also `mute`, `unmute`, `mic-mute`, `default <node.name>`).
 
+### 1.6f Media keys: mock players
+`neue-dbus`'s `mock_mpris` is an MPRIS player on the session bus (`mock_mpris <name>
+[Playing|Paused|Stopped]`; it logs each call and follows Play, Pause, PlayPause and Stop).
+Build it in OrbStack and copy it with the other binaries (§1.6e), run two with the session
+up, and send the keys (evdev codes 164 play/pause, 200 play, 201 pause, 166 stop, 163 next,
+165 previous):
+```sh
+cargo xtask linux cargo build --release -p neue-dbus --example mock_mpris
+scp target/neueos-arm64/release/examples/mock_mpris neueos-vm:neueos/target/release/
+ssh neueos-vm 'export XDG_RUNTIME_DIR=/run/user/1000 YDOTOOL_SOCKET=/tmp/.ydotool_socket; . ~/neueos/docs/vm-env.sh
+  setsid nohup ~/neueos/target/release/mock_mpris alpha Paused >/tmp/alpha.log 2>&1 </dev/null &
+  setsid nohup ~/neueos/target/release/mock_mpris beta Playing >/tmp/beta.log 2>&1 </dev/null &
+  sleep 2; ydotool key 164:1 164:0; sleep 1; playerctl -a status'
+```
+Expected: `Paused Paused` (the key went to the playing one). `playerctl play` refuses the mock
+(it has no `CanPlay`); use `gdbus call --session --dest org.mpris.MediaPlayer2.alpha
+--object-path /org/mpris/MediaPlayer2 --method org.mpris.MediaPlayer2.Player.Play`.
+
 ### 1.7 Known quirks
 - `ydotool mousemove --absolute` lands at twice the coordinates. Relative moves are 1:1.
 - Nested (winit) backend: after the pointer jumps into the window, send one relative move

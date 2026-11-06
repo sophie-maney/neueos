@@ -9,7 +9,10 @@
 //!
 //! The volume keys change the default sink's volume and mute, and the mic mute key the
 //! default source's mute, through PipeWire ([`neue_audio`], task 3.14b). The brightness
-//! is the screen's backlight, set through logind (`Session.SetBrightness`).
+//! is the screen's backlight, set through logind (`Session.SetBrightness`); the keyboard
+//! brightness keys do the same to the keyboard's backlight (task 3.14d). The media keys
+//! (play, pause, next, previous, stop) go to the active MPRIS player ([`neue_dbus::mpris`])
+//! and show nothing.
 //!
 //! The bar's volume extra (task 3.14c) shows the same default sink ([`Keys::volume_view`])
 //! and its menu acts through the same PipeWire thread ([`Keys::volume_command`]).
@@ -18,6 +21,7 @@ use std::time::Instant;
 
 use neue_audio::{Audio, Kind};
 use neue_dbus::login::Login;
+use neue_dbus::mpris::{Command, Mpris};
 use neue_kit::desktop::{
     Anchor, ChordModifiers, LayerKeyboard, LayerSpec, Margin, Osd, OsdGlyph, ShellLayer, SystemKey,
     SystemKeyState,
@@ -30,15 +34,36 @@ use neue_shell::levels::{self, Backlight, Volume};
 /// The OSD's layer-shell namespace.
 const NAMESPACE: &str = "neue-osd";
 
+/// How long a call to a media player may take before it counts as hung.
+const PLAYER_TIMEOUT: std::time::Duration = std::time::Duration::from_secs(1);
+
+/// The backlights there are, and a logind connection to set them with.
+#[derive(Debug, Clone, Default)]
+pub struct Lights {
+    /// The screen's.
+    screen: Option<Backlight>,
+    /// The keyboard's.
+    keyboard: Option<Backlight>,
+    /// `None` without the system bus: no key can change a backlight then.
+    login: Option<Login>,
+}
+
 /// What the OSD's timers and workers report.
 #[derive(Debug, Clone)]
 pub enum Event {
-    /// The backlight and a logind connection to set it with; `None` without a backlight.
-    Backlight(Option<(Backlight, Login)>),
+    /// The backlights and a logind connection to set them with.
+    Backlights(Lights),
+    /// The MPRIS client; `None` without a session bus.
+    Media(Option<Mpris>),
+    /// A media key's command ended: the player it went to, or why it failed.
+    MediaSent(Result<Option<String>, String>),
     /// PipeWire's sinks and sources changed.
     Audio(neue_audio::State),
-    /// A `SetBrightness` call ended.
-    Brightness(Result<(), String>),
+    /// A `SetBrightness` call ended; `true` for the keyboard's.
+    Brightness {
+        keyboard: bool,
+        result: Result<(), String>,
+    },
     /// The hold timer fired.
     Hold,
     /// The fade that started with this generation should be over.
@@ -61,10 +86,14 @@ pub struct Keys {
     /// The default sink and the volume last asked for: repeats step from it, since
     /// PipeWire may not have answered yet. A new press reads the reported volume again.
     volume: Option<(u32, f64)>,
-    backlight: Option<(Backlight, Login)>,
-    /// The raw brightness last asked for: repeats step from it, since logind's write
-    /// may not have reached sysfs yet. A new press reads sysfs again.
+    lights: Lights,
+    /// The raw brightness last asked for of the screen and of the keyboard: repeats step
+    /// from it, since logind's write may not have reached sysfs yet. A new press reads
+    /// sysfs again.
     brightness: Option<u32>,
+    keyboard_brightness: Option<u32>,
+    /// The media players' client; `None` until connected, or without a session bus.
+    media: Option<Mpris>,
     osd: Option<Surface>,
     /// When the OSD starts fading, pushed back by every key.
     hide_at: Option<Instant>,
@@ -75,8 +104,8 @@ pub struct Keys {
 }
 
 impl Keys {
-    /// Starts the PipeWire thread, looks for the screen's backlight, and connects to
-    /// logind if there is one.
+    /// Starts the PipeWire thread, looks for the backlights (and connects to logind if there
+    /// is one), and connects to the session bus for the media keys.
     pub fn start<M: Send + 'static>(&mut self, cx: &mut Cx<'_, M>, wrap: fn(Event) -> M) {
         let sender = cx.sender();
         match Audio::start(move |state| {
@@ -86,16 +115,31 @@ impl Keys {
             Err(error) => tracing::warn!(%error, "no audio thread: the volume keys do nothing"),
         }
         cx.spawn(move |_| {
-            let found = Backlight::find(levels::BACKLIGHTS.as_ref()).and_then(|backlight| {
-                match Login::system() {
-                    Ok(login) => Some((backlight, login)),
-                    Err(error) => {
+            let screen = Backlight::find(levels::BACKLIGHTS.as_ref());
+            let keyboard = Backlight::find_keyboard(levels::LEDS.as_ref());
+            let login = if screen.is_some() || keyboard.is_some() {
+                Login::system()
+                    .inspect_err(|error| {
                         tracing::warn!(%error, "no system bus: the brightness keys do nothing");
-                        None
-                    }
-                }
-            });
-            wrap(Event::Backlight(found))
+                    })
+                    .ok()
+            } else {
+                None
+            };
+            wrap(Event::Backlights(Lights {
+                screen,
+                keyboard,
+                login,
+            }))
+        });
+        cx.spawn(move |_| {
+            let media = Mpris::session(PLAYER_TIMEOUT)
+                .and_then(|mpris| mpris.watch().map(|()| mpris))
+                .inspect_err(|error| {
+                    tracing::warn!(%error, "no session bus: the media keys do nothing");
+                })
+                .ok();
+            wrap(Event::Media(media))
         });
     }
 
@@ -112,28 +156,77 @@ impl Keys {
             return;
         }
         let fine = levels::fine(modifiers);
-        let up = match key {
+        match key {
             SystemKey::VolumeUp | SystemKey::VolumeDown | SystemKey::Mute => {
                 self.volume_key(cx, wrap, key, state, fine);
-                return;
             }
-            SystemKey::MicMute => {
-                self.mic_mute(cx, wrap);
-                return;
+            SystemKey::MicMute => self.mic_mute(cx, wrap),
+            SystemKey::BrightnessUp | SystemKey::BrightnessDown => {
+                let up = key == SystemKey::BrightnessUp;
+                self.backlight_key(cx, wrap, false, up, state, fine);
             }
-            SystemKey::BrightnessUp => true,
-            SystemKey::BrightnessDown => false,
-            // Keyboard backlights and media keys: not yet (task 3.14d).
-            other => {
-                tracing::debug!(key = ?other, "system key not handled");
-                return;
+            SystemKey::KeyboardBrightnessUp | SystemKey::KeyboardBrightnessDown => {
+                let up = key == SystemKey::KeyboardBrightnessUp;
+                self.backlight_key(cx, wrap, true, up, state, fine);
             }
-        };
-        let Some((backlight, login)) = &self.backlight else {
-            tracing::debug!("no backlight to change");
+            SystemKey::Play => self.media_key(cx, wrap, Command::PlayPause),
+            SystemKey::Pause => self.media_key(cx, wrap, Command::Pause),
+            SystemKey::Next => self.media_key(cx, wrap, Command::Next),
+            SystemKey::Previous => self.media_key(cx, wrap, Command::Previous),
+            SystemKey::Stop => self.media_key(cx, wrap, Command::Stop),
+            SystemKey::Eject => tracing::debug!("system key not handled: Eject"),
+        }
+    }
+
+    /// A media key: `command` to the active player, off the event loop (the bus may be
+    /// slow, and a hung player makes the call wait out its timeout).
+    fn media_key<M: Send + 'static>(
+        &mut self,
+        cx: &mut Cx<'_, M>,
+        wrap: fn(Event) -> M,
+        command: Command,
+    ) {
+        let Some(mpris) = self.media.clone() else {
+            tracing::debug!(?command, "no media client");
             return;
         };
-        let now = match (state, self.brightness) {
+        cx.spawn(move |_| {
+            wrap(Event::MediaSent(
+                mpris
+                    .send(command)
+                    .map(|player| player.map(|p| p.name))
+                    .map_err(|e| e.to_string()),
+            ))
+        });
+    }
+
+    /// A brightness key for the screen's backlight, or the keyboard's when `keyboard`.
+    fn backlight_key<M: Send + 'static>(
+        &mut self,
+        cx: &mut Cx<'_, M>,
+        wrap: fn(Event) -> M,
+        keyboard: bool,
+        up: bool,
+        state: SystemKeyState,
+        fine: bool,
+    ) {
+        let (Some(backlight), Some(login)) = (
+            if keyboard {
+                &self.lights.keyboard
+            } else {
+                &self.lights.screen
+            },
+            &self.lights.login,
+        ) else {
+            tracing::debug!(keyboard, "no backlight to change");
+            return;
+        };
+        let asked = if keyboard {
+            &mut self.keyboard_brightness
+        } else {
+            &mut self.brightness
+        };
+        let now = match (state, *asked) {
             (SystemKeyState::Repeated, Some(raw)) => raw,
             _ => match backlight.read() {
                 Ok(raw) => raw,
@@ -145,18 +238,25 @@ impl Keys {
         };
         let target = backlight.step(now, up, fine);
         let level = backlight.level(target);
-        self.brightness = Some(target);
+        *asked = Some(target);
         if target != now {
-            let (login, name) = (login.clone(), backlight.name.clone());
+            let (login, name, subsystem) =
+                (login.clone(), backlight.name.clone(), backlight.subsystem);
             cx.spawn(move |_| {
-                wrap(Event::Brightness(
-                    login
-                        .set_brightness("backlight", &name, target)
+                wrap(Event::Brightness {
+                    keyboard,
+                    result: login
+                        .set_brightness(subsystem, &name, target)
                         .map_err(|e| e.to_string()),
-                ))
+                })
             });
         }
-        self.show(cx, wrap, OsdGlyph::Brightness, level);
+        let glyph = if keyboard {
+            OsdGlyph::Keyboard
+        } else {
+            OsdGlyph::Brightness
+        };
+        self.show(cx, wrap, glyph, level);
     }
 
     /// Volume Up, Down or Mute: the default sink.
@@ -258,23 +358,39 @@ impl Keys {
         event: Event,
     ) {
         match event {
-            Event::Backlight(found) => {
-                if let Some((backlight, _)) = &found {
-                    tracing::info!(name = backlight.name, max = backlight.max, "backlight");
+            Event::Backlights(lights) => {
+                for backlight in [&lights.screen, &lights.keyboard].into_iter().flatten() {
+                    tracing::info!(
+                        name = backlight.name,
+                        max = backlight.max,
+                        "{}",
+                        backlight.subsystem
+                    );
                 }
-                self.backlight = found;
+                self.lights = lights;
             }
+            Event::Media(media) => self.media = media,
+            Event::MediaSent(Ok(Some(player))) => tracing::debug!(player, "media key sent"),
+            Event::MediaSent(Ok(None)) => tracing::debug!("no media player"),
+            Event::MediaSent(Err(error)) => tracing::warn!(%error, "a media key failed"),
             Event::Audio(state) => {
                 if state.connected != self.sound.connected {
                     tracing::info!(connected = state.connected, "PipeWire");
                 }
                 self.sound = state;
             }
-            Event::Brightness(Ok(())) => {}
-            Event::Brightness(Err(error)) => {
-                tracing::warn!(%error, "setting the brightness failed");
+            Event::Brightness { result: Ok(()), .. } => {}
+            Event::Brightness {
+                keyboard,
+                result: Err(error),
+            } => {
+                tracing::warn!(%error, keyboard, "setting the brightness failed");
                 // Read sysfs again next time rather than trust the failed value.
-                self.brightness = None;
+                if keyboard {
+                    self.keyboard_brightness = None;
+                } else {
+                    self.brightness = None;
+                }
             }
             Event::Hold => {
                 self.holding = false;
