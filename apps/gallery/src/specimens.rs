@@ -996,6 +996,7 @@ pub fn shell_bar_content(app_name: &str) -> neue_shell::bar::BarContent {
             powered: true,
             devices: vec![device("Trackpad", true), device("Headphones", false)],
         }),
+        tray: Vec::new(),
     }
 }
 
@@ -1082,10 +1083,137 @@ pub fn shell_bar<M: Clone + 'static>(
             send,
             network,
             bluetooth,
+            |_| neue_kit::Menu::new(),
             &mut handles,
             // Inside a gallery window, nothing is blurred behind the bar.
             neue_kit::desktop::Backdrop::Opaque,
         ))
+}
+
+/// Golden window size for the tray specimens.
+pub const SHELL_TRAY_SIZE: (u32, u32) = (420, 100);
+
+/// A round app icon of `rgb`, `side` pixels wide, with a soft edge and a lighter top: made
+/// by code, so the goldens depend on no file. Drawn at 24 px it is resampled down to the
+/// tray's 16, as an app's picture is.
+#[expect(
+    clippy::cast_possible_truncation,
+    clippy::cast_sign_loss,
+    reason = "every value is clamped to 0..=255 first"
+)]
+fn tray_picture(rgb: [u8; 3], side: u32) -> neue_kit::Icon {
+    let mut rgba = Vec::new();
+    let r = f64::from(side) / 2.0;
+    for y in 0..side {
+        for x in 0..side {
+            let (dx, dy) = (f64::from(x) + 0.5 - r, f64::from(y) + 0.5 - r);
+            let coverage = (r - (dx * dx + dy * dy).sqrt()).clamp(0.0, 1.0);
+            let lift = (1.0 - f64::from(y) / f64::from(side)) * 0.35;
+            for c in rgb {
+                rgba.push((f64::from(c) + (255.0 - f64::from(c)) * lift).clamp(0.0, 255.0) as u8);
+            }
+            rgba.push((coverage * 255.0).round() as u8);
+        }
+    }
+    match neue_kit::desktop::ExtraIcon::pixmap(side, side, &rgba) {
+        Some(neue_kit::desktop::ExtraIcon::Image(icon)) => icon,
+        _ => unreachable!("a square of side pixels is a valid picture"),
+    }
+}
+
+/// The tray's items in each state: a chat app (active), a sync app (needs attention: its
+/// attention icon shows), an idle one (passive: hidden), one whose icon couldn't be found
+/// (a placeholder shows) and a monochrome glyph, each with a tooltip.
+pub fn shell_tray_items() -> Vec<neue_shell::bar::TrayItemView> {
+    use neue_shell::bar::{TrayItemView, TrayStatus};
+    let item = |id: &str, status, icon: Option<neue_kit::Icon>, attention| TrayItemView {
+        id: id.to_owned(),
+        title: id.to_owned(),
+        status,
+        icon,
+        attention_icon: attention,
+        tooltip: format!("{id}: all good"),
+    };
+    vec![
+        item(
+            "Chat",
+            TrayStatus::Active,
+            Some(tray_picture([52, 120, 246], 24)),
+            None,
+        ),
+        item(
+            "Sync",
+            TrayStatus::NeedsAttention,
+            Some(tray_picture([60, 170, 90], 24)),
+            Some(tray_picture([240, 140, 30], 24)),
+        ),
+        item(
+            "Idle",
+            TrayStatus::Passive,
+            Some(tray_picture([150, 150, 150], 24)),
+            None,
+        ),
+        item("Lost", TrayStatus::Active, None, None),
+        item(
+            "Glyph",
+            TrayStatus::Active,
+            Some(neue_kit::Icon::from(neue_kit::Glyph::Folder)),
+            None,
+        ),
+    ]
+}
+
+/// Two menu bars with the tray: the items above, left of the clock (each with a menu of
+/// one item), and the same on a bar too narrow for all of them, where those that don't
+/// fit before the titles on the left are left out. No menu item sends anything but
+/// `idle`.
+pub fn shell_tray<M: Clone + 'static>(idle: M) -> Stack<M> {
+    use neue_shell::bar::{BarContent, BarHandles};
+    let bar = |app_name: &str, titles: &[&str], tray| {
+        let content = BarContent {
+            app_name: app_name.to_owned(),
+            time: "09:41".to_owned(),
+            full_date: String::new(),
+            battery: None,
+            network: None,
+            bluetooth: None,
+            tray,
+        };
+        let menus = titles
+            .iter()
+            .map(|t| neue_kit::desktop::MenuTitle::new(*t, neue_kit::Menu::new()))
+            .collect();
+        neue_shell::bar::menu_bar(
+            &content,
+            menus,
+            {
+                let idle = idle.clone();
+                move |_| idle.clone()
+            },
+            {
+                let idle = idle.clone();
+                move |_| idle.clone()
+            },
+            {
+                let idle = idle.clone();
+                move |_| idle.clone()
+            },
+            |item| {
+                neue_kit::Menu::new()
+                    .with(neue_kit::MenuItem::new(format!("Open {}", item.title)).disabled(true))
+            },
+            &mut BarHandles::default(),
+            neue_kit::desktop::Backdrop::Opaque,
+        )
+        // Room for the tray: a shell's bar is as wide as its output.
+        .min_width(380.0)
+    };
+    let mut crowded = shell_tray_items();
+    crowded.extend(shell_tray_items());
+    Stack::column()
+        .align(Align::Fill)
+        .with(bar("Gallery", &[], shell_tray_items()))
+        .with(bar("Gallery", &["File", "Edit", "View"], crowded))
 }
 
 /// The desktop background specimens' size: a 16:10 output, small.

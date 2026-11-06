@@ -9,6 +9,10 @@
 //! go to the previous and next title (wrapping, skipping titles that open nothing), and
 //! between titles that have keyboard focus; Escape leaves. The menu extras on the right
 //! take part in neither.
+//!
+//! The tray (task 3.13b, ADR 0085) is a group of status icons left of the other extras
+//! that the shell replaces as apps come and go; icons that don't fit before the titles
+//! on the left are left out.
 
 use masonry_core::accesskit::{Action, HasPopup, Node, Role};
 use masonry_core::core::keyboard::{Key, NamedKey};
@@ -21,6 +25,7 @@ use masonry_core::core::{
 use masonry_core::imaging::Painter;
 use masonry_core::kurbo::{Affine, Axis, Point, Rect, Size, Vec2};
 use masonry_core::layout::{LayoutSize, LenDef, LenReq, Length, SizeDef};
+use neue_paint::icon::Icon;
 use neue_paint::imaging::ImagingReplayer;
 use neue_paint::materials::{menu_bar, menu_highlight};
 use neue_paint::{Backdrop, Scene, Variant};
@@ -28,7 +33,7 @@ use neue_theme::materials::menu as menu_tokens;
 use neue_theme::materials::menu_bar::{
     BATTERY_HEIGHT, BATTERY_WIDTH, BLUETOOTH_HEIGHT, BLUETOOTH_WIDTH, EDGE_INSET, HEIGHT,
     LABEL_BASELINE, LABEL_EMBOSS_OFFSET, LOGO_SIZE, NETWORK_HEIGHT, NETWORK_WIDTH, OFF_OPACITY,
-    Palette, TITLE_PADDING,
+    Palette, TITLE_PADDING, TRAY_ICON_SIZE, TRAY_OVERFLOW_GAP,
 };
 
 use super::menu::{self, Anchor};
@@ -44,10 +49,14 @@ pub(crate) struct MenuBarWidget {
     /// The active app's menus, after `leading`.
     menus: Vec<WidgetPod<dyn Widget>>,
     trailing: Vec<WidgetPod<dyn Widget>>,
+    /// The tray's status icons, left of `trailing`.
+    tray: Vec<WidgetPod<dyn Widget>>,
     /// The title on the left whose menu is up, as its open and close actions report it.
     open: Option<WidgetId>,
     /// Each title on the left's horizontal extent, from the last layout.
     spans: Vec<(f64, f64)>,
+    /// The least width the bar asks for, whatever its titles need.
+    min_width: f64,
     backdrop: Backdrop,
     replayer: ImagingReplayer,
 }
@@ -176,6 +185,15 @@ impl MenuBarWidget {
         this.widget.menus = menus.into_iter().map(NewWidget::to_pod).collect();
         this.ctx.children_changed();
     }
+
+    fn edit_set_tray(this: &mut WidgetMut<'_, Self>, tray: Vec<NewWidget<dyn Widget>>) {
+        for old in std::mem::take(&mut this.widget.tray) {
+            this.ctx.remove_child(old);
+        }
+        this.widget.tray = tray.into_iter().map(NewWidget::to_pod).collect();
+        this.ctx.children_changed();
+        this.ctx.request_layout();
+    }
 }
 
 impl UsesProperty<ThemeProp> for MenuBarWidget {}
@@ -270,6 +288,7 @@ impl Widget for MenuBarWidget {
             .iter_mut()
             .chain(&mut self.menus)
             .chain(&mut self.trailing)
+            .chain(&mut self.tray)
         {
             ctx.register_child(child);
         }
@@ -291,7 +310,8 @@ impl Widget for MenuBarWidget {
     ) -> Length {
         match axis {
             Axis::Vertical => Length::px(HEIGHT),
-            // Every title side by side: what the bar needs to show them all.
+            // Every title and extra side by side: what the bar needs to show them all.
+            // The tray isn't counted: it gives way (its icons that don't fit are left out).
             Axis::Horizontal => {
                 let mut width = Length::px(2.0 * EDGE_INSET);
                 let all = self.leading.iter_mut().chain(&mut self.menus);
@@ -305,7 +325,7 @@ impl Widget for MenuBarWidget {
                     );
                     width = width.saturating_add(w);
                 }
-                width
+                width.max(Length::px(self.min_width))
             }
         }
     }
@@ -330,6 +350,21 @@ impl Widget for MenuBarWidget {
             ctx.run_layout(child, child_size);
             right -= child_size.width;
             ctx.place_child(child, Point::new(right, 0.0));
+        }
+        // The tray goes on from there, the first icon rightmost, for as long as the icons
+        // fit before the titles on the left; the rest are stashed (not painted, not in the
+        // accessibility tree), and show again when room is made.
+        let limit = x + TRAY_OVERFLOW_GAP;
+        let mut full = false;
+        for child in &mut self.tray {
+            let child_size = ctx.compute_size(child, auto, available.into());
+            full |= right - child_size.width < limit;
+            ctx.set_stashed(child, full);
+            if !full {
+                ctx.run_layout(child, child_size);
+                right -= child_size.width;
+                ctx.place_child(child, Point::new(right, 0.0));
+            }
         }
         ctx.clear_baselines();
     }
@@ -369,6 +404,7 @@ impl Widget for MenuBarWidget {
             .iter()
             .chain(&self.menus)
             .chain(&self.trailing)
+            .chain(&self.tray)
             .map(WidgetPod::id)
             .collect()
     }
@@ -385,8 +421,8 @@ enum Content {
 }
 
 /// The icon of a menu extra (see [`MenuTitle::icon`]), drawn in the bar's label colours
-/// in both appearances.
-#[derive(Debug, Clone, Copy, PartialEq)]
+/// in both appearances (except an [`ExtraIcon::Image`] with colours of its own).
+#[derive(Debug, Clone, PartialEq)]
 pub enum ExtraIcon {
     /// A battery filled to `level` (0 to 1), with a bolt over it while `charging`.
     Battery { level: f64, charging: bool },
@@ -395,6 +431,11 @@ pub enum ExtraIcon {
     Bluetooth { powered: bool, connected: bool },
     /// The network: wired, Wi-Fi with its signal, Wi-Fi switched off, or nothing.
     Network(NetworkIcon),
+    /// A status icon of the tray (an app's picture, or an icon from the icon theme that
+    /// the shell has resolved), fitted in a square of one size so that the bar doesn't
+    /// shift when an app changes its icon. A picture keeps its colours, softened a little
+    /// in the dark appearance; a glyph is drawn as a label.
+    Image(Icon),
 }
 
 /// What the network extra shows (see [`ExtraIcon::Network`]); every state has the same
@@ -413,20 +454,29 @@ pub enum NetworkIcon {
 }
 
 impl ExtraIcon {
+    /// A status icon from straight-alpha RGBA8 pixels, row by row from the top left (what
+    /// StatusNotifier items send, once converted). `None` if a side is zero or over 65535
+    /// or `rgba` has the wrong length.
+    pub fn pixmap(width: u32, height: u32, rgba: &[u8]) -> Option<Self> {
+        let picture = neue_paint::materials::desktop::Picture::from_rgba8(width, height, rgba)?;
+        Some(Self::Image(Icon::raster(picture)))
+    }
+
     /// The icon's width and height.
-    fn size(self) -> (f64, f64) {
+    fn size(&self) -> (f64, f64) {
         match self {
             Self::Battery { .. } => (BATTERY_WIDTH, BATTERY_HEIGHT),
             Self::Bluetooth { .. } => (BLUETOOTH_WIDTH, BLUETOOTH_HEIGHT),
             Self::Network(_) => (NETWORK_WIDTH, NETWORK_HEIGHT),
+            Self::Image(_) => (TRAY_ICON_SIZE, TRAY_ICON_SIZE),
         }
     }
 
     /// Draws the icon in `rect`, as a label of the bar, or in the highlighted label colour
     /// (`highlighted`, over the blue of an open menu's title).
-    fn draw(self, scene: &mut Scene, rect: Rect, variant: Variant, highlighted: bool) {
+    fn draw(&self, scene: &mut Scene, rect: Rect, variant: Variant, highlighted: bool) {
         if !highlighted {
-            match self {
+            match *self {
                 Self::Battery { level, charging } => {
                     menu_bar::battery_label(scene, rect, level, charging, variant);
                 }
@@ -445,11 +495,12 @@ impl ExtraIcon {
                 Self::Network(NetworkIcon::WifiOff) => {
                     menu_bar::wifi_label(scene, rect, 0, true, variant);
                 }
+                Self::Image(ref image) => menu_bar::image_label(scene, rect, image, None, variant),
             }
             return;
         }
         let colour = menu_tokens::Palette::new(variant, Backdrop::Opaque).highlighted_label;
-        match self {
+        match *self {
             Self::Battery { level, charging } => {
                 let knockout = Palette::new(variant, Backdrop::Opaque).highlighted_knockout;
                 menu_bar::battery(scene, rect, level, charging, colour, knockout);
@@ -477,6 +528,9 @@ impl ExtraIcon {
                 menu_bar::wifi(scene, rect, menu_bar::WIFI_ARCS, colour);
                 menu_bar::strike(scene, rect, colour);
                 scene.pop_layer();
+            }
+            Self::Image(ref image) => {
+                menu_bar::image_label(scene, rect, image, Some(colour), variant);
             }
         }
     }
@@ -535,6 +589,8 @@ pub(crate) struct MenuTitleWidget {
     open: bool,
     /// Takes no room, shows nothing and opens nothing (a menu extra that isn't relevant).
     hidden: bool,
+    /// What assistive technologies read after the name (a status icon's tooltip).
+    description: Option<String>,
     return_focus: Option<WidgetId>,
     replayer: ImagingReplayer,
 }
@@ -556,6 +612,7 @@ impl MenuTitleWidget {
             spec,
             open: false,
             hidden: false,
+            description: None,
             return_focus: None,
             replayer: ImagingReplayer::new(),
         }
@@ -793,7 +850,7 @@ impl Widget for MenuTitleWidget {
                 menu_bar::logo_label(&mut scene, logo, theme.variant);
             }
         }
-        if let Content::Icon(icon, _) = self.content {
+        if let Content::Icon(icon, _) = &self.content {
             let (width, height) = icon.size();
             // Centred in the title, a pixel up like the logo for the embossed shadow.
             let at = Point::new(
@@ -835,6 +892,9 @@ impl Widget for MenuTitleWidget {
             return;
         }
         node.set_label(self.name().to_owned());
+        if let Some(description) = &self.description {
+            node.set_description(description.clone());
+        }
         node.add_action(Action::Click);
         node.set_has_popup(HasPopup::Menu);
         node.set_expanded(self.open);
@@ -871,6 +931,7 @@ pub struct MenuBar<M> {
     leading: Vec<Element<M>>,
     menus: Vec<Element<M>>,
     trailing: Vec<Element<M>>,
+    tray: Vec<Element<M>>,
 }
 
 impl<M> std::fmt::Debug for MenuBar<M> {
@@ -895,14 +956,17 @@ impl<M> MenuBar<M> {
                 leading: Vec::new(),
                 menus: Vec::new(),
                 trailing: Vec::new(),
+                tray: Vec::new(),
                 open: None,
                 spans: Vec::new(),
+                min_width: 0.0,
                 backdrop: Backdrop::Opaque,
                 replayer: ImagingReplayer::new(),
             }),
             leading: Vec::new(),
             menus: Vec::new(),
             trailing: Vec::new(),
+            tray: Vec::new(),
         }
     }
 
@@ -931,6 +995,25 @@ impl<M> MenuBar<M> {
         self
     }
 
+    /// Adds a status icon to the tray, left of the menu extras (the first is rightmost);
+    /// [`Handle::set_tray`] replaces them all.
+    #[must_use]
+    pub fn with_tray(mut self, icon: MenuTitle<M>) -> Self
+    where
+        M: 'static,
+    {
+        self.tray.push(icon.into());
+        self
+    }
+
+    /// Asks for a bar at least `width` wide, for a bar that isn't on a layer surface (the
+    /// shell's surface is as wide as its output): the room the tray fills.
+    #[must_use]
+    pub fn min_width(mut self, width: f64) -> Self {
+        self.inner.widget.min_width = width;
+        self
+    }
+
     /// [`Backdrop::Translucent`] once the compositor blurs what is behind the bar.
     #[must_use]
     pub fn backdrop(mut self, backdrop: Backdrop) -> Self {
@@ -953,6 +1036,7 @@ impl<M> From<MenuBar<M>> for Element<M> {
             leading,
             menus,
             trailing,
+            tray,
         } = bar;
         let mut wiring = Wiring::default();
         for child in leading {
@@ -963,6 +1047,9 @@ impl<M> From<MenuBar<M>> for Element<M> {
         }
         for child in trailing {
             inner.widget.trailing.push(wiring.adopt(child).to_pod());
+        }
+        for child in tray {
+            inner.widget.tray.push(wiring.adopt(child).to_pod());
         }
         Element::with_wiring(inner.erased(), wiring)
     }
@@ -991,6 +1078,30 @@ impl<M: 'static> Handle<MenuBar<M>> {
             .collect();
         cx.edit::<MenuBarWidget, _>(self, |mut bar| {
             MenuBarWidget::edit_set_menus(&mut bar, widgets);
+        });
+        cx.prune_handlers(window);
+        cx.register_wiring(window, wiring);
+    }
+}
+
+impl<M: 'static> Handle<MenuBar<M>> {
+    /// Replaces the tray's status icons (the titles added with [`MenuBar::with_tray`]),
+    /// so that apps can come and go without the bar being rebuilt. Titles bound to
+    /// handles can then change in place ([`Handle::set_icon`], [`Handle::set_hidden`]).
+    /// Don't replace an icon while its menu is up: wait for its close message
+    /// ([`MenuTitle::on_close`]).
+    pub fn set_tray(&self, cx: &mut Cx<'_, M>, icons: Vec<MenuTitle<M>>) {
+        let Some(window) = cx.window_of(self) else {
+            tracing::debug!("setting the tray of a bar that isn't in an open window");
+            return;
+        };
+        let mut wiring = Wiring::default();
+        let widgets = icons
+            .into_iter()
+            .map(|title| wiring.adopt(title.into()))
+            .collect();
+        cx.edit::<MenuBarWidget, _>(self, |mut bar| {
+            MenuBarWidget::edit_set_tray(&mut bar, widgets);
         });
         cx.prune_handlers(window);
         cx.register_wiring(window, wiring);
@@ -1075,6 +1186,14 @@ impl<M: 'static> MenuTitle<M> {
         self
     }
 
+    /// What assistive technologies read after the name: a status icon's tooltip
+    /// ([`Handle::set_description`] changes it).
+    #[must_use]
+    pub fn description(mut self, description: impl Into<String>) -> Self {
+        self.inner.widget.description = Some(description.into());
+        self
+    }
+
     /// Starts hidden (see [`Handle::set_hidden`]).
     #[must_use]
     pub fn hidden(mut self, hidden: bool) -> Self {
@@ -1136,19 +1255,27 @@ impl<M> Handle<MenuTitle<M>> {
     pub fn set_icon<N>(&self, cx: &mut Cx<'_, N>, icon: ExtraIcon, name: impl Into<String>) {
         let name = name.into();
         cx.edit::<MenuTitleWidget, _>(self, |mut w| {
-            let new = Content::Icon(icon, name);
-            if let Content::Icon(old, old_name) = &w.widget.content
-                && let Content::Icon(_, new_name) = &new
-                && old == &icon
-                && old_name == new_name
-            {
+            let Content::Icon(old, old_name) = &mut w.widget.content else {
+                return;
+            };
+            if *old == icon && *old_name == name {
                 return;
             }
-            if matches!(w.widget.content, Content::Icon(..)) {
-                w.widget.content = new;
-                // The icon's size follows its kind.
-                w.ctx.request_layout();
-                w.ctx.request_paint_only();
+            *old = icon;
+            *old_name = name;
+            // The icon's size follows its kind.
+            w.ctx.request_layout();
+            w.ctx.request_paint_only();
+            w.ctx.request_accessibility_update();
+        });
+    }
+
+    /// Changes (or with `None` removes) the description assistive technologies read after
+    /// the name.
+    pub fn set_description<N>(&self, cx: &mut Cx<'_, N>, description: Option<String>) {
+        cx.edit::<MenuTitleWidget, _>(self, |mut w| {
+            if w.widget.description != description {
+                w.widget.description = description;
                 w.ctx.request_accessibility_update();
             }
         });

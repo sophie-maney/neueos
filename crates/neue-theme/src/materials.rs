@@ -1158,6 +1158,16 @@ pub mod menu_bar {
     pub const NETWORK_STROKE: f64 = 1.5;
     /// Opacity of the Wi-Fi arcs that are not lit (the signal is weaker than them).
     pub const UNLIT_OPACITY: f32 = 0.30;
+    /// Width and height of a status icon in the tray (one size for every icon, so that the
+    /// bar doesn't shift when an app changes its icon).
+    pub const TRAY_ICON_SIZE: f64 = 16.0;
+    /// Opacity of a status icon in the dark appearance: apps draw for either, and a bright
+    /// glyph glares on the dark bar at full strength. The light appearance draws it as it
+    /// is.
+    pub const TRAY_DARK_OPACITY: f32 = 0.88;
+    /// The least room kept between the last title on the left and the first status icon
+    /// that is shown; icons that would come closer are left out (the tray's overflow).
+    pub const TRAY_OVERFLOW_GAP: f64 = 24.0;
 
     /// Colours of the bar.
     #[derive(Clone, Copy, Debug, PartialEq)]

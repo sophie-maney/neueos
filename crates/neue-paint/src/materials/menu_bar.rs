@@ -6,13 +6,14 @@
 
 use neue_theme::materials::menu_bar::{
     BLUETOOTH_STROKE, EDGE, LABEL_BASELINE, LABEL_EMBOSS_OFFSET, LOGO_STROKE, NETWORK_STROKE,
-    OFF_OPACITY, Palette, UNLIT_OPACITY,
+    OFF_OPACITY, Palette, TRAY_DARK_OPACITY, UNLIT_OPACITY,
 };
 use vello_common::kurbo::{
     Arc, BezPath, Cap, Circle, Join, Point, Rect, RoundedRect, Stroke, Vec2,
 };
 use vello_common::peniko::{Color, Gradient};
 
+use crate::icon::{self, Icon};
 use crate::scene::Scene;
 use crate::text::TextLine;
 use crate::{Backdrop, Variant};
@@ -290,6 +291,42 @@ pub fn wired_label(scene: &mut Scene, rect: Rect, connected: bool, variant: impl
     }
 }
 
+/// Draw a status icon of the tray in `rect` as a menu-bar label. An icon with colours of
+/// its own (an app's picture) keeps them, a dark bar softening it by
+/// [`TRAY_DARK_OPACITY`]; one that follows the colour it is drawn in (a glyph) is drawn in
+/// the label's colour, `highlighted` (over the blue of an open menu's title) or not.
+pub fn image_label(
+    scene: &mut Scene,
+    rect: Rect,
+    image: &Icon,
+    highlighted: Option<Color>,
+    variant: impl Into<Variant>,
+) {
+    let variant = variant.into();
+    let p = Palette::new(variant, Backdrop::default());
+    let dim = variant.is_dark() && highlighted.is_none() && image.has_own_colors();
+    if dim {
+        scene.push_opacity(TRAY_DARK_OPACITY);
+    }
+    if let Some(colour) = highlighted {
+        icon::icon(scene, rect, image, colour, variant);
+    } else {
+        if !image.has_own_colors() {
+            icon::icon(
+                scene,
+                rect + Vec2::new(0.0, LABEL_EMBOSS_OFFSET),
+                image,
+                p.label_shadow,
+                variant,
+            );
+        }
+        icon::icon(scene, rect, image, p.label, variant);
+    }
+    if dim {
+        scene.pop_layer();
+    }
+}
+
 /// A diagonal line across `rect`: what strikes out an icon that is switched off.
 pub fn strike(scene: &mut Scene, rect: Rect, color: Color) {
     let mut line = BezPath::new();
@@ -328,6 +365,36 @@ mod tests {
         bluetooth_label(&mut scene, rect, false, true, Appearance::Light);
         assert_eq!(scene.open_layers(), 0);
         assert!(!scene.commands().is_empty());
+    }
+
+    #[test]
+    fn a_picture_is_softened_on_a_dark_bar_only_and_a_glyph_gets_a_shadow() {
+        use crate::icon::Glyph;
+        use crate::materials::desktop::Picture;
+        let picture = Icon::raster(Picture::from_rgba8(1, 1, &[255, 0, 0, 255]).unwrap());
+        let glyph = Icon::from(Glyph::Folder);
+        let rect = Rect::new(0.0, 0.0, 16.0, HEIGHT);
+        let layers = |icon: &Icon, appearance| {
+            let mut scene = Scene::new(16.0, HEIGHT);
+            image_label(&mut scene, rect, icon, None, appearance);
+            assert_eq!(scene.open_layers(), 0, "balanced");
+            scene
+                .commands()
+                .iter()
+                .filter(|c| matches!(c, crate::scene::Command::PushLayer { .. }))
+                .count()
+        };
+        assert_eq!(layers(&picture, Appearance::Light), 0);
+        assert_eq!(layers(&picture, Appearance::Dark), 1);
+        // A glyph follows the label colour, so it isn't dimmed.
+        assert_eq!(layers(&glyph, Appearance::Dark), 0);
+        // A picture is drawn once; a glyph twice (shadow, then the glyph).
+        let fills = |icon: &Icon| {
+            let mut scene = Scene::new(16.0, HEIGHT);
+            image_label(&mut scene, rect, icon, None, Appearance::Light);
+            scene.commands().len()
+        };
+        assert_eq!(fills(&glyph), 2 * fills(&picture));
     }
 
     #[test]
