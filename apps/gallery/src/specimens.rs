@@ -1326,6 +1326,42 @@ pub fn shell_dock<M: 'static>(
     neue_kit::desktop::Dock::new(shell_dock_tiles()).on_click(make)
 }
 
+/// The dock with magnification on: 48 px icons growing to 96 under the pointer.
+pub const SHELL_DOCK_MAGNIFIED: neue_kit::desktop::DockLayout = neue_kit::desktop::DockLayout {
+    edge: neue_kit::desktop::DockEdge::Bottom,
+    icon: 48.0,
+    magnified: Some(96.0),
+};
+
+/// Golden window size for the magnified dock: four tiles, room for them to grow at both
+/// ends and above, and the window's padding.
+pub const SHELL_DOCK_MAGNIFIED_SIZE: (u32, u32) = (552, 154);
+
+/// Golden window size for the dock on the left or right edge: four tiles down the flat
+/// shelf, the bounce room beside them and the window's padding.
+pub const SHELL_DOCK_SIDE_SIZE: (u32, u32) = (96, 264);
+
+/// The dock with [`shell_dock_tiles`] and `layout`; `make` turns a click on a tile into a
+/// message.
+pub fn shell_dock_with<M: 'static>(
+    layout: neue_kit::desktop::DockLayout,
+    make: impl FnMut(&str) -> Option<M> + 'static,
+) -> neue_kit::desktop::Dock<M> {
+    shell_dock(make).layout(layout)
+}
+
+/// [`shell_dock_with`] on `edge`.
+pub fn shell_dock_on<M: 'static>(
+    edge: neue_kit::desktop::DockEdge,
+    make: impl FnMut(&str) -> Option<M> + 'static,
+) -> neue_kit::desktop::Dock<M> {
+    let layout = neue_kit::desktop::DockLayout {
+        edge,
+        ..neue_kit::desktop::DockLayout::default()
+    };
+    shell_dock_with(layout, make)
+}
+
 /// Golden window size for a notification: the panel, the room around it for its shadow and
 /// close button, and the window's padding.
 pub const SHELL_NOTIFICATION_SIZE: (u32, u32) = (384, 116);

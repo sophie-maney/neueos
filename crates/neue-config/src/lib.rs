@@ -30,7 +30,9 @@ use toml::{Table, Value};
 pub use appearance::AppearanceConfig;
 pub use chord::{Chord, ChordError};
 pub use compositor::{CompositorConfig, SuperAsCommandConfig, TitleBarDoubleClick, WindowsConfig};
-pub use shell::{DesktopConfig, DockConfig, NotificationsConfig, PictureFit, ShellConfig};
+pub use shell::{
+    DesktopConfig, DockConfig, DockEdge, NotificationsConfig, PictureFit, ShellConfig,
+};
 
 /// Directory name inside each config root.
 const DIR_NAME: &str = "neueos";

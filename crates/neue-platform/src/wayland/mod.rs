@@ -94,9 +94,9 @@ use wayland_protocols_plasma::appmenu::client::{
 use crate::app::{DriverWindow, Registry};
 use crate::gpu::{Gpu, GpuError, SurfaceTarget};
 use crate::{
-    Anchor, App, Blur, ChromeHeight, Ctx, Decorations, LayerKeyboard, LayerSpec, MenuAddress,
-    Options, PopoverAnchor, PopupBlur, ShellLayer, TokenRequest, Waker, WindowId, WindowKind,
-    WindowSpec,
+    Anchor, App, Blur, ChromeHeight, Ctx, Decorations, LayerKeyboard, LayerSpec, Margin,
+    MenuAddress, Options, PopoverAnchor, PopupBlur, ShellLayer, TokenRequest, Waker, WindowId,
+    WindowKind, WindowSpec,
 };
 use access::{Access, AccessEvent};
 use clipboard::Clipboard;
@@ -428,8 +428,8 @@ struct ContentSized {
     /// Whether the pointer reaches it ([`LayerSpec::pointer`]); the input region is then
     /// the content's rect.
     pointer: bool,
-    /// The strip at the top the pointer passes through ([`LayerSpec::pass_through_top`]).
-    pass_through_top: u32,
+    /// What the pointer passes through at each side ([`LayerSpec::pass_through`]).
+    pass_through: Margin,
     /// The logical size last asked of the compositor.
     sent: Option<(u32, u32)>,
 }
@@ -706,7 +706,7 @@ impl State {
         let content = match &spec.kind {
             WindowKind::Layer(layer) if layer.fit_content => Some(ContentSized {
                 pointer: layer.pointer,
-                pass_through_top: layer.pass_through_top,
+                pass_through: layer.pass_through,
                 sent: None,
             }),
             _ => None,
@@ -1004,7 +1004,7 @@ impl State {
                                     &self.g.compositor,
                                     layer.wl_surface(),
                                     logical,
-                                    content.pass_through_top,
+                                    content.pass_through,
                                 );
                             }
                             tracing::debug!(%id, ?logical, "layer surface follows its content");
@@ -1510,18 +1510,22 @@ fn content_logical(width: u32, height: u32, scale: f64) -> (u32, u32) {
     (px(width), px(height))
 }
 
-/// Makes `size` (logical, from the surface's origin) less a strip `top` tall at the top the
+/// Makes `size` (logical, from the surface's origin) less `pass_through` at its sides the
 /// surface's input region, with the next commit.
 fn set_input_rect(
     compositor: &CompositorState,
     surface: &wl_surface::WlSurface,
     size: (u32, u32),
-    top: u32,
+    pass_through: Margin,
 ) {
     match Region::new(compositor) {
         Ok(region) => {
-            let top = top.min(size.1);
-            region.add(0, top as i32, size.0 as i32, (size.1 - top) as i32);
+            let (w, h) = (size.0 as i32, size.1 as i32);
+            let left = pass_through.left.clamp(0, w);
+            let top = pass_through.top.clamp(0, h);
+            let right = (w - pass_through.right.max(0)).max(left);
+            let bottom = (h - pass_through.bottom.max(0)).max(top);
+            region.add(left, top, right - left, bottom - top);
             surface.set_input_region(Some(region.wl_region()));
         }
         Err(err) => tracing::debug!(%err, "no wl_region for the layer's content"),

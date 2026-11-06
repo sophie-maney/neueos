@@ -810,7 +810,7 @@ their goldens and the gallery's "Shell" page run on macOS.
       keyboard focus for the dock surface, the app's own window icon (ADR 0092).
 - [ ] **3.17 Dock B: magnification, edges and editing**, split into 3.17a–c (the layout
       rework, editing and menus, the Trash and minimised tiles).
-- [ ] **3.17a Magnification and left/right edges** · Opus. After 3.16. Both rewrite the
+- [x] **3.17a Magnification and left/right edges** · Opus. After 3.16. Both rewrite the
       dock's layout (`dock_size`, `dock_icon_rect`), hit-testing and the minimise
       rectangles, so they go together. Hover magnification in `neue_kit::desktop::Dock`
       (a spring-smoothed scale curve under the pointer; tile rects and minimise
@@ -823,6 +823,25 @@ their goldens and the gallery's "Shell" page run on macOS.
       switched through config, windows stopping at the shelf, minimise rectangles still
       right (debug log).
       *Owner:* magnification feels right with a real mouse and trackpad.
+      *Done:* ADR 0093. `neue_kit::desktop::{DockEdge, DockLayout, DockPlacement}`
+      replace `dock_size`/`dock_icon_rect` (`size`, `band`, `pass_through`, `rest`,
+      `place`); a raised-cosine curve over 3 tiles laid out as a fisheye of the dock at
+      rest, the amount on `MAGNIFY` (off under reduced motion); `Dock::layout`,
+      `Dock::on_placed` (the shell's minimise targets follow magnified icons);
+      `LayerSpec::pass_through: Margin` replaces `pass_through_top`; `Anchor::{LEFT,
+      RIGHT}`; tokens `dock::{ICON_RANGE, MAGNIFIED, MAGNIFIED_MAX, MAGNIFY_REACH,
+      MAGNIFY, FLAT_INSET}`; `[dock] edge, size, magnification, magnified-size`. Goldens:
+      `shell-dock-magnified` (magnified), `shell-dock-left` and `shell-dock-right`
+      (normal, bouncing) × light/dark × 1 and 2; gallery entries; `shell-dock` moved by
+      ~4 px of antialiasing (the new clip). Tests: 9 layout, 4 kit (magnify and leave,
+      reduced motion, left edge clicks, plus the 3.16 ones), 1 config. Checked in the VM
+      (1024×768): six pinned apps magnified under `ydotool` moves (screenshots), the
+      foot window's minimise rectangle following its icon (48 → 66 → 94 px) and back to
+      rest when the pointer leaves, a click on the magnified tile restoring the minimised
+      window; `edge = "left"` and `edge = "right"` (with magnification) from config, a
+      zoomed window stopping at the shelf (x 64, width 960), a launch bounce away from the
+      right edge, minimise rectangles in the turned surface. Not done: changing the edge
+      while the shell runs; real hardware.
 - [ ] **3.17b Editing and context menus** · Sonnet (Opus if the drag gesture proves
       fiddly). After 3.17a. Drag to rearrange, drag off to remove, Keep in Dock (writes
       `[dock] pinned`), and a context menu (existing `ContextMenu` widget) with the app's

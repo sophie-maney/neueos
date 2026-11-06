@@ -1,6 +1,6 @@
-//! The dock in the shell process (task 3.16, ADR 0092): a layer surface at the bottom
-//! centre of one output with a [`Dock`](neue_kit::desktop::Dock) on it, fed by the model in
-//! `neue_shell::dock`.
+//! The dock in the shell process (tasks 3.16 and 3.17a, ADRs 0092 and 0093): a layer
+//! surface centred on the bottom, left or right edge of one output (`[dock] edge`) with a
+//! [`Dock`](neue_kit::desktop::Dock) on it, fed by the model in `neue_shell::dock`.
 //!
 //! - Icons are found in the icon theme on a thread of their own, once per name.
 //! - A click on an app without windows launches it with an activation token from the
@@ -8,7 +8,8 @@
 //!   first window comes up focused; the tile bounces until a window opens or
 //!   `LAUNCH_TIMEOUT` passes. A click on a running app activates one of its windows.
 //! - Every window's minimise target is its app's icon on the dock
-//!   (`set_minimize_rectangle`, ADR 0066 §10), sent when it changes.
+//!   (`set_minimize_rectangle`, ADR 0066 §10), where the dock last reported it (it moves
+//!   with magnification), sent when it changes.
 //!
 //! The dock lives on the first output; when that output goes away it moves to another.
 
@@ -19,9 +20,9 @@ use neue_config::{DockConfig, Layers, ShellConfig};
 use neue_desktop::{AppDatabase, IconLoader, IconLookup, LaunchOptions};
 use neue_kit::desktop::{
     Anchor, Dock as DockView, DockBounce, DockTile, LayerKeyboard, LayerSpec, OutputId, ShellLayer,
-    ShellRequest, ToplevelId, dock_icon_rect, dock_size,
+    ShellRequest, ToplevelId,
 };
-use neue_kit::tokens::materials::dock::{BOUNCE_ROOM, ICON};
+use neue_kit::desktop::{DockEdge, DockLayout, Margin, Rect};
 use neue_kit::{Cx, Handle, Icon, WindowId};
 use neue_shell::dock::{Click, Dock, Tile, minimize_targets};
 use neue_shell::windows::Windows;
@@ -40,6 +41,8 @@ pub enum Event {
     Opened(WindowId),
     /// A tile was clicked.
     Clicked(String),
+    /// The icons moved: each tile's key and its icon's rect on the surface.
+    Placed(Vec<(String, Rect)>),
     /// Icons were looked up, by name (`None`: not found).
     Icons(Vec<(String, Option<Icon>)>),
     /// The compositor answered the token request for launching `entry` (tile `key`).
@@ -64,6 +67,10 @@ struct Surface<M> {
 pub struct DockHost<M> {
     wrap: fn(Event) -> M,
     model: Dock,
+    /// The edge, the icons' size and magnification, from `shell.toml`.
+    layout: DockLayout,
+    /// Where the dock last said each tile's icon is, by key.
+    placed: HashMap<String, Rect>,
     surface: Option<Surface<M>>,
     /// Icons by theme name or path; `None`: looked up and not found.
     icons: HashMap<String, Option<Icon>>,
@@ -80,9 +87,12 @@ pub struct DockHost<M> {
 impl<M: Send + 'static> DockHost<M> {
     /// Keeping the apps `shell.toml` pins.
     pub fn new(wrap: fn(Event) -> M) -> Self {
+        let config = config(&Layers::standard());
         Self {
             wrap,
-            model: Dock::new(config(&Layers::standard()).pinned),
+            layout: layout(&config),
+            placed: HashMap::new(),
+            model: Dock::new(config.pinned),
             surface: None,
             icons: HashMap::new(),
             loading: HashSet::new(),
@@ -100,30 +110,49 @@ impl<M: Send + 'static> DockHost<M> {
         let wrap = self.wrap;
         let mut view = Handle::default();
         let root = DockView::new(self.shown.clone())
+            .layout(self.layout)
             .on_click(move |key| Some(wrap(Event::Clicked(key.to_owned()))))
+            .on_placed(move |icons| Some(wrap(Event::Placed(icons.to_vec()))))
             .bind(&mut view);
-        let size = dock_size(self.shown.len());
+        let size = self.layout.size(self.shown.len());
+        let insets = self.layout.pass_through();
         #[expect(
             clippy::cast_possible_truncation,
             clippy::cast_sign_loss,
             reason = "the dock's size in whole logical pixels"
         )]
-        let (width, height, zone, room) = (
+        let (width, height, zone) = (
             size.width.ceil() as u32,
             size.height.ceil() as u32,
-            (size.height - BOUNCE_ROOM).ceil() as i32,
-            BOUNCE_ROOM as u32,
+            self.layout.band().ceil() as i32,
         );
+        #[expect(
+            clippy::cast_possible_truncation,
+            reason = "the room the pointer passes through, in whole logical pixels"
+        )]
+        let pass_through = Margin {
+            top: insets.y0.floor() as i32,
+            right: insets.x1.floor() as i32,
+            bottom: insets.y1.floor() as i32,
+            left: insets.x0.floor() as i32,
+        };
+        let anchor = match self.layout.edge {
+            DockEdge::Bottom => Anchor::BOTTOM,
+            DockEdge::Left => Anchor::LEFT,
+            DockEdge::Right => Anchor::RIGHT,
+        };
         let layer = LayerSpec {
             layer: ShellLayer::Top,
-            // Maximised windows stop above the shelf; the bounce room is over them.
+            // Maximised windows stop at the shelf; the bounce room is over them.
             exclusive_zone: zone,
             // Clicking an icon never takes the keyboard from the app being used.
             keyboard: LayerKeyboard::None,
             output: Some(output),
             fit_content: true,
-            pass_through_top: room,
-            ..LayerSpec::new(NAMESPACE, Anchor::BOTTOM)
+            // The pointer reaches the dock at rest only: the room for bounces, grown
+            // icons and the dock growing at its ends is over the windows.
+            pass_through,
+            ..LayerSpec::new(NAMESPACE, anchor)
         };
         let window = neue_kit::Window::new("Dock", (width, height), root).layer(layer);
         let window = cx.open_window(window);
@@ -135,6 +164,7 @@ impl<M: Send + 'static> DockHost<M> {
         });
         // The rectangles are on the new surface.
         self.sent.clear();
+        self.placed.clear();
         // Delivered after the driver has created the window.
         cx.spawn(move |_| wrap(Event::Opened(window)));
     }
@@ -168,6 +198,13 @@ impl<M: Send + 'static> DockHost<M> {
                 self.sync(cx, windows, apps);
             }
             Event::Clicked(key) => self.click(cx, &key, windows, apps),
+            Event::Placed(icons) => {
+                self.placed = icons.into_iter().collect();
+                if let Some(surface) = self.surface.as_ref().filter(|s| s.ready) {
+                    let tiles = self.model.tiles(windows, apps);
+                    self.send_targets(cx, surface.window, &tiles);
+                }
+            }
             Event::Icons(found) => {
                 for (name, icon) in found {
                     self.loading.remove(&name);
@@ -284,14 +321,16 @@ impl<M: Send + 'static> DockHost<M> {
         }
         self.loading.extend(wanted.iter().cloned());
         let wrap = self.wrap;
+        // Sharp at the largest size an icon grows to.
+        let icon_size = self.layout.magnified.unwrap_or(0.0).max(self.layout.icon);
         cx.spawn(move |_| {
             let mut loader = IconLoader::new(IconLookup::system(ICON_THEME, Some(FALLBACK_THEME)));
             #[expect(
                 clippy::cast_possible_truncation,
                 clippy::cast_sign_loss,
-                reason = "the dock's 48 px icon"
+                reason = "the dock's icon size, at most 256 px"
             )]
-            let size = ICON as u32;
+            let size = icon_size.ceil() as u32;
             let found = wanted
                 .into_iter()
                 .map(|name| {
@@ -310,8 +349,13 @@ impl<M: Send + 'static> DockHost<M> {
     fn send_targets(&mut self, cx: &mut Cx<'_, M>, surface: WindowId, tiles: &[Tile]) {
         let targets = minimize_targets(tiles);
         self.sent.retain(|window, _| targets.contains_key(window));
+        let rest = self.layout.rest(tiles.len());
         for (window, index) in targets {
-            let r = dock_icon_rect(index);
+            // Where the dock said the icon is; at rest until it has said.
+            let placed = tiles.get(index).and_then(|t| self.placed.get(&t.key));
+            let Some(&r) = placed.or_else(|| rest.icons.get(index)) else {
+                continue;
+            };
             #[expect(
                 clippy::cast_possible_truncation,
                 reason = "an icon's rect on the dock, in whole logical pixels"
@@ -332,6 +376,19 @@ impl<M: Send + 'static> DockHost<M> {
             }
         }
     }
+}
+
+/// The dock's layout from `[dock]`.
+fn layout(config: &DockConfig) -> DockLayout {
+    let edge = match config.edge {
+        neue_config::DockEdge::Bottom => DockEdge::Bottom,
+        neue_config::DockEdge::Left => DockEdge::Left,
+        neue_config::DockEdge::Right => DockEdge::Right,
+    };
+    let magnified = config
+        .magnification
+        .then_some(f64::from(config.magnified_size));
+    DockLayout::new(edge, f64::from(config.size), magnified)
 }
 
 /// `shell.toml`'s `[dock]`; the defaults when the file doesn't load.

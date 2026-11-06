@@ -12,6 +12,7 @@ mod context;
 mod date;
 mod desktop;
 mod dock;
+mod dock_layout;
 mod edit_menu;
 mod field;
 mod icon;
@@ -50,7 +51,7 @@ use std::cell::RefCell;
 use std::rc::Rc;
 
 use masonry_core::core::NewWidget;
-use masonry_core::kurbo::Axis;
+use masonry_core::kurbo::{Axis, Rect};
 use neue_paint::Backdrop;
 pub use neue_paint::demo::MaterialTile;
 use neue_paint::icon::Icon;
@@ -72,8 +73,9 @@ pub use context::ContextMenu;
 pub use date::{CalendarPicker, DatePicker};
 pub(crate) use date::{CalendarWidget, DateFieldWidget};
 pub(crate) use desktop::DesktopWidget;
-pub use dock::{DockBounce, DockTile, dock_icon_rect, dock_size};
-pub(crate) use dock::{DockTileWidget, DockWidget, TileClicked};
+pub(crate) use dock::{DockAction, DockTileWidget, DockWidget};
+pub use dock::{DockBounce, DockTile};
+pub use dock_layout::{DockEdge, DockLayout, DockPlacement};
 pub use field::{ComboBox, TextField};
 pub(crate) use field::{FieldAction, FieldWidget};
 pub(crate) use icon::IconWidget;
@@ -508,37 +510,51 @@ impl Handle<Osd> {
     }
 }
 
-/// The dock: the glass shelf at the bottom of the screen with a tile per app on it, each
-/// the app's icon reflected in the glass, a light under it while the app runs, and a bounce
-/// while it launches or asks for attention ([`DockBounce`]; under reduced motion an icon
-/// asking for attention stands raised instead). Its size follows the tile count
-/// ([`dock_size`]), so a layer window with `fit_content` follows it; the room above the
-/// icons is for the bounce (`tokens::materials::dock::BOUNCE_ROOM`), for the pointer to
-/// pass through. Tab reaches each tile; Space or Return clicks it.
+/// The dock: the glass shelf along an edge of the screen with a tile per app on it, each
+/// the app's icon (reflected in the glass at the bottom), a light under it while the app
+/// runs, and a bounce while it launches or asks for attention ([`DockBounce`]; under
+/// reduced motion an icon asking for attention stands raised instead). With magnification
+/// on, the icons grow under the pointer. Its size follows the tile count and its
+/// [`DockLayout`], so a layer window with `fit_content` follows it; the room beyond the
+/// icons (for the bounce and magnified icons) and at the ends (for the dock to grow into)
+/// is for the pointer to pass through ([`DockLayout::pass_through`]). Tab reaches each
+/// tile; Space or Return clicks it.
 pub struct Dock<M> {
     inner: NewWidget<DockWidget>,
     on_click: Option<DockClick<M>>,
+    on_placed: Option<DockPlaced<M>>,
 }
 
 /// The app's closure for a click on a dock tile.
 type DockClick<M> = Box<dyn FnMut(&str) -> Option<M>>;
+/// The app's closure for the dock's icons moving.
+type DockPlaced<M> = Box<dyn FnMut(&[(String, Rect)]) -> Option<M>>;
 
 impl<M> std::fmt::Debug for Dock<M> {
     fn fmt(&self, f: &mut std::fmt::Formatter<'_>) -> std::fmt::Result {
         f.debug_struct("Dock")
             .field("inner", &self.inner)
             .field("on_click", &self.on_click.is_some())
+            .field("on_placed", &self.on_placed.is_some())
             .finish()
     }
 }
 
 impl<M: 'static> Dock<M> {
-    /// Showing `tiles`, left to right.
+    /// Showing `tiles`, left to right (top to bottom on the sides).
     pub fn new(tiles: Vec<DockTile>) -> Self {
         Self {
             inner: NewWidget::new(DockWidget::new(tiles)),
             on_click: None,
+            on_placed: None,
         }
+    }
+
+    /// The dock's edge, icon size and magnification (by default [`DockLayout::default`]).
+    #[must_use]
+    pub fn layout(mut self, layout: DockLayout) -> Self {
+        self.inner.widget.layout = layout;
+        self
     }
 
     /// Sends the message `make` returns for a click on the tile with this key (`None`:
@@ -546,6 +562,15 @@ impl<M: 'static> Dock<M> {
     #[must_use]
     pub fn on_click(mut self, make: impl FnMut(&str) -> Option<M> + 'static) -> Self {
         self.on_click = Some(Box::new(make));
+        self
+    }
+
+    /// Sends the message `make` returns whenever the icons move (tiles come and go, or
+    /// magnification moves them): each tile's key and its icon's rect (before any bounce)
+    /// in the dock's coordinates. The windows' minimise targets.
+    #[must_use]
+    pub fn on_placed(mut self, make: impl FnMut(&[(String, Rect)]) -> Option<M> + 'static) -> Self {
+        self.on_placed = Some(Box::new(make));
         self
     }
 
@@ -569,10 +594,11 @@ impl<M: 'static> From<Dock<M>> for Element<M> {
     fn from(dock: Dock<M>) -> Self {
         let id = dock.inner.id();
         let mut element = Element::new(dock.inner.erased());
-        if let Some(mut make) = dock.on_click {
-            element.on_action(id, move |action| {
-                let TileClicked(key) = action.downcast_ref()?;
-                make(key)
+        let (mut on_click, mut on_placed) = (dock.on_click, dock.on_placed);
+        if on_click.is_some() || on_placed.is_some() {
+            element.on_action(id, move |action| match action.downcast_ref()? {
+                DockAction::Clicked(key) => on_click.as_mut()?(key),
+                DockAction::Placed(icons) => on_placed.as_mut()?(icons),
             });
         }
         element
@@ -580,8 +606,8 @@ impl<M: 'static> From<Dock<M>> for Element<M> {
 }
 
 impl<M> Handle<Dock<M>> {
-    /// Shows `tiles`, left to right. A tile keeps its bounce and keyboard focus across
-    /// updates by its key.
+    /// Shows `tiles`, left to right (top to bottom on the sides). A tile keeps its bounce
+    /// and keyboard focus across updates by its key.
     pub fn set_tiles<N>(&self, cx: &mut Cx<'_, N>, tiles: Vec<DockTile>) {
         cx.edit::<DockWidget, _>(self, |mut dock| DockWidget::edit_tiles(&mut dock, tiles));
     }

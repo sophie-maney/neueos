@@ -1,5 +1,5 @@
 //! `shell.toml`: settings of `neue-shell` (task 3.2c; notifications, task 3.15a; the dock,
-//! task 3.16). The menu bar and the rest join this file with their tasks.
+//! tasks 3.16 and 3.17a). The menu bar and the rest join this file with their tasks.
 
 use std::path::PathBuf;
 
@@ -16,7 +16,7 @@ pub struct ShellConfig {
     pub desktop: DesktopConfig,
     /// `[notifications]`: banners and Do Not Disturb.
     pub notifications: NotificationsConfig,
-    /// `[dock]`: the apps kept in the dock.
+    /// `[dock]`: the apps kept in the dock, its edge, size and magnification.
     pub dock: DockConfig,
 }
 
@@ -29,14 +29,48 @@ pub struct DockConfig {
     /// (`foot`). Apps that aren't installed are left out. Default: a terminal (`foot`),
     /// until neueOS's own apps arrive.
     pub pinned: Vec<String>,
+    /// The screen edge the dock stands on: `"bottom"` (the default), `"left"` or
+    /// `"right"`. Read when the shell starts.
+    pub edge: DockEdge,
+    /// The icons' size in logical pixels, 16 to 128. Default 48.
+    #[serde(deserialize_with = "dock_size")]
+    pub size: u32,
+    /// Whether icons grow under the pointer. Default `false`. Off while motion is reduced.
+    pub magnification: bool,
+    /// The size icons grow to under the pointer with `magnification` on, in logical
+    /// pixels, 16 to 256; no bigger than `size` means no magnification. Default 96.
+    #[serde(deserialize_with = "magnified_size")]
+    pub magnified_size: u32,
 }
 
 impl Default for DockConfig {
     fn default() -> Self {
         Self {
             pinned: vec!["foot".to_owned()],
+            edge: DockEdge::Bottom,
+            size: 48,
+            magnification: false,
+            magnified_size: 96,
         }
     }
+}
+
+/// The screen edge the dock stands on (`[dock] edge`).
+#[derive(Debug, Clone, Copy, Default, PartialEq, Eq, Serialize, Deserialize)]
+#[serde(rename_all = "kebab-case")]
+pub enum DockEdge {
+    #[default]
+    Bottom,
+    Left,
+    Right,
+}
+
+fn dock_size<'de, D: Deserializer<'de>>(d: D) -> Result<u32, D::Error> {
+    in_range(d, "size", 16, 128)
+}
+
+fn magnified_size<'de, D: Deserializer<'de>>(d: D) -> Result<u32, D::Error> {
+    in_range(d, "magnified-size", 16, 256)
 }
 
 impl ConfigFile for ShellConfig {
@@ -143,6 +177,31 @@ mod tests {
             .unwrap()
             .config;
         assert_eq!(config.dock.pinned, ["org.gnome.Nautilus.desktop", "foot"]);
+    }
+
+    #[test]
+    fn the_dock_stands_at_the_bottom_unmagnified_unless_told_otherwise() {
+        let config = load::<ShellConfig>(&Layers::none()).unwrap().config.dock;
+        assert_eq!(config.edge, DockEdge::Bottom);
+        assert_eq!(config.size, 48);
+        assert!(!config.magnification);
+        assert_eq!(config.magnified_size, 96);
+        let dir = tempfile::tempdir().unwrap();
+        let file = dir.path().join("shell.toml");
+        let layers = Layers::from_dirs([dir.path().to_owned()]);
+        std::fs::write(
+            &file,
+            "[dock]\nedge = \"left\"\nsize = 40\nmagnification = true\nmagnified-size = 128\n",
+        )
+        .unwrap();
+        let config = load::<ShellConfig>(&layers).unwrap().config.dock;
+        assert_eq!(config.edge, DockEdge::Left);
+        assert_eq!((config.size, config.magnified_size), (40, 128));
+        assert!(config.magnification);
+        std::fs::write(&file, "[dock]\nsize = 300\n").unwrap();
+        assert!(load::<ShellConfig>(&layers).is_err());
+        std::fs::write(&file, "[dock]\nedge = \"top\"\n").unwrap();
+        assert!(load::<ShellConfig>(&layers).is_err());
     }
 
     #[test]

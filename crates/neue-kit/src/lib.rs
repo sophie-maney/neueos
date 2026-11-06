@@ -86,10 +86,12 @@ pub use widgets::{
 pub mod desktop {
     pub use crate::notification_stack::{self, NotificationStack};
     pub use crate::widgets::{
-        Desktop, Dock, DockBounce, DockTile, ExtraIcon, MenuBar, MenuTitle, NetworkIcon,
-        Notification, NotificationContent, NotificationEvent, NotificationHost, Osd,
-        dock_icon_rect, dock_size,
+        Desktop, Dock, DockBounce, DockEdge, DockLayout, DockPlacement, DockTile, ExtraIcon,
+        MenuBar, MenuTitle, NetworkIcon, Notification, NotificationContent, NotificationEvent,
+        NotificationHost, Osd,
     };
+    /// Geometry the dock's layout speaks in.
+    pub use masonry_core::kurbo::{Insets, Rect, Size};
     pub use neue_paint::materials::desktop::{Fit, Picture};
     pub use neue_paint::materials::osd::Glyph as OsdGlyph;
     pub use neue_platform::desktop::*;
