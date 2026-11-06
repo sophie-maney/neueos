@@ -452,6 +452,8 @@ The status-icon tray follows it too: StatusNotifier watcher, host and item clien
 Volume, brightness and OSDs are split into system keys, brightness and the OSD (3.14a),
 the PipeWire volume backend (3.14b), the volume extra (3.14c), and media keys and
 the keyboard backlight (3.14d).
+Notifications are split into the D-Bus server (3.15a), the banner and alert widgets
+(3.15b), activation tokens for the shell (3.15c) and the shell wiring (3.15d).
 - **Exit:** log in from the greeter on your PC and use neueOS as the daily desktop.
 
 ### Phase 4: Overview and Spaces (L)

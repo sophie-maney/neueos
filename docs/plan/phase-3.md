@@ -620,14 +620,63 @@ their goldens and the gallery's "Shell" page run on macOS.
       (`playerctl -a status` and the mock's log), a paused player that was last to play wins
       over one earlier on the bus, also when it played only through a signal. Not checked:
       the keyboard backlight (no LED in the VM).
-- [ ] **3.15 Notifications** · Sonnet. After 3.2b. An `org.freedesktop.Notifications`
-      server in the shell (interface in `neue-dbus`): banners at the top right under the
-      menu bar, sliding in with a spring, stacking, timing out; alerts for critical or
-      persistent ones; default action on click and action buttons, with an activation
-      token; app icon from the entry or `image-data`; Do Not Disturb in config with a menu
-      item. The Notification Center panel is Phase 6.
-      *Accept:* goldens of banner and alert states; in the VM, `notify-send` with actions,
-      urgency and replace-id behaves as expected.
+- [x] **3.15 Notifications**, split into 3.15a–d (a D-Bus server, a new widget and
+      material, activation tokens across platform, kit and compositor, and the shell
+      wiring). The Notification Center panel is Phase 6.
+- [x] **3.15a Notifications server** · Sonnet. After 3.2b. `neue_dbus::notifications`:
+      `org.freedesktop.Notifications` at `/org/freedesktop/Notifications` (spec 1.2):
+      `Notify` (replace-id; actions; hints `urgency`, `image-data`/`image_data`/`icon_data`,
+      `image-path`/`image_path`, `desktop-entry`, `resident`, `transient`, `category`),
+      `CloseNotification`, `GetCapabilities`, `GetServerInformation`; signals
+      `NotificationClosed` (with its reason), `ActionInvoked`, `ActivationToken`. A
+      portable store owns replacement, expiry (−1 is the server's default, 0 never;
+      critical never expires) driven by the caller's clock; the server hands out ids.
+      `neue-config` gains `[notifications]` (`do_not_disturb`, `banner_timeout`) with
+      defaults. ADR.
+      *Accept:* tests over a peer-to-peer connection with a scripted client cover every
+      method and signal, replace-id, expiry and each close reason; store unit tests.
+      *Done:* ADR 0089. `neue_dbus::notifications` (`Notifications::{serve, own, close,
+      invoke, is_open}`, `Request`, `Notification` with `icon()`/`buttons()`, `Hints`,
+      `Image`, `Urgency`, `Timeout`, `CloseReason`, `IconSource`); the portable
+      `neue_shell::notifications` (`Store<T>`, `Lifetime`, `lifetime`); `shell.toml`
+      `[notifications] do-not-disturb, banner-timeout`. 9 unit and 6 peer-to-peer
+      `neue-dbus` tests, 7 store tests, 1 config test. Nothing owns the name yet (3.15d),
+      so there is no VM check.
+- [ ] **3.15b Banner and alert widgets** · Opus. After 3.15a (its types).
+      `neue_kit::desktop::Notification`: a banner (app icon or image, bold title, body
+      clipped to two lines, a close button on hover) and an alert (the same with action
+      buttons). Material in `neue-paint` with `neue-theme` tokens, light and dark. A
+      portable stack model: positions top right under the bar, slide in and out with a
+      spring (reduced motion: no slide), the stack closing up. AccessKit roles and labels,
+      the buttons reachable by keyboard.
+      *Accept:* gallery Shell page entry; goldens of banner, banner with image, banner with
+      hovered close, alert with two actions × light/dark × scale 1 and 2; stack model unit
+      tests.
+      *Owner:* banners and alerts look right on the PC, light and dark.
+- [ ] **3.15c Activation tokens for the shell** · Opus. After 3.2a. `Ctx::activation_token`
+      through `neue-platform` (an `xdg_activation_v1` token for a surface and the input
+      serial) and the kit; the compositor grants tokens asked for by the shell's client
+      even without keyboard focus (a banner never has it). ADR 0066/0067 addendum.
+      *Accept:* a headless `neue-comp` test with the real driver: the shell's token
+      activates another client's toplevel; a token from an unfocused ordinary client is
+      still refused.
+- [ ] **3.15d Shell wiring** · Sonnet. After 3.15a–c. The shell owns the name and shows
+      banners top right under the bar on the output with the active window, stacked,
+      timing out (paused while hovered); replace-id updates in place; critical and
+      never-expiring (`expire_timeout` 0) notifications show as alerts that stay until
+      dismissed (`Lifetime::Never`, ADR 0089). A click on a banner sends
+      `ActivationToken` and `ActionInvoked("default")` and closes it (unless `resident`);
+      the action buttons send their keys. App icon from `app_icon` or `desktop-entry`
+      through the icon theme, or `image-data`/`image-path`. A notifications extra at the
+      far right of the bar (dimmed while Do Not Disturb is on) with a menu holding a Do
+      Not Disturb toggle
+      saved to config; in Phase 6 a click on it opens the Notification Center.
+      *Accept:* goldens of the extra (on, Do Not Disturb); in the VM `notify-send` with
+      `--action`, `--urgency=critical`, `--replace-id`, `--expire-time` and `--wait`
+      behaves as expected (screenshots, `notify-send` prints the chosen action), and Do Not
+      Disturb hides banners.
+      *Owner:* a real app's notification (a browser or a chat client) opens the app
+      window on click.
 
 ## C. Dock
 - [ ] **3.16 Dock A: shelf, launching and running apps** · Opus. After 3.1–3.3. The
