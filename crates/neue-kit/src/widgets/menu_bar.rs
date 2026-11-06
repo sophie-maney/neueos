@@ -438,6 +438,8 @@ pub enum ExtraIcon {
     /// A speaker at `level` (0 to 1): a wave lit for each third of the way, none at 0;
     /// faded with no wave lit while `muted`.
     Volume { level: f64, muted: bool },
+    /// The notifications bell, faded while Do Not Disturb is on.
+    Notifications { do_not_disturb: bool },
     /// A status icon of the tray (an app's picture, or an icon from the icon theme that
     /// the shell has resolved), fitted in a square of one size so that the bar doesn't
     /// shift when an app changes its icon. A picture keeps its colours, softened a little
@@ -481,6 +483,10 @@ impl ExtraIcon {
             Self::Bluetooth { .. } => (BLUETOOTH_WIDTH, BLUETOOTH_HEIGHT),
             Self::Network(_) => (NETWORK_WIDTH, NETWORK_HEIGHT),
             Self::Volume { .. } => (menu_bar::VOLUME_WIDTH, menu_bar::VOLUME_HEIGHT),
+            Self::Notifications { .. } => (
+                menu_bar::NOTIFICATIONS_WIDTH,
+                menu_bar::NOTIFICATIONS_HEIGHT,
+            ),
             Self::Image(_) => (TRAY_ICON_SIZE, TRAY_ICON_SIZE),
         }
     }
@@ -510,6 +516,9 @@ impl ExtraIcon {
                 }
                 Self::Volume { level, muted } => {
                     menu_bar::speaker_label(scene, rect, speaker_waves(level), muted, variant);
+                }
+                Self::Notifications { do_not_disturb } => {
+                    menu_bar::bell_label(scene, rect, do_not_disturb, variant);
                 }
                 Self::Image(ref image) => menu_bar::image_label(scene, rect, image, None, variant),
             }
@@ -552,6 +561,15 @@ impl ExtraIcon {
                     scene.pop_layer();
                 } else {
                     menu_bar::speaker(scene, rect, speaker_waves(level), colour);
+                }
+            }
+            Self::Notifications { do_not_disturb } => {
+                if do_not_disturb {
+                    scene.push_opacity(OFF_OPACITY);
+                }
+                menu_bar::bell(scene, rect, colour);
+                if do_not_disturb {
+                    scene.pop_layer();
                 }
             }
             Self::Image(ref image) => {

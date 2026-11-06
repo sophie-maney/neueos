@@ -66,6 +66,16 @@ impl<M> Menu<M> {
         &self.items
     }
 
+    /// The message that choosing the item at `index` sends, as the menu would send it: what
+    /// a test of a menu built elsewhere checks. `None` for a separator, a submenu, a
+    /// slider, an item with no message, or an index past the end.
+    pub fn choose(&mut self, index: usize) -> Option<M> {
+        match &mut self.items.get_mut(index)?.kind {
+            Kind::Action(Some(handler)) => Some(handler()),
+            _ => None,
+        }
+    }
+
     /// Whether the menu has no items.
     pub fn is_empty(&self) -> bool {
         self.items.is_empty()
@@ -574,6 +584,21 @@ mod tests {
             .map(|h| h.as_mut().map(|make| make()))
             .collect();
         assert_eq!(sent, [Some(1), None, None, Some(2), Some(3)]);
+    }
+
+    #[test]
+    fn choose_makes_the_message_of_an_action_item_only() {
+        let mut menu: Menu<u8> = Menu::new()
+            .with(MenuItem::new("A").on_choose(1))
+            .separator()
+            .with(MenuItem::new("Silent"))
+            .with(MenuItem::slider("S", 0.5).on_change(|_| 9))
+            .with(MenuItem::submenu("B", Menu::new()));
+        assert_eq!(menu.choose(0), Some(1));
+        assert_eq!(menu.choose(0), Some(1));
+        for index in [1, 2, 3, 4, 5] {
+            assert_eq!(menu.choose(index), None);
+        }
     }
 
     #[test]

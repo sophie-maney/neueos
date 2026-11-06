@@ -9,6 +9,7 @@ use std::time::{Duration, Instant};
 use neue_dbus::bluetooth::{Bluetooth, State};
 use neue_dbus::network::{Network, State as NetworkState};
 use neue_dbus::power::{Battery, Power};
+use neue_dbus::settings::Settings;
 use neue_shell::bar::{
     BatteryView, BluetoothView, DeviceView, NetworkView, WifiNetworkView, WifiView, WiredView,
 };
@@ -119,6 +120,40 @@ pub fn run_network(send: impl Fn(Option<NetworkState>) -> bool) -> Result<(), ne
         let state = network.state()?;
         Ok((!state.wired.is_empty() || state.wifi.is_some()).then_some(state))
     });
+    Ok(())
+}
+
+/// The key of Do Not Disturb in `neue-settingsd` (ADR 0074): `shell.toml`'s
+/// `[notifications] do-not-disturb`.
+pub const DO_NOT_DISTURB_KEY: &str = "shell.notifications.do-not-disturb";
+
+/// `shell.toml`'s Do Not Disturb as the file says; off when it doesn't load. Used while
+/// `neue-settingsd` isn't on the bus, so a hand edit is still followed.
+fn do_not_disturb_from_file(layers: &neue_config::Layers) -> bool {
+    neue_config::load::<neue_config::ShellConfig>(layers)
+        .is_ok_and(|loaded| loaded.config.notifications.do_not_disturb)
+}
+
+/// Follows Do Not Disturb until `send` says the shell is gone: `neue-settingsd` tells of
+/// every change (its own sets and hand edits of the files); while the service isn't on the
+/// session bus, the file is read directly every [`POLL`].
+pub fn run_do_not_disturb(send: impl Fn(bool) -> bool) -> Result<(), neue_dbus::Error> {
+    let settings = Settings::session()?;
+    let signals = signals("settings-signals", settings.changes()?)?;
+    let layers = neue_config::Layers::standard();
+    follow(
+        "neue-settingsd",
+        &signals,
+        Duration::ZERO,
+        |on| send(on.unwrap_or(false)),
+        || {
+            Ok(Some(
+                settings
+                    .get_bool(DO_NOT_DISTURB_KEY)
+                    .unwrap_or_else(|_| do_not_disturb_from_file(&layers)),
+            ))
+        },
+    );
     Ok(())
 }
 

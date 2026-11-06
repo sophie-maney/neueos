@@ -678,7 +678,7 @@ their goldens and the gallery's "Shell" page run on macOS.
       client's window forward from no focus; an unfocused ordinary client only gets
       attention; tokens single-use; the test fails without the grant). No VM check: nothing
       in the shell asks for a token until 3.15d.
-- [ ] **3.15d Shell wiring**, split into 3.15d1–d4 (a layer surface that follows its
+- [x] **3.15d Shell wiring**, split into 3.15d1–d4 (a layer surface that follows its
       content, the kit container that hosts the panels, the shell wiring, and the bar
       extra). Split because the surface can't be resized from an app yet (`neue-platform`
       opens every window with `WindowSizePolicy::User`) and a fixed, oversized transparent
@@ -754,13 +754,30 @@ their goldens and the gallery's "Shell" page run on macOS.
       hovered banner outlives its 3 s until the pointer leaves. Not checked: `notify-send`
       itself and `--wait` (not installed; its output is `ActionInvoked` as seen with
       `gdbus monitor`), a second output.
-- [ ] **3.15d4 Notifications extra in the bar** · Sonnet. After 3.15a (independent of
+- [x] **3.15d4 Notifications extra in the bar** · Sonnet. After 3.15a (independent of
       the rest). A notifications extra at the far right of the bar, dimmed while Do Not
       Disturb is on, with a menu holding a Do Not Disturb toggle saved to `shell.toml`
       (the shell follows the file); in Phase 6 a click on it opens the Notification Center.
       Icon in `neue-paint`/`neue-theme` as the other extras', light and dark.
       *Accept:* goldens of the extra (on, Do Not Disturb) × light/dark × scale 1 and 2;
       menu tests (the toggle's message, its check state); gallery Shell page entry.
+      *Owner:* the bell and its menu look right on the PC, light and dark.
+      *Done:* ADR 0091 addendum. `ExtraIcon::Notifications` with `menu_bar::bell` and
+      `bell_label` (tokens `NOTIFICATIONS_*`); `neue_shell::bar::{NotificationsView,
+      NotificationsCommand, notifications_icon, notifications_menu}` and
+      `BarContent::notifications`, `BarHandles::notifications`, a fourth
+      `ExtraMessages` field. Diverges from the text above: the toggle is saved through
+      `neue-settingsd` (ADR 0004) with the new `neue_dbus::settings::Settings` client, and
+      the shell follows its `Changed` signal (the file itself while the service is down),
+      not an inotify watch of its own. `Menu::choose` in the kit for menu tests. Goldens:
+      `shell-extras` gains a notifications row (on, Do Not Disturb); the bar specimen is
+      560 px wide and the other bar goldens are redrawn (a new rightmost extra), with no
+      open-menu golden for the bell (a fixture can't flip a popup that doesn't fit). 2
+      `neue-dbus` tests (a fake service), 2 bar tests (icon and name, the menu's tick and
+      message), 1 kit test. Checked on Linux with the real `neue-settingsd` on a private
+      bus: the key reads `false`, `Set` writes `[notifications] do-not-disturb = true`.
+      Not checked: the shell in the VM (the bell and a toggle that dims it and hides the
+      next banner).
 
 ## C. Dock
 - [ ] **3.16 Dock A: shelf, launching and running apps** · Opus. After 3.1–3.3. The

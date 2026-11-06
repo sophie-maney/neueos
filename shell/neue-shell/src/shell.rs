@@ -9,6 +9,7 @@ use neue_config::{AppearanceConfig, Layers};
 use neue_dbus::bluetooth::{Bluetooth, State as BluetoothState};
 use neue_dbus::login::Login;
 use neue_dbus::network::{Network, State as NetworkState};
+use neue_dbus::settings::Settings as SettingsClient;
 use neue_dbus::{Host, MenuNode};
 use neue_desktop::{AppDatabase, LaunchOptions, Locale};
 use neue_kit::desktop::{
@@ -19,7 +20,8 @@ use neue_kit::{Application, Cx, Handle, Settings, WindowId};
 use neue_shell::about::About;
 use neue_shell::bar::{
     self, BarContent, BarHandles, BatteryView, BluetoothCommand, ExtraMessages, NetworkCommand,
-    SystemCommand, TrayActions, TrayItemView, VolumeCommand,
+    NotificationsCommand, NotificationsView, SystemCommand, TrayActions, TrayItemView,
+    VolumeCommand,
 };
 use neue_shell::clock;
 use neue_shell::fallback::{self, Command, Context, WindowEntry};
@@ -61,6 +63,14 @@ enum Message {
     Bluetooth(BluetoothCommand),
     /// Something done in the volume menu (task 3.14c).
     Volume(VolumeCommand),
+    /// Something chosen in the notifications menu (task 3.15d4).
+    Notifications(NotificationsCommand),
+    /// Do Not Disturb changed in `shell.toml` (from the menu, Preferences or a hand edit).
+    DoNotDisturb(bool),
+    /// The Do Not Disturb worker stopped (it logged why).
+    DoNotDisturbEnded,
+    /// Saving Do Not Disturb through `neue-settingsd` finished.
+    DoNotDisturbSaved(Result<(), String>),
     /// UPower's battery changed (`None`: there is none, or UPower isn't on the bus).
     Battery(Option<BatteryView>),
     /// The battery worker stopped (it logged why).
@@ -300,6 +310,8 @@ impl Shell {
                 // Shown once the network worker finds a network device.
                 network: None,
                 bluetooth: None,
+                // The Do Not Disturb worker reads it as soon as it starts.
+                notifications: NotificationsView::default(),
                 // Filled as the tray's worker finds status items.
                 tray: Vec::new(),
             },
@@ -362,6 +374,39 @@ impl Shell {
             }
             Message::BluetoothEnded
         });
+    }
+
+    /// Follows Do Not Disturb in `shell.toml` on a thread of its own.
+    fn start_do_not_disturb(cx: &mut Cx<'_, Message>) {
+        cx.spawn(|sender| {
+            if let Err(err) = extras::run_do_not_disturb(|on| sender.send(Message::DoNotDisturb(on)))
+            {
+                tracing::warn!(%err, "Do Not Disturb is not followed: the session bus is unavailable");
+            }
+            Message::DoNotDisturbEnded
+        });
+    }
+
+    /// Does what the notifications menu chose: saves Do Not Disturb through
+    /// `neue-settingsd`, on a thread of its own. The extra changes when the service's
+    /// change signal comes back, so what it shows is what the file says.
+    fn notifications_command(cx: &mut Cx<'_, Message>, command: NotificationsCommand) {
+        let NotificationsCommand::SetDoNotDisturb(on) = command;
+        cx.spawn(move |_| {
+            Message::DoNotDisturbSaved(
+                SettingsClient::session()
+                    .and_then(|settings| settings.set_bool(extras::DO_NOT_DISTURB_KEY, on))
+                    .map_err(|e| e.to_string()),
+            )
+        });
+    }
+
+    /// Shows Do Not Disturb on every bar.
+    fn set_do_not_disturb(&mut self, cx: &mut Cx<'_, Message>, on: bool) {
+        if self.content.notifications.do_not_disturb != on {
+            self.content.notifications.do_not_disturb = on;
+            self.sync_bars(cx);
+        }
     }
 
     /// Starts the status-icon tray's worker on a thread of its own.
@@ -854,6 +899,7 @@ impl Shell {
                 volume: Message::Volume,
                 network: Message::Network,
                 bluetooth: Message::Bluetooth,
+                notifications: Message::Notifications,
             },
             |view| tray_actions(&self.tray, view),
             &mut handles,
@@ -908,6 +954,13 @@ impl Shell {
                 }
                 None => volume.set_hidden(cx, true),
             }
+            let notifications = &bar.handles.notifications;
+            let (icon, name) = bar::notifications_icon(&self.content.notifications);
+            notifications.set_icon(cx, icon, name);
+            notifications.set_menu(
+                cx,
+                bar::notifications_menu(&self.content.notifications, Message::Notifications),
+            );
             let network = &bar.handles.network;
             match &self.content.network {
                 Some(view) => {
@@ -1110,6 +1163,7 @@ impl Application for Shell {
         self.watch_appearance(cx);
         self.start_global_menu(cx);
         Self::start_extras(cx);
+        Self::start_do_not_disturb(cx);
         Self::start_tray(cx);
         self.keys.start(cx, Message::Osd);
         self.notifications.start(cx);
@@ -1179,6 +1233,14 @@ impl Application for Shell {
                 }
             }
             Message::Bluetooth(command) => self.bluetooth_command(cx, command),
+            Message::Notifications(command) => Self::notifications_command(cx, command),
+            Message::DoNotDisturb(on) => self.set_do_not_disturb(cx, on),
+            Message::DoNotDisturbEnded => {}
+            Message::DoNotDisturbSaved(result) => {
+                if let Err(err) = result {
+                    tracing::warn!(%err, "Do Not Disturb was not saved: is neue-settingsd running?");
+                }
+            }
             Message::Battery(battery) => self.set_battery(cx, battery),
             Message::BatteryEnded => self.set_battery(cx, None),
             Message::BluetoothState(state) => self.set_bluetooth(cx, state),

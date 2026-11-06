@@ -1,7 +1,7 @@
 //! The menu bar's pieces (task 3.2b): the logo menu, the active app's name, the app's own
-//! menus (the global menu, task 3.7a), the clock, battery, volume, network and Bluetooth
-//! extras (tasks 3.11b, 3.12b and 3.14c) and the status-icon tray (task 3.13b), put
-//! together in a
+//! menus (the global menu, task 3.7a), the clock, battery, volume, network, Bluetooth and
+//! notifications extras (tasks 3.11b, 3.12b, 3.14c and 3.15d4) and the status-icon tray
+//! (task 3.13b), put together in a
 //! [`MenuBar`]. Portable: the shell builds one per output, and the
 //! gallery's Shell page and the goldens build the same.
 
@@ -174,6 +174,47 @@ pub fn volume_menu<M: 'static>(
         menu = menu.with(item(&output.name, VolumeCommand::SetOutput(i)).radio(output.default));
     }
     menu
+}
+
+/// What the notifications extra shows; the shell follows `shell.toml` for it.
+#[derive(Debug, Clone, Copy, PartialEq, Eq, Default)]
+pub struct NotificationsView {
+    /// Do Not Disturb is on: notifications arrive but show no banner.
+    pub do_not_disturb: bool,
+}
+
+/// What the notifications menu offers.
+#[derive(Debug, Clone, Copy, PartialEq, Eq)]
+pub enum NotificationsCommand {
+    /// Turn Do Not Disturb on (`true`) or off; the shell saves it to `shell.toml`.
+    SetDoNotDisturb(bool),
+}
+
+/// The notifications extra's icon and what assistive technologies call it.
+pub fn notifications_icon(view: &NotificationsView) -> (ExtraIcon, String) {
+    let icon = ExtraIcon::Notifications {
+        do_not_disturb: view.do_not_disturb,
+    };
+    let name = if view.do_not_disturb {
+        "Notifications, Do Not Disturb"
+    } else {
+        "Notifications"
+    };
+    (icon, name.to_owned())
+}
+
+/// The notifications extra's menu: Do Not Disturb, ticked while it is on. (The
+/// Notification Center opens from a click on the extra in Phase 6.)
+pub fn notifications_menu<M: 'static>(
+    view: &NotificationsView,
+    message: impl Fn(NotificationsCommand) -> M + 'static,
+) -> Menu<M> {
+    let on = view.do_not_disturb;
+    Menu::new().with(
+        MenuItem::new("Do Not Disturb")
+            .checked(on)
+            .on_choose_with(move || message(NotificationsCommand::SetDoNotDisturb(!on))),
+    )
 }
 
 /// A wired (Ethernet) device as the bar shows it.
@@ -634,6 +675,8 @@ pub struct BarHandles<M> {
     pub network: Handle<MenuTitle<M>>,
     /// The Bluetooth extra (hidden without an adapter).
     pub bluetooth: Handle<MenuTitle<M>>,
+    /// The notifications extra (always shown).
+    pub notifications: Handle<MenuTitle<M>>,
     /// The tray's status icons, one per [`BarContent::tray`] item in the same order.
     pub tray: Vec<Handle<MenuTitle<M>>>,
     /// The Help title, which menu search opens under (unbound when the bar has none).
@@ -650,6 +693,7 @@ impl<M> Default for BarHandles<M> {
             volume: Handle::default(),
             network: Handle::default(),
             bluetooth: Handle::default(),
+            notifications: Handle::default(),
             tray: Vec::new(),
             help: Handle::default(),
         }
@@ -673,22 +717,26 @@ pub struct BarContent {
     pub network: Option<NetworkView>,
     /// The Bluetooth extra's state; `None` (no adapter) hides it.
     pub bluetooth: Option<BluetoothView>,
+    /// The notifications extra's state.
+    pub notifications: NotificationsView,
     /// The tray's status items, left of the other extras (the first is rightmost); more
     /// can come later through [`Handle::set_tray`] on [`BarHandles::bar`].
     pub tray: Vec<TrayItemView>,
 }
 
 /// The commands of the menus of a bar's extras, each sending a message of the app's.
-pub struct ExtraMessages<V, N, B> {
+pub struct ExtraMessages<V, N, B, D> {
     /// The volume menu's.
     pub volume: V,
     /// The network menu's (it also sends [`NetworkCommand::Scan`] when it opens).
     pub network: N,
     /// The Bluetooth menu's.
     pub bluetooth: B,
+    /// The notifications menu's.
+    pub notifications: D,
 }
 
-impl<V, N, B> std::fmt::Debug for ExtraMessages<V, N, B> {
+impl<V, N, B, D> std::fmt::Debug for ExtraMessages<V, N, B, D> {
     fn fmt(&self, f: &mut std::fmt::Formatter<'_>) -> std::fmt::Result {
         f.debug_struct("ExtraMessages").finish_non_exhaustive()
     }
@@ -698,11 +746,11 @@ impl<V, N, B> std::fmt::Debug for ExtraMessages<V, N, B> {
 /// sending `message(command)`, its extras' menus sending `extras`' messages and each tray
 /// item doing `tray(item)`; `handles` are pointed at the parts that change. `backdrop` is
 /// translucent when the compositor blurs behind the bar (task 3.5).
-pub fn menu_bar<M, V, N, B>(
+pub fn menu_bar<M, V, N, B, D>(
     content: &BarContent,
     menus: Vec<MenuTitle<M>>,
     message: impl Fn(SystemCommand) -> M + Clone + 'static,
-    extras: ExtraMessages<V, N, B>,
+    extras: ExtraMessages<V, N, B, D>,
     tray: impl Fn(&TrayItemView) -> TrayActions<M>,
     handles: &mut BarHandles<M>,
     backdrop: Backdrop,
@@ -712,11 +760,13 @@ where
     V: Fn(VolumeCommand) -> M + Clone + 'static,
     N: Fn(NetworkCommand) -> M + Clone + 'static,
     B: Fn(BluetoothCommand) -> M + Clone + 'static,
+    D: Fn(NotificationsCommand) -> M + 'static,
 {
     let ExtraMessages {
         volume,
         network,
         bluetooth,
+        notifications,
     } = extras;
     // All the extras are always in the bar, so that they can appear without rebuilding it.
     let battery = content.battery.unwrap_or(BatteryView {
@@ -743,6 +793,7 @@ where
         devices: Vec::new(),
     });
     let (bluetooth_icon, bluetooth_name) = bluetooth_icon(&bluetooth_view);
+    let (notifications_icon, notifications_name) = notifications_icon(&content.notifications);
     let bar = MenuBar::new()
         .backdrop(backdrop)
         .with(MenuTitle::logo(LOGO_NAME, logo_menu(message)))
@@ -755,6 +806,15 @@ where
     let bar = menus
         .into_iter()
         .fold(bar, MenuBar::with_menu)
+        // The first extra is rightmost.
+        .with_extra(
+            MenuTitle::icon(
+                notifications_icon,
+                notifications_name,
+                notifications_menu(&content.notifications, notifications),
+            )
+            .bind(&mut handles.notifications),
+        )
         .with_extra(
             MenuTitle::new(content.time.clone(), clock_menu(&content.full_date))
                 .bind(&mut handles.clock),
@@ -931,6 +991,45 @@ mod tests {
             empty.items().last().map(MenuItem::label),
             Some("No Output Devices")
         );
+    }
+
+    #[test]
+    fn the_notifications_icon_and_name_follow_do_not_disturb() {
+        let (icon, name) = notifications_icon(&NotificationsView::default());
+        assert_eq!(
+            icon,
+            ExtraIcon::Notifications {
+                do_not_disturb: false
+            }
+        );
+        assert_eq!(name, "Notifications");
+        let (icon, name) = notifications_icon(&NotificationsView {
+            do_not_disturb: true,
+        });
+        assert_eq!(
+            icon,
+            ExtraIcon::Notifications {
+                do_not_disturb: true
+            }
+        );
+        assert_eq!(name, "Notifications, Do Not Disturb");
+    }
+
+    #[test]
+    fn the_notifications_menu_toggles_do_not_disturb() {
+        for on in [false, true] {
+            let mut menu = notifications_menu(&NotificationsView { do_not_disturb: on }, |c| c);
+            let items = menu.items();
+            assert_eq!(items.len(), 1);
+            assert_eq!(items[0].label(), "Do Not Disturb");
+            let state = if on { CheckState::On } else { CheckState::Off };
+            assert_eq!(items[0].toggle(), MenuToggle::Check(state));
+            // Choosing it asks for the opposite.
+            assert_eq!(
+                menu.choose(0),
+                Some(NotificationsCommand::SetDoNotDisturb(!on))
+            );
+        }
     }
 
     #[test]
