@@ -23,15 +23,30 @@ fn vertical(rect: Rect, top: Color, bottom: Color) -> Gradient {
 
 /// The outline of a panel filling `rect`.
 pub fn hud_outline(rect: Rect) -> RoundedRect {
-    RoundedRect::from_rect(rect, RADIUS.min(rect.width().min(rect.height()) / 2.0))
+    rounded_outline(rect, RADIUS)
+}
+
+fn rounded_outline(rect: Rect, radius: f64) -> RoundedRect {
+    RoundedRect::from_rect(rect, radius.min(rect.width().min(rect.height()) / 2.0))
 }
 
 /// Draw a HUD panel filling `rect` (logical pixels). The shadow reaches
 /// [`SHADOW_REACH`] beyond the sides and top and a little more below, so leave that room.
 /// Content (text, glyphs) is the caller's, in [`Palette::label`] colours.
 pub fn hud(scene: &mut Scene, rect: Rect, variant: impl Into<Variant>, backdrop: Backdrop) {
+    hud_rounded(scene, rect, RADIUS, variant, backdrop);
+}
+
+/// [`hud`] with corners of `radius` instead of the panel's (the OSD's rounded square).
+pub fn hud_rounded(
+    scene: &mut Scene,
+    rect: Rect,
+    radius: f64,
+    variant: impl Into<Variant>,
+    backdrop: Backdrop,
+) {
     let p = Palette::new(variant.into(), backdrop);
-    let outline = hud_outline(rect);
+    let outline = rounded_outline(rect, radius);
 
     // The shadow falls outside the panel only: it must not darken the translucent body.
     // The clip is a frame, the shadow's extent with the panel cut out.

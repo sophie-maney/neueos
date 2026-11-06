@@ -8,6 +8,7 @@
 
 use std::collections::HashMap;
 use std::sync::Arc;
+use std::time::Duration;
 
 use neue_protocols::neue_shell::client::{
     neue_shell_action_v1::{self, NeueShellActionV1},
@@ -16,14 +17,16 @@ use neue_protocols::neue_shell::client::{
 };
 use smithay_client_toolkit::dispatch2::Dispatch2;
 use smithay_client_toolkit::output::{OutputHandler, OutputState};
+use smithay_client_toolkit::reexports::calloop::RegistrationToken;
+use smithay_client_toolkit::reexports::calloop::timer::{TimeoutAction, Timer};
 use wayland_client::backend::{ObjectData, ObjectId};
 use wayland_client::protocol::wl_output;
 use wayland_client::{Connection, Proxy, QueueHandle, WEnum};
 
 use super::{AppEvent, State};
 use crate::desktop::{
-    ChordModifiers, OutputEvent, OutputId, OutputInfo, ShellEvent, ShellRequest, Toplevel,
-    ToplevelId, ToplevelMenu,
+    ChordModifiers, OutputEvent, OutputId, OutputInfo, ShellEvent, ShellRequest, SystemKey,
+    SystemKeyState, Toplevel, ToplevelId, ToplevelMenu,
 };
 
 /// The driver's view of outputs and of the shell protocol.
@@ -36,7 +39,17 @@ pub(super) struct Desktop {
     manager: Option<NeueShellManagerV1>,
     toplevels: HashMap<ObjectId, ShellToplevel>,
     next_toplevel: u64,
+    /// The stepping system key being held, and the timer that repeats it.
+    repeating: Option<(SystemKey, RegistrationToken)>,
+    /// The keyboard's repeat delay and interval (`wl_keyboard.repeat_info`); `None` when
+    /// the compositor turned repeat off.
+    pub(super) repeat: Option<(Duration, Duration)>,
 }
+
+/// Until `wl_keyboard.repeat_info` says otherwise: 600 ms, then 25 a second (xkb's and
+/// neue-comp's defaults).
+const DEFAULT_REPEAT: (Duration, Duration) =
+    (Duration::from_millis(600), Duration::from_millis(40));
 
 /// One window of the shell's window list.
 struct ShellToplevel {
@@ -62,6 +75,7 @@ impl Desktop {
         }
         Self {
             manager,
+            repeat: Some(DEFAULT_REPEAT),
             ..Self::default()
         }
     }
@@ -116,6 +130,73 @@ impl Desktop {
                 Some(())
             }
         };
+    }
+}
+
+/// Reports a system key and starts or stops its repeat.
+fn system_key_event(state: &mut State, key: SystemKey, pressed: bool, modifiers: ChordModifiers) {
+    // A new press, or the held key's release, ends the repeat. Another key's release
+    // doesn't (one key repeats at a time, as on a keyboard).
+    let ends = pressed || state.desktop.repeating.is_some_and(|(held, _)| held == key);
+    if ends && let Some((_, token)) = state.desktop.repeating.take() {
+        state.loop_handle.remove(token);
+    }
+    let event = move |state: SystemKeyState| {
+        AppEvent::Shell(ShellEvent::SystemKey {
+            key,
+            state,
+            modifiers,
+        })
+    };
+    state.events.push(event(if pressed {
+        SystemKeyState::Pressed
+    } else {
+        SystemKeyState::Released
+    }));
+    let Some((delay, interval)) = state.desktop.repeat.filter(|_| pressed && key.repeats()) else {
+        return;
+    };
+    let timer =
+        state
+            .loop_handle
+            .insert_source(Timer::from_duration(delay), move |_, (), state| {
+                state.events.push(event(SystemKeyState::Repeated));
+                TimeoutAction::ToDuration(interval)
+            });
+    match timer {
+        Ok(token) => state.desktop.repeating = Some((key, token)),
+        Err(err) => tracing::warn!(%err, "can't repeat the system key"),
+    }
+}
+
+fn system_key(key: neue_shell_manager_v1::SystemKey) -> Option<SystemKey> {
+    use neue_shell_manager_v1::SystemKey as K;
+    Some(match key {
+        K::VolumeUp => SystemKey::VolumeUp,
+        K::VolumeDown => SystemKey::VolumeDown,
+        K::Mute => SystemKey::Mute,
+        K::MicMute => SystemKey::MicMute,
+        K::BrightnessUp => SystemKey::BrightnessUp,
+        K::BrightnessDown => SystemKey::BrightnessDown,
+        K::KeyboardBrightnessUp => SystemKey::KeyboardBrightnessUp,
+        K::KeyboardBrightnessDown => SystemKey::KeyboardBrightnessDown,
+        K::Play => SystemKey::Play,
+        K::Pause => SystemKey::Pause,
+        K::Next => SystemKey::Next,
+        K::Previous => SystemKey::Previous,
+        K::Stop => SystemKey::Stop,
+        K::Eject => SystemKey::Eject,
+        _ => return None,
+    })
+}
+
+fn chord_modifiers(m: neue_shell_manager_v1::Modifiers) -> ChordModifiers {
+    use neue_shell_manager_v1::Modifiers as M;
+    ChordModifiers {
+        shift: m.contains(M::Shift),
+        ctrl: m.contains(M::Ctrl),
+        alt: m.contains(M::Alt),
+        logo: m.contains(M::Logo),
     }
 }
 
@@ -261,8 +342,24 @@ impl Dispatch2<NeueShellManagerV1, State> for ShellManagerData {
                     .events
                     .push(AppEvent::Shell(ShellEvent::Active(active)));
             }
-            // Volume, brightness and media keys: task 3.14.
-            Event::SystemKey { .. } => {}
+            Event::SystemKey {
+                key,
+                state: key_state,
+                modifiers,
+            } => {
+                let (WEnum::Value(key), WEnum::Value(key_state)) = (key, key_state) else {
+                    return;
+                };
+                let Some(key) = system_key(key) else {
+                    return;
+                };
+                let modifiers = match modifiers {
+                    WEnum::Value(m) => chord_modifiers(m),
+                    WEnum::Unknown(_) => ChordModifiers::default(),
+                };
+                let pressed = key_state == neue_shell_manager_v1::KeyState::Pressed;
+                system_key_event(state, key, pressed, modifiers);
+            }
             Event::FocusMenuBar { serial, output } => {
                 // The menu it opens grabs with this serial.
                 state.input.last_serial = Some(serial);

@@ -534,15 +534,52 @@ their goldens and the gallery's "Shell" page run on macOS.
       they pass: the mock's disc shows left of the network extra, a left click logs
       `Activate`, a right click opens the menu, Mark Attention turns the disc red, Quit
       removes it; then `nm-applet --indicator` shows.
-- [ ] **3.14 Volume, brightness and OSDs** · Opus. After 3.1 and 3.2b. ADR for
-      `pipewire-rs` (a C dependency, also used by 3.22). The volume extra (slider, mute,
-      output device), media and volume keys routed by `neue-shell-v1`, brightness through
-      logind `SetBrightness` on the backlight, and the rounded-square HUD OSD for both
-      (springs, reduced motion; ADR 0059 material).
-      *Accept:* goldens of the OSD; in the VM the volume keys (sent with `ydotool`) change
-      the sink volume shown by `wpctl` and show the OSD.
+- [x] **3.14a System keys, brightness and the OSD** · Opus. After 3.1 and 3.2b. Split
+      from 3.14 (volume, brightness and OSDs). `ShellEvent::SystemKey` through
+      `neue-platform` and the kit (the shell repeats held keys itself); `neue_kit::desktop::Osd`,
+      an overlay layer surface without input: the rounded-square HUD (`materials::hud`,
+      ADR 0059) with a speaker or sun glyph and a 16-step level bar, fading with a spring
+      (reduced motion: no fade), AccessKit label. Brightness: the backlight read from
+      `/sys/class/backlight` and set through logind `SetBrightness` (`neue_dbus::login`).
+      Until 3.14b the volume keys move an in-memory level.
+      *Accept:* OSD goldens (volume, muted, brightness × light/dark × scale 1 and 2); gallery
+      Shell page entry; brightness unit test against a fake sysfs folder; in the VM a volume
+      key sent with `ydotool` shows the OSD (screenshot).
+      *Owner:* brightness keys on a laptop: the screen follows and the OSD shows the sun.
+      *Done:* ADR 0086. The Wayland driver repeats the stepping keys at
+      `wl_keyboard.repeat_info`'s rate (`SystemKeyState::Repeated`);
+      `neue_paint::materials::osd` (`hud_rounded`, 20 px corners, quarter-lit steps),
+      `neue_theme::materials::osd` tokens, `Osd`/`Handle<Osd>::{show, hide}`,
+      `LayerSpec::pointer`, `Window::blur_behind_rounded`, layer-surface roots no longer
+      fill a background; `Login::set_brightness`; `neue_shell::levels` (stepping, the
+      backlight lookup) and the shell's `osd.rs` (the surface opens on the first key and
+      closes after the fade). Goldens `shell-osd-*`; 5 kit, 4 paint, 5 shell, 1 dbus and 1
+      `neue-comp` (real driver: press, repeat, release) tests. VM (arm64): Volume Up shows
+      the OSD at 9 of 16 steps, a held Volume Down repeats (about 30/s, the compositor's
+      rate) down to 0 (no waves), the OSD fades and closes, a click on it reaches the
+      desktop below. Not checked: brightness (no backlight in the VM).
+- [ ] **3.14b PipeWire volume backend** · Opus. After 3.14a. ADR for `pipewire-rs` (a C
+      dependency through bindgen and clang; licence check; also used by 3.22). A new
+      Linux-only crate `neue-audio`: the PipeWire loop on its own thread, the default sink
+      from the `default` metadata, its volume (cubic, as `wpctl` shows it) and mute, the
+      list of sinks, setting the default sink. Volume and mute keys use it, and mic mute
+      toggles the default source (with the OSD). PKGBUILD and CI dependencies.
+      *Accept:* in the VM the volume keys (sent with `ydotool`) change the sink volume shown
+      by `wpctl get-volume @DEFAULT_AUDIO_SINK@`, and the OSD shows the real level.
+- [ ] **3.14c Volume extra** · Opus for the kit part, then Sonnet. After 3.14b. A slider
+      item in kit menus; the volume extra in the bar (ADR 0083 pattern): glyph by level, a
+      menu with the slider, Mute and the output devices as a radio list.
+      *Accept:* goldens of the extra and its menu; in the VM the slider and the device
+      choice show in `wpctl status`.
       *Owner:* the volume you hear follows the keys and the slider; brightness keys on a
       laptop if available.
+- [ ] **3.14d Media keys and the keyboard backlight** · Sonnet. After 3.14a. Play, pause,
+      next, previous and stop go to the active MPRIS player (`neue_dbus`, the most recently
+      playing one); keyboard brightness keys set the `leds` `*::kbd_backlight` device
+      through logind `SetBrightness`, with a keyboard glyph on the OSD (goldens).
+      *Accept:* unit tests with a mock MPRIS player; in the VM `playerctl status` follows
+      the play key sent with `ydotool`.
+      *Owner:* keyboard backlight keys on a laptop that has one.
 - [ ] **3.15 Notifications** · Sonnet. After 3.2b. An `org.freedesktop.Notifications`
       server in the shell (interface in `neue-dbus`): banners at the top right under the
       menu bar, sliding in with a spring, stacking, timing out; alerts for critical or

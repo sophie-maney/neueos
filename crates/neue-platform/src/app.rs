@@ -182,11 +182,14 @@ pub struct LayerSpec {
     /// The output to put it on; `None` lets the compositor choose (the active one). An
     /// output that has gone away by the time the surface opens counts as `None`.
     pub output: Option<OutputId>,
+    /// Whether the pointer can reach it. False: an empty input region, so clicks go to
+    /// whatever is below (an OSD).
+    pub pointer: bool,
 }
 
 impl LayerSpec {
     /// A top-layer surface with the given anchor, no margin, no exclusive zone and
-    /// on-demand keyboard focus.
+    /// on-demand keyboard focus, reached by the pointer.
     pub fn new(namespace: impl Into<String>, anchor: Anchor) -> Self {
         Self {
             namespace: namespace.into(),
@@ -196,6 +199,7 @@ impl LayerSpec {
             exclusive_zone: 0,
             keyboard: LayerKeyboard::OnDemand,
             output: None,
+            pointer: true,
         }
     }
 }

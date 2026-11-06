@@ -114,6 +114,59 @@ pub enum ShellEvent {
     /// menu of the bar on `output` (`None`: any) from the keyboard. Opening it right away
     /// lets the driver grab with this event's serial.
     FocusMenuBar { output: Option<OutputId> },
+    /// A volume, brightness or media key (task 3.14a). The compositor routes these to the
+    /// shell whatever has the keyboard. The driver repeats the stepping keys
+    /// ([`SystemKey::repeats`]) at the keyboard's rate while they're held.
+    SystemKey {
+        key: SystemKey,
+        state: SystemKeyState,
+        /// The modifiers held (Shift+Alt steps finer, as on the Mac).
+        modifiers: ChordModifiers,
+    },
+}
+
+/// A key the compositor hands to the shell (`neue_shell_v1`'s `system_key`).
+#[derive(Debug, Clone, Copy, PartialEq, Eq, Hash)]
+pub enum SystemKey {
+    VolumeUp,
+    VolumeDown,
+    Mute,
+    MicMute,
+    BrightnessUp,
+    BrightnessDown,
+    KeyboardBrightnessUp,
+    KeyboardBrightnessDown,
+    Play,
+    Pause,
+    Next,
+    Previous,
+    Stop,
+    Eject,
+}
+
+impl SystemKey {
+    /// Whether holding it repeats: the keys that step a level up or down. Toggles (mute)
+    /// and media keys don't.
+    pub const fn repeats(self) -> bool {
+        matches!(
+            self,
+            Self::VolumeUp
+                | Self::VolumeDown
+                | Self::BrightnessUp
+                | Self::BrightnessDown
+                | Self::KeyboardBrightnessUp
+                | Self::KeyboardBrightnessDown
+        )
+    }
+}
+
+/// What happened to a [`SystemKey`].
+#[derive(Debug, Clone, Copy, PartialEq, Eq)]
+pub enum SystemKeyState {
+    Pressed,
+    /// Held past the keyboard's repeat delay; again at its rate until released.
+    Repeated,
+    Released,
 }
 
 /// Modifiers of a key chord for [`ShellRequest::SendShortcut`].

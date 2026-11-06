@@ -5,7 +5,8 @@
 //! This library holds what is portable, so the gallery and the goldens can use it on
 //! macOS: the menu bar's pieces ([`bar`]), the clock's text ([`clock`]), the window list
 //! behind the active app's name ([`windows`]), the About panel ([`about`]), the fallback
-//! menu ([`fallback`]) and menu search ([`search`], [`help`]). The process
+//! menu ([`fallback`]), menu search ([`search`], [`help`]) and what the volume and
+//! brightness keys do ([`levels`]). The process
 //! itself (`src/shell.rs`) is Linux-only.
 
 pub mod about;
@@ -13,6 +14,7 @@ pub mod bar;
 pub mod clock;
 pub mod fallback;
 pub mod help;
+pub mod levels;
 pub mod picture;
 pub mod search;
 pub mod windows;

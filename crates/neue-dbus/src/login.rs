@@ -1,6 +1,7 @@
-//! The bits of systemd-logind (`org.freedesktop.login1`) the shell's logo menu uses (task
-//! 3.2b): locking this session, restarting and shutting down. Logging out is the
-//! compositor quitting (ADR 0027), not a logind call.
+//! The bits of systemd-logind (`org.freedesktop.login1`) the shell uses: locking this
+//! session, restarting and shutting down for the logo menu (task 3.2b), and setting the
+//! backlight for the brightness keys (task 3.14a). Logging out is the compositor quitting
+//! (ADR 0027), not a logind call.
 //!
 //! Restart and Shut Down are `interactive`: polkit may ask for a password through the
 //! session's agent (3.20) when other users are logged in.
@@ -49,6 +50,24 @@ impl Login {
     /// Shuts the machine down (`Manager.PowerOff`).
     pub fn power_off(&self) -> Result<(), crate::Error> {
         self.call(MANAGER_PATH, MANAGER, "PowerOff", &(true,))
+    }
+
+    /// Sets a backlight to `brightness` (raw, up to its `max_brightness`) through
+    /// `Session.SetBrightness`, which needs no privileges for the active session's seat.
+    /// `subsystem` is `backlight` (a screen) or `leds` (a keyboard); `name` is the device's
+    /// directory in `/sys/class/<subsystem>`.
+    pub fn set_brightness(
+        &self,
+        subsystem: &str,
+        name: &str,
+        brightness: u32,
+    ) -> Result<(), crate::Error> {
+        self.call(
+            SESSION_PATH,
+            SESSION,
+            "SetBrightness",
+            &(subsystem, name, brightness),
+        )
     }
 
     fn call<B>(
@@ -103,6 +122,13 @@ mod tests {
         fn lock(&self) {
             self.0.0.lock().unwrap().push("Lock".to_owned());
         }
+        fn set_brightness(&self, subsystem: &str, name: &str, brightness: u32) {
+            self.0
+                .0
+                .lock()
+                .unwrap()
+                .push(format!("SetBrightness({subsystem}, {name}, {brightness})"));
+        }
     }
 
     #[test]
@@ -117,9 +143,17 @@ mod tests {
         login.lock_session().unwrap();
         login.reboot().unwrap();
         login.power_off().unwrap();
+        login
+            .set_brightness("backlight", "intel_backlight", 480)
+            .unwrap();
         assert_eq!(
             *fake.0.lock().unwrap(),
-            ["Lock", "Reboot(true)", "PowerOff(true)"]
+            [
+                "Lock",
+                "Reboot(true)",
+                "PowerOff(true)",
+                "SetBrightness(backlight, intel_backlight, 480)"
+            ]
         );
     }
 }

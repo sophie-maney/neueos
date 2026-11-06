@@ -17,6 +17,7 @@ mod icon;
 mod label;
 mod menu;
 mod menu_bar;
+mod osd;
 mod outline;
 mod path;
 pub(crate) mod popover;
@@ -48,6 +49,7 @@ use neue_paint::Backdrop;
 pub use neue_paint::demo::MaterialTile;
 use neue_paint::icon::Icon;
 use neue_paint::materials::desktop::{Fit, Picture};
+use neue_paint::materials::osd::Glyph as OsdGlyph;
 use neue_theme::metrics::spacing;
 
 pub use bevel::BevelButton;
@@ -71,6 +73,7 @@ pub(crate) use label::LabelWidget;
 pub(crate) use menu::{MenuRowWidget, MenuWidget};
 pub use menu_bar::{ExtraIcon, MenuBar, MenuTitle, NetworkIcon};
 pub(crate) use menu_bar::{MenuBarWidget, MenuTitleWidget};
+pub(crate) use osd::OsdWidget;
 pub use outline::Outline;
 pub use path::PathControl;
 pub(crate) use path::PathWidget;
@@ -433,6 +436,64 @@ impl Handle<Desktop> {
         cx.edit::<DesktopWidget, _>(self, |mut desktop| {
             DesktopWidget::edit_content(&mut desktop, desktop::Content::Default);
         });
+    }
+}
+
+/// The on-screen display: a rounded square of HUD material showing a glyph and a level
+/// (volume, brightness). For the shell's overlay layer surface; it is
+/// `tokens::materials::osd::SIZE` square.
+#[derive(Debug)]
+pub struct Osd {
+    inner: NewWidget<OsdWidget>,
+}
+
+impl Osd {
+    /// Showing `glyph` and `level` (0 to 1), at rest.
+    pub fn new(glyph: OsdGlyph, level: f64) -> Self {
+        Self {
+            inner: NewWidget::new(OsdWidget::new(glyph, level)),
+        }
+    }
+
+    /// Starts transparent and fades in once on screen.
+    #[must_use]
+    pub fn fade_in(mut self) -> Self {
+        self.inner.widget.start_transparent();
+        self
+    }
+
+    /// [`Backdrop::Translucent`] when the window asked for blur behind it
+    /// ([`crate::Cx::backdrop`]).
+    #[must_use]
+    pub fn backdrop(mut self, backdrop: Backdrop) -> Self {
+        self.inner.widget.backdrop = backdrop;
+        self
+    }
+
+    /// Points `handle` at this display.
+    #[must_use]
+    pub fn bind(self, handle: &mut Handle<Self>) -> Self {
+        *handle = Handle::new(self.inner.id());
+        self
+    }
+}
+
+impl<M> From<Osd> for Element<M> {
+    fn from(osd: Osd) -> Self {
+        Element::new(osd.inner.erased())
+    }
+}
+
+impl Handle<Osd> {
+    /// Shows `glyph` and `level`, fading in if it was fading or faded out.
+    pub fn show<M>(&self, cx: &mut Cx<'_, M>, glyph: OsdGlyph, level: f64) {
+        cx.edit::<OsdWidget, _>(self, |mut osd| OsdWidget::edit_show(&mut osd, glyph, level));
+    }
+
+    /// Fades out. The surface stays: close it once `tokens::materials::osd::FADE` has
+    /// passed.
+    pub fn hide<M>(&self, cx: &mut Cx<'_, M>) {
+        cx.edit::<OsdWidget, _>(self, |mut osd| OsdWidget::edit_hide(&mut osd));
     }
 }
 

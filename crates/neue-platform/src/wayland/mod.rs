@@ -683,6 +683,13 @@ impl State {
                     }
                     found
                 });
+                if !layer.pointer {
+                    // The pointer passes through to what is below.
+                    match Region::new(&self.g.compositor) {
+                        Ok(region) => wl.set_input_region(Some(region.wl_region())),
+                        Err(err) => tracing::debug!(%err, "no wl_region for the layer"),
+                    }
+                }
                 Shell::Layer(create_layer(layer_shell, &qh, wl, &layer, size, output))
             }
             _ => {
