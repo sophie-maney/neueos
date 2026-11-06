@@ -5,9 +5,12 @@
 //! Colours and metrics come from [`neue_theme::materials::menu_bar`].
 
 use neue_theme::materials::menu_bar::{
-    BLUETOOTH_STROKE, EDGE, LABEL_BASELINE, LABEL_EMBOSS_OFFSET, LOGO_STROKE, OFF_OPACITY, Palette,
+    BLUETOOTH_STROKE, EDGE, LABEL_BASELINE, LABEL_EMBOSS_OFFSET, LOGO_STROKE, NETWORK_STROKE,
+    OFF_OPACITY, Palette, UNLIT_OPACITY,
 };
-use vello_common::kurbo::{BezPath, Cap, Circle, Join, Point, Rect, RoundedRect, Stroke, Vec2};
+use vello_common::kurbo::{
+    Arc, BezPath, Cap, Circle, Join, Point, Rect, RoundedRect, Stroke, Vec2,
+};
 use vello_common::peniko::{Color, Gradient};
 
 use crate::scene::Scene;
@@ -16,7 +19,11 @@ use crate::{Backdrop, Variant};
 
 pub use neue_theme::materials::menu_bar::{
     BATTERY_HEIGHT, BATTERY_WIDTH, BLUETOOTH_HEIGHT, BLUETOOTH_WIDTH, FONT_SIZE, HEIGHT, LOGO_SIZE,
+    NETWORK_HEIGHT, NETWORK_WIDTH,
 };
+
+/// How many arcs a Wi-Fi fan has.
+pub const WIFI_ARCS: u8 = 3;
 
 /// Draw the bar filling `rect` ([`HEIGHT`] tall for the real bar).
 pub fn menu_bar(scene: &mut Scene, rect: Rect, variant: impl Into<Variant>, backdrop: Backdrop) {
@@ -201,6 +208,100 @@ pub fn bluetooth_label(
     }
 }
 
+/// Draw the Wi-Fi fan in `rect` in `color`: a dot at the bottom and [`WIFI_ARCS`] arcs over
+/// it, the first `lit` of them in full and the rest faded.
+pub fn wifi(scene: &mut Scene, rect: Rect, lit: u8, color: Color) {
+    let stroke = Stroke::new(NETWORK_STROKE).with_caps(Cap::Round);
+    // The fan's tip is at the bottom centre; the arcs are 90 degrees of circles around it.
+    let tip = Point::new(rect.center().x, rect.y1 - 1.2);
+    scene.fill(&Circle::new(tip, 1.3), color);
+    let reach = (rect.height() - 2.5).min(rect.width() / 2.0 * 1.35);
+    for arc in 1..=WIFI_ARCS {
+        let radius = reach * f64::from(arc) / f64::from(WIFI_ARCS);
+        let shape = Arc::new(
+            tip,
+            Vec2::new(radius, radius),
+            -std::f64::consts::FRAC_PI_2 - std::f64::consts::FRAC_PI_4,
+            std::f64::consts::FRAC_PI_2,
+            0.0,
+        );
+        let brush = if arc <= lit {
+            color
+        } else {
+            color.multiply_alpha(UNLIT_OPACITY)
+        };
+        scene.stroke(&shape, &stroke, brush);
+    }
+}
+
+/// Draw the wired (Ethernet) icon in `rect` in `color`: two chevrons pointing outwards
+/// around a dot.
+pub fn wired(scene: &mut Scene, rect: Rect, color: Color) {
+    let c = rect.center();
+    let stroke = Stroke::new(NETWORK_STROKE)
+        .with_caps(Cap::Round)
+        .with_join(Join::Round);
+    let reach = 3.6;
+    for side in [-1.0, 1.0] {
+        let outer = c.x + side * (rect.width() / 2.0 - 1.0);
+        let inner = outer - side * 3.6;
+        let mut chevron = BezPath::new();
+        chevron.move_to((inner, c.y - reach));
+        chevron.line_to((outer, c.y));
+        chevron.line_to((inner, c.y + reach));
+        scene.stroke(&chevron, &stroke, color);
+    }
+    scene.fill(&Circle::new(c, 1.4), color);
+}
+
+/// Draw the Wi-Fi fan in `rect` as a menu-bar label: its embossed shadow, then the fan.
+/// `off` (the switch is off) fades it and strikes it through.
+pub fn wifi_label(scene: &mut Scene, rect: Rect, lit: u8, off: bool, variant: impl Into<Variant>) {
+    let p = Palette::new(variant.into(), Backdrop::default());
+    if off {
+        scene.push_opacity(OFF_OPACITY);
+    }
+    let shadow = rect + Vec2::new(0.0, LABEL_EMBOSS_OFFSET);
+    let lit = if off { WIFI_ARCS } else { lit };
+    wifi(scene, shadow, lit, p.label_shadow);
+    wifi(scene, rect, lit, p.label);
+    if off {
+        strike(scene, shadow, p.label_shadow);
+        strike(scene, rect, p.label);
+        scene.pop_layer();
+    }
+}
+
+/// Draw the wired icon in `rect` as a menu-bar label: its embossed shadow, then the icon,
+/// faded while nothing is connected.
+pub fn wired_label(scene: &mut Scene, rect: Rect, connected: bool, variant: impl Into<Variant>) {
+    let p = Palette::new(variant.into(), Backdrop::default());
+    if !connected {
+        scene.push_opacity(OFF_OPACITY);
+    }
+    wired(
+        scene,
+        rect + Vec2::new(0.0, LABEL_EMBOSS_OFFSET),
+        p.label_shadow,
+    );
+    wired(scene, rect, p.label);
+    if !connected {
+        scene.pop_layer();
+    }
+}
+
+/// A diagonal line across `rect`: what strikes out an icon that is switched off.
+pub fn strike(scene: &mut Scene, rect: Rect, color: Color) {
+    let mut line = BezPath::new();
+    line.move_to((rect.x0 + 2.0, rect.y0 + 1.0));
+    line.line_to((rect.x1 - 2.0, rect.y1));
+    scene.stroke(
+        &line,
+        &Stroke::new(NETWORK_STROKE).with_caps(Cap::Round),
+        color,
+    );
+}
+
 #[cfg(test)]
 mod tests {
     use super::*;
@@ -246,5 +347,23 @@ mod tests {
         };
         assert_eq!(count(0.0, false) + 1, count(0.5, false));
         assert_eq!(count(0.5, false) + 2, count(0.5, true));
+    }
+
+    #[test]
+    fn network_icons_balance_their_layers_and_light_their_arcs() {
+        let rect = Rect::new(0.0, 0.0, NETWORK_WIDTH, NETWORK_HEIGHT);
+        let mut scene = Scene::new(NETWORK_WIDTH, NETWORK_HEIGHT);
+        wifi_label(&mut scene, rect, 2, true, Appearance::Dark);
+        wifi_label(&mut scene, rect, 1, false, Appearance::Light);
+        wired_label(&mut scene, rect, false, Appearance::Dark);
+        wired_label(&mut scene, rect, true, Appearance::Light);
+        assert_eq!(scene.open_layers(), 0);
+        // Every lit level draws the same shapes (the unlit arcs only fade).
+        let count = |lit| {
+            let mut scene = Scene::new(NETWORK_WIDTH, NETWORK_HEIGHT);
+            wifi(&mut scene, rect, lit, Color::BLACK);
+            scene.commands().len()
+        };
+        assert_eq!(count(0), count(3));
     }
 }

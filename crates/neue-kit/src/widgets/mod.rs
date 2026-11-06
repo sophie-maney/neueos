@@ -69,7 +69,7 @@ pub(crate) use field::{FieldAction, FieldWidget};
 pub(crate) use icon::IconWidget;
 pub(crate) use label::LabelWidget;
 pub(crate) use menu::{MenuRowWidget, MenuWidget};
-pub use menu_bar::{ExtraIcon, MenuBar, MenuTitle};
+pub use menu_bar::{ExtraIcon, MenuBar, MenuTitle, NetworkIcon};
 pub(crate) use menu_bar::{MenuBarWidget, MenuTitleWidget};
 pub use outline::Outline;
 pub use path::PathControl;

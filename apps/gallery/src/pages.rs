@@ -177,6 +177,20 @@ fn shell(_: &mut PageHandles) -> Element<Message> {
             neue_shell::bar::SystemCommand::ShutDown => "Shut Down",
         })
     };
+    let network = |command: neue_shell::bar::NetworkCommand| {
+        use neue_shell::bar::NetworkCommand::{
+            ConnectWired, DisconnectWifi, DisconnectWired, Join, Scan, SetWifi,
+        };
+        Message::Pressed(match command {
+            SetWifi(true) => "Turn Wi-Fi On",
+            SetWifi(false) => "Turn Wi-Fi Off",
+            Join(_) => "Join Network",
+            DisconnectWifi => "Disconnect Wi-Fi",
+            ConnectWired(_) => "Connect Ethernet",
+            DisconnectWired(_) => "Disconnect Ethernet",
+            Scan => "Scan",
+        })
+    };
     let bluetooth = |command: neue_shell::bar::BluetoothCommand| {
         use neue_shell::bar::BluetoothCommand::{Connect, Disconnect, SetPowered};
         Message::Pressed(match command {
@@ -191,24 +205,25 @@ fn shell(_: &mut PageHandles) -> Element<Message> {
         .with(heading(
             "Shell",
             "The menu bar on every display: press the logo for the system menu, the clock \
-             for today's date, the battery and Bluetooth icons for their menus · Space, \
+             for today's date, the battery, network and Bluetooth icons for their menus · Space, \
              Return or Down open a focused title · the status line shows what you chose \
              (nothing here locks or shuts down)",
         ))
         .with(section(
             "Menu bar, an app active",
-            Stack::column().with(specimens::shell_bar("Gallery", send, bluetooth)),
+            Stack::column().with(specimens::shell_bar("Gallery", send, network, bluetooth)),
         ))
         .with(section(
             "Menu bar, no window active",
             Stack::column().with(specimens::shell_bar(
                 neue_shell::windows::DESKTOP_NAME,
                 send,
+                network,
                 bluetooth,
             )),
         ))
         .with(section(
-            "Menu extras: batteries (full, charging, half, low, empty), Bluetooth (off, on, connected)",
+            "Menu extras: batteries (full, charging, half, low, empty), network (wired, none, Wi-Fi with 3, 2, 1 and no arcs, off), Bluetooth (off, on, connected)",
             Stack::column().with(specimens::shell_extras()),
         ))
         .with(section(

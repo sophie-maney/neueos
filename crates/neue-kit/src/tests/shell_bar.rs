@@ -12,7 +12,7 @@ use neue_theme::materials::menu_bar::{EDGE_INSET, HEIGHT};
 
 use super::menus::{a11y, click_item, find, focused, menus_open, named};
 use super::*;
-use crate::desktop::{Anchor, ExtraIcon, LayerSpec, MenuBar, MenuTitle};
+use crate::desktop::{Anchor, ExtraIcon, LayerSpec, MenuBar, MenuTitle, NetworkIcon};
 use crate::{Menu, MenuItem};
 
 #[derive(Debug, Clone, PartialEq)]
@@ -30,6 +30,8 @@ enum Msg {
     Item(&'static str),
     /// Script: the battery extra shows this icon, named so.
     SetBattery(ExtraIcon, &'static str),
+    /// Script: the network extra shows this icon, named so.
+    SetNetwork(ExtraIcon, &'static str),
     /// Script: the Bluetooth extra hides or shows.
     HideBluetooth(bool),
 }
@@ -54,6 +56,7 @@ struct Bar {
     app: Handle<MenuTitle<Msg>>,
     clock: Handle<MenuTitle<Msg>>,
     battery: Handle<MenuTitle<Msg>>,
+    network: Handle<MenuTitle<Msg>>,
     bluetooth: Handle<MenuTitle<Msg>>,
     log: Vec<Msg>,
 }
@@ -62,6 +65,7 @@ const HALF: ExtraIcon = ExtraIcon::Battery {
     level: 0.5,
     charging: false,
 };
+const WIFI: ExtraIcon = ExtraIcon::Network(NetworkIcon::Wifi { level: 3 });
 const BLUETOOTH: ExtraIcon = ExtraIcon::Bluetooth {
     powered: true,
     connected: false,
@@ -99,6 +103,25 @@ impl Application for Bar {
             )
             .with_extra(
                 MenuTitle::icon(
+                    WIFI,
+                    "Network, Wi-Fi, Home",
+                    Menu::new()
+                        .with(
+                            MenuItem::new("Home")
+                                .checked(true)
+                                .signal(3, true)
+                                .on_choose(Msg::Item("Home")),
+                        )
+                        .with(
+                            MenuItem::new("Cafe")
+                                .signal(2, false)
+                                .on_choose(Msg::Item("Cafe")),
+                        ),
+                )
+                .bind(&mut self.network),
+            )
+            .with_extra(
+                MenuTitle::icon(
                     BLUETOOTH,
                     "Bluetooth, on",
                     Menu::new().with(MenuItem::new("Switch").on_choose(Msg::Item("Switch"))),
@@ -118,6 +141,7 @@ impl Application for Bar {
             Msg::Rename(name) => self.app.set_text(cx, name),
             Msg::FocusBar => self.bar.open_first_menu(cx),
             Msg::SetBattery(icon, name) => self.battery.set_icon(cx, icon, name),
+            Msg::SetNetwork(icon, name) => self.network.set_icon(cx, icon, name),
             Msg::HideBluetooth(hidden) => self.bluetooth.set_hidden(cx, hidden),
             Msg::SetMenus(names) => {
                 self.bar
@@ -301,8 +325,8 @@ fn app_menus_are_replaced_whole() {
     assert!(title(&mut host, "Window").is_none());
     assert_eq!(
         find(&mut host, Role::MenuItem, None).len(),
-        5,
-        "logo, app, clock, battery and the hidden Bluetooth"
+        6,
+        "logo, app, clock, battery, network and the hidden Bluetooth"
     );
 }
 
@@ -507,7 +531,7 @@ fn an_icon_extra_opens_its_menu_and_changes_its_name() {
 fn a_hidden_extra_takes_no_room_and_opens_nothing_until_shown() {
     use neue_theme::materials::menu_bar::BLUETOOTH_WIDTH;
     let (mut runner, mut host) = setup();
-    let (bluetooth, battery) = (id(&runner.app().bluetooth), id(&runner.app().battery));
+    let (bluetooth, network) = (id(&runner.app().bluetooth), id(&runner.app().network));
     let width = bounds_of(&mut host, bluetooth).width();
     assert!(width < 0.5, "hidden at the start: {width}");
     // Nothing takes it from the keyboard either.
@@ -519,7 +543,7 @@ fn a_hidden_extra_takes_no_room_and_opens_nothing_until_shown() {
     let _ = host.only().render();
     let shown = bounds_of(&mut host, bluetooth);
     assert!((shown.width() - (BLUETOOTH_WIDTH + PADDING).ceil()).abs() < 0.5);
-    assert!((shown.x1 - bounds_of(&mut host, battery).x0).abs() < 0.5);
+    assert!((shown.x1 - bounds_of(&mut host, network).x0).abs() < 0.5);
     click_widget(&mut runner, &mut host, bluetooth);
     assert_eq!(menus_open(&mut host), 1);
 
@@ -529,4 +553,68 @@ fn a_hidden_extra_takes_no_room_and_opens_nothing_until_shown() {
     let _ = host.only().render();
     assert_eq!(menus_open(&mut host), 0);
     assert!(bounds_of(&mut host, bluetooth).width() < 0.5);
+}
+
+#[test]
+fn the_network_extra_keeps_its_size_in_every_state_and_sits_left_of_the_battery() {
+    use neue_theme::materials::menu_bar::NETWORK_WIDTH;
+    let (mut runner, mut host) = setup();
+    let battery = bounds_of(&mut host, id(&runner.app().battery));
+    let network = bounds_of(&mut host, id(&runner.app().network));
+    assert!(
+        (network.x1 - battery.x0).abs() < 0.5,
+        "{network:?} {battery:?}"
+    );
+    assert!((network.width() - (NETWORK_WIDTH + PADDING).ceil()).abs() < 0.5);
+
+    // Switching state moves nothing: every network icon is one size.
+    for (icon, name) in [
+        (ExtraIcon::Network(NetworkIcon::Wired), "Network, wired"),
+        (
+            ExtraIcon::Network(NetworkIcon::WifiOff),
+            "Network, Wi-Fi off",
+        ),
+        (
+            ExtraIcon::Network(NetworkIcon::Disconnected),
+            "Network, disconnected",
+        ),
+        (
+            ExtraIcon::Network(NetworkIcon::Wifi { level: 0 }),
+            "Network, Wi-Fi on",
+        ),
+    ] {
+        runner.send(&mut host, Msg::SetNetwork(icon, name));
+        let _ = host.only().render();
+        let now = bounds_of(&mut host, id(&runner.app().network));
+        assert_eq!(now, network, "{name}");
+        assert_eq!(find(&mut host, Role::MenuItem, Some(name)).len(), 1);
+    }
+}
+
+#[test]
+fn network_items_show_and_read_their_signal() {
+    let (mut runner, mut host) = setup();
+    let network = id(&runner.app().network);
+    click_widget(&mut runner, &mut host, network);
+    assert_eq!(menus_open(&mut host), 1);
+    let harness = host.only();
+    let _ = harness.render();
+    let state = harness.access_tree().state();
+    let described = |label: &str| {
+        let mut stack = vec![state.root()];
+        while let Some(node) = stack.pop() {
+            if node.label().as_deref() == Some(label) {
+                return node.data().description().map(str::to_owned);
+            }
+            stack.extend(node.children());
+        }
+        panic!("no node {label:?}");
+    };
+    assert_eq!(
+        described("Home").as_deref(),
+        Some("strong signal, password needed")
+    );
+    assert_eq!(described("Cafe").as_deref(), Some("good signal"));
+    click_item(&mut runner, &mut host, "Cafe");
+    assert_eq!(runner.app().log, [Msg::Item("Cafe")]);
 }

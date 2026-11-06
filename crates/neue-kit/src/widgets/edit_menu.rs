@@ -44,6 +44,7 @@ pub(crate) fn spec(editable: bool, has_selection: bool, has_text: bool) -> MenuS
                 id,
                 label: label.to_owned(),
                 shortcut: command.map(|_| Shortcut::command(key)),
+                signal: None,
                 enabled: match command {
                     Some(EditCommand::Cut) => editable && has_selection,
                     Some(EditCommand::Copy) => has_selection,

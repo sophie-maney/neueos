@@ -36,20 +36,21 @@ use masonry_core::kurbo::{Affine, Axis, Insets, Point, Rect, Size, Vec2};
 use masonry_core::layout::{LayoutSize, LenDef, LenReq, Length};
 use neue_paint::imaging::ImagingReplayer;
 use neue_paint::materials::{
-    MenuMark, menu_highlight, menu_mark, menu_panel, menu_separator, submenu_arrow,
+    MenuMark, menu_highlight, menu_lock, menu_mark, menu_panel, menu_separator, menu_signal,
+    submenu_arrow,
 };
 use neue_paint::{Backdrop, Scene};
 use neue_platform::{PopupBlur, PopupBlurRequest};
 use neue_theme::materials::menu::{
-    ARROW_WIDTH, DRAG_THRESHOLD, ITEM_HEIGHT, LABEL_INSET, MARK_SIZE, MIN_WIDTH, PADDING_Y,
-    Palette, RADIUS, RIM, SEPARATOR_HEIGHT, SHADOW_OFFSET, SHADOW_REACH, SHORTCUT_GAP,
-    SUBMENU_OVERLAP, TRAILING_INSET,
+    ACCESSORY_GAP, ARROW_WIDTH, DRAG_THRESHOLD, ITEM_HEIGHT, LABEL_INSET, LOCK_HEIGHT, LOCK_WIDTH,
+    MARK_SIZE, MIN_WIDTH, PADDING_Y, Palette, RADIUS, RIM, SEPARATOR_HEIGHT, SHADOW_OFFSET,
+    SHADOW_REACH, SHORTCUT_GAP, SIGNAL_HEIGHT, SIGNAL_WIDTH, SUBMENU_OVERLAP, TRAILING_INSET,
 };
 use neue_theme::motion::TYPE_SELECT_RESET;
 
 use super::text::{TextLine, TextStyle};
 use crate::CheckState;
-use crate::menu::{ItemSpec, MenuSpec, MenuToggle, SpecKind};
+use crate::menu::{ItemSpec, MenuSpec, MenuToggle, Signal, SpecKind};
 use crate::theme::{BackdropProp, ThemeProp};
 
 /// What a menu's owner receives when an item is chosen: the item's id in the menu tree.
@@ -880,6 +881,15 @@ impl Layer for MenuWidget {
     }
 }
 
+/// Room an item's signal glyph takes at its right: the fan, and the padlock with its gap.
+fn signal_width(signal: Signal) -> f64 {
+    if signal.locked {
+        LOCK_WIDTH + ACCESSORY_GAP + SIGNAL_WIDTH
+    } else {
+        SIGNAL_WIDTH
+    }
+}
+
 /// What a row tells its menu.
 #[derive(Debug, Clone, Copy, PartialEq, Eq)]
 pub(crate) enum RowEvent {
@@ -996,6 +1006,10 @@ impl Widget for MenuRowWidget {
                     Some(s) => SHORTCUT_GAP + s.size(ctx.text_contexts()).width,
                     None => 0.0,
                 };
+                let shortcut = match self.spec.signal {
+                    Some(signal) => shortcut + SHORTCUT_GAP + signal_width(signal),
+                    None => shortcut,
+                };
                 let trailing = if self.is_submenu() {
                     SHORTCUT_GAP.max(shortcut) + ARROW_WIDTH
                 } else {
@@ -1061,6 +1075,22 @@ impl Widget for MenuRowWidget {
         } else {
             size.width - TRAILING_INSET
         };
+        if let Some(signal) = self.spec.signal {
+            // The fan at the right edge, the padlock (a network that needs a password)
+            // before it.
+            let fan = Rect::from_center_size(
+                Point::new(right - SIGNAL_WIDTH / 2.0, size.height / 2.0),
+                Size::new(SIGNAL_WIDTH, SIGNAL_HEIGHT),
+            );
+            menu_signal(&mut scene, fan, signal.bars, shortcut);
+            if signal.locked {
+                let lock = Rect::from_center_size(
+                    Point::new(fan.x0 - ACCESSORY_GAP - LOCK_WIDTH / 2.0, size.height / 2.0),
+                    Size::new(LOCK_WIDTH, LOCK_HEIGHT),
+                );
+                menu_lock(&mut scene, lock, shortcut);
+            }
+        }
         self.replayer.replay(&scene, ctx.scale_factor(), painter);
 
         let text = self.label.size(ctx.text_contexts());
@@ -1099,6 +1129,9 @@ impl Widget for MenuRowWidget {
         node.add_action(Action::Click);
         if let Some(s) = &self.spec.shortcut {
             node.set_keyboard_shortcut(s.spoken());
+        }
+        if let Some(signal) = self.spec.signal {
+            node.set_description(signal.spoken());
         }
         match self.spec.toggle {
             MenuToggle::None => {}

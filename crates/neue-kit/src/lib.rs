@@ -64,7 +64,7 @@ mod tests;
 pub use app::{Application, Cx, Error, Settings, Window, run};
 pub use date::Date;
 pub use element::{Element, Handle};
-pub use menu::{Menu, MenuItem, MenuToggle, Shortcut};
+pub use menu::{Menu, MenuItem, MenuToggle, Shortcut, Signal};
 pub use neue_paint::icon::{Glyph, Icon, IconError, IconPaint, VectorIcon};
 pub use neue_paint::materials::{DividerStyle, Edge};
 pub use neue_platform::WindowId;
@@ -82,7 +82,7 @@ pub use widgets::{
 /// ([`Window::layer`]), outputs ([`Application::output`]) and the compositor's window list
 /// and window requests ([`Application::shell`], [`Cx::shell`]).
 pub mod desktop {
-    pub use crate::widgets::{Desktop, ExtraIcon, MenuBar, MenuTitle};
+    pub use crate::widgets::{Desktop, ExtraIcon, MenuBar, MenuTitle, NetworkIcon};
     pub use neue_paint::materials::desktop::{Fit, Picture};
     pub use neue_platform::desktop::*;
     pub use neue_platform::{Anchor, LayerKeyboard, LayerSpec, Margin, ShellLayer};

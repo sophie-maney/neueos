@@ -68,6 +68,7 @@ fn choices(labels: &[TextLine], selected: usize) -> MenuSpec {
                 id,
                 label: line.text().to_owned(),
                 shortcut: None,
+                signal: None,
                 enabled: true,
                 toggle: if id == selected {
                     MenuToggle::Check(CheckState::On)

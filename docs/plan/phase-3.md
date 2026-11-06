@@ -428,7 +428,7 @@ their goldens and the gallery's "Shell" page run on macOS.
       device's `State`; activating an AP moves `ActiveAccessPoint`). No ADR: zbus only, no
       new dependency or protocol. Protected networks that aren't saved are deferred until a
       secret agent exists (`nmtui` until then).
-- [ ] **3.12b Network B: icon extra in the kit** · Sonnet. Can start from 3.12a's shapes.
+- [x] **3.12b Network B: icon extra in the kit** · Sonnet. Can start from 3.12a's shapes.
       `ExtraIcon::Network` (wired, Wi-Fi with signal level, Wi-Fi off, disconnected),
       original vector icons in `neue_paint::materials::menu_bar`, light and dark; portable
       `NetworkView`, `NetworkCommand` and `bar::network_menu` (Wi-Fi switch, the network
@@ -436,6 +436,29 @@ their goldens and the gallery's "Shell" page run on macOS.
       Disconnect), `BarContent::network` (`None` hides it). Gallery Shell page entries,
       AccessKit labels.
       *Accept:* goldens (states × light/dark × scale 1 and 2); kit tests.
+      *Done (ADR with 3.12c):* `neue_kit::desktop::{ExtraIcon::Network(NetworkIcon), NetworkIcon}`
+      (`Wired`, `Wifi { level }` with 0 to 3 arcs lit, `WifiOff` faded and struck through,
+      `Disconnected` the wired icon faded); every state has one size, so the bar doesn't
+      shift. Drawn by `neue_paint::materials::menu_bar::{wifi, wired, strike, wifi_label,
+      wired_label}` with metrics in `neue_theme`. New kit feature `MenuItem::signal(bars,
+      locked)` (`neue_kit::Signal`): a Wi-Fi fan, and a padlock before it, at an item's
+      right, read as its accessible description ("strong signal, password needed"); drawn
+      by `neue_paint::materials::{menu_signal, menu_lock}`. `neue_shell::bar`: portable
+      `NetworkView` (`WiredView`, `WifiView`, `WifiNetworkView`), `NetworkCommand`
+      (`SetWifi`, `Join`, `DisconnectWifi`, `ConnectWired`, `DisconnectWired`, `Scan`),
+      `signal_bars` (1 to 3 arcs from 0 to 100 %), `network_icon` (a wired connection that
+      is up wins over Wi-Fi), `network_menu` (state line and switch; the networks with a
+      tick on the joined one, a signal glyph and a padlock, a protected network that isn't
+      saved greyed out; Disconnect Wi-Fi; a submenu per Ethernet device: Connect,
+      Disconnect or "Cable Unplugged"), `BarContent::network` (`None` hides it),
+      `BarHandles::network`; `menu_bar` takes a closure for `NetworkCommand`, needs
+      `M: Clone`, and the network title sends `Scan` when its menu opens. Extras order,
+      right to left: clock, battery, network, Bluetooth. The shell passes `None` and only
+      logs network commands until 3.12c. Goldens: `shell-bar` gained a network-open state
+      (the window is larger, the others changed: the extra is in the bar) and
+      `shell-extras` a row of network icons; 2 kit tests, 4 shell tests, 1 paint test. The
+      Linux-only `shell.rs` passes clippy on arm64 Linux (`cargo xtask linux`). Not
+      checked: the extra in a running session (nothing feeds it until 3.12c).
 - [ ] **3.12c Network C: shell wiring** · Sonnet. After 3.12a and 3.12b. A worker thread in
       `extras.rs` following NetworkManager (debounced), bar sync, the extra absent without
       NetworkManager, menu actions through `cx.spawn` (Wi-Fi switch, join, connect,

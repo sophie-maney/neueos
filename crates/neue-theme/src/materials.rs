@@ -1149,6 +1149,15 @@ pub mod menu_bar {
     pub const BLUETOOTH_STROKE: f64 = 1.4;
     /// Opacity of the Bluetooth icon while the adapter is off.
     pub const OFF_OPACITY: f32 = 0.45;
+    /// Width of the network extra's icon (one size for every state, so that the bar
+    /// doesn't shift when the network changes).
+    pub const NETWORK_WIDTH: f64 = 17.0;
+    /// Height of the network extra's icon.
+    pub const NETWORK_HEIGHT: f64 = 13.0;
+    /// Stroke width of the Wi-Fi arcs and the wired chevrons.
+    pub const NETWORK_STROKE: f64 = 1.5;
+    /// Opacity of the Wi-Fi arcs that are not lit (the signal is weaker than them).
+    pub const UNLIT_OPACITY: f32 = 0.30;
 
     /// Colours of the bar.
     #[derive(Clone, Copy, Debug, PartialEq)]
@@ -1915,6 +1924,16 @@ pub mod menu {
     pub const ARROW_SIZE: f64 = 7.0;
     /// Smallest gap between a label and its shortcut.
     pub const SHORTCUT_GAP: f64 = 24.0;
+    /// Width of the signal glyph at an item's right (see `MenuItem::signal`).
+    pub const SIGNAL_WIDTH: f64 = 13.0;
+    /// Height of the signal glyph.
+    pub const SIGNAL_HEIGHT: f64 = 10.0;
+    /// Width of the lock before the signal glyph.
+    pub const LOCK_WIDTH: f64 = 8.0;
+    /// Height of the lock.
+    pub const LOCK_HEIGHT: f64 = 10.0;
+    /// Space between the lock and the signal glyph, and before them.
+    pub const ACCESSORY_GAP: f64 = 6.0;
     /// Side of the box the check mark, mixed dash or radio dot is drawn in.
     pub const MARK_SIZE: f64 = 9.0;
     /// Stroke width of the check mark and the dash.

@@ -49,7 +49,8 @@ pub use date_picker::{
 pub use focus_ring::focus_ring;
 pub use linen::{Linen, fill_linen};
 pub use menu::{
-    MenuMark, menu_highlight, menu_mark, menu_outline, menu_panel, menu_separator, submenu_arrow,
+    MenuMark, menu_highlight, menu_lock, menu_mark, menu_outline, menu_panel, menu_separator,
+    menu_signal, submenu_arrow,
 };
 pub use path_control::{PathControl, path_control, path_segment_rects};
 pub use popover::{
