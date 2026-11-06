@@ -32,6 +32,7 @@ mod menu_slider;
 #[cfg(target_os = "linux")]
 mod menubar;
 mod menus;
+mod notifications;
 mod osd;
 mod outline;
 mod paths;

@@ -642,7 +642,7 @@ their goldens and the gallery's "Shell" page run on macOS.
       `[notifications] do-not-disturb, banner-timeout`. 9 unit and 6 peer-to-peer
       `neue-dbus` tests, 7 store tests, 1 config test. Nothing owns the name yet (3.15d),
       so there is no VM check.
-- [ ] **3.15b Banner and alert widgets** · Opus. After 3.15a (its types).
+- [x] **3.15b Banner and alert widgets** · Opus. After 3.15a (its types).
       `neue_kit::desktop::Notification`: a banner (app icon or image, bold title, body
       clipped to two lines, a close button on hover) and an alert (the same with action
       buttons). Material in `neue-paint` with `neue-theme` tokens, light and dark. A
@@ -653,6 +653,16 @@ their goldens and the gallery's "Shell" page run on macOS.
       hovered close, alert with two actions × light/dark × scale 1 and 2; stack model unit
       tests.
       *Owner:* banners and alerts look right on the PC, light and dark.
+      *Done:* ADR 0090. `neue_paint::materials::notification` (`Parts`, `panel`, `picture`,
+      `close_button`, `panel_height`) with tokens in `neue_theme::materials::notification`;
+      `neue_kit::desktop::{Notification, NotificationContent, NotificationEvent}` (close
+      and two action buttons as child widgets, `Handle::set_content` in place, Escape
+      closes, `Hovered` reported for pausing); `neue_kit::desktop::NotificationStack`
+      (`push`, `set_height`, `remove`, `step`, `placements`, `extent`); `Fixture::hover_at_px`.
+      Goldens `shell-banner` (normal, close hovered, focused), `shell-banner-image`,
+      `shell-alert` (normal, close hovered); gallery Shell page. 5 material, 7 stack model and
+      5 widget tests (clicks, hover, Tab order and keys, AccessKit, replacement). Not done
+      here: the container that hosts the panels and applies the model (3.15d).
 - [ ] **3.15c Activation tokens for the shell** · Opus. After 3.2a. `Ctx::activation_token`
       through `neue-platform` (an `xdg_activation_v1` token for a surface and the input
       serial) and the kit; the compositor grants tokens asked for by the shell's client
@@ -661,7 +671,9 @@ their goldens and the gallery's "Shell" page run on macOS.
       activates another client's toplevel; a token from an unfocused ordinary client is
       still refused.
 - [ ] **3.15d Shell wiring** · Sonnet. After 3.15a–c. The shell owns the name and shows
-      banners top right under the bar on the output with the active window, stacked,
+      banners top right under the bar on the output with the active window, stacked
+      (a kit container that hosts `Notification`s and applies `NotificationStack`, in one
+      layer surface sized to its `extent()`, ADR 0090),
       timing out (paused while hovered); replace-id updates in place; critical and
       never-expiring (`expire_timeout` 0) notifications show as alerts that stay until
       dismissed (`Lifetime::Never`, ADR 0089). A click on a banner sends

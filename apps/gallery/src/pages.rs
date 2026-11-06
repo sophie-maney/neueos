@@ -259,7 +259,26 @@ fn shell(_: &mut PageHandles) -> Element<Message> {
                 .with(specimens::shell_osd(OsdGlyph::MicrophoneMuted, 0.75))
                 .with(specimens::shell_osd(OsdGlyph::Keyboard, 0.5)),
         ))
+        .with(section(
+            "Notifications: a banner (point at it for its close button), a banner with an image, and an alert with two actions · Tab reaches each button, Space or Return activates, Escape closes · the status line shows what you did",
+            Stack::column()
+                .with(specimens::shell_banner(notification_event))
+                .with(specimens::shell_banner_image(notification_event))
+                .with(specimens::shell_alert(notification_event)),
+        ))
         .into()
+}
+
+/// The status line's word for what was done to a notification (hovering isn't shown).
+fn notification_event(event: neue_kit::desktop::NotificationEvent) -> Option<Message> {
+    use neue_kit::desktop::NotificationEvent::{Action, Activated, Closed, Hovered};
+    Some(Message::Pressed(match event {
+        Activated => "Notification",
+        Closed => "Close Notification",
+        Action(0) => "First Action",
+        Action(_) => "Second Action",
+        Hovered(_) => return None,
+    }))
 }
 
 fn heading(title: &str, blurb: &str) -> Stack<Message> {

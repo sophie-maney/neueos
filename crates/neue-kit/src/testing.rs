@@ -182,6 +182,13 @@ impl Fixture {
         self.harness.mouse_move(at);
     }
 
+    /// Puts the pointer `(x, y)` logical pixels from the widget's top left corner.
+    pub fn hover_at_px(&mut self, x: f64, y: f64) {
+        let widget = self.harness.get_widget_with_id(self.target);
+        let at = widget.ctx().to_window(Point::new(x, y));
+        self.harness.mouse_move(at);
+    }
+
     /// Turns the mouse wheel (or swipes) over the widget: `dx` and `dy` logical pixels,
     /// negative to see further right or down.
     pub fn scroll(&mut self, dx: f64, dy: f64) {
