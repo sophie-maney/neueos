@@ -12,6 +12,8 @@
 //!   (task 3.12a).
 //!
 //! - [`mpris`]: media players, for the media keys (task 3.14d).
+//! - [`notifications`]: the `org.freedesktop.Notifications` server, owned by the shell
+//!   (task 3.15a).
 //! - [`status_notifier`]: the StatusNotifierItem tray protocol: watcher, host and item client
 //!   (task 3.13a).
 //!
@@ -28,6 +30,7 @@ pub mod menu;
 pub mod menu_client;
 pub mod mpris;
 pub mod network;
+pub mod notifications;
 pub mod power;
 pub mod registrar;
 pub mod status_notifier;
@@ -45,6 +48,7 @@ pub use zbus;
 pub use gmenu_client::{Activation, GMenuAddress, GMenuClient, GMenuSignals, GMenus, Scope};
 pub use menu::{Layout, MENU_ROOT, MenuExport, MenuIcon, MenuNode, NodeKind, Toggle, ToggleState};
 pub use menu_client::{MenuChanged, MenuClient, MenuSignals};
+pub use notifications::Notifications;
 pub use registrar::Registrar;
 pub use status_notifier::{Host, HostEvent, ItemInfo, StatusItem, Watcher};
 

@@ -1,11 +1,12 @@
-//! `shell.toml`: settings of `neue-shell` (task 3.2c). The menu bar, dock and the rest join
+//! `shell.toml`: settings of `neue-shell` (task 3.2c; notifications, task 3.15a). The menu bar, dock and the rest join
 //! this file with their tasks.
 
 use std::path::PathBuf;
 
-use serde::{Deserialize, Serialize};
+use serde::{Deserialize, Deserializer, Serialize};
 
 use crate::ConfigFile;
+use crate::compositor::in_range;
 
 /// Everything in `shell.toml`.
 #[derive(Debug, Clone, Default, PartialEq, Serialize, Deserialize)]
@@ -13,6 +14,8 @@ use crate::ConfigFile;
 pub struct ShellConfig {
     /// `[desktop]`: the background.
     pub desktop: DesktopConfig,
+    /// `[notifications]`: banners and Do Not Disturb.
+    pub notifications: NotificationsConfig,
 }
 
 impl ConfigFile for ShellConfig {
@@ -47,6 +50,33 @@ pub enum PictureFit {
     Center,
 }
 
+/// `[notifications]`.
+#[derive(Debug, Clone, PartialEq, Serialize, Deserialize)]
+#[serde(default, rename_all = "kebab-case")]
+pub struct NotificationsConfig {
+    /// Do Not Disturb: notifications arrive but no banner or alert shows. Off by default;
+    /// the notifications extra in the menu bar turns it on and off.
+    pub do_not_disturb: bool,
+    /// Milliseconds a banner stays up when the app leaves the time to us (1000 to 60000,
+    /// default 5000). Critical notifications and those the app asks to keep stay until
+    /// dismissed.
+    #[serde(deserialize_with = "banner_timeout")]
+    pub banner_timeout: u32,
+}
+
+impl Default for NotificationsConfig {
+    fn default() -> Self {
+        Self {
+            do_not_disturb: false,
+            banner_timeout: 5000,
+        }
+    }
+}
+
+fn banner_timeout<'de, D: Deserializer<'de>>(d: D) -> Result<u32, D::Error> {
+    in_range(d, "banner-timeout", 1000, 60_000)
+}
+
 #[cfg(test)]
 mod tests {
     use super::*;
@@ -57,6 +87,25 @@ mod tests {
         let config = load::<ShellConfig>(&Layers::none()).unwrap().config;
         assert_eq!(config.desktop.picture, None);
         assert_eq!(config.desktop.fit, PictureFit::Fill);
+        assert!(!config.notifications.do_not_disturb);
+        assert_eq!(config.notifications.banner_timeout, 5000);
+    }
+
+    #[test]
+    fn notifications_load_and_check_the_timeout() {
+        let dir = tempfile::tempdir().unwrap();
+        let file = dir.path().join("shell.toml");
+        std::fs::write(
+            &file,
+            "[notifications]\ndo-not-disturb = true\nbanner-timeout = 8000\n",
+        )
+        .unwrap();
+        let layers = Layers::from_dirs([dir.path().to_owned()]);
+        let config = load::<ShellConfig>(&layers).unwrap().config;
+        assert!(config.notifications.do_not_disturb);
+        assert_eq!(config.notifications.banner_timeout, 8000);
+        std::fs::write(&file, "[notifications]\nbanner-timeout = 10\n").unwrap();
+        assert!(load::<ShellConfig>(&layers).is_err());
     }
 
     #[test]
