@@ -11,8 +11,10 @@
 //! - [`network`]: NetworkManager's wired and Wi-Fi devices, for the network menu extra
 //!   (task 3.12a).
 //!
-//! The StatusNotifierItem host and our private services arrive
-//! with later Phase 3 tasks.
+//! - [`status_notifier`]: the StatusNotifierItem tray protocol: watcher, host and item client
+//!   (task 3.13a).
+//!
+//! Our private services arrive with later Phase 3 tasks.
 //!
 //! Connections are zbus's blocking ones with zbus's own executor thread (`async-io`), so
 //! apps without an async runtime can use this crate; method calls are answered on that
@@ -26,6 +28,7 @@ pub mod menu_client;
 pub mod network;
 pub mod power;
 pub mod registrar;
+pub mod status_notifier;
 pub mod testing;
 
 use std::time::Duration;
@@ -41,6 +44,7 @@ pub use gmenu_client::{Activation, GMenuAddress, GMenuClient, GMenuSignals, GMen
 pub use menu::{Layout, MENU_ROOT, MenuExport, MenuIcon, MenuNode, NodeKind, Toggle, ToggleState};
 pub use menu_client::{MenuChanged, MenuClient, MenuSignals};
 pub use registrar::Registrar;
+pub use status_notifier::{Host, HostEvent, ItemInfo, StatusItem, Watcher};
 
 /// Connects to the session bus, ready for [`MenuExport`]s.
 ///
@@ -76,6 +80,8 @@ pub enum Error {
     PathTaken(String),
     #[error("joining {0:?} needs a password, which isn't supported yet")]
     SecretRequired(String),
+    #[error("no status-notifier item {0:?}")]
+    UnknownItem(String),
     #[error("{0} has no saved connection to connect with")]
     NoConnection(String),
 }
