@@ -1083,7 +1083,7 @@ pub fn shell_bar<M: Clone + 'static>(
             send,
             network,
             bluetooth,
-            |_| neue_kit::Menu::new(),
+            |_| neue_shell::bar::TrayActions::menu(neue_kit::Menu::new()),
             &mut handles,
             // Inside a gallery window, nothing is blurred behind the bar.
             neue_kit::desktop::Backdrop::Opaque,
@@ -1169,45 +1169,47 @@ pub fn shell_tray_items() -> Vec<neue_shell::bar::TrayItemView> {
 /// `idle`.
 pub fn shell_tray<M: Clone + 'static>(idle: M) -> Stack<M> {
     use neue_shell::bar::{BarContent, BarHandles};
-    let bar = |app_name: &str, titles: &[&str], tray| {
-        let content = BarContent {
-            app_name: app_name.to_owned(),
-            time: "09:41".to_owned(),
-            full_date: String::new(),
-            battery: None,
-            network: None,
-            bluetooth: None,
-            tray,
+    let bar =
+        |app_name: &str, titles: &[&str], tray| {
+            let content = BarContent {
+                app_name: app_name.to_owned(),
+                time: "09:41".to_owned(),
+                full_date: String::new(),
+                battery: None,
+                network: None,
+                bluetooth: None,
+                tray,
+            };
+            let menus = titles
+                .iter()
+                .map(|t| neue_kit::desktop::MenuTitle::new(*t, neue_kit::Menu::new()))
+                .collect();
+            neue_shell::bar::menu_bar(
+                &content,
+                menus,
+                {
+                    let idle = idle.clone();
+                    move |_| idle.clone()
+                },
+                {
+                    let idle = idle.clone();
+                    move |_| idle.clone()
+                },
+                {
+                    let idle = idle.clone();
+                    move |_| idle.clone()
+                },
+                |item| {
+                    neue_shell::bar::TrayActions::menu(neue_kit::Menu::new().with(
+                        neue_kit::MenuItem::new(format!("Open {}", item.title)).disabled(true),
+                    ))
+                },
+                &mut BarHandles::default(),
+                neue_kit::desktop::Backdrop::Opaque,
+            )
+            // Room for the tray: a shell's bar is as wide as its output.
+            .min_width(380.0)
         };
-        let menus = titles
-            .iter()
-            .map(|t| neue_kit::desktop::MenuTitle::new(*t, neue_kit::Menu::new()))
-            .collect();
-        neue_shell::bar::menu_bar(
-            &content,
-            menus,
-            {
-                let idle = idle.clone();
-                move |_| idle.clone()
-            },
-            {
-                let idle = idle.clone();
-                move |_| idle.clone()
-            },
-            {
-                let idle = idle.clone();
-                move |_| idle.clone()
-            },
-            |item| {
-                neue_kit::Menu::new()
-                    .with(neue_kit::MenuItem::new(format!("Open {}", item.title)).disabled(true))
-            },
-            &mut BarHandles::default(),
-            neue_kit::desktop::Backdrop::Opaque,
-        )
-        // Room for the tray: a shell's bar is as wide as its output.
-        .min_width(380.0)
-    };
     let mut crowded = shell_tray_items();
     crowded.extend(shell_tray_items());
     Stack::column()

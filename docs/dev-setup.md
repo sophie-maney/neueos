@@ -174,14 +174,27 @@ Without a private system bus the example can also be tried in OrbStack:
 and `busctl --user …` against `org.freedesktop.NetworkManager`.
 
 ### 1.6d Tray apps: the watcher, the host and a mock item (status-icon tray)
-Until the shell owns the StatusNotifierWatcher (3.13c), `neue-dbus`'s `sni_host` example
-owns it on the **session** bus and prints what a tray would show (items added, changed and
-removed, with icon, status, tooltip and menu path); `mock_sni_item` is a stand-in tray app
-(a drawn blue icon, a tooltip, a menu; its Mark Attention item turns the icon red; `--named`
-gives the icon by theme name) that prints the calls it gets. Run them in the VM's session
-(over ssh, with the session's bus address) or in OrbStack under `dbus-run-session`.
+The shell owns the StatusNotifierWatcher on the **session** bus (3.13c) and shows the
+items as icons left of the other extras. Without a shell, `neue-dbus`'s `sni_host` example
+owns it instead and prints what a tray would show (items added, changed and removed, with
+icon, status, tooltip and menu path; stop the shell first). `mock_sni_item` is a stand-in
+tray app (a drawn blue icon, a tooltip, a menu of Open, Mark Attention, a check item and
+Quit; Mark Attention turns the icon red and back; `--named` gives the icon by theme name)
+that prints the calls it gets. Run them in the VM's session (over ssh, with the session's
+bus address) or in OrbStack under `dbus-run-session`.
 ```sh
 orb run -m neueos-arm64 dbus-run-session -- sh -c 'target/neueos-arm64/debug/examples/sni_host & sleep 1; target/neueos-arm64/debug/examples/mock_sni_item'
+# the shell's worker itself, against the mock, in OrbStack (prints what the bar would get):
+cargo xtask linux dbus-run-session -- sh -c 'target/neueos-arm64/debug/examples/mock_sni_item & sleep 1; cargo test -p neue-shell the_worker_shows -- --ignored --nocapture'
+```
+In the VM (compositor and shell running as in §1.3):
+```sh
+ssh neueos-vm 'cd neueos && cargo build --release -p neue-dbus --examples'
+ssh neueos-vm '. ~/neueos/docs/vm-env.sh; setsid nohup ~/neueos/target/release/examples/mock_sni_item >/tmp/mock-sni.log 2>&1 </dev/null &'
+ssh neueos-vm '. ~/neueos/docs/vm-env.sh; neuectl screenshot /tmp/tray.png'   # a blue disc left of the network extra
+# left click it: the log shows `Activate`; right click: its menu opens, choose Mark Attention
+# (log `clicked 3`, the disc turns red) and Quit (the icon goes away)
+ssh neueos-vm 'cat /tmp/mock-sni.log'
 ```
 A real tray app (`nm-applet --indicator`) can replace the mock. Menu clicks can be sent
 with `busctl --user call <service> /StatusNotifierItem/Menu com.canonical.dbusmenu Event

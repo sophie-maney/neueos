@@ -47,9 +47,9 @@ dependency: icons are `neue_paint::Icon`s, which already carry raster pictures (
    and the newest are dropped. Passive items count as zero width. There is no "more" menu
    in this task: a notch for the left-out ones would be a follow-up if a real bar runs
    out of room (a 1920 px bar holds dozens of icons).
-8. **Not here.** A press without a menu (3.13c needs the primary press to send
-   `Activate` and the secondary one to open the menu: a kit addition, listed in the task)
-   and the keyboard: like the other extras, the tray takes no part in Left and Right
+8. **Not here.** A press without a menu (3.13c adds `MenuTitle::on_press` and `on_context`,
+   so that the primary press sends `Activate` and the secondary one opens the menu; ADR
+   0084's addendum) and the keyboard: like the other extras, the tray takes no part in Left and Right
    between menus.
 
 ## Consequences

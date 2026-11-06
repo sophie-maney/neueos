@@ -9,6 +9,7 @@ use neue_config::{AppearanceConfig, Layers};
 use neue_dbus::bluetooth::{Bluetooth, State as BluetoothState};
 use neue_dbus::login::Login;
 use neue_dbus::network::{Network, State as NetworkState};
+use neue_dbus::{Host, MenuNode};
 use neue_desktop::{AppDatabase, LaunchOptions, Locale};
 use neue_kit::desktop::{
     Anchor, Desktop, Fit, LayerKeyboard, LayerSpec, OutputEvent, OutputId, Picture, ShellEvent,
@@ -18,6 +19,7 @@ use neue_kit::{Application, Cx, Handle, Settings, WindowId};
 use neue_shell::about::About;
 use neue_shell::bar::{
     self, BarContent, BarHandles, BatteryView, BluetoothCommand, NetworkCommand, SystemCommand,
+    TrayActions, TrayItemView,
 };
 use neue_shell::clock;
 use neue_shell::fallback::{self, Command, Context, WindowEntry};
@@ -29,6 +31,7 @@ use neue_shell::windows::Windows;
 use crate::appearance;
 use crate::extras;
 use crate::global_menu::{self, Address, Input, MenuEvent, Menus};
+use crate::tray;
 
 /// The bar's layer-shell namespace.
 const NAMESPACE: &str = "neue-menubar";
@@ -64,6 +67,22 @@ enum Message {
     BluetoothEnded,
     /// A BlueZ call (power, connect, disconnect) finished.
     BluetoothCall(Result<(), String>),
+    /// The tray worker's host, for the actions on items.
+    TrayHost(Host),
+    /// A status item appeared, changed, got its menu or left.
+    Tray(tray::Update),
+    /// The tray worker stopped (it logged why).
+    TrayEnded,
+    /// A primary press on item `id`: its app's `Activate`.
+    TrayPress(String),
+    /// A secondary press on item `id` that has no menu to open: its app's `ContextMenu`.
+    TrayContext(String),
+    /// Item `n` of the menu of item `id` was chosen.
+    TrayMenu(String, i32),
+    /// A tray menu went up (`true`) or came down.
+    TrayMenuUp(bool),
+    /// A call on a status item finished.
+    TrayCall(Result<(), String>),
     /// A logind call finished.
     Login(Result<(), String>),
     /// The configured picture was decoded, or why not.
@@ -147,6 +166,51 @@ struct Background {
     desktop: Handle<Desktop>,
 }
 
+/// A status item as the UI thread keeps it.
+struct TrayEntry {
+    item: tray::Item,
+    /// Its DBusMenu as last read.
+    menu: Vec<MenuNode>,
+}
+
+/// The status-icon tray as the UI thread keeps it.
+#[derive(Default)]
+struct Tray {
+    /// For the actions on items; `None` until the worker has it, and after it stopped.
+    host: Option<Host>,
+    /// In order of arrival (the first is rightmost).
+    items: Vec<TrayEntry>,
+    /// One of the tray's menus is up.
+    open: bool,
+    /// The bars' tray titles need replacing (an item came or left, got another menu, or
+    /// acts differently now): done once no tray menu is up.
+    dirty: bool,
+}
+
+/// What item `view` does in the bar: a primary press activates its app and a secondary one
+/// opens its menu, except for an item that is only a menu (`ItemIsMenu`), which opens it
+/// on any press.
+fn tray_actions(tray: &Tray, view: &TrayItemView) -> TrayActions<Message> {
+    let Some(entry) = tray.items.iter().find(|e| e.item.view.id == view.id) else {
+        return TrayActions::menu(neue_kit::Menu::new());
+    };
+    let id = view.id.clone();
+    let menu = {
+        let id = id.clone();
+        global_menu::app_menu(&entry.menu, 0, false, move |event| {
+            Message::TrayMenu(id.clone(), event.id)
+        })
+    };
+    let only_menu = entry.item.item_is_menu && entry.item.has_menu;
+    TrayActions {
+        menu,
+        press: (!only_menu).then(|| Message::TrayPress(id.clone())),
+        context: Some(Message::TrayContext(id)),
+        on_open: Some(Message::TrayMenuUp(true)),
+        on_close: Some(Message::TrayMenuUp(false)),
+    }
+}
+
 struct Shell {
     bars: BTreeMap<OutputId, Bar>,
     backgrounds: BTreeMap<OutputId, Background>,
@@ -167,6 +231,7 @@ struct Shell {
     bluetooth: Option<BluetoothState>,
     /// NetworkManager as of its last change: the menu's indices are looked up here.
     network: Option<NetworkState>,
+    tray: Tray,
 }
 
 /// The global menu as the UI thread keeps it.
@@ -221,7 +286,7 @@ impl Shell {
                 // Shown once the network worker finds a network device.
                 network: None,
                 bluetooth: None,
-                // Filled by the tray's worker (task 3.13c).
+                // Filled as the tray's worker finds status items.
                 tray: Vec::new(),
             },
             windows,
@@ -232,6 +297,7 @@ impl Shell {
             search: Search::default(),
             bluetooth: None,
             network: None,
+            tray: Tray::default(),
         }
     }
 
@@ -280,6 +346,117 @@ impl Shell {
             }
             Message::BluetoothEnded
         });
+    }
+
+    /// Starts the status-icon tray's worker on a thread of its own.
+    fn start_tray(cx: &mut Cx<'_, Message>) {
+        cx.spawn(|sender| {
+            let result = tray::run(
+                |host| sender.send(Message::TrayHost(host)),
+                |update| sender.send(Message::Tray(update)),
+            );
+            if let Err(err) = result {
+                tracing::warn!(%err, "no status-icon tray: the session bus is unavailable or another watcher owns its name");
+            }
+            Message::TrayEnded
+        });
+    }
+
+    /// Takes what the tray worker said into the items.
+    fn tray_update(&mut self, cx: &mut Cx<'_, Message>, update: tray::Update) {
+        let items = &mut self.tray.items;
+        match update {
+            tray::Update::Item(item) => {
+                match items.iter_mut().find(|e| e.item.view.id == item.view.id) {
+                    Some(entry) => {
+                        // Another menu or press behaviour needs new titles; the icon, the
+                        // name, the tooltip and the status change in place.
+                        if entry.item.has_menu != item.has_menu
+                            || entry.item.item_is_menu != item.item_is_menu
+                        {
+                            self.tray.dirty = true;
+                        }
+                        if !item.has_menu && !entry.menu.is_empty() {
+                            entry.menu.clear();
+                            self.tray.dirty = true;
+                        }
+                        entry.item = item;
+                    }
+                    None => {
+                        items.push(TrayEntry {
+                            item,
+                            menu: Vec::new(),
+                        });
+                        self.tray.dirty = true;
+                    }
+                }
+            }
+            tray::Update::Menu { id, nodes } => {
+                if let Some(entry) = items.iter_mut().find(|e| e.item.view.id == id)
+                    && entry.menu != nodes
+                {
+                    entry.menu = nodes;
+                    self.tray.dirty = true;
+                }
+            }
+            tray::Update::Removed(id) => {
+                items.retain(|e| e.item.view.id != id);
+                self.tray.dirty = true;
+            }
+        }
+        self.sync_tray(cx);
+    }
+
+    /// Shows the tray's items on every bar: in place while the same icons are there, by
+    /// replacing the tray's titles when items came, left or changed their menus (held back
+    /// while a tray menu is up).
+    fn sync_tray(&mut self, cx: &mut Cx<'_, Message>) {
+        self.content.tray = self
+            .tray
+            .items
+            .iter()
+            .map(|e| e.item.view.clone())
+            .collect();
+        if self.tray.dirty {
+            if self.tray.open {
+                return;
+            }
+            self.tray.dirty = false;
+            let Self {
+                bars,
+                tray,
+                content,
+                ..
+            } = self;
+            for bar in bars.values_mut() {
+                let titles = bar::tray_titles(
+                    &content.tray,
+                    |view| tray_actions(tray, view),
+                    &mut bar.handles.tray,
+                );
+                bar.handles.bar.set_tray(cx, titles);
+            }
+            return;
+        }
+        for bar in self.bars.values() {
+            for (handle, view) in bar.handles.tray.iter().zip(&self.content.tray) {
+                bar::update_tray_title(handle, cx, view);
+            }
+        }
+    }
+
+    /// Calls `call` on item `id`'s app, on a thread of its own (apps answer slowly or not
+    /// at all).
+    fn tray_call(
+        &self,
+        cx: &mut Cx<'_, Message>,
+        id: String,
+        call: impl FnOnce(&Host, &str) -> Result<(), neue_dbus::Error> + Send + 'static,
+    ) {
+        let Some(host) = self.tray.host.clone() else {
+            return;
+        };
+        cx.spawn(move |_| Message::TrayCall(call(&host, &id).map_err(|e| e.to_string())));
     }
 
     /// The bar's titles: the fallback menu's, or the app's menus being shown, and Help
@@ -659,8 +836,7 @@ impl Shell {
             Message::System,
             Message::Network,
             Message::Bluetooth,
-            // The items' menus come with the tray's wiring (task 3.13c).
-            |_| neue_kit::Menu::new(),
+            |view| tray_actions(&self.tray, view),
             &mut handles,
             cx.backdrop(),
         );
@@ -905,6 +1081,7 @@ impl Application for Shell {
         self.watch_appearance(cx);
         self.start_global_menu(cx);
         Self::start_extras(cx);
+        Self::start_tray(cx);
         self.load_apps(cx);
         self.tick(cx);
     }
@@ -914,6 +1091,7 @@ impl Application for Shell {
             Message::Tick => self.tick(cx),
             Message::Sync => {
                 self.sync_bars(cx);
+                self.sync_tray(cx);
                 // A new bar can't take the menus while another bar's menu is up.
                 if !self.busy() {
                     self.sync_menus(cx);
@@ -977,6 +1155,36 @@ impl Application for Shell {
             Message::BluetoothCall(result) => {
                 if let Err(err) = result {
                     tracing::warn!(%err, "a Bluetooth call failed");
+                }
+            }
+            Message::TrayHost(host) => self.tray.host = Some(host),
+            Message::Tray(update) => self.tray_update(cx, update),
+            Message::TrayEnded => {
+                self.tray = Tray {
+                    dirty: true,
+                    ..Tray::default()
+                };
+                self.sync_tray(cx);
+            }
+            // The position is a hint for apps that place their own windows; the bar's
+            // surface isn't asked for it.
+            Message::TrayPress(id) => self.tray_call(cx, id, |host, id| host.activate(id, 0, 0)),
+            Message::TrayContext(id) => {
+                self.tray_call(cx, id, |host, id| host.context_menu(id, 0, 0));
+            }
+            Message::TrayMenu(id, item) => self.tray_call(cx, id, move |host, id| {
+                host.menu(id)?
+                    .map_or(Ok(()), |menu| menu.event(item, "clicked"))
+            }),
+            Message::TrayMenuUp(open) => {
+                self.tray.open = open;
+                if !open && self.tray.dirty {
+                    self.sync_tray(cx);
+                }
+            }
+            Message::TrayCall(result) => {
+                if let Err(err) = result {
+                    tracing::warn!(%err, "a status item didn't take a call");
                 }
             }
             Message::Login(Ok(())) => {}

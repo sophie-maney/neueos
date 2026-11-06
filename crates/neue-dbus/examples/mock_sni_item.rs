@@ -138,17 +138,15 @@ fn main() -> Result<()> {
     let _menu = MenuExport::new(
         &conn,
         MENU_PATH,
-        vec![MenuNode::submenu(
-            1,
-            "Mock Tray",
-            vec![
-                MenuNode::item(2, "Open"),
-                MenuNode::item(3, "Mark Attention"),
-                wrap,
-                MenuNode::separator(5),
-                MenuNode::item(6, "Quit"),
-            ],
-        )],
+        // A tray menu's items hang straight off the root, as in real tray apps (an app
+        // menu has titles there).
+        vec![
+            MenuNode::item(2, "Open"),
+            MenuNode::item(3, "Mark Attention"),
+            wrap,
+            MenuNode::separator(5),
+            MenuNode::item(6, "Quit"),
+        ],
         move |id| {
             println!("clicked {id}");
             match id {

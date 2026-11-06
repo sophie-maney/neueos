@@ -10,6 +10,8 @@ mod extras;
 mod global_menu;
 #[cfg(target_os = "linux")]
 mod shell;
+#[cfg(target_os = "linux")]
+mod tray;
 
 fn main() -> anyhow::Result<()> {
     tracing_subscriber::fmt()
