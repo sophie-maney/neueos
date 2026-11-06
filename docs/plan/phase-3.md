@@ -700,7 +700,7 @@ their goldens and the gallery's "Shell" page run on macOS.
       its 120×40 content, grows to 200×90 and shrinks to 80×30 with its buffer; a click
       where it used to be reaches the zoomed window under it; fails without the opt-in), 1
       kit test, 1 platform unit test (rounding). No VM check: nothing uses it until 3.15d3.
-- [ ] **3.15d2 Notification host** · Opus. After 3.15b; the surface it lives in comes from
+- [x] **3.15d2 Notification host** · Opus. After 3.15b; the surface it lives in comes from
       3.15d1. `neue_kit::desktop::NotificationHost`: a container widget that owns the
       `Notification` panels, applies `NotificationStack` placements on animation frames
       and reports its `extent()` as its size. Add, replace in place (`set_content`),
@@ -709,6 +709,14 @@ their goldens and the gallery's "Shell" page run on macOS.
       *Accept:* gallery Shell page entry; goldens of a stack of three (one an alert) ×
       light/dark × scale 1 and 2; tests for slide in and out, closing up, replacement,
       resizing to `extent()`, and keyboard reach of every panel's buttons.
+      *Done:* ADR 0090 addendum. `neue_kit::desktop::NotificationHost` (`with`,
+      `on_event(id, event)`, `on_gone(id)`, `backdrop`; `Handle::show` adds or replaces in
+      place, `Handle::dismiss` slides out); one pixel when empty; per-slot hit testing so
+      overlapping margins don't steal clicks; `PanelGone` prunes the panel's handlers.
+      Golden `shell-notification-stack`; gallery Shell page (Post a Notification, dismiss
+      on click). 7 kit tests (slide in, size follows the stack, slide out and close up with
+      handlers forgotten, replacement and coming back, reduced motion, clicks by id, Tab
+      order). No VM check: the shell uses it in 3.15d3.
 - [ ] **3.15d3 Notifications in the shell** · Sonnet. After 3.15a–c, 3.15d1 and
       3.15d2. The shell owns `org.freedesktop.Notifications` and shows banners top right
       under the bar on the output with the active window, in one layer surface per

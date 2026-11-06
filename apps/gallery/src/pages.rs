@@ -33,9 +33,22 @@ pub struct PageHandles {
     /// popover open.
     pub popover_anchors: Vec<Handle<Button<Message>>>,
     pub popover_open: Option<usize>,
+    /// The Shell page: the notification stack, and how many notifications were posted
+    /// to it.
+    pub notifications: Handle<neue_kit::desktop::NotificationHost<Message>>,
+    pub posted: u32,
 }
 
 impl PageHandles {
+    /// Posts another notification on the Shell page's stack: banners and alerts in turn.
+    pub fn post_notification(&mut self, cx: &mut neue_kit::Cx<'_, Message>) {
+        self.posted += 1;
+        // The stack starts with notifications 1 to 3.
+        let id = 3 + self.posted;
+        self.notifications
+            .show(cx, id, specimens::posted_notification(self.posted));
+    }
+
     /// Sorts the Tables page's files by `column` and shows them again.
     pub fn sort_files(&self, cx: &mut neue_kit::Cx<'_, Message>, column: usize, order: SortOrder) {
         let mut files = self.files.borrow_mut();
@@ -167,7 +180,7 @@ pub const PAGES: &[Page] = &[
 
 /// The shell's pieces (task 3.2b): the menu bar with its logo menu, the active app's name
 /// and the clock extra; and the desktop picture (3.2c).
-fn shell(_: &mut PageHandles) -> Element<Message> {
+fn shell(handles: &mut PageHandles) -> Element<Message> {
     let send = |command: neue_shell::bar::SystemCommand| {
         Message::Pressed(match command {
             neue_shell::bar::SystemCommand::About => "About This Computer",
@@ -265,6 +278,17 @@ fn shell(_: &mut PageHandles) -> Element<Message> {
                 .with(specimens::shell_banner(notification_event))
                 .with(specimens::shell_banner_image(notification_event))
                 .with(specimens::shell_alert(notification_event)),
+        ))
+        .with(section(
+            "Notification stack: the newest on top · Post slides another in and the others make room, the close button, a click or an action slides one out and the rest close up (they jump with Motion reduced) · the status line shows what you did",
+            Stack::column()
+                .with(Button::new("Post a Notification").on_press(Message::PostNotification))
+                .with(
+                    specimens::shell_notification_stack(|id, event| {
+                        Some(Message::Notification(id, event))
+                    })
+                    .bind(&mut handles.notifications),
+                ),
         ))
         .into()
 }

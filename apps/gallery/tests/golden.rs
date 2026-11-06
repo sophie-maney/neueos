@@ -15,9 +15,9 @@ use neue_gallery::specimens::{
     COLOR_WELL_SIZE, COMBO_SIZE, DATE_SIZE, FIELD_SIZE, ICONS_SIZE, MENU_SIZE, OUTLINE_SIZE,
     PATH_SIZE, POPOVER_SIZE, POPUP_SIZE, PROGRESS_SIZE, PULL_DOWN_SIZE, PUSH_BUTTON_SIZE,
     SCROLL_SIZE, SEGMENTED_SIZE, SHELL_BAR_SIZE, SHELL_DESKTOP_SIZE, SHELL_EXTRAS_SIZE,
-    SHELL_NOTIFICATION_SIZE, SHELL_OSD_SIZE, SHELL_TRAY_SIZE, SIDEBAR_SIZE, SLIDER_SIZE,
-    SPINNER_SIZE, SPLIT_SIZE, STEPPER_SIZE, SUBMENU_SIZE, TABLE_SIZE, TABS_SIZE, TEXT_VIEW_SIZE,
-    TOGGLE_SIZE,
+    SHELL_NOTIFICATION_SIZE, SHELL_NOTIFICATION_STACK_SIZE, SHELL_OSD_SIZE, SHELL_TRAY_SIZE,
+    SIDEBAR_SIZE, SLIDER_SIZE, SPINNER_SIZE, SPLIT_SIZE, STEPPER_SIZE, SUBMENU_SIZE, TABLE_SIZE,
+    TABS_SIZE, TEXT_VIEW_SIZE, TOGGLE_SIZE,
 };
 use neue_kit::testing::{
     self, DISABLED, FOCUSED, Fixture, Goldens, INACTIVE, NORMAL, NavKey, PRESSED, State,
@@ -410,6 +410,9 @@ control_goldens! {
     shell_banner: "shell-banner", SHELL_NOTIFICATION_SIZE, &[NORMAL, NOTE_CLOSE_HOVERED, FOCUSED], specimens::shell_banner(|_| None);
     shell_banner_image: "shell-banner-image", SHELL_NOTIFICATION_SIZE, &[NORMAL], specimens::shell_banner_image(|_| None);
     shell_alert: "shell-alert", SHELL_NOTIFICATION_SIZE, &[NORMAL, NOTE_CLOSE_HOVERED], specimens::shell_alert(|_| None);
+    // The notification host (3.15d2): three panels at rest, a banner over an alert over a
+    // banner with an image.
+    shell_notification_stack: "shell-notification-stack", SHELL_NOTIFICATION_STACK_SIZE, &[NORMAL], specimens::shell_notification_stack(|_, _| None);
 
     context_menu: "context-menu", MENU_SIZE, &[MENU_OPEN, MENU_HIGHLIGHTED], specimens::context_menu(|_| (), specimens::command);
     context_submenu: "context-menu", SUBMENU_SIZE, &[MENU_SUBMENU], specimens::context_menu(|_| (), specimens::command);

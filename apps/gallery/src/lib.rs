@@ -86,6 +86,9 @@ pub enum Message {
     ShowHud,
     OpenFile(usize),
     SortFiles(usize, neue_kit::SortOrder),
+    /// The Shell page: post another notification; what was done to notification `id`.
+    PostNotification,
+    Notification(u32, neue_kit::desktop::NotificationEvent),
 }
 
 fn appearance_label(theme: Theme) -> String {
@@ -412,6 +415,20 @@ impl Application for Gallery {
                 }
             }
             Message::SortFiles(column, order) => self.handles.sort_files(cx, column, order),
+            Message::PostNotification => self.handles.post_notification(cx),
+            Message::Notification(id, event) => {
+                use neue_kit::desktop::NotificationEvent::{Action, Activated, Closed, Hovered};
+                let what = match event {
+                    Activated => "Notification",
+                    Closed => "Close Notification",
+                    Action(0) => "First Action",
+                    Action(_) => "Second Action",
+                    Hovered(_) => return,
+                };
+                self.status
+                    .set_text(cx, format!("Pressed “{what}” on notification {id}"));
+                self.handles.notifications.dismiss(cx, id);
+            }
             Message::Radio(n) => {
                 // The app owns the choice: the others turn off.
                 for (i, radio) in self.handles.radios.iter().enumerate() {

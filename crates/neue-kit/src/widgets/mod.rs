@@ -18,6 +18,7 @@ mod label;
 mod menu;
 mod menu_bar;
 mod notification;
+mod notification_host;
 mod osd;
 mod outline;
 mod path;
@@ -43,6 +44,9 @@ mod ticker;
 mod toggle;
 mod toolbar;
 mod zoom;
+
+use std::cell::RefCell;
+use std::rc::Rc;
 
 use masonry_core::core::NewWidget;
 use masonry_core::kurbo::Axis;
@@ -76,6 +80,7 @@ pub use menu_bar::{ExtraIcon, MenuBar, MenuTitle, NetworkIcon};
 pub(crate) use menu_bar::{MenuBarWidget, MenuTitleWidget};
 pub(crate) use notification::{NoteButtonWidget, NotificationWidget};
 pub use notification::{NotificationContent, NotificationEvent};
+pub(crate) use notification_host::{NotificationHostWidget, PanelGone};
 pub(crate) use osd::OsdWidget;
 pub use outline::Outline;
 pub use path::PathControl;
@@ -552,34 +557,50 @@ impl<M: 'static> Notification<M> {
 
 impl<M: 'static> From<Notification<M>> for Element<M> {
     fn from(notification: Notification<M>) -> Self {
-        let id = notification.inner.id();
-        let close = notification.inner.widget.close_id();
-        let actions = notification.inner.widget.action_ids();
-        let mut element = Element::new(notification.inner.erased());
-        let Some(make) = notification.on_event else {
-            return element;
+        let wiring = match notification.on_event {
+            Some(make) => notification_wiring(&notification.inner, make),
+            None => Wiring::default(),
         };
-        // Every handler reaches the one closure.
-        let make = std::rc::Rc::new(std::cell::RefCell::new(make));
-        let shared = std::rc::Rc::clone(&make);
-        element.on_action(id, move |action| {
+        Element::with_wiring(notification.inner.erased(), wiring)
+    }
+}
+
+/// Handlers that send what the user does to `panel` (on it, its close button or an action
+/// button) through `make`.
+fn notification_wiring<M: 'static>(
+    panel: &NewWidget<NotificationWidget>,
+    make: Box<dyn FnMut(NotificationEvent) -> Option<M>>,
+) -> Wiring<M> {
+    let mut wiring = Wiring::default();
+    // Every handler reaches the one closure.
+    let make = Rc::new(RefCell::new(make));
+    let shared = Rc::clone(&make);
+    wiring.handlers.push((
+        panel.id(),
+        Box::new(move |action| {
             let notification::PanelEvent(event) = *action.downcast_ref()?;
             (shared.borrow_mut())(event)
-        });
-        let shared = std::rc::Rc::clone(&make);
-        element.on_action(close, move |action| {
+        }),
+    ));
+    let shared = Rc::clone(&make);
+    wiring.handlers.push((
+        panel.widget.close_id(),
+        Box::new(move |action| {
             action.is::<notification::ButtonPressed>().then_some(())?;
             (shared.borrow_mut())(NotificationEvent::Closed)
-        });
-        for (i, id) in actions.into_iter().enumerate() {
-            let shared = std::rc::Rc::clone(&make);
-            element.on_action(id, move |action| {
+        }),
+    ));
+    for (i, id) in panel.widget.action_ids().into_iter().enumerate() {
+        let shared = Rc::clone(&make);
+        wiring.handlers.push((
+            id,
+            Box::new(move |action| {
                 action.is::<notification::ButtonPressed>().then_some(())?;
                 (shared.borrow_mut())(NotificationEvent::Action(i))
-            });
-        }
-        element
+            }),
+        ));
     }
+    wiring
 }
 
 impl<M> Handle<Notification<M>> {
@@ -587,6 +608,175 @@ impl<M> Handle<Notification<M>> {
     pub fn set_content<N>(&self, cx: &mut Cx<'_, N>, content: NotificationContent) {
         cx.edit::<NotificationWidget, _>(self, |mut notification| {
             NotificationWidget::edit_content(&mut notification, content);
+        });
+    }
+}
+
+/// The app's closure for what the user does to a hosted notification, shared by every
+/// panel's handlers.
+type HostEvents<M> = Rc<RefCell<Box<dyn FnMut(u32, NotificationEvent) -> Option<M>>>>;
+
+/// The stack of notifications at the top right of the screen: it owns one
+/// [`Notification`] panel per notification id, newest on top, sliding each in from the
+/// right as it is shown and out as it is dismissed while the others move to make room or
+/// close up (straight to their places under reduced motion). It is as tall as the stack
+/// needs (one pixel when empty) and `tokens::materials::notification::WIDTH` plus `MARGIN`
+/// on each side wide, so a layer window with `fit_content` follows it.
+///
+/// What the user does to a panel reaches the app with its id ([`Self::on_event`]); the
+/// host does not dismiss anything by itself.
+pub struct NotificationHost<M> {
+    inner: NewWidget<NotificationHostWidget>,
+    events: HostEvents<M>,
+    /// The panels given to [`Self::with`], bottom first.
+    panels: Vec<(u32, NewWidget<NotificationWidget>)>,
+    on_gone: Option<Box<dyn FnMut(u32) -> Option<M>>>,
+    wiring: Wiring<M>,
+}
+
+impl<M> std::fmt::Debug for NotificationHost<M> {
+    fn fmt(&self, f: &mut std::fmt::Formatter<'_>) -> std::fmt::Result {
+        f.debug_struct("NotificationHost")
+            .field("inner", &self.inner)
+            .field("on_gone", &self.on_gone.is_some())
+            .finish_non_exhaustive()
+    }
+}
+
+impl<M: 'static> Default for NotificationHost<M> {
+    fn default() -> Self {
+        Self::new()
+    }
+}
+
+impl<M: 'static> NotificationHost<M> {
+    /// Showing nothing.
+    pub fn new() -> Self {
+        let events: HostEvents<M> = Rc::new(RefCell::new(Box::new(|_, _| None)));
+        Self {
+            inner: NewWidget::new(NotificationHostWidget::new(Box::new(Rc::clone(&events)))),
+            events,
+            panels: Vec::new(),
+            on_gone: None,
+            wiring: Wiring::default(),
+        }
+    }
+
+    /// Shows `content` as notification `id` at rest, on top of the ones added before.
+    #[must_use]
+    pub fn with(mut self, id: u32, content: NotificationContent) -> Self {
+        let (panel, wiring) = host_panel(&self.events, id, content);
+        self.wiring.handlers.extend(wiring.handlers);
+        self.panels.push((id, panel));
+        self
+    }
+
+    /// [`Backdrop::Translucent`] when the window asked for blur behind it
+    /// ([`crate::Cx::backdrop`]); applies to every panel.
+    #[must_use]
+    pub fn backdrop(mut self, backdrop: Backdrop) -> Self {
+        self.inner.widget.backdrop = backdrop;
+        self
+    }
+
+    /// Sends the message `make` returns for what the user does to notification `id`
+    /// (`None`: nothing).
+    #[must_use]
+    pub fn on_event(self, make: impl FnMut(u32, NotificationEvent) -> Option<M> + 'static) -> Self {
+        *self.events.borrow_mut() = Box::new(make);
+        self
+    }
+
+    /// Sends the message `make` returns once notification `id` has slid out and left the
+    /// host (after [`Handle::dismiss`]); when none are left the window can close.
+    #[must_use]
+    pub fn on_gone(mut self, make: impl FnMut(u32) -> Option<M> + 'static) -> Self {
+        self.on_gone = Some(Box::new(make));
+        self
+    }
+
+    /// Points `handle` at this host.
+    #[must_use]
+    pub fn bind(self, handle: &mut Handle<Self>) -> Self {
+        *handle = Handle::new(self.inner.id());
+        self
+    }
+}
+
+/// A panel for notification `id`, its handlers sending through `events`.
+fn host_panel<M: 'static>(
+    events: &HostEvents<M>,
+    id: u32,
+    content: NotificationContent,
+) -> (NewWidget<NotificationWidget>, Wiring<M>) {
+    let panel = NewWidget::new(NotificationWidget::new(content));
+    let events = Rc::clone(events);
+    let wiring = notification_wiring(
+        &panel,
+        Box::new(move |event| (events.borrow_mut())(id, event)),
+    );
+    (panel, wiring)
+}
+
+impl<M: 'static> From<NotificationHost<M>> for Element<M> {
+    fn from(host: NotificationHost<M>) -> Self {
+        let NotificationHost {
+            mut inner,
+            panels,
+            on_gone,
+            mut wiring,
+            ..
+        } = host;
+        for (id, mut panel) in panels {
+            panel.widget.backdrop = inner.widget.backdrop;
+            inner.widget.push(id, panel);
+        }
+        if let Some(mut make) = on_gone {
+            wiring.handlers.push((
+                inner.id(),
+                Box::new(move |action| {
+                    let PanelGone(id) = *action.downcast_ref()?;
+                    make(id)
+                }),
+            ));
+        }
+        Element::with_wiring(inner.erased(), wiring)
+    }
+}
+
+impl<M: 'static> Handle<NotificationHost<M>> {
+    /// Shows `content` as notification `id`: in place if it is shown (a replacement; one
+    /// sliding out comes back), otherwise in a new panel sliding in on top.
+    pub fn show(&self, cx: &mut Cx<'_, M>, id: u32, content: NotificationContent) {
+        let Some(window) = cx.window_of(self) else {
+            tracing::debug!(
+                id,
+                "showing a notification in a host that isn't in an open window"
+            );
+            return;
+        };
+        let wiring =
+            cx.edit::<NotificationHostWidget, _>(self, |mut host| {
+                NotificationHostWidget::edit_show(&mut host, id, content, |events, content| {
+                    match events.downcast_ref::<HostEvents<M>>() {
+                        Some(events) => host_panel(events, id, content),
+                        None => (
+                            NewWidget::new(NotificationWidget::new(content)),
+                            Wiring::default(),
+                        ),
+                    }
+                })
+            });
+        if let Some(Some(wiring)) = wiring {
+            cx.register_wiring(window, wiring);
+        }
+    }
+
+    /// Slides notification `id` out. Once it is gone the panels below close up and
+    /// [`NotificationHost::on_gone`] reports it.
+    pub fn dismiss(&self, cx: &mut Cx<'_, M>, id: u32) {
+        cx.edit::<NotificationHostWidget, _>(self, |mut host| {
+            NotificationHostWidget::edit_dismiss(&mut host, id);
         });
     }
 }
