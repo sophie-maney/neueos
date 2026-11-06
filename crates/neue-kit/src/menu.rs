@@ -87,6 +87,7 @@ impl<M> Menu<M> {
                 shortcut,
                 enabled,
                 toggle,
+                signal,
             } = item;
             let kind = match kind {
                 Kind::Action(handler) => {
@@ -106,6 +107,7 @@ impl<M> Menu<M> {
                 id,
                 label,
                 shortcut,
+                signal,
                 enabled,
                 toggle,
                 kind,
@@ -125,6 +127,33 @@ pub struct MenuItem<M> {
     shortcut: Option<Shortcut>,
     enabled: bool,
     toggle: MenuToggle,
+    signal: Option<Signal>,
+}
+
+/// A network's signal at an item's right (see [`MenuItem::signal`]).
+#[derive(Debug, Clone, Copy, PartialEq, Eq)]
+pub struct Signal {
+    /// How many of the three arcs of the Wi-Fi fan are lit (0 to 3; more counts as 3).
+    pub bars: u8,
+    /// Needs a password: a padlock shows before the fan.
+    pub locked: bool,
+}
+
+impl Signal {
+    /// What assistive technologies read as the item's description.
+    pub(crate) fn spoken(self) -> String {
+        let level = match self.bars {
+            0 => "no signal",
+            1 => "weak signal",
+            2 => "good signal",
+            _ => "strong signal",
+        };
+        if self.locked {
+            format!("{level}, password needed")
+        } else {
+            level.to_owned()
+        }
+    }
 }
 
 enum Kind<M> {
@@ -144,6 +173,7 @@ impl<M> std::fmt::Debug for MenuItem<M> {
             Kind::Separator => return f.write_str("Separator"),
         };
         d.field("shortcut", &self.shortcut)
+            .field("signal", &self.signal)
             .field("enabled", &self.enabled)
             .field("toggle", &self.toggle)
             .finish()
@@ -159,6 +189,7 @@ impl<M> MenuItem<M> {
             shortcut: None,
             enabled: true,
             toggle: MenuToggle::None,
+            signal: None,
         }
     }
 
@@ -201,6 +232,14 @@ impl<M> MenuItem<M> {
     #[must_use]
     pub fn shortcut(mut self, shortcut: Shortcut) -> Self {
         self.shortcut = Some(shortcut);
+        self
+    }
+
+    /// Shows a network's signal (and a padlock when it needs a password) at the item's
+    /// right, where a shortcut would go: an item of a Wi-Fi list.
+    #[must_use]
+    pub fn signal(mut self, bars: u8, locked: bool) -> Self {
+        self.signal = Some(Signal { bars, locked });
         self
     }
 
@@ -411,6 +450,7 @@ pub(crate) struct ItemSpec {
     pub(crate) id: usize,
     pub(crate) label: String,
     pub(crate) shortcut: Option<Shortcut>,
+    pub(crate) signal: Option<Signal>,
     pub(crate) enabled: bool,
     pub(crate) toggle: MenuToggle,
     pub(crate) kind: SpecKind,

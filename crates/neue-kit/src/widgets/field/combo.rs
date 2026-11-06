@@ -66,6 +66,7 @@ fn suggestions(labels: &[String]) -> MenuSpec {
                 id,
                 label: label.clone(),
                 shortcut: None,
+                signal: None,
                 enabled: true,
                 toggle: MenuToggle::None,
                 kind: SpecKind::Action,

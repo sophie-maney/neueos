@@ -9,7 +9,7 @@ use neue_theme::materials::menu::{
     ARROW_SIZE, MARK_STROKE, Palette, RADIUS, RIM, SEPARATOR_LINE, SHADOW_BLUR, SHADOW_OFFSET,
 };
 use vello_common::kurbo::{
-    BezPath, Cap, Circle, Join, Point, Rect, RoundedRect, Shape, Stroke, Vec2,
+    Arc, BezPath, Cap, Circle, Join, Point, Rect, RoundedRect, Shape, Stroke, Vec2,
 };
 use vello_common::peniko::{Color, Gradient};
 
@@ -132,6 +132,41 @@ pub fn submenu_arrow(scene: &mut Scene, rect: Rect, color: Color) {
     path.line_to(Point::new(c.x - w / 2.0, c.y + h));
     path.close_path();
     scene.fill(&path, color);
+}
+
+/// Draw the signal glyph at an item's right in `rect` (a
+/// [`neue_theme::materials::menu::SIGNAL_WIDTH`] by `SIGNAL_HEIGHT` box) in `color`: the
+/// Wi-Fi fan with `bars` (0 to 3) of its arcs lit.
+pub fn menu_signal(scene: &mut Scene, rect: Rect, bars: u8, color: Color) {
+    super::menu_bar::wifi(scene, rect, bars, color);
+}
+
+/// Draw a padlock in `rect` (a [`neue_theme::materials::menu::LOCK_WIDTH`] by
+/// `LOCK_HEIGHT` box) in `color`: the item needs a password.
+pub fn menu_lock(scene: &mut Scene, rect: Rect, color: Color) {
+    let body = Rect::new(rect.x0, rect.y0 + rect.height() * 0.45, rect.x1, rect.y1);
+    scene.fill(&RoundedRect::from_rect(body, 1.5), color);
+    // The shackle: a half circle over the body and a short leg down each side.
+    let radius = rect.width() / 2.0 - 1.4;
+    let top = Point::new(rect.center().x, body.y0 - radius + 0.5);
+    let stroke = Stroke::new(1.3).with_caps(Cap::Butt);
+    scene.stroke(
+        &Arc::new(
+            top,
+            Vec2::new(radius, radius),
+            std::f64::consts::PI,
+            std::f64::consts::PI,
+            0.0,
+        ),
+        &stroke,
+        color,
+    );
+    for x in [top.x - radius, top.x + radius] {
+        let mut leg = BezPath::new();
+        leg.move_to((x, top.y));
+        leg.line_to((x, body.y0 + 0.5));
+        scene.stroke(&leg, &stroke, color);
+    }
 }
 
 #[cfg(test)]

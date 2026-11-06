@@ -15,7 +15,9 @@ use neue_kit::desktop::{
 };
 use neue_kit::{Application, Cx, Handle, Settings, WindowId};
 use neue_shell::about::About;
-use neue_shell::bar::{self, BarContent, BarHandles, BatteryView, BluetoothCommand, SystemCommand};
+use neue_shell::bar::{
+    self, BarContent, BarHandles, BatteryView, BluetoothCommand, NetworkCommand, SystemCommand,
+};
 use neue_shell::clock;
 use neue_shell::fallback::{self, Command, Context, WindowEntry};
 use neue_shell::help::{self, PanelHandles};
@@ -40,6 +42,8 @@ enum Message {
     /// change missed it, since a queued window's widgets can't be edited yet.
     Sync,
     System(SystemCommand),
+    /// Something chosen in the network menu (task 3.12c wires it up).
+    Network(NetworkCommand),
     /// Something chosen in the Bluetooth menu.
     Bluetooth(BluetoothCommand),
     /// UPower's battery changed (`None`: there is none, or UPower isn't on the bus).
@@ -194,6 +198,8 @@ impl Shell {
                 full_date: clock::full_date_text(now),
                 // Shown once the workers (`start_extras`) find a battery and an adapter.
                 battery: None,
+                // Followed by a NetworkManager worker (task 3.12c).
+                network: None,
                 bluetooth: None,
             },
             windows,
@@ -621,6 +627,7 @@ impl Shell {
             &self.content,
             titles,
             Message::System,
+            Message::Network,
             Message::Bluetooth,
             &mut handles,
             cx.backdrop(),
@@ -855,6 +862,9 @@ impl Application for Shell {
                 self.unbusy(cx);
             }
             Message::System(command) => self.system(cx, command),
+            Message::Network(command) => {
+                tracing::debug!(?command, "network menu: not wired yet");
+            }
             Message::Bluetooth(command) => self.bluetooth_command(cx, command),
             Message::Battery(battery) => self.set_battery(cx, battery),
             Message::BatteryEnded => self.set_battery(cx, None),

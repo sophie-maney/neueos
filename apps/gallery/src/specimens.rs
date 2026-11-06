@@ -944,12 +944,22 @@ pub fn calendar<M: 'static>() -> neue_kit::CalendarPicker<M> {
 }
 
 /// Golden window size for the shell's menu bar, with room for its logo menu.
-pub const SHELL_BAR_SIZE: (u32, u32) = (420, 210);
+pub const SHELL_BAR_SIZE: (u32, u32) = (460, 240);
 
 /// What the specimen bar shows: a fixed app name and time, so goldens don't change; a
-/// battery on its way up and a connected Bluetooth mouse.
+/// battery on its way up, Wi-Fi joined to Home (with Cafe open and Library protected in
+/// range, and an Ethernet port with a cable) and a connected Bluetooth mouse.
 pub fn shell_bar_content(app_name: &str) -> neue_shell::bar::BarContent {
-    use neue_shell::bar::{BatteryView, BluetoothView, DeviceView};
+    use neue_shell::bar::{
+        BatteryView, BluetoothView, DeviceView, NetworkView, WifiNetworkView, WifiView, WiredView,
+    };
+    let network = |ssid: &str, strength, secured, saved, active| WifiNetworkView {
+        ssid: ssid.to_owned(),
+        strength,
+        secured,
+        saved,
+        active,
+    };
     let device = |name: &str, connected| DeviceView {
         name: name.to_owned(),
         connected,
@@ -964,6 +974,24 @@ pub fn shell_bar_content(app_name: &str) -> neue_shell::bar::BarContent {
             on_ac: true,
             time_left: Some(std::time::Duration::from_secs(45 * 60)),
         }),
+        network: Some(NetworkView {
+            wifi_enabled: true,
+            wired: vec![WiredView {
+                name: "enp0s1".to_owned(),
+                carrier: true,
+                connected: false,
+                connecting: false,
+            }],
+            wifi: Some(WifiView {
+                connected: true,
+                connecting: false,
+                networks: vec![
+                    network("Home", 82, true, true, true),
+                    network("Cafe", 55, false, false, false),
+                    network("Library", 20, true, false, false),
+                ],
+            }),
+        }),
         bluetooth: Some(BluetoothView {
             powered: true,
             devices: vec![device("Trackpad", true), device("Headphones", false)],
@@ -972,12 +1000,15 @@ pub fn shell_bar_content(app_name: &str) -> neue_shell::bar::BarContent {
 }
 
 /// Golden window size for the menu extras' icons in each state.
-pub const SHELL_EXTRAS_SIZE: (u32, u32) = (300, 60);
+pub const SHELL_EXTRAS_SIZE: (u32, u32) = (300, 90);
 
-/// Two bars of menu extras: batteries (full, charging, half, low, empty) and Bluetooth
-/// icons (off, on, connected).
+/// Three bars of menu extras: batteries (full, charging, half, low, empty), network icons
+/// (wired, disconnected, Wi-Fi with three, two, one and no arcs lit, Wi-Fi off) and
+/// Bluetooth icons (off, on, connected).
 pub fn shell_extras<M: 'static>() -> Stack<M> {
-    use neue_kit::desktop::{Backdrop, ExtraIcon, MenuBar, MenuTitle};
+    use neue_kit::desktop::{Backdrop, ExtraIcon, MenuBar, MenuTitle, NetworkIcon};
+    let network =
+        |icon| MenuTitle::icon(ExtraIcon::Network(icon), "Network", neue_kit::Menu::new());
     let battery = |level, charging| {
         MenuTitle::icon(
             ExtraIcon::Battery { level, charging },
@@ -1006,6 +1037,17 @@ pub fn shell_extras<M: 'static>() -> Stack<M> {
         .with(
             MenuBar::new()
                 .backdrop(Backdrop::Opaque)
+                .with_extra(network(NetworkIcon::Wired))
+                .with_extra(network(NetworkIcon::Disconnected))
+                .with_extra(network(NetworkIcon::Wifi { level: 3 }))
+                .with_extra(network(NetworkIcon::Wifi { level: 2 }))
+                .with_extra(network(NetworkIcon::Wifi { level: 1 }))
+                .with_extra(network(NetworkIcon::Wifi { level: 0 }))
+                .with_extra(network(NetworkIcon::WifiOff)),
+        )
+        .with(
+            MenuBar::new()
+                .backdrop(Backdrop::Opaque)
                 .with_extra(bluetooth(false, false))
                 .with_extra(bluetooth(true, false))
                 .with_extra(bluetooth(true, true)),
@@ -1013,10 +1055,12 @@ pub fn shell_extras<M: 'static>() -> Stack<M> {
 }
 
 /// The shell's menu bar across the top, naming `app_name`; the logo menu sends
-/// `send(command)` and the Bluetooth menu `bluetooth(command)`.
-pub fn shell_bar<M: 'static>(
+/// `send(command)`, the network menu `network(command)` and the Bluetooth menu
+/// `bluetooth(command)`.
+pub fn shell_bar<M: Clone + 'static>(
     app_name: &str,
     send: impl Fn(neue_shell::bar::SystemCommand) -> M + Clone + 'static,
+    network: impl Fn(neue_shell::bar::NetworkCommand) -> M + Clone + 'static,
     bluetooth: impl Fn(neue_shell::bar::BluetoothCommand) -> M + Clone + 'static,
 ) -> Stack<M> {
     let mut handles = neue_shell::bar::BarHandles::default();
@@ -1036,6 +1080,7 @@ pub fn shell_bar<M: 'static>(
             &shell_bar_content(app_name),
             menus,
             send,
+            network,
             bluetooth,
             &mut handles,
             // Inside a gallery window, nothing is blurred behind the bar.

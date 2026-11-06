@@ -27,7 +27,8 @@ use neue_paint::{Backdrop, Scene, Variant};
 use neue_theme::materials::menu as menu_tokens;
 use neue_theme::materials::menu_bar::{
     BATTERY_HEIGHT, BATTERY_WIDTH, BLUETOOTH_HEIGHT, BLUETOOTH_WIDTH, EDGE_INSET, HEIGHT,
-    LABEL_BASELINE, LABEL_EMBOSS_OFFSET, LOGO_SIZE, OFF_OPACITY, Palette, TITLE_PADDING,
+    LABEL_BASELINE, LABEL_EMBOSS_OFFSET, LOGO_SIZE, NETWORK_HEIGHT, NETWORK_WIDTH, OFF_OPACITY,
+    Palette, TITLE_PADDING,
 };
 
 use super::menu::{self, Anchor};
@@ -392,6 +393,23 @@ pub enum ExtraIcon {
     /// The Bluetooth rune, faded while the adapter is off (`powered` false), with a dot
     /// on each side while a device is `connected`.
     Bluetooth { powered: bool, connected: bool },
+    /// The network: wired, Wi-Fi with its signal, Wi-Fi switched off, or nothing.
+    Network(NetworkIcon),
+}
+
+/// What the network extra shows (see [`ExtraIcon::Network`]); every state has the same
+/// size, so the bar doesn't shift when the network changes.
+#[derive(Debug, Clone, Copy, PartialEq, Eq)]
+pub enum NetworkIcon {
+    /// A wired connection is up.
+    Wired,
+    /// Wi-Fi, with `level` (0 to 3) of its arcs lit: the signal of the network joined,
+    /// or none while Wi-Fi is on but joined to no network.
+    Wifi { level: u8 },
+    /// Wi-Fi is switched off (and no wired connection is up).
+    WifiOff,
+    /// No connection and no Wi-Fi to switch on.
+    Disconnected,
 }
 
 impl ExtraIcon {
@@ -400,6 +418,7 @@ impl ExtraIcon {
         match self {
             Self::Battery { .. } => (BATTERY_WIDTH, BATTERY_HEIGHT),
             Self::Bluetooth { .. } => (BLUETOOTH_WIDTH, BLUETOOTH_HEIGHT),
+            Self::Network(_) => (NETWORK_WIDTH, NETWORK_HEIGHT),
         }
     }
 
@@ -413,6 +432,18 @@ impl ExtraIcon {
                 }
                 Self::Bluetooth { powered, connected } => {
                     menu_bar::bluetooth_label(scene, rect, powered, connected, variant);
+                }
+                Self::Network(NetworkIcon::Wired) => {
+                    menu_bar::wired_label(scene, rect, true, variant);
+                }
+                Self::Network(NetworkIcon::Disconnected) => {
+                    menu_bar::wired_label(scene, rect, false, variant);
+                }
+                Self::Network(NetworkIcon::Wifi { level }) => {
+                    menu_bar::wifi_label(scene, rect, level, false, variant);
+                }
+                Self::Network(NetworkIcon::WifiOff) => {
+                    menu_bar::wifi_label(scene, rect, 0, true, variant);
                 }
             }
             return;
@@ -431,6 +462,21 @@ impl ExtraIcon {
                 if !powered {
                     scene.pop_layer();
                 }
+            }
+            Self::Network(NetworkIcon::Wired) => menu_bar::wired(scene, rect, colour),
+            Self::Network(NetworkIcon::Disconnected) => {
+                scene.push_opacity(OFF_OPACITY);
+                menu_bar::wired(scene, rect, colour);
+                scene.pop_layer();
+            }
+            Self::Network(NetworkIcon::Wifi { level }) => {
+                menu_bar::wifi(scene, rect, level, colour);
+            }
+            Self::Network(NetworkIcon::WifiOff) => {
+                scene.push_opacity(OFF_OPACITY);
+                menu_bar::wifi(scene, rect, menu_bar::WIFI_ARCS, colour);
+                menu_bar::strike(scene, rect, colour);
+                scene.pop_layer();
             }
         }
     }
